@@ -1,7 +1,7 @@
 from opendbc.can.packer import CANPacker
-from opendbc.car import Bus, DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance, make_tester_present_msg, structs
+from opendbc.car import Bus, DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance, make_tester_present_msg, structs, apply_std_steer_angle_limits
 from opendbc.car.common.conversions import Conversions as CV
-from opendbc.car.common.numpy_fast import clip
+from opendbc.car.common.numpy_fast import clip, interp
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.hyundaicanfd import CanBus
@@ -76,6 +76,10 @@ class CarController(CarControllerBase):
     self.button_spam2 = 30
     self.button_spam3 = 1
 
+    self.apply_angle_last = 0
+    self.lkas_max_torque = 0
+    self.driver_applied_torque_reducer = 0
+
   def update(self, CC, CS, now_nanos):
 
     if self.frame % 50 == 0:
@@ -111,8 +115,19 @@ class CarController(CarControllerBase):
                                                                        self.angle_limit_counter, self.max_angle_frames,
                                                                        MAX_ANGLE_CONSECUTIVE_FRAMES)
 
+    apply_angle = apply_std_steer_angle_limits(actuators.steeringAngleDeg, self.apply_angle_last, CS.out.vEgoRaw, self.params)
+
+    max_torque = 200
+    ego_weight = interp(CS.out.vEgoCluster, [0, 5, 10, 20], [0.2, 0.3, 0.5, 1.0])
+    self.driver_applied_torque_reducer = max(30, min(150, self.driver_applied_torque_reducer + (-1 if abs(CS.out.steeringTorque) > 200 else 1)))
+    self.lkas_max_torque = int(round(max_torque * ego_weight * (self.driver_applied_torque_reducer / 150)))
+
     if not CC.latActive:
+      apply_angle = CS.out.steeringAngleDeg
       apply_steer = 0
+      self.lkas_max_torque = 0
+
+    self.apply_angle_last = apply_angle
 
     # Hold torque with induced temporary fault when cutting the actuation bit
     torque_fault = CC.latActive and not apply_steer_req
@@ -171,10 +186,11 @@ class CarController(CarControllerBase):
       hda2_long = hda2 and self.CP.openpilotLongitudinalControl
 
       # steering control
+      angle_control = self.CP.flags & HyundaiFlags.ANGLE_CONTROL
       if camera_scc:
-        can_sends.extend(hyundaicanfd.create_steering_messages_camera_scc(self.packer, self.CP, self.CAN, CC.enabled, apply_steer_req, apply_steer, CS))
+        can_sends.extend(hyundaicanfd.create_steering_messages_camera_scc(self.packer, self.CP, self.CAN, CC.enabled, apply_steer_req, apply_steer, CS, apply_angle, self.lkas_max_torque, angle_control))
       else:
-        can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, CC.enabled, apply_steer_req, apply_steer))
+        can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, CC.enabled, apply_steer_req, apply_steer, apply_angle, self.lkas_max_torque, angle_control))
 
       # prevent LFA from activating on HDA2 by sending "no lane lines detected" to ADAS ECU
       if self.frame % 5 == 0 and hda2 and not camera_scc:
@@ -254,6 +270,7 @@ class CarController(CarControllerBase):
     new_actuators = actuators.as_builder()
     new_actuators.steer = apply_steer / self.params.STEER_MAX
     new_actuators.steerOutputCan = apply_steer
+    new_actuators.steeringAngleDeg = apply_angle
     new_actuators.accel = accel
 
     self.frame += 1

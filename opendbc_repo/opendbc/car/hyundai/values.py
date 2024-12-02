@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from enum import Enum, IntFlag
 
 from panda import uds
-from opendbc.car import Bus, CarSpecs, DbcDict, PlatformConfig, Platforms
+from opendbc.car import Bus, CarSpecs, DbcDict, PlatformConfig, Platforms, AngleRateLimit
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.structs import CarParams
 from opendbc.car.docs_definitions import CarFootnote, CarHarness, CarDocs, CarParts, Column
@@ -15,6 +15,8 @@ Ecu = CarParams.Ecu
 class CarControllerParams:
   ACCEL_MIN = -4.0 # m/s
   ACCEL_MAX = 2.5 # m/s
+  ANGLE_RATE_LIMIT_UP = AngleRateLimit(speed_bp=[0., 5., 15.], angle_v=[5., .8, .15])
+  ANGLE_RATE_LIMIT_DOWN = AngleRateLimit(speed_bp=[0., 5., 15.], angle_v=[5., 3.5, 0.4])
 
   def __init__(self, CP):
     self.STEER_DELTA_UP = 3
@@ -99,6 +101,9 @@ class HyundaiFlags(IntFlag):
   TCU_GEARS = 2 ** 22
 
   MIN_STEER_32_MPH = 2 ** 23
+  
+  ANGLE_CONTROL = 2 ** 24
+
   CC_ONLY_CAR = 2 ** 25
 
 class HyundaiExtFlags(IntFlag):
@@ -378,6 +383,20 @@ class CAR(Platforms):
     CarSpecs(mass=1970, wheelbase=2.64, steerRatio=14.5),
     flags=HyundaiFlags.EV | HyundaiFlags.CC_ONLY_CAR,
   )
+  HYUNDAI_SANTAFE_MX5 = HyundaiCanFDPlatformConfig(
+    [
+      HyundaiCarDocs("HYUNDAI SANTAFE (MX5)", car_parts=CarParts.common([CarHarness.hyundai_k])),
+    ],
+    CarSpecs(mass=1910, wheelbase=2.76, steerRatio=15.8, tireStiffnessFactor=0.82),
+    flags=HyundaiFlags.ANGLE_CONTROL,
+  )
+  HYUNDAI_SANTAFE_MX5_HEV = HyundaiCanFDPlatformConfig(
+    [
+      HyundaiCarDocs("HYUNDAI SANTAFE HYBRID (MX5)", car_parts=CarParts.common([CarHarness.hyundai_k])),
+    ],
+    HYUNDAI_SANTAFE_MX5.specs,
+    flags=HyundaiFlags.ANGLE_CONTROL,
+  )
 
 
   # Kia
@@ -502,7 +521,7 @@ class CAR(Platforms):
       HyundaiCarDocs("Kia Sorento Plug-in Hybrid 2022-23", "All", car_parts=CarParts.common([CarHarness.hyundai_a])),
     ],
     CarSpecs(mass=4395 * CV.LB_TO_KG, wheelbase=2.81, steerRatio=13.5),  # average of the platforms
-    flags=HyundaiFlags.RADAR_SCC,
+    flags=HyundaiFlags.RADAR_SCC | HyundaiFlags.ANGLE_CONTROL,
   )
   KIA_STINGER = HyundaiPlatformConfig(
     [HyundaiCarDocs("Kia Stinger 2018-20", video_link="https://www.youtube.com/watch?v=MJ94qoofYw0",
@@ -669,6 +688,13 @@ class CAR(Platforms):
     [HyundaiCarDocs("Kia Soul EV 2019", car_parts=CarParts.common([CarHarness.hyundai_c]))],
     CarSpecs(mass=1695, wheelbase=2.6, steerRatio=13.75),
     flags=HyundaiFlags.CHECKSUM_CRC8 | HyundaiFlags.EV,
+  )
+  KIA_EV9 = HyundaiCanFDPlatformConfig(
+    [
+      HyundaiCarDocs("KIA EV9 (MV)", car_parts=CarParts.common([CarHarness.hyundai_k])),
+    ],
+    CarSpecs(mass=2625, wheelbase=3.1, steerRatio=16.02),
+    flags=HyundaiFlags.EV | HyundaiFlags.ANGLE_CONTROL,
   )
 
 
