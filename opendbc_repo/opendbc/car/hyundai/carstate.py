@@ -137,7 +137,7 @@ class CarState(CarStateBase):
       ret.cruiseState.enabled = cp.vl["TCS13"]["ACC_REQ"] == 1
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
-    else:
+    elif not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
       self.main_enabled = ret.cruiseState.available = cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1
       ret.cruiseState.enabled = cp_cruise.vl["SCC12"]["ACCMode"] != 0
       ret.cruiseState.standstill = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 4.
@@ -148,13 +148,14 @@ class CarState(CarStateBase):
 
     # TODO: Find brake pressure
     ret.brake = 0
-    ret.brakePressed = cp.vl["TCS13"]["DriverOverride"] == 2  # 2 includes regen braking by user on HEV/EV
-    ret.brakeHoldActive = cp.vl["TCS15"]["AVH_LAMP"] == 2  # 0 OFF, 1 ERROR, 2 ACTIVE, 3 READY
-    ret.parkingBrake = cp.vl["TCS13"]["PBRAKE_ACT"] == 1
-    ret.espDisabled = cp.vl["TCS11"]["TCS_PAS"] == 1
-    ret.espActive = cp.vl["TCS11"]["ABS_ACT"] == 1
-    ret.accFaulted = cp.vl["TCS13"]["ACCEnable"] != 0  # 0 ACC CONTROL ENABLED, 1-3 ACC CONTROL DISABLED
-    ret.brakeLights = bool(cp.vl["TCS13"]["BrakeLight"] or ret.brakePressed)
+    if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
+      ret.brakePressed = cp.vl["TCS13"]["DriverOverride"] == 2  # 2 includes regen braking by user on HEV/EV
+      ret.brakeHoldActive = cp.vl["TCS15"]["AVH_LAMP"] == 2  # 0 OFF, 1 ERROR, 2 ACTIVE, 3 READY
+      ret.parkingBrake = cp.vl["TCS13"]["PBRAKE_ACT"] == 1
+      ret.espDisabled = cp.vl["TCS11"]["TCS_PAS"] == 1
+      ret.espActive = cp.vl["TCS11"]["ABS_ACT"] == 1
+      ret.accFaulted = cp.vl["TCS13"]["ACCEnable"] != 0  # 0 ACC CONTROL ENABLED, 1-3 ACC CONTROL DISABLED
+      ret.brakeLights = bool(cp.vl["TCS13"]["BrakeLight"] or ret.brakePressed)
 
     if self.CP.flags & (HyundaiFlags.HYBRID | HyundaiFlags.EV):
       if self.CP.flags & HyundaiFlags.HYBRID:
@@ -201,7 +202,7 @@ class CarState(CarStateBase):
 
       ret.gearShifter = self.gear_shifter
 
-    if not self.CP.openpilotLongitudinalControl or self.CP.flags & HyundaiFlags.CAMERA_SCC.value:
+    if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR and (not self.CP.openpilotLongitudinalControl or self.CP.flags & HyundaiFlags.CAMERA_SCC.value):
       aeb_src = "FCA11" if self.CP.flags & HyundaiFlags.USE_FCA.value else "SCC12"
       aeb_sig = "FCA_CmdAct" if self.CP.flags & HyundaiFlags.USE_FCA.value else "AEB_CmdAct"
       aeb_warning = cp_cruise.vl[aeb_src]["CF_VSM_Warn"] != 0
@@ -240,11 +241,12 @@ class CarState(CarStateBase):
                         *create_button_events(self.main_buttons[-1], prev_main_buttons, {1: ButtonType.mainCruise})]
 
 
-    tpms_unit = cp.vl["TPMS11"]["UNIT"] * 0.725 if int(cp.vl["TPMS11"]["UNIT"]) > 0 else 1.
-    ret.tpms.fl = tpms_unit * cp.vl["TPMS11"]["PRESSURE_FL"]
-    ret.tpms.fr = tpms_unit * cp.vl["TPMS11"]["PRESSURE_FR"]
-    ret.tpms.rl = tpms_unit * cp.vl["TPMS11"]["PRESSURE_RL"]
-    ret.tpms.rr = tpms_unit * cp.vl["TPMS11"]["PRESSURE_RR"]
+    if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
+      tpms_unit = cp.vl["TPMS11"]["UNIT"] * 0.725 if int(cp.vl["TPMS11"]["UNIT"]) > 0 else 1.
+      ret.tpms.fl = tpms_unit * cp.vl["TPMS11"]["PRESSURE_FL"]
+      ret.tpms.fr = tpms_unit * cp.vl["TPMS11"]["PRESSURE_FR"]
+      ret.tpms.rl = tpms_unit * cp.vl["TPMS11"]["PRESSURE_RL"]
+      ret.tpms.rr = tpms_unit * cp.vl["TPMS11"]["PRESSURE_RR"]
 
     self.scc11 = cp_cruise.vl["SCC11"] if "SCC11" in cp_cruise.vl else None
     self.scc12 = cp_cruise.vl["SCC12"] if "SCC12" in cp_cruise.vl else None
@@ -566,8 +568,13 @@ class CarState(CarStateBase):
       ("SAS11", 100),
       ("TPMS11", 5), 
     ]
+    if CP.flags & HyundaiFlags.CC_ONLY_CAR:
+      pt_messages.remove(("TCS11", 100))
+      pt_messages.remove(("TCS13", 50))
+      pt_messages.remove(("TCS15", 10))
+      pt_messages.remove(("TPMS11", 5))
 
-    if not CP.openpilotLongitudinalControl and not (CP.flags & HyundaiFlags.CAMERA_SCC):
+    if not CP.openpilotLongitudinalControl and not (CP.flags & HyundaiFlags.CAMERA_SCC) and not (CP.flags & HyundaiFlags.CC_ONLY_CAR):
       pt_messages += [
         ("SCC11", 50),
         ("SCC12", 50),

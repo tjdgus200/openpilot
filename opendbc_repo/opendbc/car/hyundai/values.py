@@ -99,6 +99,7 @@ class HyundaiFlags(IntFlag):
   TCU_GEARS = 2 ** 22
 
   MIN_STEER_32_MPH = 2 ** 23
+  CC_ONLY_CAR = 2 ** 25
 
 class HyundaiExtFlags(IntFlag):
   HAS_SCC13 = 1
@@ -371,6 +372,11 @@ class CAR(Platforms):
     [HyundaiCarDocs("Hyundai Casper EV 2024", "All", car_parts=CarParts.common([CarHarness.hyundai_k]))],
     CarSpecs(mass=1355, wheelbase=2.58, steerRatio=14.3),  # mass: from https://www.hyundai-motor.com.tw/clicktobuy/custin#spec_0, steerRatio: from learner
     flags=HyundaiFlags.CAMERA_SCC | HyundaiFlags.CHECKSUM_CRC8 | HyundaiFlags.EV
+  )
+  HYUNDAI_PORTER_II_EV = HyundaiPlatformConfig(
+    [HyundaiCarDocs("Hyundai Porter II EV 2024", car_parts=CarParts.common([CarHarness.hyundai_h]))],
+    CarSpecs(mass=1970, wheelbase=2.64, steerRatio=14.5),
+    flags=HyundaiFlags.EV | HyundaiFlags.CC_ONLY_CAR,
   )
 
 
