@@ -30,16 +30,19 @@ def get_schedule(onnx_data, supercombo_dtypes=False) -> Tuple[List[ScheduleItem]
   onnx_model = onnx.load(io.BytesIO(onnx_data))
   run_onnx = get_run_onnx(onnx_model)
   input_shapes = {inp.name:tuple(x.dim_value for x in inp.type.tensor_type.shape.dim) for inp in onnx_model.graph.input}
-  input_types_onnx = {inp.name:onnx.helper.tensor_dtype_to_np_dtype(inp.type.tensor_type.elem_type) for inp in onnx_model.graph.input}
 
   # run the model
-  input_types = {k:getattr(dtypes, input_types_onnx[k].name)for k in input_types_onnx.keys()}
-  print(input_types)
   if supercombo_dtypes:
-    input_types = {k:dtypes.float32 if 'img' not in k else dtypes.uint8 for k in input_types.keys()}
-  print(input_types)
-
-  inputs = {k:Tensor.empty(*shp, dtype=input_types[k]) for k,shp in input_shapes.items()}
+    inputs = {k:Tensor.empty(*shp) for k,shp in input_shapes.items()}
+  else:
+    input_types_onnx = {inp.name:onnx.helper.tensor_dtype_to_np_dtype(inp.type.tensor_type.elem_type) for inp in onnx_model.graph.input}
+    input_types = {k:getattr(dtypes, input_types_onnx[k].name)for k in input_types_onnx.keys()}
+    print(input_types)
+    if supercombo_dtypes:
+      input_types = {k:dtypes.float32 if 'img' not in k else dtypes.uint8 for k in input_types.keys()}
+    print(input_types)
+  
+    inputs = {k:Tensor.empty(*shp, dtype=input_types[k]) for k,shp in input_shapes.items()}
   ret: Tensor = next(iter(run_onnx(inputs).values())).cast(dtypes.float32).contiguous()
   schedule = ret.lazydata.schedule()
 
@@ -145,7 +148,9 @@ if __name__ == "__main__":
 
   # this is a hack due to supercombo being converted with f16 inputs but it uses f32 at runtime
   supercombo = 'supercombo'
-  schedule, schedule_independent, inputs = get_schedule(onnx_data, supercombo_dtypes=supercombo)
+  is_supercombo = os.path.splitext(os.path.basename(onnx_fn))[0] == "supercombo"
+  print("is_supercombo=", is_supercombo, onnx_fn)
+  schedule, schedule_independent, inputs = get_schedule(onnx_data, supercombo_dtypes=is_supercombo)
   schedule, schedule_input = partition(schedule, lambda x: x.ast.op not in LoadOps)
   print(f"{len(schedule_input)} inputs")
 
