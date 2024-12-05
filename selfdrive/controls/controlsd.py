@@ -125,15 +125,26 @@ class Controls:
     lat_plan = self.sm['lateralPlan']
     curve_speed_abs = abs(self.sm['carrotMan'].vTurnSpeed)
     self.lanefull_mode_enabled = lat_plan.useLaneLines and self.params.get_int("UseLaneLineSpeedApply") > 0 and curve_speed_abs > self.params.get_int("UseLaneLineCurveSpeed")
-    steer_actuator_delay = self.params.get_float("SteerActuatorDelay") * 0.01
-    if self.lanefull_mode_enabled:
-      desired_curvature = get_lag_adjusted_curvature(self.CP, CS.vEgo, lat_plan.psis, lat_plan.curvatures, steer_actuator_delay)
-      self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, desired_curvature)
+    
+    if self.params.get_bool("CarrotLatControl"):
+      model_actuator_delay = self.params.get_float("ModelActuatorDelay") * 0.01
+      desired_curvature_now = get_lag_adjusted_curvature(self.CP, CS.vEgo, lat_plan.psis, lat_plan.curvatures, model_actuator_delay)
+      # desired_curvature_now: curvature at SAD applied time
+      steer_actuator_delay = self.params.get_float("SteerActuatorDelay") * 0.01
+      desired_curvature_ff = get_lag_adjusted_curvature(self.CP, CS.vEgo, lat_plan.psis, lat_plan.curvatures, model_actuator_delay + steer_actuator_delay)
+      self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, desired_curvature_now)
+      desired_curvature_ff = clip_curvature(CS.vEgo, self.desired_curvature, desired_curvature_ff)
     else:
-      self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, model_v2.action.desiredCurvature)
+      steer_actuator_delay = self.params.get_float("SteerActuatorDelay") * 0.01      
+      if self.lanefull_mode_enabled:
+        desired_curvature = get_lag_adjusted_curvature(self.CP, CS.vEgo, lat_plan.psis, lat_plan.curvatures, steer_actuator_delay)
+        desired_curvature_ff = self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, desired_curvature)
+      else:
+        desired_curvature_ff = self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, model_v2.action.desiredCurvature)
+
     actuators.curvature = self.desired_curvature
     actuators.steer, actuators.steeringAngleDeg, lac_log = self.LaC.update(CC.latActive, CS, self.VM, lp,
-                                                                            self.steer_limited, self.desired_curvature,
+                                                                            self.steer_limited, desired_curvature_ff, self.desired_curvature,
                                                                             self.calibrated_pose) # TODO what if not available
 
     # Ensure no NaNs/Infs

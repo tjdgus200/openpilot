@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <limits>
 
 //#define __TEST
 //#define __UI_TEST
@@ -315,6 +316,8 @@ protected:
         auto    car_state = sm["carState"].getCarState();
         auto    lp = sm["longitudinalPlan"].getLongitudinalPlan();
         auto    car_control = sm["carControl"].getCarControl();
+        auto    controls_state = sm["controlsState"].getControlsState();
+        auto    torque_state = controls_state.getLateralControlState().getTorqueState();
 
         float   a_ego = car_state.getAEgo();
         float   v_ego = car_state.getVEgo();
@@ -361,7 +364,13 @@ protected:
             data[0] = a_ego;
             data[1] = lead_radar.getALead();
             data[2] = lead_radar.getALeadK();
-            sprintf(title, "4.Lead(Y:a_ego, G:a_lead, O:a_lead_k)");
+            sprintf(title, "5.Lead(Y:a_ego, G:a_lead, O:a_lead_k)");
+            break;
+        case 6:
+            data[0] = torque_state.getActualLateralAccel() * 10.0;
+            data[1] = torque_state.getDesiredLateralAccel() * 10.0;
+            data[2] = torque_state.getOutput() * 10.0;
+            sprintf(title, "6.Steer(Y:actual, G:desire, O:output)");
             break;
         default:
             data[0] = data[1] = data[2] = 0;
@@ -378,7 +387,57 @@ protected:
     }
 
     Params  params;
+    std::deque<float> minDeque[3];  // 최소값을 유지하는 덱
+    std::deque<float> maxDeque[3];  // 최대값을 유지하는 덱
 
+    void updatePlotQueue(float plot_data[3]) {
+        // plotIndex 업데이트
+        plotIndex = (plotIndex + 1) % PLOT_MAX;
+
+        for (int i = 0; i < 3; i++) {
+            // 오래된 값이 덱의 최솟값/최댓값에 해당하면 제거
+            if (plotSize == PLOT_MAX) {
+                if (!minDeque[i].empty() && minDeque[i].front() == plotQueue[i][plotIndex]) {
+                    minDeque[i].pop_front();
+                }
+                if (!maxDeque[i].empty() && maxDeque[i].front() == plotQueue[i][plotIndex]) {
+                    maxDeque[i].pop_front();
+                }
+            }
+
+            // 새 값을 큐에 추가
+            plotQueue[i][plotIndex] = plot_data[i];
+
+            // minDeque 업데이트
+            while (!minDeque[i].empty() && minDeque[i].back() > plot_data[i]) {
+                minDeque[i].pop_back();
+            }
+            minDeque[i].push_back(plot_data[i]);
+
+            // maxDeque 업데이트
+            while (!maxDeque[i].empty() && maxDeque[i].back() < plot_data[i]) {
+                maxDeque[i].pop_back();
+            }
+            maxDeque[i].push_back(plot_data[i]);
+        }
+
+        // 큐 크기 증가
+        if (plotSize < PLOT_MAX) {
+            plotSize++;
+        }
+
+        // 전체 최소값 및 최대값 계산
+        plotMin = std::numeric_limits<double>::max();
+        plotMax = std::numeric_limits<double>::lowest();
+        for (int i = 0; i < 3; i++) {
+            plotMin = std::min(plotMin, minDeque[i].front());
+            plotMax = std::max(plotMax, maxDeque[i].front());
+        }
+
+        // plotMin 및 plotMax 범위 제한
+        if (plotMin > -2.0) plotMin = -2.0;
+        if (plotMax < 2.0) plotMax = 2.0;
+    }
 public:
     void	draw(const UIState* s) {
         show_plot_mode = params.getInt("ShowPlotMode");
@@ -395,6 +454,9 @@ public:
 
         makePlotData(s, plot_data, title);
 
+        updatePlotQueue(plot_data);
+
+        /*
         for (int i = 0; i < 3; i++) {
             if (plotMin > plot_data[i]) plotMin = plot_data[i];
             if (plotMax < plot_data[i]) plotMax = plot_data[i];
@@ -405,7 +467,7 @@ public:
         plotIndex = (plotIndex + 1) % PLOT_MAX;
         for(int i=0;i<3;i++) plotQueue[i][plotIndex] = plot_data[i];
         if (plotSize < PLOT_MAX - 1) plotSize++;
-
+        */
         if (s->fb_w < 1200) return;
 
         NVGcolor color[3] = { COLOR_YELLOW, COLOR_GREEN, COLOR_ORANGE };
