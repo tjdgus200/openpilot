@@ -41,6 +41,7 @@ class LatControlTorque(LatControl):
     self.latAccelOffset_default = self.torque_params.latAccelOffset
     self.friction_default = self.torque_params.friction
     self.carrotLatControl = False
+    self.dampingFactor = 0
     self.error_last = 0.0
 
 
