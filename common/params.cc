@@ -224,6 +224,7 @@ std::unordered_map<std::string, uint32_t> keys = {
     { "AutoGasTokSpeed", PERSISTENT },
     { "AutoGasSyncSpeed", PERSISTENT },
     { "AutoEngage", PERSISTENT },
+    { "DisableMinSteerSpeed", PERSISTENT },
     { "AutoCurveSpeedLowerLimit", PERSISTENT },
     { "AutoCurveSpeedFactor", PERSISTENT },
     { "AutoCurveSpeedAggressiveness", PERSISTENT },

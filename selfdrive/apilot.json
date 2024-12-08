@@ -523,6 +523,19 @@
     },
     {
       "group": "시작",
+      "name": "DisableMinSteerSpeed",
+      "title": "저속조향제한해제",
+      "descr": "저속조향이 안되나, SMDPS장착차량",
+      "egroup": "START",
+      "etitle": "DisableMinSteerSpeed",
+      "edescr": "",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "시작",
       "name": "SpeedFromPCM",
       "title": "PCM차량속도제어(순정SCC)",
       "descr": "1:버튼스패밍안함(차량속도), 0: 커브/카메라 감속 + OPLong, 2: 커브/카메라 감속, 3:Honda/Toyota",
