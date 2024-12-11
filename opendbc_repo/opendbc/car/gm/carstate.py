@@ -286,10 +286,10 @@ class CarState(CarStateBase):
       ]
     if CP.enableGasInterceptorDEPRECATED: #위에 적용된 SDGM차량과 연관되어 있으므로 SDGM조건이 추가되어야 합니다.
       if CP.carFingerprint in SDGM_CAR:
-        pt_messages.remove(("AcceleratorPedal2", 40)),
+        #pt_messages.remove(("AcceleratorPedal2", 40)),
         pt_messages.append(("GAS_SENSOR", 50)),
       else:
-        pt_messages.remove(("AcceleratorPedal2", 33)),
+        #pt_messages.remove(("AcceleratorPedal2", 33)),
         pt_messages.append(("GAS_SENSOR", 50)),
 
     cam_messages = []
