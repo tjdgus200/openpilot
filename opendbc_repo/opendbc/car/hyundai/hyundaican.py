@@ -7,6 +7,9 @@ def create_lkas11(packer, frame, CP, apply_steer, steer_req,
                   torque_fault, lkas11, sys_warning, sys_state, enabled,
                   left_lane, right_lane,
                   left_lane_depart, right_lane_depart):
+  if CP.flags & HyundaiFlags.CAN_CANFD_MIX:
+    return create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req, torque_fault, lkas11, sys_warning, sys_state, enabled, left_lane, right_lane, left_lane_depart, right_lane_depart)
+  
   values = {s: lkas11[s] for s in [
     "CF_Lkas_LdwsActivemode",
     "CF_Lkas_LdwsSysState",
@@ -89,6 +92,42 @@ def create_lkas11(packer, frame, CP, apply_steer, steer_req,
 
   return packer.make_can_msg("LKAS11", 0, values)
 
+def create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req,
+                  torque_fault, lkas11, sys_warning, sys_state, enabled,
+                  left_lane, right_lane,
+                  left_lane_depart, right_lane_depart):
+
+  lkas11_sigs = [
+    "CF_Lkas_LdwsActivemode",
+    "CF_Lkas_LdwsLHWarning",
+    "CF_Lkas_LdwsRHWarning",
+    "CF_Lkas_FcwOpt_USM",
+  ]
+
+  values = {s: lkas11[s] for s in lkas11_sigs}
+
+  values["CF_Lkas_LdwsLHWarning"] = left_lane_depart
+  values["CF_Lkas_LdwsRHWarning"] = right_lane_depart
+  values["CR_Lkas_StrToqReq"] = apply_steer
+  values["CF_Lkas_ActToi"] = steer_req
+  values["CF_Lkas_ToiFlt"] = torque_fault  # seems to allow actuation on CR_Lkas_StrToqReq
+  values["CF_Lkas_MsgCount"] = frame % 0xF
+
+  values["CF_Lkas_LdwsActivemode"] = int(left_lane) + (int(right_lane) << 1)
+  values["CF_Lkas_FcwOpt_USM"] = 2 if enabled else 1
+  values["NEW_SIGNAL_1"] = 0
+  values["NEW_SIGNAL_5"] = 100
+
+  dat = packer.make_can_msg("LKAS11", 0, values)[1]
+
+  # CRC Checksum as seen on 2019 Hyundai Santa Fe
+  dat = dat[1:8]
+  checksum = hyundai_checksum(dat)
+
+  values["CF_Lkas_Chksum"] = checksum
+
+  return packer.make_can_msg("LKAS11", 0, values)  
+
 
 def create_clu11(packer, frame, clu11, button, CP):
   values = {s: clu11[s] for s in [
@@ -112,18 +151,29 @@ def create_clu11(packer, frame, clu11, button, CP):
   return packer.make_can_msg("CLU11", bus, values)
 
 
-def create_lfahda_mfc(packer, CC, blinking_signal):
+def create_lfahda_mfc(packer, CC, blinking_signal, CP, frame):
   activeCarrot = CC.hudControl.activeCarrot
-  values = {
-    "LFA_Icon_State": 2 if CC.latActive else 1 if CC.enabled else 0,
-    #"HDA_Active": 1 if activeCarrot >= 2 else 0,
-    #"HDA_Icon_State": 2 if activeCarrot == 3 and blinking_signal else 2 if activeCarrot >= 2 else 0,
-    "HDA_Icon_State": 0 if activeCarrot == 3 and blinking_signal else 2 if activeCarrot >= 1 else 0,
-    "HDA_VSetReq": 0, #set_speed_in_units if activeCarrot >= 2 else 0,
-    "HDA_USM" : 2,
-    "HDA_Icon_Wheel" : 1 if CC.latActive else 0,
-    "HDA_Chime" : 1 if CC.latActive else 0,
-  }
+  if not CP.flags & HyundaiFlags.CAN_CANFD_MIX:
+    values = {
+      "LFA_Icon_State": 2 if CC.latActive else 1 if CC.enabled else 0,
+      #"HDA_Active": 1 if activeCarrot >= 2 else 0,
+      #"HDA_Icon_State": 2 if activeCarrot == 3 and blinking_signal else 2 if activeCarrot >= 2 else 0,
+      "HDA_Icon_State": 0 if activeCarrot == 3 and blinking_signal else 2 if activeCarrot >= 1 else 0,
+      "HDA_VSetReq": 0, #set_speed_in_units if activeCarrot >= 2 else 0,
+      "HDA_USM" : 2,
+      "HDA_Icon_Wheel" : 1 if CC.latActive else 0,
+      "HDA_Chime" : 1 if CC.latActive else 0,
+    }
+  else:
+    values = {
+      "LFA_Icon_State": 2 if CC.enabled else 0,
+    }
+    values["COUNTER"] = frame % 0xF
+
+    dat = packer.make_can_msg("LFAHDA_MFC", 0, values)[1]
+    checksum = hyundai_checksum(dat[1:8])
+    values["CHECKSUM"] = checksum
+    
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
 def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, use_fca, CS, soft_hold_mode):

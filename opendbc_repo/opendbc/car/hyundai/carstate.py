@@ -137,6 +137,12 @@ class CarState(CarStateBase):
       ret.cruiseState.enabled = cp.vl["TCS13"]["ACC_REQ"] == 1
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
+    elif self.CP.flags & HyundaiFlags.CAN_CANFD_MIX:
+      ret.cruiseState.available = cp_cruise.vl["SCC12"]["MainMode_ACC"] == 1
+      ret.cruiseState.enabled = cp_cruise.vl["SCC12"]["ACCMode"] != 0
+      ret.cruiseState.standstill = cp_cruise.vl["SCC12"]["SCCInfoDisplay"] == 4.
+      ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC12"]["SCCInfoDisplay"] == 2.  # Shows 'Cruise Control' on dash
+      ret.cruiseState.speed = cp_cruise.vl["SCC12"]["VSetDis"] * speed_conv      
     elif not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
       self.main_enabled = ret.cruiseState.available = cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1
       ret.cruiseState.enabled = cp_cruise.vl["SCC12"]["ACCMode"] != 0
@@ -202,7 +208,7 @@ class CarState(CarStateBase):
 
       ret.gearShifter = self.gear_shifter
 
-    if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR and (not self.CP.openpilotLongitudinalControl or self.CP.flags & HyundaiFlags.CAMERA_SCC.value):
+    if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR and (not self.CP.openpilotLongitudinalControl or self.CP.flags & HyundaiFlags.CAMERA_SCC.value) and not self.CP.flags & HyundaiFlags.CAN_CANFD_MIX:
       aeb_src = "FCA11" if self.CP.flags & HyundaiFlags.USE_FCA.value else "SCC12"
       aeb_sig = "FCA_CmdAct" if self.CP.flags & HyundaiFlags.USE_FCA.value else "AEB_CmdAct"
       aeb_warning = cp_cruise.vl[aeb_src]["CF_VSM_Warn"] != 0
@@ -554,7 +560,7 @@ class CarState(CarStateBase):
 
     pt_messages = [
       # address, frequency
-      ("MDPS12", 50),
+      ("MDPS12", 100 if CP.flags & HyundaiFlags.CAN_CANFD_MIX else 50),
       ("TCS11", 100),
       ("TCS13", 50),
       ("TCS15", 10),
@@ -583,7 +589,7 @@ class CarState(CarStateBase):
         pt_messages.append(("FCA11", 50))
 
     if CP.enableBsm:
-      pt_messages.append(("LCA11", 50))
+      pt_messages.append(("LCA11", 20 if CP.flags & HyundaiFlags.CAN_CANFD_MIX else 50))
 
     if CP.flags & (HyundaiFlags.HYBRID | HyundaiFlags.EV):
       pt_messages.append(("E_EMS11", 50))

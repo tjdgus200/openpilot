@@ -36,7 +36,7 @@ bool hyundai_canfd_hda2 = false;
 extern bool hyundai_alt_limits;
 bool hyundai_alt_limits = false;
 
-extern bool hyunda_can_canfd_mix;
+extern bool hyundai_can_canfd_mix;
 bool hyundai_can_canfd_mix = false;
 
 static uint8_t hyundai_last_button_interaction;  // button messages since the user pressed an enable button
@@ -55,7 +55,7 @@ void hyundai_common_init(uint16_t param) {
   hyundai_canfd_hda2 = GET_FLAG(param, HYUNDAI_PARAM_CANFD_HDA2);
   hyundai_alt_limits = GET_FLAG(param, HYUNDAI_PARAM_ALT_LIMITS);
 
-  hyunda_can_canfd_mix = GET_FLAG(param, HYUNDAI_PARAM_CAN_CANFD_MIX);
+  hyundai_can_canfd_mix = GET_FLAG(param, HYUNDAI_PARAM_CAN_CANFD_MIX);
 
   hyundai_last_button_interaction = HYUNDAI_PREV_BUTTON_SAMPLES;
 

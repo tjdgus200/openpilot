@@ -65,7 +65,11 @@ static uint8_t hyundai_get_counter(const CANPacket_t *to_push) {
   } else if (addr == 0x394) {
     cnt = (GET_BYTE(to_push, 1) >> 5) & 0x7U;
   } else if (addr == 0x421) {
-    cnt = GET_BYTE(to_push, 7) & 0xFU;
+    if(hyundai_can_canfd_mix) {
+	  cnt = (GET_BYTE(to_push, 1) >> 4) & 0xFU;
+	} else {
+      cnt = GET_BYTE(to_push, 7) & 0xFU;
+	}    
   } else if (addr == 0x4F1) {
     cnt = (GET_BYTE(to_push, 3) >> 4) & 0xFU;
   } else {
@@ -84,7 +88,12 @@ static uint32_t hyundai_get_checksum(const CANPacket_t *to_push) {
   } else if (addr == 0x394) {
     chksum = GET_BYTE(to_push, 6) & 0xFU;
   } else if (addr == 0x421) {
-    chksum = GET_BYTE(to_push, 7) >> 4;
+    if(hyundai_can_canfd_mix) {
+	  chksum = GET_BYTE(to_push, 0);
+    }
+    else {
+      chksum = GET_BYTE(to_push, 7) >> 4;
+    }
   } else {
   }
   return chksum;
@@ -134,6 +143,9 @@ static void hyundai_rx_hook(const CANPacket_t *to_push) {
   if ((addr == 0x421) && (((bus == 0) && !hyundai_camera_scc) || ((bus == 2) && hyundai_camera_scc))) {
     // 2 bits: 13-14
     int cruise_engaged = (GET_BYTES(to_push, 0, 4) >> 13) & 0x3U;
+    if(hyundai_can_canfd_mix) {
+	  cruise_engaged = (GET_BYTE(to_push, 3) >> 4) & 0x3U;
+	}
     hyundai_common_cruise_state_check(cruise_engaged);
   }
 
