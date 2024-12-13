@@ -105,6 +105,7 @@ class HyundaiFlags(IntFlag):
   ANGLE_CONTROL = 2 ** 24
 
   CC_ONLY_CAR = 2 ** 25
+  CAN_CANFD_MIX = 2 ** 26
 
 class HyundaiExtFlags(IntFlag):
   HAS_SCC13 = 1
@@ -139,6 +140,17 @@ class HyundaiCarDocs(CarDocs):
 @dataclass
 class HyundaiPlatformConfig(PlatformConfig):
   dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: "hyundai_kia_generic"})
+
+  def init(self):
+    if self.flags & HyundaiFlags.MANDO_RADAR:
+      self.dbc_dict = {Bus.pt: "hyundai_kia_generic", Bus.radar: 'hyundai_kia_mando_front_radar_generated'}
+
+    if self.flags & HyundaiFlags.MIN_STEER_32_MPH:
+      self.specs = self.specs.override(minSteerSpeed=32 * CV.MPH_TO_MS)
+
+@dataclass
+class HyundaiMixPlatformConfig(PlatformConfig):
+  dbc_dict: DbcDict = field(default_factory=lambda: {Bus.pt: "hyundai_can_mix"})
 
   def init(self):
     if self.flags & HyundaiFlags.MANDO_RADAR:
@@ -653,6 +665,11 @@ class CAR(Platforms):
     [HyundaiCarDocs("Kia Mohave 2019", "All", car_parts=CarParts.common([CarHarness.hyundai_k]))],
     CarSpecs(mass=2285, wheelbase=2.895, steerRatio=16., tireStiffnessFactor=0.7),
     flags=HyundaiFlags.LEGACY,
+  )
+  KIA_MOHAVE_HM = HyundaiMixPlatformConfig(
+    [HyundaiCarDocs("Kia Mohave HM", "All", car_parts=CarParts.common([CarHarness.hyundai_k]))],
+    CarSpecs(mass=2285, wheelbase=2.895, steerRatio=16., tireStiffnessFactor=0.7),
+    flags=HyundaiFlags.LEGACY | HyundaiFlags.CAN_CANFD_MIX,
   )
   KIA_K5 = HyundaiPlatformConfig(
     [HyundaiCarDocs("Kia K5 2019 & 2016", "All", car_parts=CarParts.common([CarHarness.hyundai_b]))],
