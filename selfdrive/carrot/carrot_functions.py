@@ -22,6 +22,15 @@ class XState(Enum):
   def __str__(self):
     return self.name
 
+class DrivingMode(Enum):
+  Eco = 1
+  Safe = 2
+  Normal = 3
+  High = 4
+
+  def __str__(self):
+    return self.name
+
 class TrafficState(Enum):
   off = 0
   red = 1
@@ -68,15 +77,6 @@ class CarrotPlanner:
     
     self.startSignCount = 0
     self.stopSignCount = 0
-    
-    self.myDrivingMode = self.params.get_int("MyDrivingMode")
-    self.myEcoModeFactor = 0.9 #params.get_float("MyEcoModeFactor") / 100.
-    self.mySafeModeFactor = 0.8 #params.get_float("MySafeModeFactor") / 100.
-    self.mySafeFactor = 1.0
-    if self.myDrivingMode == 1: # eco
-      self.mySafeFactor = self.myEcoModeFactor
-    elif self.myDrivingMode == 2: #safe
-      self.mySafeFactor = self.mySafeModeFactor
 
     self.stop_distance = 6.0
     self.trafficStopDistanceAdjust = 1.0 #params.get_float("TrafficStopDistanceAdjust") / 100.
@@ -85,10 +85,13 @@ class CarrotPlanner:
 
     self.soft_hold_active = 0
     self.events = Events()
-    self.myDrivingMode = 3
+    self.myDrivingMode = DrivingMode.Normal
     self.myEcoModeFactor = 0.9
     self.mySafeModeFactor = 0.8
     self.myHighModeFactor = 1.2
+    self.drivingModeDetector = DrivingModeDetector()    
+    self.mySafeFactor = 1.0
+    
     self.tFollowGap1 = 1.1
     self.tFollowGap2 = 1.3
     self.tFollowGap3 = 1.45
@@ -104,7 +107,7 @@ class CarrotPlanner:
     self.cruiseMaxVals5 = 0.7
     self.cruiseMaxVals6 = 0.6
 
-
+    self.trafficLightDetectMode = 2 # 0: None, 1:Stop, 2:Stop&Go
     self.trafficState_carrot = 0
     self.carrot_stay_stop = False
 
@@ -117,16 +120,23 @@ class CarrotPlanner:
   def _params_update(self):
     self.frame += 1
     self.params_count += 1
-    if self.params_count % 2 == 0:
-      self.myDrivingMode = self.params.get_int("MyDrivingMode")
+    if self.params_count % 10 == 0:
+      myDrivingMode = DrivingMode(self.params.get_int("MyDrivingMode"))
+      self.myDrivingModeAuto = self.params.get_int("MyDrivingModeAuto")
+      if self.myDrivingModeAuto > 0:
+        self.myDrivingMode = self.drivingModeDetector.determine_mode()
+      else:
+        self.myDrivingMode = myDrivingMode
+        
       self.mySafeFactor = 1.0
-      if self.myDrivingMode == 1: # eco
+      if self.myDrivingMode == DrivingMode.Eco: # eco
         self.mySafeFactor = self.myEcoModeFactor
-      elif self.myDrivingMode == 2: #safe
+      elif self.myDrivingMode == DrivingMode.Safe: #safe
         self.mySafeFactor = self.mySafeModeFactor
 
     if self.params_count == 10:
       self.myHighModeFactor = 1.2 #float(self.params.get_int("MyHighModeFactor")) / 100.
+      self.trafficLightDetectMode = self.params.get_int("TrafficLightDetectMode") # 0: None, 1:Stop, 2:Stop&Go
     elif self.params_count == 20:
       self.tFollowGap1 = self.params.get_float("TFollowGap1") / 100.
       self.tFollowGap2 = self.params.get_float("TFollowGap2") / 100.
@@ -151,7 +161,7 @@ class CarrotPlanner:
 
   def get_carrot_accel(self, v_ego):
     cruiseMaxVals = [self.cruiseMaxVals1, self.cruiseMaxVals2, self.cruiseMaxVals3, self.cruiseMaxVals4, self.cruiseMaxVals5, self.cruiseMaxVals6]
-    factor = self.myHighModeFactor if self.myDrivingMode == 4 else self.mySafeFactor
+    factor = self.myHighModeFactor if self.myDrivingMode == DrivingMode.High else self.mySafeFactor
     return interp(v_ego, A_CRUISE_MAX_BP_CARROT, cruiseMaxVals) * factor
 
   def get_T_FOLLOW(self, personality=log.LongitudinalPersonality.standard):
@@ -284,6 +294,17 @@ class CarrotPlanner:
     v_ego_cluster = carstate.vEgoCluster
     v_ego_cluster_kph = v_ego_cluster * CV.MS_TO_KPH
 
+    if self.frame % 20 == 0: # every 1 sec
+      vLead = 0
+      aLead = 0
+      dRel = 200
+      if radarstate.leadOne.status:
+        vLead = radarstate.leadOne.vLead * CV.MS_TO_KPH
+        aLead = radarstate.leadOne.aLead
+        dRel = radarstate.leadOne.dRel
+        
+      self.drivingModeDetector.update_data(v_ego_kph, vLead, carstate.aEgo, aLead, dRel)
+
     v_cruise_kph = self.cruise_eco_control(v_ego_cluster_kph, v_cruise_kph)
     v_cruise_kph = self._update_carrot_man(sm, v_ego_kph, v_cruise_kph)
 
@@ -304,7 +325,9 @@ class CarrotPlanner:
     #self.check_model_stopping(v, v_ego, self.xStop, y)
     self.check_model_stopping(v, v_ego, x[-1], y, radarstate.leadOne.dRel if lead_detected else 1000)
 
-    if self.myDrivingMode == 4:
+    if self.myDrivingMode == DrivingMode.High or self.trafficLightDetectMode == 0:
+      self.trafficState = TrafficState.off
+    if self.trafficState == TrafficState.green and self.trafficLightDetectMode == 1:  # Stopping only
       self.trafficState = TrafficState.off
     
     #self.update_user_control()
@@ -397,3 +420,82 @@ class CarrotPlanner:
     #return v_cruise, stop_dist, mode
 
     return v_cruise_kph
+
+
+import time
+from collections import deque
+
+class DrivingModeDetector:
+  def __init__(self, time_window=5, sampling_interval=1):
+    self.time_window = time_window
+    self.sampling_interval = sampling_interval
+    self.data_window = deque(maxlen=time_window)
+
+    self.speed_threshold = 10  # (km/h)
+    self.accel_threshold = 1.0  # (m/s^2)
+    self.distance_threshold = 12  # (m)
+    self.wait_time_threshold = 20  # traffic signal (sec)
+
+    self.stopped_since = None
+
+  def update_data(self, my_speed, lead_speed, my_accel, lead_accel, distance):
+    self.data_window.append({
+        'my_speed': my_speed,
+        'lead_speed': lead_speed,
+        'my_accel': my_accel,
+        'lead_accel': lead_accel,
+        'distance': distance,
+        'timestamp': time.time()
+    })
+    # 정지 상태 기록 갱신
+    if my_speed <= self.speed_threshold:
+      if self.stopped_since is None:
+        self.stopped_since = time.time()  # 정지 상태 시작 시점 기록
+    else:
+      self.stopped_since = None  # 정지 상태 종료 시점 초기화
+
+  def is_congested(self):
+    if not self.data_window:
+        return False
+
+    speeds = [d['my_speed'] for d in self.data_window]
+    distances = [d['distance'] for d in self.data_window]
+    my_accels = [d['my_accel'] for d in self.data_window]
+
+    # 조건 1: 평균 속도가 높으면 정체아님
+    average_speed = sum(speeds) / len(speeds)
+    if average_speed > self.speed_threshold:
+        return False
+
+    # 조건 2: 속도 변화가 없으면 정체아님
+    speed_changes = [abs(speeds[i] - speeds[i - 1]) for i in range(1, len(speeds))]
+    if not any(change > 1 for change in speed_changes):  # 속도 변화가 거의 없으면 정체 아님
+        return False
+
+    # 조건 3: 가속도 변화가 없으면 정체아님
+    accel_changes = [abs(my_accels[i] - my_accels[i - 1]) for i in range(1, len(my_accels))]
+    if not any(change > self.accel_threshold for change in accel_changes):
+        return False
+
+    # 조건 4: 거리가 모두 정체거리 이내에 와야함
+    if not all(1 <= dist <= self.distance_threshold for dist in distances):
+        return False
+
+    # 모든 조건 충족 시 정체로 판단
+    return True
+
+  def is_signal_waiting(self):
+    if not self.data_window or self.stopped_since is None:
+      return False
+        
+    current_time = time.time()
+    return (current_time - self.stopped_since) >= self.wait_time_threshold
+
+  def determine_mode(self):
+    if self.is_signal_waiting():
+      return DrivingMode.Normal #신호정지
+    elif self.is_congested():
+      return DrivingMode.Safe #"정체모드"
+    else:
+      return DrivingMode.Normal #"주행모드"
+

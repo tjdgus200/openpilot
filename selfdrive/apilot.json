@@ -1095,6 +1095,32 @@
       "unit": 1
     },
     {
+      "group": "가속설정",
+      "name": "MyDrivingModeAuto",
+      "title": "드라이브모드: 자동",
+      "descr": "일반모드에서만 작동함",
+      "egroup": "ACCEL",
+      "etitle": "DrivingMode: Auto",
+      "edescr": "General Driving Mode only",
+      "min": 1,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "감속제어",
+      "name": "TrafficLightDetectMode",
+      "title": "신호감지 기능",
+      "descr": "0:신호감지안함, 1:신호정지만 감지, 2:신호정지/출발 모두",
+      "egroup": "SPEED",
+      "etitle": "TrafficLightDetectMode",
+      "edescr": "0:None,1:Stopping only, 2:Stop & Go",
+      "min": 1,
+      "max": 2,
+      "default": 2,
+      "unit": 1
+    },
+    {
       "group": "감속제어",
       "name": "AutoNaviSpeedCtrlEnd",
       "title": "과속카메라감속 완료 시간(6초)",

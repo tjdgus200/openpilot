@@ -203,7 +203,7 @@ std::unordered_map<std::string, uint32_t> keys = {
     {"Version", PERSISTENT},
 
     { "NetworkAddress", CLEAR_ON_MANAGER_START },
-    
+
     {"CarSelected3", PERSISTENT},
     {"SupportedCars", PERSISTENT},
     {"SupportedCars_gm", PERSISTENT},
@@ -251,6 +251,8 @@ std::unordered_map<std::string, uint32_t> keys = {
     { "CruiseButtonTest3", PERSISTENT },
     { "CruiseSpeedUnit", PERSISTENT },
     { "MyDrivingMode", PERSISTENT },
+    { "MyDrivingModeAuto", PERSISTENT },
+    { "TrafficLightDetectMode", PERSISTENT },
     { "SteerActuatorDelay", PERSISTENT },
     { "ModelActuatorDelay", PERSISTENT },
     { "CruiseOnDist", PERSISTENT },
@@ -301,16 +303,17 @@ std::unordered_map<std::string, uint32_t> keys = {
     { "MaxTimeOffroadMin", PERSISTENT },
     { "DisableDM", PERSISTENT },
 
-
     { "CarrotManCommand", PERSISTENT },
     { "CarrotException", CLEAR_ON_MANAGER_START },
     { "CarName", PERSISTENT },
-    
+
     {"EVTable", PERSISTENT},
-    {"LongPitch", PERSISTENT},    
+    {"LongPitch", PERSISTENT},
 
     { "CustomSR", PERSISTENT },
     { "SteerRatioRate", PERSISTENT },
+
+    {"SoftRestartTriggered", CLEAR_ON_MANAGER_START},
 };
 
 } // namespace

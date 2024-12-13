@@ -302,8 +302,8 @@ class VCruiseCarrot:
     else:
       self.v_cruise_kph = 20 #V_CRUISE_UNSET
       self.v_cruise_cluster_kph = 20 #V_CRUISE_UNSET
-      if self.cruise_state_available_last: # 최초 한번이라도 cruiseState.available이 True였다면
-        self._lat_enabled = False
+      #if self.cruise_state_available_last: # 최초 한번이라도 cruiseState.available이 True였다면
+      #  self._lat_enabled = False
 
     self.cruise_state_available_last = CS.cruiseState.available
 
@@ -475,9 +475,9 @@ class VCruiseCarrot:
         print("lfaButton")
         pass
       elif button_type == ButtonType.cancel:
-        if self._cruise_cancel_state:
-          self._lat_enabled = not self._lat_enabled
-          self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
+        #if self._cruise_cancel_state:
+        #  self._lat_enabled = not self._lat_enabled
+        #  self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
         self._cruise_cancel_state = True
         self._v_cruise_kph_at_brake = 0
         pass

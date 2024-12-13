@@ -79,6 +79,8 @@ def get_default_params():
     ("CruiseButtonTest3", "1"),      
     ("CruiseSpeedUnit", "10"),
     ("MyDrivingMode", "3"),      
+    ("MyDrivingModeAuto", "0"),      
+    ("TrafficLightDetectMode", "2"),      
     ("CruiseMaxVals1", "200"),
     ("CruiseMaxVals2", "160"),
     ("CruiseMaxVals3", "130"),
@@ -300,9 +302,10 @@ def manager_thread() -> None:
 
 def main() -> None:
   manager_init()
-  os.system("python /data/openpilot/opendbc/car/hyundai/values.py > /data/params/d/SupportedCars")
-  os.system("python /data/openpilot/opendbc/car/gm/values.py > /data/params/d/SupportedCars_gm")
-  os.system("python /data/openpilot/opendbc/car/toyota/values.py > /data/params/d/SupportedCars_toyota")
+  print(f"python ../../opendbc/car/hyundai/values.py > {Params().get_param_path()}/SupportedCars")
+  os.system(f"python ../../opendbc/car/hyundai/values.py > {Params().get_param_path()}/SupportedCars")
+  os.system(f"python ../../opendbc/car/gm/values.py > {Params().get_param_path()}/SupportedCars_gm")
+  os.system(f"python ../../opendbc/car/toyota/values.py > {Params().get_param_path()}/SupportedCars_toyota")
 
   if os.getenv("PREPAREONLY") is not None:
     return

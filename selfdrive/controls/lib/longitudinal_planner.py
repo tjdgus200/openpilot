@@ -237,5 +237,6 @@ class LongitudinalPlanner:
     longitudinalPlan.tFollow = float(self.mpc.t_follow)
     longitudinalPlan.desiredDistance = float(self.mpc.desired_distance)
     longitudinalPlan.events = self.carrot.events.to_msg()
+    longitudinalPlan.myDrivingMode = self.carrot.myDrivingMode.value
 
     pm.send('longitudinalPlan', plan_send)

@@ -1860,6 +1860,7 @@ public:
     int     trafficState_carrot = 0;
     int     active_carrot = 0;
     float   xTarget = 0.0;
+    int     myDrivingMode = 1;
 
     QString szPosRoadName = "";
     int     nRoadLimitSpeed = 30;
@@ -1951,6 +1952,7 @@ public:
         xState = lp.getXState();
         trafficState = lp.getTrafficState();
         xTarget = lp.getXTarget();
+        myDrivingMode = lp.getMyDrivingMode();
 
         s->max_distance = std::clamp(*(model_position.getX().end() - 1),
             MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE);
@@ -2102,7 +2104,7 @@ public:
 
         // draw gap info
         char driving_mode_str[32] = "연비";
-        int driving_mode = params.getInt("MyDrivingMode");
+        int driving_mode = myDrivingMode;// params.getInt("MyDrivingMode");
         NVGcolor mode_color = COLOR_GREEN_ALPHA(210);
         NVGcolor text_color = COLOR_WHITE;
         switch (driving_mode) {
@@ -2369,6 +2371,9 @@ public:
         }
     }
     void drawDeviceInfo(const UIState* s) {
+#ifdef WSL2
+        return;
+#endif
         makeDeviceInfo(s);
         if (params.getInt("ShowDebugUI") == 0) return;
 

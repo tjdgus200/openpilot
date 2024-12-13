@@ -1287,6 +1287,7 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   jTarget @45: Float32;
   tFollow @46: Float32;
   desiredDistance @47: Float32;
+  myDrivingMode @48: Int32;
 
   solverExecutionTime @35 :Float32;
 
