@@ -285,11 +285,39 @@ static bool hyundai_tx_hook(const CANPacket_t *to_send) {
   return tx;
 }
 
+
+#define MAX_BUS 3
+#define MAX_ADDR 128
+int bus_addr_map[MAX_BUS][MAX_ADDR] = { 0 };  // bus별 addr 배열
+int addr_count[MAX_BUS] = { 0 };             // 각 bus에 저장된 addr 개수
+bool record_address(int bus_num, int addr) {
+    if (bus_num < 0 || bus_num >= MAX_BUS) return false;
+    for (int i = 0; i < addr_count[bus_num]; ++i) {
+        if (bus_addr_map[bus_num][i] == addr) return false;
+    }
+    if (addr_count[bus_num] < MAX_ADDR) {
+        bus_addr_map[bus_num][addr_count[bus_num]] = addr;
+        addr_count[bus_num]++;
+        return true;
+    }
+    return false;
+}
+void print_bus_map(int bus_num) {
+    if (addr_count[bus_num] == 0) return;
+    print("@@@@ bus%d_list=", bus_num);
+    for (int i = 0; i < addr_count[bus_num]; ++i) {
+        putui((uint32_t)bus_addr_map[bus_num][i]);
+        print(",");
+    }
+    print("\n");
+}
 static int hyundai_fwd_hook(int bus_num, int addr) {
 
   int bus_fwd = -1;
 
   uint32_t now = microsecond_timer_get();
+
+  bool recorded = record_address(bus_num, addr);
 
   // forward cam to ccan and viceversa, except lkas cmd
   if (bus_num == 0) {
@@ -303,6 +331,9 @@ static int hyundai_fwd_hook(int bus_num, int addr) {
   }
 
   if (bus_num == 2) {
+    if(recorded) {
+	  print_bus_map(bus_num);
+	}
     bool is_lkas_msg = addr == 832;
     bool is_lfahda_msg = addr == 1157;
     bool is_scc_msg = addr == 1056 || addr == 1057 || addr == 1290 || addr == 905;
