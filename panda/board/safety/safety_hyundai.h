@@ -304,7 +304,7 @@ bool record_address(int bus_num, int addr) {
 }
 void print_bus_map(int bus_num) {
     if (addr_count[bus_num] == 0) return;
-    print("@@@@ bus%d_list=", bus_num);
+    print("@@@@ bus"); putui(bus_num); print("_list = ");
     for (int i = 0; i < addr_count[bus_num]; ++i) {
         putui((uint32_t)bus_addr_map[bus_num][i]);
         print(",");
