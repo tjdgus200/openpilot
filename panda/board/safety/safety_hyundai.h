@@ -30,6 +30,7 @@ static const CanMsg HYUNDAI_TX_MSGS[] = {
   {0x340, 0, 8}, // LKAS11 Bus 0
   {0x4F1, 0, 4}, // CLU11 Bus 0
   {0x485, 0, 4}, // LFAHDA_MFC Bus 0
+  {0x485, 0, 8}, // LFAHDA_MFC Bus 0 :CAN_CANFD_MIX len=8
   {593, 2, 8},                              // MDPS12, Bus 2
   {1056, 0, 8},                             // SCC11, Bus 0
   {1057, 0, 8},                             // SCC12, Bus 0
@@ -339,7 +340,10 @@ static int hyundai_fwd_hook(int bus_num, int addr) {
     bool is_scc_msg = addr == 1056 || addr == 1057 || addr == 1290 || addr == 905;
     bool is_fca_msg = addr == 909 || addr == 1155;
 
-    bool block_msg = is_lkas_msg || is_lfahda_msg || is_scc_msg; //|| is_fca_msg;
+    bool block_msg = is_lkas_msg || is_lfahda_msg;// || is_scc_msg; //|| is_fca_msg;
+    // canfdmix 인경우 CAMERA에서 판다를 연결하지 않고, ADAS에서 판다를 연결한다. SCC데이터는 아직 분석이 안되므로, 그냥 보내준다.
+    if (!hyundai_can_canfd_mix) block_msg |= is_scc_msg;
+
     if (!block_msg) {
       bus_fwd = 0;
     }
