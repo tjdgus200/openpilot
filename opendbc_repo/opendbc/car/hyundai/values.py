@@ -669,7 +669,7 @@ class CAR(Platforms):
   KIA_MOHAVE_HM = HyundaiMixPlatformConfig(
     [HyundaiCarDocs("Kia Mohave HM", "All", car_parts=CarParts.common([CarHarness.hyundai_k]))],
     CarSpecs(mass=2285, wheelbase=2.895, steerRatio=16., tireStiffnessFactor=0.7),
-    flags=HyundaiFlags.LEGACY | HyundaiFlags.CAN_CANFD_MIX,
+    flags=HyundaiFlags.CAN_CANFD_MIX,
   )
   KIA_K5 = HyundaiPlatformConfig(
     [HyundaiCarDocs("Kia K5 2019 & 2016", "All", car_parts=CarParts.common([CarHarness.hyundai_b]))],
