@@ -117,7 +117,7 @@ def create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req,
   values["NEW_SIGANL_7"] = 0  
 
   dat = packer.make_can_msg("LKAS11", 0, values)[1]
-  checksum = sum(dat[:7]) % 256
+  checksum = sum(dat[:6]) % 256
   values["NEW_SIGNAL_6"] = checksum
 
   return packer.make_can_msg("LKAS11", 0, values)  
