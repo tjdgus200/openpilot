@@ -93,7 +93,9 @@ def create_lkas11(packer, frame, CP, apply_steer, steer_req,
   return packer.make_can_msg("LKAS11", 0, values)
 
 
-#모하비등 Mixed CAN, Bus2 List = 832,867,905,909,920,921,922,923,924,1056,1057,1082,1095,1157 
+#모하비등 Mixed CAN, Bus2 List = 832,     867,      905,     909,     920,     921,     922,     923,     924,    1056,    1057,    1082,    1095,    1157
+#                               ['0x340', '0x363', '0x389', '0x38d', '0x398', '0x399', '0x39a', '0x39b', '0x39c', '0x420', '0x421', '0x43a', '0x447', '0x485']
+
 def create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req,
                   torque_fault, lkas11, sys_warning, sys_state, enabled,
                   left_lane, right_lane,
