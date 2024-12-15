@@ -113,7 +113,7 @@ def create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req,
   values["CF_Lkas_FcwOpt_USM"] = 2 if enabled else 1
   #values["NEW_SIGANL_4"] = 0  
   values["CF_Lkas_MsgCount"] = frame % 0xF
-  values["NEW_SIGNAL_5"] = 150 if enabled else 100
+  values["NEW_SIGNAL_5"] = 150 if steer_req else 100
   #values["NEW_SIGANL_7"] = 0  
 
   dat = packer.make_can_msg("LKAS11", 0, values)[1]
