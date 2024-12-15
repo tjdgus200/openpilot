@@ -95,8 +95,34 @@ def create_lkas11(packer, frame, CP, apply_steer, steer_req,
 
 #모하비등 Mixed CAN, Bus2 List = 832,     867,      905,     909,     920,     921,     922,     923,     924,    1056,    1057,    1082,    1095,    1157
 #                               ['0x340', '0x363', '0x389', '0x38d', '0x398', '0x399', '0x39a', '0x39b', '0x39c', '0x420', '0x421', '0x43a', '0x447', '0x485']
-
 def create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req,
+                  torque_fault, lkas11, sys_warning, sys_state, enabled,
+                  left_lane, right_lane,
+                  left_lane_depart, right_lane_depart):
+  values = lkas11
+  values["CF_Lkas_Chksum"] = 0
+  #values["NEW_SIGANL_1"] = 0
+  #values["CF_Lkas_LdwsRHWarning"] = right_lane_depart
+  #values["CF_Lkas_LdwsLHWarning"] = left_lane_depart
+  #values["NEW_SIGANL_2"] = 0
+  values["CR_Lkas_StrToqReq"] = apply_steer
+  values["CF_Lkas_ActToi"] = steer_req
+  values["CF_Lkas_ToiFlt"] = torque_fault  # seems to allow actuation on CR_Lkas_StrToqReq
+  #values["NEW_SIGANL_3"] = 0
+  values["CF_Lkas_LdwsActivemode"] = int(left_lane) + (int(right_lane) << 1)
+  values["CF_Lkas_FcwOpt_USM"] = 2 if enabled else 1
+  #values["NEW_SIGANL_4"] = 0  
+  values["CF_Lkas_MsgCount"] = frame % 0xF
+  values["NEW_SIGNAL_5"] = 150 if enabled else 100
+  #values["NEW_SIGANL_7"] = 0  
+
+  dat = packer.make_can_msg("LKAS11", 0, values)[1]
+  checksum = sum(dat[:6]) % 256
+  values["NEW_SIGNAL_6"] = checksum
+
+  return packer.make_can_msg("LKAS11", 0, values)  
+
+def create_lkas11_mixed1(packer, frame, CP, apply_steer, steer_req,
                   torque_fault, lkas11, sys_warning, sys_state, enabled,
                   left_lane, right_lane,
                   left_lane_depart, right_lane_depart):
@@ -106,6 +132,7 @@ def create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req,
     "CF_Lkas_LdwsLHWarning",
     "CF_Lkas_LdwsRHWarning",
     "CF_Lkas_FcwOpt_USM",
+    ""
   ]
 
   values = {s: lkas11[s] for s in lkas11_sigs}
