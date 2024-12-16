@@ -440,7 +440,7 @@ static safety_config hyundai_init_carrot(bool legacy_car) {
            //HYUNDAI_SCC12_ADDR_CHECK(0)
         };
 
-        if(legacy_car) ret = BUILD_SAFETY_CFG(hyundai_rx_checks_legacy, HYUNDAI_TX_MSGS);
+        if(legacy_car || hyundai_can_canfd_mix) ret = BUILD_SAFETY_CFG(hyundai_rx_checks_legacy, HYUNDAI_TX_MSGS);
         else ret = BUILD_SAFETY_CFG(hyundai_rx_checks, HYUNDAI_TX_MSGS);
     }
     return ret;
