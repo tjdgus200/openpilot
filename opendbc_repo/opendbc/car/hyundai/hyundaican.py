@@ -101,20 +101,20 @@ def create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req,
                   left_lane_depart, right_lane_depart):
   values = lkas11
   values["CF_Lkas_Chksum"] = 0
-  values["NEW_SIGANL_1"] = 0
+  values["NEW_SIGNAL_1"] = 0
   values["CF_Lkas_LdwsRHWarning"] = right_lane_depart
   values["CF_Lkas_LdwsLHWarning"] = left_lane_depart
-  values["NEW_SIGANL_2"] = 0
+  values["NEW_SIGNAL_2"] = 0
   values["CR_Lkas_StrToqReq"] = apply_steer
   values["CF_Lkas_ActToi"] = steer_req
   values["CF_Lkas_ToiFlt"] = torque_fault  # seems to allow actuation on CR_Lkas_StrToqReq
-  values["NEW_SIGANL_3"] = 0
+  values["NEW_SIGNAL_3"] = 0
   values["CF_Lkas_LdwsActivemode"] = int(left_lane) + (int(right_lane) << 1)
   values["CF_Lkas_FcwOpt_USM"] = 2 if enabled else 1
-  values["NEW_SIGANL_4"] = 0  
+  values["NEW_SIGNAL_4"] = 0  
   values["CF_Lkas_MsgCount"] = frame % 0xF
   values["NEW_SIGNAL_5"] = 100 #150 if steer_req else 100
-  values["NEW_SIGANL_7"] = 0  
+  values["NEW_SIGNAL_7"] = 0  
 
   dat = packer.make_can_msg("LKAS11", 0, values)[1]
   checksum = sum(dat[:6]) % 256
