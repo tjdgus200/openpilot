@@ -116,6 +116,9 @@ class CarController(CarControllerBase):
                                                                        MAX_ANGLE_CONSECUTIVE_FRAMES)
 
     apply_angle = apply_std_steer_angle_limits(actuators.steeringAngleDeg, self.apply_angle_last, CS.out.vEgoRaw, self.params)
+    
+    if abs(CS.out.steeringTorqueEps) >= 100.0: # carrot. fault avoidance, test code
+      apply_angle = actuators.steeringAngleDeg
 
     max_torque = 200
     ego_weight = interp(CS.out.vEgoCluster, [0, 5, 10, 20], [0.2, 0.3, 0.5, 1.0])
