@@ -259,9 +259,9 @@ class CarController(CarControllerBase):
       if self.frame % 20 == 0 and self.CP.openpilotLongitudinalControl:
         if camera_scc:
           if CS.scc13 is not None:
-            can_sends.append(hyundaican.create_acc_opt_copy(CS, self.packer, self.CP))
+            can_sends.append(hyundaican.create_acc_opt_copy(CS, self.packer))
         else:
-          can_sends.extend(hyundaican.create_acc_opt(CS, self.packer, self.CP))
+          can_sends.extend(hyundaican.create_acc_opt(self.packer, self.CP))
 
       # 2 Hz front radar options
       if self.frame % 50 == 0 and self.CP.openpilotLongitudinalControl and not camera_scc:
