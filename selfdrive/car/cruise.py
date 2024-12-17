@@ -614,7 +614,9 @@ class VCruiseCarrot:
     elif not CC.enabled and self._brake_pressed_count < 0 and self._gas_pressed_count < 0:
       if self.d_rel > 0 and CS.vEgo > 0.02:
         safe_state, safe_dist = self._check_safe_stop(CS, 4)        
-        if not safe_state:
+        if abs(CS.steeringAngleDeg) > 20:
+          pass
+        elif not safe_state:
           self._cruise_control(1, -1, "Cruise on (fcw)")
         elif self.d_rel < self.cruiseOnDist:
           self._cruise_control(1, -1, "Cruise on (fcw dist)")

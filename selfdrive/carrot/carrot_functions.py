@@ -329,6 +329,8 @@ class CarrotPlanner:
       self.trafficState = TrafficState.off
     if self.trafficState == TrafficState.green and self.trafficLightDetectMode == 1:  # Stopping only
       self.trafficState = TrafficState.off
+    if abs(carstate.steeringAngleDeg) > 20: 
+      self.trafficState = TrafficState.off
     
     #self.update_user_control()
 
