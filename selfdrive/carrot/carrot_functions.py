@@ -124,7 +124,7 @@ class CarrotPlanner:
       myDrivingMode = DrivingMode(self.params.get_int("MyDrivingMode"))
       self.myDrivingModeAuto = self.params.get_int("MyDrivingModeAuto")
       if self.myDrivingModeAuto > 0:
-        self.myDrivingMode = self.drivingModeDetector.determine_mode()
+        self.myDrivingMode = self.drivingModeDetector.get_mode()
       else:
         self.myDrivingMode = myDrivingMode
         
@@ -422,80 +422,22 @@ class CarrotPlanner:
     return v_cruise_kph
 
 
-import time
-from collections import deque
-
 class DrivingModeDetector:
-  def __init__(self, time_window=5, sampling_interval=1):
-    self.time_window = time_window
-    self.sampling_interval = sampling_interval
-    self.data_window = deque(maxlen=time_window)
+    def __init__(self):
+        self.congested = False
+        self.speed_threshold = 2  # (km/h)
+        self.accel_threshold = 1.5  # (m/s^2)
+        self.distance_threshold = 12  # (m)
+        self.lead_speed_exit_threshold = 20  # (km/h)
 
-    self.speed_threshold = 10  # (km/h)
-    self.accel_threshold = 1.0  # (m/s^2)
-    self.distance_threshold = 12  # (m)
-    self.wait_time_threshold = 20  # traffic signal (sec)
+    def update_data(self, my_speed, lead_speed, my_accel, lead_accel, distance):
+        # 1. 정체 조건: 앞차가 가까이 있고 정지된 상황
+        if distance <= self.distance_threshold and lead_speed <= self.speed_threshold:
+            self.congested = True
 
-    self.stopped_since = None
+        # 2. 주행 조건: 앞차가 가속하거나 빠르게 이동
+        if lead_accel > self.accel_threshold or lead_speed > self.lead_speed_exit_threshold:
+            self.congested = False
 
-  def update_data(self, my_speed, lead_speed, my_accel, lead_accel, distance):
-    self.data_window.append({
-        'my_speed': my_speed,
-        'lead_speed': lead_speed,
-        'my_accel': my_accel,
-        'lead_accel': lead_accel,
-        'distance': distance,
-        'timestamp': time.time()
-    })
-    # 정지 상태 기록 갱신
-    if my_speed <= self.speed_threshold:
-      if self.stopped_since is None:
-        self.stopped_since = time.time()  # 정지 상태 시작 시점 기록
-    else:
-      self.stopped_since = None  # 정지 상태 종료 시점 초기화
-
-  def is_congested(self):
-    if not self.data_window:
-        return False
-
-    speeds = [d['my_speed'] for d in self.data_window]
-    distances = [d['distance'] for d in self.data_window]
-    my_accels = [d['my_accel'] for d in self.data_window]
-
-    # 조건 1: 평균 속도가 높으면 정체아님
-    average_speed = sum(speeds) / len(speeds)
-    if average_speed > self.speed_threshold:
-        return False
-
-    # 조건 2: 속도 변화가 없으면 정체아님
-    speed_changes = [abs(speeds[i] - speeds[i - 1]) for i in range(1, len(speeds))]
-    if not any(change > 1 for change in speed_changes):  # 속도 변화가 거의 없으면 정체 아님
-        return False
-
-    # 조건 3: 가속도 변화가 없으면 정체아님
-    accel_changes = [abs(my_accels[i] - my_accels[i - 1]) for i in range(1, len(my_accels))]
-    if not any(change > self.accel_threshold for change in accel_changes):
-        return False
-
-    # 조건 4: 거리가 모두 정체거리 이내에 와야함
-    if not all(1 <= dist <= self.distance_threshold for dist in distances):
-        return False
-
-    # 모든 조건 충족 시 정체로 판단
-    return True
-
-  def is_signal_waiting(self):
-    if not self.data_window or self.stopped_since is None:
-      return False
-        
-    current_time = time.time()
-    return (current_time - self.stopped_since) >= self.wait_time_threshold
-
-  def determine_mode(self):
-    if self.is_signal_waiting():
-      return DrivingMode.Normal #신호정지
-    elif self.is_congested():
-      return DrivingMode.Safe #"정체모드"
-    else:
-      return DrivingMode.Normal #"주행모드"
-
+    def get_mode(self):
+        return DrivingMode.Safe if self.congested else DrivingMode.Normal
