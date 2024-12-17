@@ -315,7 +315,7 @@ class VCruiseCarrot:
     initial = V_CRUISE_INITIAL_EXPERIMENTAL_MODE if experimental_mode else CS.vEgo * CV.MS_TO_KPH
 
     if any(b.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for b in CS.buttonEvents): # and self.v_cruise_initialized:
-      self.v_cruise_kph = self.v_cruise_kph_last
+      self.v_cruise_kph = self._v_cruise_kph_at_brake if self._v_cruise_kph_at_brake > 0 else self.v_cruise_kph_last
     else:
       self.v_cruise_kph = int(round(clip(CS.vEgo * CV.MS_TO_KPH, initial, V_CRUISE_MAX)))
 
