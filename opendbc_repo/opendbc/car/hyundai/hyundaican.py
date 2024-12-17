@@ -110,7 +110,7 @@ def create_lkas11_mixed(packer, frame, CP, apply_steer, steer_req,
   values["CF_Lkas_ToiFlt"] = torque_fault  # seems to allow actuation on CR_Lkas_StrToqReq
   values["NEW_SIGNAL_3"] = 0
   values["CF_Lkas_LdwsActivemode"] = int(left_lane) + (int(right_lane) << 1)
-  values["CF_Lkas_FcwOpt_USM"] = 2 if enabled else 1
+  values["CF_Lkas_FcwOpt_USM"] = 1 #2 if enabled else 1
   values["NEW_SIGNAL_4"] = 0  
   values["CF_Lkas_MsgCount"] = frame % 0xF
   values["NEW_SIGNAL_5"] = 100 #150 if steer_req else 100
