@@ -317,6 +317,7 @@ class VCruiseCarrot:
     v_ego_kph = int(round(clip(CS.vEgoCluster * CV.MS_TO_KPH, initial, V_CRUISE_MAX)))
     if any(b.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for b in CS.buttonEvents): # and self.v_cruise_initialized:
       self.v_cruise_kph = max(self._v_cruise_kph_at_brake, v_ego_kph) if self._v_cruise_kph_at_brake > 0 else self.v_cruise_kph_last
+      self._add_log(f"{self.v_cruise_kph},{self._v_cruise_kph_at_brake} Cruise resume")
     else:
       self.v_cruise_kph = v_ego_kph
 
@@ -663,6 +664,7 @@ class VCruiseCarrot:
       self._brake_pressed_count = max(1, self._brake_pressed_count + 1)
       if self._brake_pressed_count == 1: # and CC.enabled:
         self._v_cruise_kph_at_brake = self.v_cruise_kph
+        self._add_log(f"{self.v_cruise_kph} Cruise speed at brake")
       self._soft_hold_count = self._soft_hold_count + 1 if CS.vEgo < 0.1 and CS.gearShifter == GearShifter.drive else 0
       if self.autoCruiseControl == 0 or self.CP.pcmCruise:
         self._soft_hold_active = 0
