@@ -8,6 +8,16 @@ Ecu = CarParams.Ecu
 
 
 FW_VERSIONS = {
+  CAR.HYUNDAI_AZERA_7TH_GEN: {
+    (Ecu.fwdRadar, 0x7d0, None): [
+      b'\xf1\x00GN7_ RDR -----      1.00 1.03 99110-N1000         ',
+      b'\xf1\x8b #\x11\x15',
+    ],
+    (Ecu.fwdCamera, 0x7c4, None): [
+      b'\xf1\x00GN7 MFC  AT KOR LHD 1.00 1.03 99211-N1000 230322',
+      b'\xf1\x8b #\x11\x16',
+    ],
+  },
   CAR.HYUNDAI_AZERA_6TH_GEN: {
     (Ecu.fwdRadar, 0x7d0, None): [
       b'\xf1\x00IG__ SCC F-CU-      1.00 1.00 99110-G8100         ',
