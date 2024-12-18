@@ -100,22 +100,32 @@ def create_steering_messages_camera_scc(packer, CP, CAN, enabled, lat_active, ap
     #203(0xcb), 298(0x12a), 352(0x160), 416(0x1a0), 282(0x11a), 437(0x1b5), 506(0x1fa),
     #698(0x2ba), 353(0x161), 354(0x162), 442(0x1ba), 480(0x1e0), 485(0x1e5), 490(0x1ea),
     #512(0x200), 837(0x345), 908(0x38c), 1402(0x57a), 474(0x1da)
-    values = {
-      "LKA_MODE": 0,
-      "LKA_ICON": 2 if enabled else 1,
-      "TORQUE_REQUEST": 0,  # apply_steer,
-      "VALUE63": 0, # LKA_ASSIST
-      "STEER_REQ": 0,  # 1 if lat_active else 0,
-      "HAS_LANE_SAFETY": 0,  # hide LKAS settings
-      "LKA_ACTIVE": 3 if lat_active else 0,  # this changes sometimes, 3 seems to indicate engaged
-      "VALUE64": 0,  #STEER_MODE, NEW_SIGNAL_2
-      "LKAS_ANGLE_CMD": -apply_angle,
-      "LKAS_ANGLE_ACTIVE": 2 if lat_active else 1,
-      # a torque scale value? ramps up when steering, highest seen is 234
-      # "UNKNOWN": 50 if lat_active and not steering_pressed else 0,
-      "UNKNOWN": max_torque if lat_active else 0,
-    }
 
+    apply_angle = clip(apply_angle, -119, 119)
+      
+    values = {
+      "LKAS_ANGLE_ACTIVE": 1 if abs(CS.out.steeringAngleDeg) > 110.0 else 2,
+      "LKAS_ANGLE_CMD": -apply_angle,
+      "TORQUE_MAYBE": max_torque if lat_active else 0,
+    }
+    ret.append(packer.make_can_msg("LFA_ANGLE_MAYBE_CB", CAN.ECAN, values))
+
+    values = CS.lfa_info
+    values["LKA_MODE"] = 0
+    values["LKA_ICON"] = 2 if enabled else 1
+    values["TORQUE_REQUEST"] = -1024  # apply_steer,
+    values["VALUE63"] = 0 # LKA_ASSIST
+    values["STEER_REQ"] = 0  # 1 if lat_active else 0,
+    values["HAS_LANE_SAFETY"] = 0  # hide LKAS settings
+    values["LKA_ACTIVE"] = 3 if lat_active else 0  # this changes sometimes, 3 seems to indicate engaged
+    values["VALUE64"] = 0  #STEER_MODE, NEW_SIGNAL_2
+    values["LKAS_ANGLE_CMD"] = -25.6 #-apply_angle,
+    values["LKAS_ANGLE_ACTIVE"] = 0 #2 if lat_active else 1,
+    # a torque scale value? ramps up when steering, highest seen is 234
+    # "UNKNOWN": 50 if lat_active and not steering_pressed else 0,
+    values["UNKNOWN"] = 0 #max_torque if lat_active else 0,
+    values["NEW_SIGNAL_1"] = 10
+  
   else:
 
     values = CS.lfa_info
