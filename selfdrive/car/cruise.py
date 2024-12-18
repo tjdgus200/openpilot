@@ -483,7 +483,7 @@ class VCruiseCarrot:
         #  self._lat_enabled = not self._lat_enabled
         #  self._add_log("Lateral " + "enabled" if self._lat_enabled else "disabled")
         self._cruise_cancel_state = True
-        self._v_cruise_kph_at_brake = 0
+        #self._v_cruise_kph_at_brake = 0
         pass
     else:
       if button_type == ButtonType.accelCruise:
