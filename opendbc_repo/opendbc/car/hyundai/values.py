@@ -158,6 +158,10 @@ class HyundaiCanFDPlatformConfig(PlatformConfig):
 
 class CAR(Platforms):
   # Hyundai
+  HYUNDAI_AZERA_7TH_GEN = HyundaiCanFDPlatformConfig(
+    [HyundaiCarDocs("Hyundai Azera 2023-2024", "All", car_parts=CarParts.common([CarHarness.hyundai_a]))],
+    CarSpecs(mass=1700, wheelbase=2.895, steerRatio=16.5),
+  )  
   HYUNDAI_AZERA_6TH_GEN = HyundaiPlatformConfig(
     [HyundaiCarDocs("Hyundai Azera 2022", "All", car_parts=CarParts.common([CarHarness.hyundai_k]))],
     CarSpecs(mass=1600, wheelbase=2.885, steerRatio=14.5),
