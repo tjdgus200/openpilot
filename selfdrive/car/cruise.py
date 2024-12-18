@@ -320,6 +320,7 @@ class VCruiseCarrot:
       self._add_log(f"{self.v_cruise_kph},{self._v_cruise_kph_at_brake} Cruise resume")
     else:
       self.v_cruise_kph = v_ego_kph
+      self._add_log(f"{self.v_cruise_kph} Cruise Set")
 
     self.v_cruise_kph = clip(self.v_cruise_kph, self._cruise_speed_min, self._cruise_speed_max)
     self.v_cruise_cluster_kph = self.v_cruise_kph
