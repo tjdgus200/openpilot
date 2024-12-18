@@ -154,6 +154,8 @@ class VCruiseCarrot:
     self.v_cruise_cluster_kph = 20 #V_CRUISE_UNSET
     self.v_cruise_kph_last = 20
 
+    self.enabled_last = False
+
     self.long_pressed = False
     self.button_cnt = 0
     self.button_prev = ButtonType.unknown
@@ -306,8 +308,10 @@ class VCruiseCarrot:
       #  self._lat_enabled = False
 
     self.cruise_state_available_last = CS.cruiseState.available
+    self.enabled_last = CC.enabled
 
   def initialize_v_cruise(self, CS, experimental_mode: bool) -> None:
+    return
     # initializing is handled by the PCM
     if self.CP.pcmCruise and self.speed_from_pcm == 1:
       return
@@ -664,7 +668,7 @@ class VCruiseCarrot:
     if CS.brakePressed:
       self._cruise_ready = False
       self._brake_pressed_count = max(1, self._brake_pressed_count + 1)
-      if self._brake_pressed_count == 1: # and CC.enabled:
+      if self._brake_pressed_count == 1 and self.enabled_last:
         self._v_cruise_kph_at_brake = self.v_cruise_kph
         self._add_log(f"{self.v_cruise_kph} Cruise speed at brake")
       self._soft_hold_count = self._soft_hold_count + 1 if CS.vEgo < 0.1 and CS.gearShifter == GearShifter.drive else 0
