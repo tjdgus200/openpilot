@@ -99,6 +99,10 @@ def create_steering_messages_camera_scc(packer, CP, CAN, enabled, lat_active, ap
 
   ret = []
   if angle_control:
+    # EV9(ADRV)
+    #203(0xcb), 298(0x12a), 352(0x160), 416(0x1a0), 282(0x11a), 437(0x1b5), 506(0x1fa), 
+    #698(0x2ba), 353(0x161), 354(0x162), 442(0x1ba), 480(0x1e0), 485(0x1e5), 490(0x1ea), 
+    #512(0x200), 837(0x345), 908(0x38c), 1402(0x57a), 474(0x1da)
     values = {
       "LKA_MODE": 0,
       "LKA_ICON": 2 if enabled else 1,
