@@ -1167,7 +1167,7 @@
       "egroup": "SPEED",
       "etitle": "TrafficLightDetectMode",
       "edescr": "0:None,1:Stopping only, 2:Stop & Go",
-      "min": 1,
+      "min": 0,
       "max": 2,
       "default": 2,
       "unit": 1
