@@ -439,7 +439,7 @@ class DrivingModeDetector:
             self.congested = True
 
         # 2. 주행 조건: 앞차가 가속하거나 빠르게 이동
-        if lead_accel > self.accel_threshold or lead_speed > self.lead_speed_exit_threshold:
+        if lead_accel > self.accel_threshold or my_speed > self.lead_speed_exit_threshold or distance >= 200:
             self.congested = False
 
     def get_mode(self):
