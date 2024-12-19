@@ -79,11 +79,16 @@ class LateralPlanner:
     self.lat_mpc.reset(x0=self.x0)
 
   def update(self, sm):
+    global PATH_COST, LATERAL_ACCEL_COST, LATERAL_JERK_COST, STEERING_RATE_COST
     self.readParams -= 1
     if self.readParams <= 0:
       self.readParams = 100
       self.useLaneLineSpeedApply = self.params.get_int("UseLaneLineSpeedApply")
       self.pathOffset = 0.0 #float(self.params.get_int("PathOffset")) * 0.01
+      PATH_COST = self.params.get_float("LatMpcPathCost") * 0.01
+      LATERAL_ACCEL_COST = self.params.get_float("LatMpcAccelCost") * 0.01
+      LATERAL_JERK_COST = self.params.get_float("LatMpcJerkCost") * 0.01
+      STEERING_RATE_COST = self.params.get_float("LatMpcSteeringRateCost")
 
     # clip speed , lateral planning is not possible at 0 speed
     measured_curvature = sm['controlsState'].curvature
