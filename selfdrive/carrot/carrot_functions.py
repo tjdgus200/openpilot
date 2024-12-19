@@ -429,7 +429,7 @@ class DrivingModeDetector:
     def __init__(self):
         self.congested = False
         self.speed_threshold = 2  # (km/h)
-        self.accel_threshold = 1.5  # (m/s^2)
+        self.accel_threshold = 1.8  # (m/s^2)
         self.distance_threshold = 12  # (m)
         self.lead_speed_exit_threshold = 20  # (km/h)
 
