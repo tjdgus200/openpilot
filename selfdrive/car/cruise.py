@@ -583,6 +583,8 @@ class VCruiseCarrot:
       if self._brake_pressed_count == -1 and self._soft_hold_active > 0:
         self._soft_hold_active = 2
         self._cruise_control(1, -1, "Cruise on (soft hold)")
+      elif self.v_cruise_kph < self.v_ego_kph_set:
+        self.v_cruise_kph = self.v_ego_kph_set
 
     if self._soft_hold_active > 0:
       #self.events.append(EventName.softHold)
