@@ -522,7 +522,7 @@ class VCruiseCarrot:
       for speed in range (40, 160, self._cruise_speed_unit):
         if v_cruise_kph < speed:
           v_cruise_kph = speed
-          break;
+          break
     return v_cruise_kph
   
   def _auto_speed_up(self, v_cruise_kph):
