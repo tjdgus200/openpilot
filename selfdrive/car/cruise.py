@@ -614,7 +614,7 @@ class VCruiseCarrot:
       if 40 < self.v_ego_kph_set:
         v_cruise_kph = self.v_ego_kph_set
         self._cruise_control(1, -1 if self.aTarget > 0.0 else 0, "Cruise on (speed)")
-      elif abs(CS.out.steeringAngleDeg) < 20):
+      elif abs(CS.steeringAngleDeg) < 20:
         if self.xState in [3, 5]:
           v_cruise_kph = self.v_ego_kph_set
           self._cruise_control(1, 0, "Cruise on (traffic sign)")
