@@ -613,13 +613,14 @@ class VCruiseCarrot:
     elif self._brake_pressed_count == -1 and self._soft_hold_active == 0:
       if 40 < self.v_ego_kph_set:
         v_cruise_kph = self.v_ego_kph_set
-        self._cruise_control(1, -1 if self.aTarget > 0.0 else 0, "Cruise on (speed)")     
-      elif self.xState in [3, 5]:
-        v_cruise_kph = self.v_ego_kph_set
-        self._cruise_control(1, 0, "Cruise on (traffic sign)")
-      elif 0 < self.d_rel < 20:
-        v_cruise_kph = self.v_ego_kph_set
-        self._cruise_control(1, -1 if self.v_ego_kph_set < 1 else 0, "Cruise on (lead car)")
+        self._cruise_control(1, -1 if self.aTarget > 0.0 else 0, "Cruise on (speed)")
+      elif abs(CS.out.steeringAngleDeg) < 20):
+        if self.xState in [3, 5]:
+          v_cruise_kph = self.v_ego_kph_set
+          self._cruise_control(1, 0, "Cruise on (traffic sign)")
+        elif 0 < self.d_rel < 20:
+          v_cruise_kph = self.v_ego_kph_set
+          self._cruise_control(1, -1 if self.v_ego_kph_set < 1 else 0, "Cruise on (lead car)")
 
     elif not CC.enabled and self._brake_pressed_count < 0 and self._gas_pressed_count < 0:
       if self.d_rel > 0 and CS.vEgo > 0.02:
