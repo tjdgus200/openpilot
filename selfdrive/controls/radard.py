@@ -342,7 +342,7 @@ class VisionTrack:
     if self.prob > .5:
       dRel = float(lead_msg.x[0]) - RADAR_TO_CAMERA
       if abs(self.dRel - dRel) > 5.0:
-        cnt = 0
+        self.cnt = 0
       self.dRel = dRel
 
       self.yRel = float(-lead_msg.y[0])
