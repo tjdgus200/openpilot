@@ -114,7 +114,9 @@ class CarrotPlanner:
     self.eco_over_speed = 4
     self.eco_target_speed = 0
 
-    self.desireState = 0.0    
+    self.desireState = 0.0
+    self.jerk_factor = 1.0
+    self.jerk_factor_apply = 1.0
 
 
   def _params_update(self):
@@ -166,12 +168,16 @@ class CarrotPlanner:
 
   def get_T_FOLLOW(self, personality=log.LongitudinalPersonality.standard):
     if personality==log.LongitudinalPersonality.moreRelaxed:
+      self.jerk_factor = 1.0
       return self.tFollowGap4
     elif personality==log.LongitudinalPersonality.relaxed:
+      self.jerk_factor = 1.0
       return self.tFollowGap3
     elif personality==log.LongitudinalPersonality.standard:
+      self.jerk_factor = 1.0 if self.myDrivingMode == DrivingMode.Safe else 0.7
       return self.tFollowGap2
     elif personality==log.LongitudinalPersonality.aggressive:
+      self.jerk_factor = 1.0 if self.myDrivingMode == DrivingMode.Safe else 0.5
       return self.tFollowGap1
     else:
       raise NotImplementedError("Longitudinal personality not supported")
@@ -186,12 +192,16 @@ class CarrotPlanner:
   
   def dynamic_t_follow(self, t_follow, lead, desired_follow_distance):
 
-    if self.desireState > 0.9:
-      t_follow *= self.dynamicTFollowLC
+    self.jerk_factor_apply = self.jerk_factor
+    if self.desireState > 0.9:  # lane change state
+      t_follow *= self.dynamicTFollowLC   # 차선변경시 t_follow를 줄임.
+      self.jerk_factor_apply = self.jerk_factor * self.dynamicTFollowLC   # 차선변경시 jerk factor를 줄여 aggresive하게
     elif lead.status:      
       if self.dynamicTFollow > 0.0:
         gap_dist_adjust = clip((desired_follow_distance - lead.dRel) * self.dynamicTFollow, - 0.1, 1.0)
         t_follow += gap_dist_adjust
+        if gap_dist_adjust < 0:
+          self.jerk_factor_apply = self.jerk_factor * 0.5 # 전방차량을 따라갈때는 aggressive하게.
 
     return t_follow
 
