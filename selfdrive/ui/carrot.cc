@@ -1838,6 +1838,10 @@ private:
 #include <QJsonValue>
 #include <QJsonArray>
 
+typedef struct {
+    float x, y, d, v, y_rel, v_lat, radar;
+} lead_vertex_data;
+
 char    carrot_man_debug[128] = "";
 class DrawCarrot : public QObject {
     Q_OBJECT
@@ -1870,6 +1874,8 @@ public:
     QPointF nav_path_vertex_xy[150];
     int     nav_path_vertex_count = 0;
 
+    std::vector<lead_vertex_data> lead_vertices_side;
+
     void updateState(UIState *s) {
         const SubMaster& sm = *(s->sm);
         const bool cs_alive = sm.alive("carState");
@@ -1883,8 +1889,10 @@ public:
         const auto lp = sm["longitudinalPlan"].getLongitudinalPlan();
         const auto carrot_man = sm["carrotMan"].getCarrotMan();
         const cereal::ModelDataV2::Reader& model = sm["modelV2"].getModelV2();
-        auto lead_one = sm["radarState"].getRadarState().getLeadOne();
+        const auto radar_state = sm["radarState"].getRadarState();
+        auto lead_one = radar_state.getLeadOne();
         auto model_position = model.getPosition();
+        const auto lane_lines = model.getLaneLines();
 
         if (!cs_alive || !car_control_alive || !car_state_alive || !lp_alive) return;
         auto selfdrive_state = sm["selfdriveState"].getSelfdriveState();
@@ -1909,7 +1917,6 @@ public:
             QString naviPaths = QString::fromStdString(carrot_man.getNaviPaths());
             QStringList pairs = naviPaths.split(";");
             nav_path_vertex_count = 0;
-            const auto lane_lines = model.getLaneLines();
             int max_z = lane_lines[2].getZ().size();
             float z_offset = 0.0;
             foreach(const QString & pair, pairs) {
@@ -1961,7 +1968,68 @@ public:
             const float lead_d = lead_one.getDRel();
             s->max_distance = std::clamp((float)lead_d, 0.0f, s->max_distance);
         }
+
+        lead_vertices_side.clear();
+        for (auto const& rs : { radar_state.getLeadsLeft(), radar_state.getLeadsRight(), radar_state.getLeadsCenter() }) {
+            for (auto const& l : rs) {
+                lead_vertex_data vd;
+                QPointF vtmp;
+                float z = lane_lines[2].getZ()[get_path_length_idx(lane_lines[2], l.getDRel())];
+                if (_model->mapToScreen(l.getDRel(), -l.getYRel(), z + 0.61, &vtmp)) {
+                    vd.x = vtmp.x();
+                    vd.y = vtmp.y();
+                    //printf("(%.1f,%.1f,%.1f) -> (%.1f, %.1f)\n", l.getDRel(), -l.getYRel(), z, vd.x, vd.y);
+                    vd.d = l.getDRel();
+                    vd.v = l.getVLeadK();
+                    vd.y_rel = l.getDPath();// l.getYRel();
+                    vd.v_lat = l.getVLat();
+                    vd.radar = l.getRadar();
+                    lead_vertices_side.push_back(vd);
+                }
+            }
+        }
 	}
+    void drawRadarInfo(UIState* s) {
+        char str[128];
+        int show_radar_info = params.getInt("ShowRadarInfo");
+        if (show_radar_info > 0) {
+            int wStr = 40;
+            for (auto const& vrd : lead_vertices_side) {
+                auto [rx, ry, rd, rv, ry_rel, v_lat, radar] = vrd;
+
+                if (rv < -1.0 || rv > 1.0) {
+                    sprintf(str, "%.0f", rv * 3.6);
+                    wStr = 35 * (strlen(str) + 0);
+                    ui_fill_rect(s->vg, { (int)(rx - wStr / 2), (int)(ry - 35), wStr, 42 }, (!radar) ? COLOR_BLUE : (rv > 0.) ? COLOR_GREEN : COLOR_RED, 15);
+                    ui_draw_text(s, rx, ry, str, 40, COLOR_WHITE, BOLD);
+                    if (show_radar_info >= 2) {
+                        sprintf(str, "%.1f", ry_rel);
+                        ui_draw_text(s, rx, ry - 40, str, 30, COLOR_WHITE, BOLD);
+                        sprintf(str, "%.2f", v_lat);
+                        //sprintf(str, "%.1f", rd);
+                        ui_draw_text(s, rx, ry + 30, str, 30, COLOR_WHITE, BOLD);
+                    }
+                }
+#if 0
+                else if (v_lat < -1.0 || v_lat > 1.0) {
+                    sprintf(str, "%.0f", (rv + v_lat) * 3.6);
+                    wStr = 35 * (strlen(str) + 0);
+                    ui_fill_rect(s->vg, { (int)(rx - wStr / 2), (int)(ry - 35), wStr, 42 }, COLOR_ORANGE, 15);
+                    ui_draw_text(s, rx, ry, str, 40, COLOR_WHITE, BOLD);
+                    if (s->show_radar_info >= 2) {
+                        sprintf(str, "%.1f", ry_rel);
+                        ui_draw_text(s, rx, ry - 40, str, 30, COLOR_WHITE, BOLD);
+                    }
+                }
+#endif
+                else if (show_radar_info >= 3) {
+                    strcpy(str, "*");
+                    ui_draw_text(s, rx, ry, str, 40, COLOR_WHITE, BOLD);
+                }
+            }
+        }
+
+    }
     void drawDebug(UIState* s) {
         if (params.getInt("ShowDebugUI") > 1) {
             nvgTextAlign(s->vg, NVG_ALIGN_RIGHT | NVG_ALIGN_BOTTOM);
@@ -2429,6 +2497,8 @@ void ui_draw(UIState *s, ModelRenderer* model_renderer, int w, int h) {
   drawPlot.draw(s);
 
   drawBlindSpot.draw(s);
+
+  drawCarrot.drawRadarInfo(s);
 
   drawCarrot.drawHud(s);
 

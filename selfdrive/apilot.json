@@ -979,6 +979,19 @@
     },
     {
       "group": "시작",
+      "name": "CanfdDebug",
+      "title": "CANFD Debug(0)",
+      "descr": "",
+      "egroup": "START",
+      "etitle": "CANFD Debug(0)",
+      "edescr": "",
+      "min": 0,
+      "max": 3,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "시작",
       "name": "EnableRadarTracks",
       "title": "레이더트랙사용(0)",
       "descr": "일부차량만 지원됨, 2: SCC mix (문제있음)",
@@ -1154,7 +1167,7 @@
       "egroup": "ACCEL",
       "etitle": "DrivingMode: Auto",
       "edescr": "General Driving Mode only",
-      "min": 1,
+      "min": 0,
       "max": 1,
       "default": 0,
       "unit": 1
