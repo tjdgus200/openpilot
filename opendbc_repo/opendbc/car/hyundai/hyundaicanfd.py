@@ -403,7 +403,7 @@ def create_fca_warning_light(CP, packer, CAN, frame):
   return ret
 
 
-def create_adrv_messages(CP, packer, CAN, frame, CC, CS, hud_control):
+def create_adrv_messages(CP, packer, CAN, frame, CC, CS, hud_control, canfd_debug):
   # messages needed to car happy after disabling
   # the ADAS Driving ECU to do longitudinal control
 
@@ -490,12 +490,21 @@ def create_adrv_messages(CP, packer, CAN, frame, CC, CS, hud_control):
         values["SIGNAL246"] = 0
         ret.append(packer.make_can_msg("CORNER_RADAR_HIGHWAY", CAN.ECAN, values))
 
-    if frame % 20 == 0 and False: # 아직 시험중..
+    if frame % 20 == 0 and canfd_debug > 0: # 아직 시험중..
       if CS.hda_info_4a3 is not None:
         values = CS.hda_info_4a3
-        # SIGNAL_4: 7, SIGNAL_0: 0 으로 해도 .. 옆두부는 나오기도 함.. 아오5
-        values["SIGNAL_4"] = 10 if CC.enabled else 0   # 0, 5(고속도로진입), 10(고속도로), 7,5(국도에서 간혹), 0,10(카니발)      , 5(고속도로진입,EV6), 11(고속도로,EV6)
-        values["SIGNAL_0"] = 5 if CC.enabled else 0  # 0, 2(고속도로진입), 1(고속도로),                      5(카니발은 항상)  , 2(고속도로진입,EV6), 1(고속도로,EV6)
+        # SIGNAL_4: 7, SIGNAL_0: 0 으로 해도 .. 옆두부는 나오기도 함.. 아오5        
+        if canfd_debug == 1:
+          test4 = 10
+          test0 = 5
+        elif canfd_debug == 2:
+          test4 = 11
+          test0 = 1
+        elif canfd_debug == 3:
+          test4 = 5
+          test0 = 2
+        values["SIGNAL_4"] = test4 if CC.enabled else 0   # 0, 5(고속도로진입), 10(고속도로), 7,5(국도에서 간혹), 0,10(카니발)      , 5(고속도로진입,EV6), 11(고속도로,EV6)
+        values["SIGNAL_0"] = test0 if CC.enabled else 0  # 0, 2(고속도로진입), 1(고속도로),                      5(카니발은 항상)  , 2(고속도로진입,EV6), 1(고속도로,EV6)
         values["NEW_SIGNAL_1"] = 4
         values["NEW_SIGNAL_2"] = 0
         values["NEW_SIGNAL_3"] = 154
@@ -504,7 +513,7 @@ def create_adrv_messages(CP, packer, CAN, frame, CC, CS, hud_control):
         values["NEW_SIGNAL_6"] = 256
         values["NEW_SIGNAL_7"] = 0
         ret.append(packer.make_can_msg("HDA_INFO_4A3", CAN.CAM, values))
-    if frame % 10 == 0:
+    if frame % 10 == 0 and False:
       if CS.new_msg_4b4 is not None: #G80 HDA2개조차량은 안나옴...
         values = CS.new_msg_4b4
         values["NEW_SIGNAL_4"] = 146

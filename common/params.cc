@@ -272,6 +272,7 @@ std::unordered_map<std::string, uint32_t> keys = {
     { "HotspotOnBoot", PERSISTENT },
     { "HyundaiCameraSCC", PERSISTENT },
     { "CanfdHDA2", PERSISTENT },
+    { "CanfdDebug", PERSISTENT },
     { "SoundVolumeAdjust", PERSISTENT },
     { "SoundVolumeAdjustEngage", PERSISTENT },
     { "TFollowGap1", PERSISTENT },

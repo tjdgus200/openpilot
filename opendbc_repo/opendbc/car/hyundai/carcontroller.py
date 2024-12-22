@@ -80,6 +80,8 @@ class CarController(CarControllerBase):
     self.lkas_max_torque = 0
     self.driver_applied_torque_reducer = 0
 
+    self.canfd_debug = 0
+
   def update(self, CC, CS, now_nanos):
 
     if self.frame % 50 == 0:
@@ -101,6 +103,8 @@ class CarController(CarControllerBase):
       self.button_spam2 = params.get_int("CruiseButtonTest2")
       self.button_spam3 = params.get_int("CruiseButtonTest3")
       self.speed_from_pcm = params.get_int("SpeedFromPCM")
+
+      self.canfd_debug = params.get_int("CanfdDebug")
       
 
     actuators = CC.actuators
@@ -213,7 +217,7 @@ class CarController(CarControllerBase):
 
         if True: #not camera_scc:
           if hda2:
-            can_sends.extend(hyundaicanfd.create_adrv_messages(self.CP, self.packer, self.CAN, self.frame, CC, CS, hud_control))
+            can_sends.extend(hyundaicanfd.create_adrv_messages(self.CP, self.packer, self.CAN, self.frame, CC, CS, hud_control, self.canfd_debug))
           else:
             can_sends.extend(hyundaicanfd.create_fca_warning_light(self.CP, self.packer, self.CAN, self.frame))
         if self.frame % 2 == 0:
