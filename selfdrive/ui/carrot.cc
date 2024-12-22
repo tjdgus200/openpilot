@@ -1975,7 +1975,7 @@ public:
                 lead_vertex_data vd;
                 QPointF vtmp;
                 float z = lane_lines[2].getZ()[get_path_length_idx(lane_lines[2], l.getDRel())];
-                if (_model->mapToScreen(l.getDRel(), -l.getYRel(), z + 0.61, &vtmp)) {
+                if (_model->mapToScreen(l.getDRel(), -l.getYRel(), z - 0.61, &vtmp)) {
                     vd.x = vtmp.x();
                     vd.y = vtmp.y();
                     //printf("(%.1f,%.1f,%.1f) -> (%.1f, %.1f)\n", l.getDRel(), -l.getYRel(), z, vd.x, vd.y);
