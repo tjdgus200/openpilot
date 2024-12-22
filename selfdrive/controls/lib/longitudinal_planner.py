@@ -92,7 +92,7 @@ class LongitudinalPlanner:
     self.a_desired_trajectory = np.zeros(CONTROL_N)
     self.j_desired_trajectory = np.zeros(CONTROL_N)
     self.solverExecutionTime = 0.0
-    
+
     self.carrot = CarrotPlanner()
     self.vCluRatio = 1.0
 
@@ -128,7 +128,7 @@ class LongitudinalPlanner:
 
     v_ego = sm['carState'].vEgo
     v_cruise_kph = min(sm['carState'].vCruise, V_CRUISE_MAX)
-    
+
     self.v_cruise_kph = self.carrot.update(sm, v_cruise_kph)
     v_cruise = self.v_cruise_kph * CV.KPH_TO_MS
 
@@ -141,7 +141,7 @@ class LongitudinalPlanner:
 
     long_control_off = sm['controlsState'].longControlState == LongCtrlState.off
     force_slow_decel = sm['controlsState'].forceDecel
-    
+
     # Reset current state when not engaged, or user is controlling the speed
     reset_state = long_control_off if self.CP.openpilotLongitudinalControl else not sm['selfdriveState'].enabled
     # PCM cruise speed may be updated a few cycles later, check if initialized
@@ -163,7 +163,7 @@ class LongitudinalPlanner:
       self.v_desired_filter.x = v_ego
       # Clip aEgo to cruise limits to prevent large accelerations when becoming active
       self.a_desired = clip(sm['carState'].aEgo, accel_limits[0], accel_limits[1])
-      
+
       self.mpc.prev_a = np.full(N+1, self.a_desired) ## carrot
       accel_limits_turns[0] = accel_limits_turns[0] = 0.0 ## carrot
 
@@ -222,7 +222,7 @@ class LongitudinalPlanner:
     longitudinalPlan.hasLead = sm['radarState'].leadOne.status
     longitudinalPlan.longitudinalPlanSource = self.mpc.source
     longitudinalPlan.fcw = self.fcw
-        
+
     a_target, should_stop, v_target, j_target = get_accel_from_plan(self.CP, longitudinalPlan.speeds, longitudinalPlan.accels, longitudinalPlan.jerks)
     longitudinalPlan.aTarget = a_target
     longitudinalPlan.shouldStop = should_stop

@@ -1,15 +1,13 @@
 import os
 import operator
+import importlib.util
 
 from cereal import car
 from openpilot.common.params import Params
 from openpilot.system.hardware import PC, TICI
 from openpilot.system.manager.process import PythonProcess, NativeProcess, DaemonProcess
-try:
-    import flask
-    FLASK_AVAILABLE = True
-except ImportError:
-    FLASK_AVAILABLE = False
+
+FLASK_AVAILABLE = importlib.util.find_spec("flask") is not None
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
 
