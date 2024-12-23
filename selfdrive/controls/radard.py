@@ -355,13 +355,13 @@ class VisionTrack:
         self.vLat = 0.0
       else:
         v_rel = (self.dRel - self.dRel_last) / self.radar_ts
-        self.vRel = self.vRel * (1. - self.alpha) + v_rel * self.alpha
+        v_rel = self.vRel * (1. - self.alpha) + v_rel * self.alpha
 
         #self.vRel = lead_v_rel_pred if self.mixRadarInfo == 3 else (lead_v_rel_pred + self.vRel) / 2
-        self.vRel = (lead_v_rel_pred + self.vRel) / 2
+        self.vRel = (lead_v_rel_pred + v_rel) / 2
         self.vLead = float(v_ego + self.vRel)
 
-        a_lead = (self.vLead - self.vLead_last) / self.radar_ts * 0.5
+        a_lead = (self.vLead - self.vLead_last) / self.radar_ts * 0.2 #0.5 -> 0.2 vel 미분적용을 줄임.
         self.aLead = self.aLead * (1. - self.alpha_a) + a_lead * self.alpha_a
         if abs(a_lead_vision) > abs(self.aLead): # or self.mixRadarInfo == 3:
           self.aLead = a_lead_vision
