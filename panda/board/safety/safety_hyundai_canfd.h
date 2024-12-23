@@ -184,7 +184,9 @@ bool hyundai_canfd_alt_buttons = false;
 bool hyundai_canfd_hda2_alt_steering = false;
 
 int canfd_tx_addr[32] = { 80, 81, 272, 282, 298, 352, 353, 354, 442, 485, 416, 437, 506, 474, 480, 490, 512, 676, 866, 837, 1402, 908, 1848, 1187, 1204, 203, 0, };
+int canfd_tx_addr2[32] = { 0x4a3, 0 };
 uint32_t canfd_tx_time[32] = { 0, };
+uint32_t canfd_tx_time2[32] = { 0, };
 
 int hyundai_canfd_hda2_get_lkas_addr(void) {
   return hyundai_canfd_hda2_alt_steering ? 0x110 : 0x50;
@@ -369,7 +371,10 @@ static bool hyundai_canfd_tx_hook(const CANPacket_t *to_send) {
   }
 
   for (int i = 0; canfd_tx_addr[i] > 0; i++) {
-      if(addr == canfd_tx_addr[i]) canfd_tx_time[i] = (tx) ? microsecond_timer_get() : 0;
+      if (addr == canfd_tx_addr[i]) canfd_tx_time[i] = (tx) ? microsecond_timer_get() : 0;
+  }
+  for (int i = 0; canfd_tx_addr2[i] > 0; i++) {
+      if (addr == canfd_tx_addr2[i]) canfd_tx_time2[i] = (tx) ? microsecond_timer_get() : 0;
   }
 
   return tx;
@@ -389,6 +394,12 @@ static int hyundai_canfd_fwd_hook(int bus_num, int addr) {
 
   if (bus_num == 0) {
     bus_fwd = 2;
+    for (int i = 0; canfd_tx_addr2[i] > 0; i++) {
+        if (addr == canfd_tx_addr2[i] && (now - canfd_tx_time2[i]) < 200000) {
+            bus_fwd = -1;
+            break;
+        }
+    }
   }
   extern uint8_t to_push_data_len_code;
   if (bus_num == 1) {
