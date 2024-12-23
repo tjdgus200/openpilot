@@ -37,7 +37,7 @@ class CarInterface(CarInterfaceBase):
     CAN = CanBus(None, fingerprint, hda2)
 
     if params.get_int("CanfdDebug") == -1:
-      ret.flags |= HyundaiFlags.ANGLE_CONTROL
+      ret.flags |= HyundaiFlags.ANGLE_CONTROL.value
 
     if ret.flags & HyundaiFlags.CANFD:
       # Shared configuration for CAN-FD cars
