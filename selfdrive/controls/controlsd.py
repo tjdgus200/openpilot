@@ -135,7 +135,7 @@ class Controls:
       steer_actuator_delay = self.params.get_float("SteerActuatorDelay") * 0.01
       desired_curvature_ff = get_lag_adjusted_curvature(self.CP, CS.vEgo, lat_plan.psis, lat_plan.curvatures, model_actuator_delay + steer_actuator_delay)
       self.desired_curvature = clip_curvature(CS.vEgo, self.desired_curvature, desired_curvature_now)
-      desired_curvature_ff = clip_curvature(CS.vEgo, self.desired_curvature, desired_curvature_ff)
+      desired_curvature_ff = clip_curvature(CS.vEgo, desired_curvature_now, desired_curvature_ff)
     else:
       steer_actuator_delay = self.params.get_float("SteerActuatorDelay") * 0.01
       if self.lanefull_mode_enabled:
