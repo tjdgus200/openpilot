@@ -36,6 +36,9 @@ class CarInterface(CarInterfaceBase):
     hda2 = hda2 or params.get_bool("CanfdHDA2")
     CAN = CanBus(None, fingerprint, hda2)
 
+    if params.get_int("CanfdDebug") == -1:
+      ret.flags |= HyundaiFlags.ANGLE_CONTROL
+
     if ret.flags & HyundaiFlags.CANFD:
       # Shared configuration for CAN-FD cars
       ret.experimentalLongitudinalAvailable = True #candidate not in (CANFD_UNSUPPORTED_LONGITUDINAL_CAR | CANFD_RADAR_SCC_CAR)
