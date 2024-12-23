@@ -337,7 +337,7 @@ class VCruiseCarrot:
     button_speed_dn_diff = self._cruise_speed_unit if self._cruise_button_mode in [1, 2, 3] else 1
 
     button_type = 0
-    self.long_pressed = False
+    #self.long_pressed = False
     if self.button_cnt > 0:
       self.button_cnt += 1
     for b in buttonEvents:
