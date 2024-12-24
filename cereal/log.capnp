@@ -2660,7 +2660,7 @@ struct Event {
     driverStateDEPRECATED @59 :DriverStateDEPRECATED;
     sensorEventsDEPRECATED @11 :List(SensorEventData);
     lateralPlan @64 :LateralPlan;
-    navModelDEPRECATED @104 :NavModelData;
+    navModel @104 :NavModelData;
     uiPlanDEPRECATED @106 :UiPlan;
     liveLocationKalmanDEPRECATED @72 :LiveLocationKalman;
     liveTracksDEPRECATED @16 :List(LiveTracksDEPRECATED);

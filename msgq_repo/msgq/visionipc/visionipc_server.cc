@@ -49,6 +49,7 @@ void VisionIpcServer::create_buffers(VisionStreamType type, size_t num_buffers, 
   size = width * height * 3 / 2;
   stride = width;
   uv_offset = width * height;
+  printf("type: %d, num_buffers: %zu, width: %zu, height: %zu, size: %zu, stride: %zu, uv_offset: %zu\n", type, num_buffers, width, height, size, stride, uv_offset);
 
   create_buffers_with_sizes(type, num_buffers, width, height, size, stride, uv_offset);
 }

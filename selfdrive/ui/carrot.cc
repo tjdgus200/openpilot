@@ -2063,6 +2063,7 @@ public:
                 nvgFill(s->vg);
 			}
         }
+
 #else
         if (nav_path_vertex_count) {
             nvgBeginPath(s->vg);
@@ -2454,6 +2455,106 @@ public:
 
 };
 
+#include "msgq/visionipc/visionipc_server.h"
+#include <QImage>
+#include <QPainter>
+#include <QPainterPath> // 추가
+
+class MapRenderer {
+public:
+    MapRenderer() : image_data(WIDTH* HEIGHT * 4) { initialize(); }
+
+    void initialize() {
+        const int NUM_VIPC_BUFFERS = 4;
+
+        vipc_server = std::make_unique<VisionIpcServer>("navd");
+        vipc_server->create_buffers(VisionStreamType::VISION_STREAM_MAP, NUM_VIPC_BUFFERS, WIDTH, HEIGHT);
+        vipc_server->start_listener();
+    }
+
+    void render(QPointF nav_path_vertex_xy[], int vertex_count) {
+        // QImage 생성 및 초기화
+        QImage image(WIDTH, HEIGHT, QImage::Format_RGBA8888); // RGBA 형식
+        image.fill(Qt::black); // 검정 배경
+
+        QPainter painter(&image);
+        painter.setPen(QPen(Qt::gray, 5)); // 경로 색상 및 두께 설정
+        painter.setRenderHint(QPainter::Antialiasing, true);
+
+        // 경로 그리기
+        if (vertex_count > 2) {
+            QPainterPath path;
+            path.moveTo(nav_path_vertex_xy[0].x() * pixels_per_meter + WIDTH / 2.0,
+                nav_path_vertex_xy[0].y() * pixels_per_meter + HEIGHT / 2.0);
+            for (int i = 1; i < vertex_count; ++i) {
+                path.lineTo(nav_path_vertex_xy[i].x() * pixels_per_meter + WIDTH / 2.0,
+                    nav_path_vertex_xy[i].y() * pixels_per_meter + HEIGHT / 2.0);
+            }
+            painter.drawPath(path);
+        }
+        painter.end();
+
+        // QImage 데이터를 NanoVG에 전달
+        memcpy(image_data.data(), image.bits(), WIDTH * HEIGHT * 4); // RGBA 크기
+    }
+
+    bool publish() {
+        double cur_t = millis_since_boot();
+        if (cur_t > vipc_sent_t + 500) {
+            vipc_sent_t = cur_t;
+
+            // Vision IPC 버퍼에 데이터 전송
+            VisionBuf* buf = vipc_server->get_buffer(VisionStreamType::VISION_STREAM_MAP);
+
+            uint8_t* dst = (uint8_t*)buf->addr;
+            memset(dst, 128, buf->len); // 초기화
+
+            for (int i = 0; i < WIDTH * HEIGHT; i++) {
+                dst[i] = image_data[i * 4]; // R 값을 사용하여 grayscale 변환
+            }
+
+            VisionIpcBufExtra extra = {
+                .frame_id = frame_id,
+                .timestamp_sof = nanos_since_boot(),
+                .timestamp_eof = nanos_since_boot(),
+                .valid = true
+            };
+            vipc_server->send(buf, &extra);
+            frame_id++;
+            return true;
+        }
+        return false;
+    }
+
+    void test_draw(NVGcontext* vg) {
+        static int tex_id = -1; // 텍스처 ID 저장
+        if (tex_id == -1) {
+            tex_id = nvgCreateImageRGBA(vg, WIDTH, HEIGHT, 0, image_data.data());
+        }
+        else {
+            // 텍스처 업데이트
+            nvgUpdateImage(vg, tex_id, image_data.data());
+        }
+
+        // 텍스처를 화면에 그리기
+        float x_offset = 200;
+        float y_offset = 200;
+        NVGpaint img_paint = nvgImagePattern(vg, x_offset, y_offset, WIDTH, HEIGHT, 0, tex_id, 1.0f);
+        nvgBeginPath(vg);
+        nvgRect(vg, x_offset, y_offset, WIDTH, HEIGHT); // 텍스처를 그릴 영역
+        nvgFillPaint(vg, img_paint);
+        nvgFill(vg);
+    }
+
+private:
+    std::unique_ptr<VisionIpcServer> vipc_server;
+    uint32_t frame_id = 0;
+    double vipc_sent_t = 0.0;
+    float pixels_per_meter = 0.5f; // 픽셀 단위 조정
+    const int HEIGHT = 256, WIDTH = 256;
+    std::vector<unsigned char> image_data;
+};
+
 
 DrawPlot drawPlot;
 DrawCarrot drawCarrot;
@@ -2466,6 +2567,8 @@ TurnInfoDrawer drawTurnInfo;
 
 OnroadAlerts::Alert alert;
 NVGcolor alert_color;
+
+MapRenderer mapRenderer;
 
 void ui_draw(UIState *s, ModelRenderer* model_renderer, int w, int h) {
   _model = model_renderer;
@@ -2510,9 +2613,20 @@ void ui_draw(UIState *s, ModelRenderer* model_renderer, int w, int h) {
 
   drawTurnInfo.draw(s);
 
+
   ui_draw_text_a2(s);
   ui_draw_alert(s);
 
+  if (drawCarrot.nav_path_vertex_count > 1) {
+      mapRenderer.render(drawCarrot.nav_path_vertex_xy, drawCarrot.nav_path_vertex_count);
+      mapRenderer.publish();
+      mapRenderer.test_draw(s->vg);
+  }
+  nvgResetScissor(s->vg);
+  nvgEndFrame(s->vg);
+
+  nvgBeginFrame(s->vg, s->fb_w, s->fb_h, 1.0f);
+  nvgScissor(s->vg, 0, 0, s->fb_w, s->fb_h);
   nvgResetScissor(s->vg);
   nvgEndFrame(s->vg);
   glDisable(GL_BLEND);

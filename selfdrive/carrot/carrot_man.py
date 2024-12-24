@@ -181,7 +181,7 @@ class CarrotMan:
     self.params = Params()
     self.params_memory = Params("/dev/shm/params")
     self.sm = messaging.SubMaster(['deviceState', 'carState', 'controlsState', 'longitudinalPlan', 'modelV2', 'selfdriveState', 'carControl'])
-    self.pm = messaging.PubMaster(['carrotMan'])
+    self.pm = messaging.PubMaster(['carrotMan', "navInstruction"])
 
     self.carrot_serv = CarrotServ()
 
@@ -1491,6 +1491,99 @@ class CarrotServ:
     msg.carrotMan.leftSec = int(self.carrot_left_sec)
 
     pm.send('carrotMan', msg)
+
+
+    nav_type_mapping = {
+      12: ("turn", "left", 1),
+      16: ("turn", "sharp left", 1),
+      13: ("turn", "right", 2),
+      19: ("turn", "sharp right", 2),
+      102: ("off ramp", "slight left", 3),
+      105: ("off ramp", "slight left", 3),
+      112: ("off ramp", "slight left", 3),
+      115: ("off ramp", "slight left", 3),
+      101: ("off ramp", "slight right", 4),
+      104: ("off ramp", "slight right", 4),
+      111: ("off ramp", "slight right", 4),
+      114: ("off ramp", "slight right", 4),
+      7: ("fork", "left", 3),
+      44: ("fork", "left", 3),
+      17: ("fork", "left", 3),
+      75: ("fork", "left", 3),
+      76: ("fork", "left", 3),
+      118: ("fork", "left", 3),
+      6: ("fork", "right", 4),
+      43: ("fork", "right", 4),
+      73: ("fork", "right", 4),
+      74: ("fork", "right", 4),
+      123: ("fork", "right", 4),
+      124: ("fork", "right", 4),
+      117: ("fork", "right", 4),
+      131: ("rotary", "slight right", 5),
+      132: ("rotary", "slight right", 5),
+      140: ("rotary", "slight left", 5),
+      141: ("rotary", "slight left", 5),
+      133: ("rotary", "right", 5),
+      134: ("rotary", "sharp right", 5),
+      135: ("rotary", "sharp right", 5),
+      136: ("rotary", "sharp left", 5),
+      137: ("rotary", "sharp left", 5),
+      138: ("rotary", "sharp left", 5),
+      139: ("rotary", "left", 5),
+      142: ("rotary", "straight", 5),
+      14: ("turn", "uturn", 5),
+      201: ("arrive", "straight", 5),
+      51: ("notification", "straight", None),
+      52: ("notification", "straight", None),
+      53: ("notification", "straight", None),
+      54: ("notification", "straight", None),
+      55: ("notification", "straight", None),
+      153: ("", "", 6),  #TG
+      154: ("", "", 6),  #TG
+      249: ("", "", 6)   #TG
+    }
+
+    msg = messaging.new_message('navInstruction')
+    msg.valid = True
+    
+    instruction = msg.navInstruction
+    instruction.distanceRemaining = self.nGoPosDist
+    instruction.timeRemaining = self.nGoPosTime
+    instruction.speedLimit = self.nRoadLimitSpeed / 3.6 if self.nRoadLimitSpeed > 0 else 0
+    instruction.maneuverDistance = float(self.nTBTDist)
+    instruction.maneuverSecondaryText = self.szNearDirName
+    if len(self.szFarDirName):
+      instruction.maneuverSecondaryText += "[{}]".format(self.szFarDirName)
+    instruction.maneuverPrimaryText = self.szTBTMainText
+    instruction.timeRemainingTypical = self.nGoPosTime
+
+    navType, navModifier, xTurnInfo1 = "invalid", "", -1
+    if self.nTBTTurnType in nav_type_mapping:
+      navType, navModifier, xTurnInfo1 = nav_type_mapping[self.nTBTTurnType]
+    navTypeNext, navModifierNext, xTurnInfoNext = "invalid", "", -1
+    if self.nTBTTurnTypeNext in nav_type_mapping:
+      navTypeNext, navModifierNext, xTurnInfoNext = nav_type_mapping[self.nTBTTurnTypeNext]
+      
+    instruction.maneuverType = navType
+    instruction.maneuverModifier = navModifier
+
+    maneuvers = []
+    if self.nTBTTurnType >= 0:
+      maneuver = {}
+      maneuver['distance'] = float(self.nTBTDist)
+      maneuver['type'] = navType
+      maneuver['modifier'] = navModifier
+      maneuvers.append(maneuver)
+      if self.nTBTDistNext >= self.nTBTDist:
+        maneuver = {}
+        maneuver['distance'] = float(self.nTBTDistNext)
+        maneuver['type'] = navTypeNext
+        maneuver['modifier'] = navModifierNext
+        maneuvers.append(maneuver)
+
+    instruction.allManeuvers = maneuvers
+
+    pm.send('navInstruction', msg)
 
   def _update_system_time(self, epoch_time_remote, timezone_remote):
     epoch_time = int(time.time())
