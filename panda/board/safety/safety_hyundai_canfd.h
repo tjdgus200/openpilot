@@ -395,7 +395,7 @@ static int hyundai_canfd_fwd_hook(int bus_num, int addr) {
   if (bus_num == 0) {
     bus_fwd = 2;
     for (int i = 0; canfd_tx_addr2[i] > 0; i++) {
-        if (addr == canfd_tx_addr2[i] && (now - canfd_tx_time2[i]) < 200000) {
+        if (addr == canfd_tx_addr2[i] && (now - canfd_tx_time2[i]) < 50000) {
             bus_fwd = -1;
             break;
         }
