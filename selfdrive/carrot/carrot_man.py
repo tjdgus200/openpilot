@@ -18,6 +18,7 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.common.params import Params
 from openpilot.common.numpy_fast import clip, interp
 from openpilot.common.filter_simple import StreamingMovingAverage
+from openpilot.system.hardware import PC, TICI
 try:
   from shapely.geometry import LineString
   SHAPELY_AVAILABLE = True
@@ -217,16 +218,29 @@ class CarrotMan:
     self.navi_points_active = False
 
   def get_broadcast_address(self):
+    if PC:
+      iface = b'br0'
+    else:
+      iface = b'wlan0'
     try:
       with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         ip = fcntl.ioctl(
           s.fileno(),
           0x8919,
-          struct.pack('256s', b'wlan0')
+          struct.pack('256s', iface)
         )[20:24]
         return socket.inet_ntoa(ip)
     except (OSError, Exception):
       return None
+
+  def get_local_ip(self):
+      try:
+          # 외부 서버와의 연결을 통해 로컬 IP 확인
+          with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+              s.connect(("8.8.8.8", 80))  # Google DNS로 연결 시도
+              return s.getsockname()[0]
+      except Exception as e:
+          return f"Error: {e}"
 
   # 브로드캐스트 메시지 전송
   def broadcast_version_info(self):
@@ -252,7 +266,10 @@ class CarrotMan:
         if frame % 20 == 0 or remote_addr is not None:
           try:
             self.broadcast_ip = self.get_broadcast_address() if remote_addr is None else remote_addr[0]
-            ip_address = socket.gethostbyname(socket.gethostname())
+            if not PC:
+              ip_address = socket.gethostbyname(socket.gethostname())
+            else:
+              ip_address = self.get_local_ip()
             if ip_address != self.ip_address:
               self.ip_address = ip_address
               self.remote_addr = None
@@ -290,6 +307,7 @@ class CarrotMan:
   def carrot_navi_route(self):
 
     if not self.navi_points_active or not SHAPELY_AVAILABLE or self.carrot_serv.active_carrot <= 1:
+      #print(f"navi_points_active: {self.navi_points_active}, active_carrot: {self.carrot_serv.active_carrot}")
       #haversine_cache.clear()
       #curvature_cache.clear()
       self.navi_points = []
@@ -1534,7 +1552,8 @@ class CarrotServ:
       # op는 ntp를 사용하기때문에... 필요없는 루틴으로 보임.
       timezone_remote = json.get("timezone", "Asia/Seoul")
 
-      self.set_time(int(json.get("epochTime")), timezone_remote)
+      if not PC:
+        self.set_time(int(json.get("epochTime")), timezone_remote)
 
       #self._update_system_time(int(json.get("epochTime")), timezone_remote)
 
