@@ -384,7 +384,6 @@ int addr_list1[128] = { 0, };
 int addr_list_count1 = 0;
 int addr_list2[128] = { 0, };
 int addr_list_count2 = 0;
-uint32_t last_ts_lkas_msg_acan = 0;
 
 static int hyundai_canfd_fwd_hook(int bus_num, int addr) {
   int bus_fwd = -1;
