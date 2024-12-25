@@ -261,8 +261,6 @@ def main(demo=False):
           direction_idx = 1
         if maneuver.modifier in ("right", "slight right", "sharp right"):
           direction_idx = 2
-        if direction_idx > 0:
-          print(f"nav instruction: {maneuver.modifier} {maneuver.distance}m")
         if 0 <= distance_idx < 50:
           nav_instructions[distance_idx*3 + direction_idx] = 1
 
