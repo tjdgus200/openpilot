@@ -2478,7 +2478,7 @@ public:
         image.fill(Qt::black); // 검정 배경
 
         QPainter painter(&image);
-        painter.setPen(QPen(Qt::gray, 5)); // 경로 색상 및 두께 설정
+        painter.setPen(QPen(Qt::white, 15)); // 경로 색상 및 두께 설정
         painter.setRenderHint(QPainter::Antialiasing, true);
 
         // 경로 그리기
