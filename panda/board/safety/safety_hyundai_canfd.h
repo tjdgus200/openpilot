@@ -384,6 +384,7 @@ int addr_list1[128] = { 0, };
 int addr_list_count1 = 0;
 int addr_list2[128] = { 0, };
 int addr_list_count2 = 0;
+#define OP_CAN_SEND_TIMEOUT 100000
 
 static int hyundai_canfd_fwd_hook(int bus_num, int addr) {
   int bus_fwd = -1;
@@ -392,7 +393,7 @@ static int hyundai_canfd_fwd_hook(int bus_num, int addr) {
   if (bus_num == 0) {
     bus_fwd = 2;
     for (int i = 0; canfd_tx_addr2[i] > 0; i++) {
-        if (addr == canfd_tx_addr2[i] && (now - canfd_tx_time2[i]) < 50000) {
+        if (addr == canfd_tx_addr2[i] && (now - canfd_tx_time2[i]) < OP_CAN_SEND_TIMEOUT) {
             bus_fwd = -1;
             break;
         }
@@ -430,7 +431,7 @@ static int hyundai_canfd_fwd_hook(int bus_num, int addr) {
 #if 1
       bus_fwd = 0;
       for (int i = 0; canfd_tx_addr[i] > 0; i++) {
-          if (addr == canfd_tx_addr[i] && (now - canfd_tx_time[i]) < 50000) {
+          if (addr == canfd_tx_addr[i] && (now - canfd_tx_time[i]) < OP_CAN_SEND_TIMEOUT) {
               bus_fwd = -1;
               break;
           }
