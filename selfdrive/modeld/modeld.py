@@ -12,6 +12,8 @@ from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from opendbc.car.car_helpers import get_demo_car_params
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
+from openpilot.common.realtime import DT_MDL
+from openpilot.common.numpy_fast import interp
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import config_realtime_process
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
