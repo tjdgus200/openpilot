@@ -1570,7 +1570,7 @@ class CarrotServ:
     maneuvers = []
     if self.nTBTTurnType >= 0:
       maneuver = {}
-      maneuver['distance'] = float(self.nTBTDist)
+      maneuver['distance'] = float(self.xDistToTurn)
       maneuver['type'] = navType
       maneuver['modifier'] = navModifier
       maneuvers.append(maneuver)
