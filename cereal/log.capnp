@@ -1113,7 +1113,7 @@ struct ModelDataV2 {
   action @26: Action;
 
   gpuExecutionTimeDEPRECATED @17 :Float32;
-  navEnabledDEPRECATED @22 :Bool;
+  navEnabled @22 :Bool;
   locationMonoTimeDEPRECATED @24 :UInt64;
   lateralPlannerSolution @25: LateralPlannerSolution;
 

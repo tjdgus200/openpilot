@@ -57,7 +57,7 @@ def fill_lane_line_meta(builder, lane_lines, lane_line_probs):
 def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._DynamicStructBuilder,
                    net_output_data: dict[str, np.ndarray], publish_state: PublishState,
                    vipc_frame_id: int, vipc_frame_id_extra: int, frame_id: int, frame_drop: float,
-                   timestamp_eof: int, model_execution_time: float, valid: bool) -> None:
+                   timestamp_eof: int, model_execution_time: float, nav_enabled: bool, valid: bool) -> None:
   frame_age = frame_id - vipc_frame_id if frame_id > vipc_frame_id else 0
   frame_drop_perc = frame_drop * 100
   extended_msg.valid = valid
@@ -80,6 +80,7 @@ def fill_model_msg(base_msg: capnp._DynamicStructBuilder, extended_msg: capnp._D
   modelV2.frameDropPerc = frame_drop_perc
   modelV2.timestampEof = timestamp_eof
   modelV2.modelExecutionTime = model_execution_time
+  modelV2.navEnabled = nav_enabled
 
   # plan
   position = modelV2.position
