@@ -106,6 +106,7 @@ if arch == "larch64":
 
   libpath = [
     "/usr/local/lib",
+    "/usr/lib",
     "/system/vendor/lib64",
     "#third_party/nanovg",
     f"#third_party/acados/{arch}/lib",
@@ -274,7 +275,7 @@ Export('envCython', 'np_version')
 
 # Qt build environment
 qt_env = env.Clone()
-qt_modules = ["Widgets", "Gui", "Core", "Network", "Concurrent", "DBus", "Xml", "Qml", "QuickWidgets", "Location", "Positioning"]
+qt_modules = ["Widgets", "Gui", "Core", "Network", "Concurrent", "Multimedia", "Quick", "Qml", "QuickWidgets", "Location", "Positioning", "DBus", "Xml"]
 
 qt_libs = []
 if arch == "Darwin":
