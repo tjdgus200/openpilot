@@ -185,7 +185,7 @@ void MapWindow::updateState(const UIState &s) {
 
     if (locationd_valid) {
       last_position = QMapLibre::Coordinate(carrotMan.getXPosLat(), carrotMan.getXPosLon());
-      last_bearing = carrotMan.getXPosAngle;
+      last_bearing = carrotMan.getXPosAngle();
       velocity_filter.update(std::max(10.0, carrotMan.getXPosSpeed()/3.6));
     }
   }
