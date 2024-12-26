@@ -39,6 +39,7 @@ QMapLibre::Coordinate get_point_along_line(float lat, float lon, float bearing, 
 
 
 MapRenderer::MapRenderer(const QMapLibre::Settings &settings, bool online) : m_settings(settings) {
+    printf("############### MapRenderer::MapRenderer\n");
   QSurfaceFormat fmt;
   fmt.setRenderableType(QSurfaceFormat::OpenGLES);
 
@@ -87,6 +88,7 @@ MapRenderer::MapRenderer(const QMapLibre::Settings &settings, bool online) : m_s
   QObject::connect(m_map.data(), &QMapLibre::Map::mapLoadingFailed, [=](QMapLibre::Map::MapLoadingFailure err_code, const QString &reason) {
     LOGE("Map loading failed with %d: '%s'\n", err_code, reason.toStdString().c_str());
   });
+  printf("############### MapRenderer::MapRenderer2\n");
 
   if (online) {
     vipc_server.reset(new VisionIpcServer("navd"));
@@ -102,6 +104,7 @@ MapRenderer::MapRenderer(const QMapLibre::Settings &settings, bool online) : m_s
     QObject::connect(timer, SIGNAL(timeout()), this, SLOT(msgUpdate()));
     timer->start(0);
   }
+  printf("############### MapRenderer::MapRenderer3\n");
 }
 
 void MapRenderer::msgUpdate() {
