@@ -2454,7 +2454,7 @@ public:
     }
 
 };
-
+#if 0
 #include "msgq/visionipc/visionipc_server.h"
 #include <QImage>
 #include <QPainter>
@@ -2554,7 +2554,7 @@ private:
     const int HEIGHT = 256, WIDTH = 256;
     std::vector<unsigned char> image_data;
 };
-
+#endif
 
 DrawPlot drawPlot;
 DrawCarrot drawCarrot;
@@ -2568,7 +2568,7 @@ TurnInfoDrawer drawTurnInfo;
 OnroadAlerts::Alert alert;
 NVGcolor alert_color;
 
-MapRenderer mapRenderer;
+//MapRenderer mapRenderer;
 
 void ui_draw(UIState *s, ModelRenderer* model_renderer, int w, int h) {
   _model = model_renderer;
@@ -2617,16 +2617,13 @@ void ui_draw(UIState *s, ModelRenderer* model_renderer, int w, int h) {
   ui_draw_text_a2(s);
   ui_draw_alert(s);
 
+#if 0
   if (drawCarrot.nav_path_vertex_count > 1) {
       mapRenderer.render(drawCarrot.nav_path_vertex_xy, drawCarrot.nav_path_vertex_count);
       mapRenderer.publish();
       mapRenderer.test_draw(s->vg);
   }
-  nvgResetScissor(s->vg);
-  nvgEndFrame(s->vg);
-
-  nvgBeginFrame(s->vg, s->fb_w, s->fb_h, 1.0f);
-  nvgScissor(s->vg, 0, 0, s->fb_w, s->fb_h);
+#endif
   nvgResetScissor(s->vg);
   nvgEndFrame(s->vg);
   glDisable(GL_BLEND);
