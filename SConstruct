@@ -147,6 +147,7 @@ else:
     libpath = [
       f"#third_party/acados/{arch}/lib",
       f"#third_party/libyuv/{arch}/lib",
+      f"#third_party/mapbox-gl-native-qt/{arch}",
       "/usr/lib",
       "/usr/local/lib",
     ]
@@ -273,7 +274,7 @@ Export('envCython', 'np_version')
 
 # Qt build environment
 qt_env = env.Clone()
-qt_modules = ["Widgets", "Gui", "Core", "Network", "Concurrent", "DBus", "Xml", "Location", "Positioning"]
+qt_modules = ["Widgets", "Gui", "Core", "Network", "Concurrent", "DBus", "Xml", "Qml", "QuickWidgets", "Location", "Positioning"]
 
 qt_libs = []
 if arch == "Darwin":
@@ -319,6 +320,9 @@ qt_flags = [
   "-DQT_NO_DEBUG",
   "-DQT_WIDGETS_LIB",
   "-DQT_GUI_LIB",
+  "-DQT_QUICK_LIB",
+  "-DQT_QUICKWIDGETS_LIB",
+  "-DQT_QML_LIB",
   "-DQT_CORE_LIB",
   "-DQT_MESSAGELOGCONTEXT",
 ]
