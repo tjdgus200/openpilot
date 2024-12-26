@@ -108,8 +108,7 @@ if arch == "larch64":
     "/usr/local/lib",
     "/usr/lib",
     "/system/vendor/lib64",
-    "#third_party/lib",
-    "#third_party/nanovg",    
+    "#third_party/nanovg",
     f"#third_party/acados/{arch}/lib",
   ]
 
