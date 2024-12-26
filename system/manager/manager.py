@@ -31,6 +31,12 @@ def get_default_params():
     ("LanguageSetting", "main_en"),
     ("OpenpilotEnabledToggle", "1"),
     ("LongitudinalPersonality", str(log.LongitudinalPersonality.standard)),
+
+    ("SearchInput", "0"),
+    ("GMapKey", "0"),
+    ("MapboxStyle", "0"),    
+
+
     ("LongitudinalPersonalityMax", "3"),
     ("ShowDebugUI", "0"),
     ("ShowDateTime", "1"),

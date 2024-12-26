@@ -201,6 +201,19 @@ std::unordered_map<std::string, uint32_t> keys = {
     {"UpdaterTargetBranch", CLEAR_ON_MANAGER_START},
     {"UpdaterLastFetchTime", PERSISTENT},
     {"Version", PERSISTENT},
+    
+    {"ApiCache_NavDestinations", PERSISTENT},
+    {"NavDestination", CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION},
+    {"NavDestinationWaypoints", CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION},
+    {"NavPastDestinations", PERSISTENT},
+    {"NavSettingLeftSide", PERSISTENT},
+    {"NavSettingTime24h", PERSISTENT},
+    {"MapboxStyle", PERSISTENT },
+    {"MapboxPublicKey", PERSISTENT},
+    {"MapboxSecretKey", PERSISTENT},
+    {"GMapKey", PERSISTENT},
+    {"SearchInput", PERSISTENT},
+
 
     { "NetworkAddress", CLEAR_ON_MANAGER_START },
 
