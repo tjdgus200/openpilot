@@ -73,7 +73,8 @@ function launch {
   ln -sfn $(pwd) /data/pythonpath
   export PYTHONPATH="$PWD"
   export QT_DEBUG_PLUGINS=1
-  export LD_LIBRARY_PATH=/data/openpilot/third_party/lib:$LD_LIBRARY_PATH
+  export QT_QPA_PLATFORM_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/qt5/plugins/platforms
+  export QT_QPA_PLATFORM=linuxfb
 
   # hardware specific init
   if [ -f /AGNOS ]; then
