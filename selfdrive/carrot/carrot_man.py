@@ -19,6 +19,8 @@ from openpilot.common.params import Params
 from openpilot.common.numpy_fast import clip, interp
 from openpilot.common.filter_simple import StreamingMovingAverage
 from openpilot.system.hardware import PC, TICI
+from openpilot.selfdrive.navd.helpers import Coordinate
+
 try:
   from shapely.geometry import LineString
   SHAPELY_AVAILABLE = True
@@ -693,24 +695,24 @@ class CarrotMan:
             for i in range(0, len(all_data), 8):
               x, y = struct.unpack('!ff', all_data[i:i+8])
               self.navi_points.append((x, y))
-              #coord = Coordinate.from_mapbox_tuple((x, y))
-              #points.append(coord)
-            #coords = [c.as_dict() for c in points]
+              coord = Coordinate.from_mapbox_tuple((x, y))
+              points.append(coord)
+            coords = [c.as_dict() for c in points]
             self.navi_points_start_index = 0
             self.navi_points_active = True
             print("Received points:", len(self.navi_points))
             #print("Received points:", self.navi_points)
 
-            #msg = messaging.new_message('navRoute', valid=True)
-            #msg.navRoute.coordinates = coords
-            #self.pm.send('navRoute', msg)
+            msg = messaging.new_message('navRoute', valid=True)
+            msg.navRoute.coordinates = coords
+            self.pm.send('navRoute', msg)
             #self.carrot_route_active = True
             #self.params.put_bool_nonblocking("CarrotRouteActive", True)
 
-            #if len(coords):
-            #  dest = coords[-1]
-            #  dest['place_name'] = "External Navi"
-            #  self.params.put("NavDestination", json.dumps(dest))
+            if len(coords):
+              dest = coords[-1]
+              dest['place_name'] = "External Navi"
+              self.params.put("NavDestination", json.dumps(dest))
 
           except Exception as e:
             print(e)
