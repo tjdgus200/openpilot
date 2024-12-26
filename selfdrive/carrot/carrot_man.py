@@ -692,6 +692,7 @@ class CarrotMan:
                 continue
 
             self.navi_points = []
+            points = []
             for i in range(0, len(all_data), 8):
               x, y = struct.unpack('!ff', all_data[i:i+8])
               self.navi_points.append((x, y))
