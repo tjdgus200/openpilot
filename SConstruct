@@ -106,6 +106,7 @@ if arch == "larch64":
 
   libpath = [
     "/usr/local/lib",
+    "/usr/lib",
     "/system/vendor/lib64",
     "#third_party/nanovg",
     f"#third_party/acados/{arch}/lib",
