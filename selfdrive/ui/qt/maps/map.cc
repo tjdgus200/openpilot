@@ -179,21 +179,14 @@ void MapWindow::updateState(const UIState &s) {
   }
 
   if (sm.updated("liveLocationKalman")) {
-    auto locationd_location = sm["liveLocationKalman"].getLiveLocationKalman();
-    auto locationd_pos = locationd_location.getPositionGeodetic();
-    auto locationd_orientation = locationd_location.getCalibratedOrientationNED();
-    auto locationd_velocity = locationd_location.getVelocityCalibrated();
+    auto carrotMan = sm["carrotMan"].getCarrotMan();
 
-    // Check std norm
-    auto pos_ecef_std = locationd_location.getPositionECEF().getStd();
-    bool pos_accurate_enough = sqrt(pow(pos_ecef_std[0], 2) + pow(pos_ecef_std[1], 2) + pow(pos_ecef_std[2], 2)) < 100;
-
-    locationd_valid = (locationd_pos.getValid() && locationd_orientation.getValid() && locationd_velocity.getValid() && pos_accurate_enough);
+    locationd_valid = carrotMan.getActiveCarrot() > 1;
 
     if (locationd_valid) {
-      last_position = QMapLibre::Coordinate(locationd_pos.getValue()[0], locationd_pos.getValue()[1]);
-      last_bearing = RAD2DEG(locationd_orientation.getValue()[2]);
-      velocity_filter.update(std::max(10.0, locationd_velocity.getValue()[0]));
+      last_position = QMapLibre::Coordinate(carrotMan.getXPosLat(), carrotMan.getXPosLon());
+      last_bearing = carrotMan.getXPosAngle;
+      velocity_filter.update(std::max(10.0, carrotMan.getXPosSpeed()/3.6));
     }
   }
 
@@ -209,8 +202,8 @@ void MapWindow::updateState(const UIState &s) {
       emit requestVisible(true);
 
       // carrot
-      extern int _current_carrot_display;
-      _current_carrot_display = 3;
+      //extern int _current_carrot_display;
+      //_current_carrot_display = 3;
     }
   }
 
