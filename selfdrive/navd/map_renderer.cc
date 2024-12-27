@@ -226,13 +226,16 @@ void MapRenderer::publish(const double render_time, const bool loaded) {
     buffer.open(QIODevice::WriteOnly);
     cap.save(&buffer, "PNG");
 
-    QString filename = QString("/home/yun/output_%1.png").arg(frame_id);
+#if 0
+    //QString filename = QString("/home/yun/output_%1.png").arg(frame_id);
+    QString filename = QString("/data/output_%1.png").arg(frame_id);
     QFile file(filename);
     printf("%s\n", filename.toUtf8().constData());
     if (file.open(QIODevice::WriteOnly)) {
         file.write(buffer_bytes);
         file.close();
     }
+#endif
 
     kj::Array<capnp::byte> buffer_kj = kj::heapArray<capnp::byte>((const capnp::byte*)buffer_bytes.constData(), buffer_bytes.size());
     sendThumbnail(ts, buffer_kj);
