@@ -175,7 +175,6 @@ void MapRenderer::update() {
   if ((vipc_server != nullptr) && loaded()) {
     publish((end_t - start_t) / 1000.0, true);
     last_llk_rendered = (*sm)["carrotMan"].getLogMonoTime();
-    printf("last_llk_rendered = %ld\n", last_llk_rendered);
   }
 }
 
