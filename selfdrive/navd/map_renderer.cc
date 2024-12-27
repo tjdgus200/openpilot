@@ -184,7 +184,7 @@ void MapRenderer::update() {
 
   if ((vipc_server != nullptr) && loaded()) {
     publish((end_t - start_t) / 1000.0, true);
-    //last_llk_rendered = (*sm)["liveLocationKalman"].getLogMonoTime();
+    last_llk_rendered = (*sm)["carrotMan"].getLogMonoTime();
   }
 }
 
