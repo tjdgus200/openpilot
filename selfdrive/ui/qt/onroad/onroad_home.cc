@@ -129,6 +129,24 @@ void OnroadWindow::mousePressEvent(QMouseEvent* e) {
 }
 
 void OnroadWindow::offroadTransition(bool offroad) {
+#ifdef ENABLE_MAPS
+  if (!offroad) {
+    if (map == nullptr && (uiState()->hasPrime() || !MAPBOX_TOKEN.isEmpty())) {
+      auto m = new MapPanel(get_mapbox_settings());
+      map = m;
+
+      QObject::connect(m, &MapPanel::mapPanelRequested, this, &OnroadWindow::mapPanelRequested);
+      QObject::connect(nvg->map_settings_btn, &MapSettingsButton::clicked, m, &MapPanel::toggleMapSettings);
+      nvg->map_settings_btn->setEnabled(true);
+
+      m->setFixedWidth(topWidget(this)->width() / 2 - UI_BORDER_SIZE);
+      split->insertWidget(0, m);
+
+      // hidden by default, made visible when navRoute is published
+      m->setVisible(false);
+    }
+  }
+#endif
   alerts->clear();
 }
 
