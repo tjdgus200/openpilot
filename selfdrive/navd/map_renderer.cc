@@ -116,13 +116,15 @@ void MapRenderer::msgUpdate() {
         float bearing = carrotMan.getXPosAngle();
         printf("updatePosition: lat=%f, lon=%f, bearing=%f\n", carrotMan.getXPosLat(), carrotMan.getXPosLon(), bearing);
         updatePosition(get_point_along_line(carrotMan.getXPosLat(), carrotMan.getXPosLon(), bearing, MAP_OFFSET), bearing);
-
+        printf("###### updatePosition\n");
       // TODO: use the static rendering mode instead
       // retry render a few times
       for (int i = 0; i < 5 && !rendered(); i++) {
+          printf("###### processEvents\n");
         QApplication::processEvents(QEventLoop::AllEvents, 100);
         printf("###### update\n");
         update();
+        printf("###### rendered\n");
         if (rendered()) {
           LOGW("rendered after %d retries", i+1);
           break;
