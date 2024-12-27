@@ -39,7 +39,6 @@ QMapLibre::Coordinate get_point_along_line(float lat, float lon, float bearing, 
 
 
 MapRenderer::MapRenderer(const QMapLibre::Settings &settings, bool online) : m_settings(settings) {
-    printf("############### MapRenderer::MapRenderer\n");
   QSurfaceFormat fmt;
   //fmt.setRenderableType(QSurfaceFormat::OpenGLES);
   fmt.setRenderableType(QSurfaceFormat::OpenGL);
@@ -89,7 +88,6 @@ MapRenderer::MapRenderer(const QMapLibre::Settings &settings, bool online) : m_s
   QObject::connect(m_map.data(), &QMapLibre::Map::mapLoadingFailed, [=](QMapLibre::Map::MapLoadingFailure err_code, const QString &reason) {
     LOGE("Map loading failed with %d: '%s'\n", err_code, reason.toStdString().c_str());
   });
-  printf("############### MapRenderer::MapRenderer2\n");
 
   if (online) {
     vipc_server.reset(new VisionIpcServer("navd"));
@@ -105,23 +103,25 @@ MapRenderer::MapRenderer(const QMapLibre::Settings &settings, bool online) : m_s
     QObject::connect(timer, SIGNAL(timeout()), this, SLOT(msgUpdate()));
     timer->start(0);
   }
-  printf("############### MapRenderer::MapRenderer3\n");
 }
 
 void MapRenderer::msgUpdate() {
   sm->update(1000);
+  printf("###### msgUpdate\n");
 
   if (sm->updated("carrotMan")) {
     auto carrotMan = (*sm)["carrotMan"].getCarrotMan();
     if (carrotMan.getActiveCarrot() > 1) {
 
         float bearing = carrotMan.getXPosAngle();
+        printf("updatePosition: lat=%f, lon=%f, bearing=%f\n", carrotMan.getXPosLat(), carrotMan.getXPosLon(), bearing);
         updatePosition(get_point_along_line(carrotMan.getXPosLat(), carrotMan.getXPosLon(), bearing, MAP_OFFSET), bearing);
 
       // TODO: use the static rendering mode instead
       // retry render a few times
       for (int i = 0; i < 5 && !rendered(); i++) {
         QApplication::processEvents(QEventLoop::AllEvents, 100);
+        printf("###### update\n");
         update();
         if (rendered()) {
           LOGW("rendered after %d retries", i+1);
@@ -131,19 +131,24 @@ void MapRenderer::msgUpdate() {
 
       // fallback to sending a blank frame
       if (!rendered()) {
+          printf("###### publish\n");
         publish(0, false);
       }
     }
+    printf("###### update1\n");
   }
 
+  printf("###### update2\n");
   if (sm->updated("navRoute")) {
     QList<QGeoCoordinate> route;
     auto coords = (*sm)["navRoute"].getNavRoute().getCoordinates();
     for (auto const &c : coords) {
       route.push_back(QGeoCoordinate(c.getLatitude(), c.getLongitude()));
     }
+    printf("###### updateRoute\n");
     updateRoute(route);
   }
+  printf("###### update3\n");
 
   // schedule next update
   timer->start(0);
