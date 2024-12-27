@@ -11,7 +11,7 @@
 int main(int argc, char *argv[]) {
   setpriority(PRIO_PROCESS, 0, -20);
 
-  qInstallMessageHandler(swagLogMessageHandler);
+  //qInstallMessageHandler(swagLogMessageHandler);
   initApp(argc, argv);
 
   QTranslator translator;
