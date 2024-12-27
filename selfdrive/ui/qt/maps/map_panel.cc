@@ -9,6 +9,7 @@
 #include "selfdrive/ui/ui.h"
 
 MapPanel::MapPanel(const QMapLibre::Settings &mapboxSettings, QWidget *parent) : QFrame(parent) {
+    printf("MapPanel::MapPanel\n");
   content_stack = new QStackedLayout(this);
   content_stack->setContentsMargins(0, 0, 0, 0);
 
@@ -32,6 +33,7 @@ MapPanel::MapPanel(const QMapLibre::Settings &mapboxSettings, QWidget *parent) :
     content_stack->setCurrentIndex(0);
   });
   content_stack->addWidget(settings);
+  printf("MapPanel::MapPanel end\n");
 }
 
 void MapPanel::toggleMapSettings() {
