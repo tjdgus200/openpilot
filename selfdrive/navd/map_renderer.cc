@@ -41,7 +41,8 @@ QMapLibre::Coordinate get_point_along_line(float lat, float lon, float bearing, 
 MapRenderer::MapRenderer(const QMapLibre::Settings &settings, bool online) : m_settings(settings) {
     printf("############### MapRenderer::MapRenderer\n");
   QSurfaceFormat fmt;
-  fmt.setRenderableType(QSurfaceFormat::OpenGLES);
+  //fmt.setRenderableType(QSurfaceFormat::OpenGLES);
+  fmt.setRenderableType(QSurfaceFormat::OpenGL);
 
   ctx = std::make_unique<QOpenGLContext>();
   ctx->setFormat(fmt);
