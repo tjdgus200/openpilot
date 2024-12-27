@@ -130,7 +130,7 @@ void OnroadWindow::mousePressEvent(QMouseEvent* e) {
 
 void OnroadWindow::offroadTransition(bool offroad) {
 #ifdef ENABLE_MAPS
-  if (!offroad) {
+  if (!offroad && false) {
     if (map == nullptr && (!MAPBOX_TOKEN.isEmpty())) {
       auto m = new MapPanel(get_mapbox_settings());
       map = m;
