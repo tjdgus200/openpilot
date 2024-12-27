@@ -226,7 +226,7 @@ void MapRenderer::publish(const double render_time, const bool loaded) {
     buffer.open(QIODevice::WriteOnly);
     cap.save(&buffer, "PNG");
 
-    QString filename = QString("./output_%1.png").arg(frame_id);
+    QString filename = QString("/home/yun/output_%1.png").arg(frame_id);
     QFile file(filename);
     printf("%s\n", filename.toUtf8().constData());
     if (file.open(QIODevice::WriteOnly)) {
