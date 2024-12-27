@@ -16,19 +16,19 @@ void customMessageHandler(QtMsgType type, const QMessageLogContext& context, con
     // 메시지 타입에 따라 출력 형식 설정
     switch (type) {
     case QtDebugMsg:
-        fprintf(stderr, "Debug: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
+        printf("Debug: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
         break;
     case QtInfoMsg:
-        fprintf(stderr, "Info: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
+        printf("Info: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
         break;
     case QtWarningMsg:
-        fprintf(stderr, "Warning: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
+        printf("Warning: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
         break;
     case QtCriticalMsg:
-        fprintf(stderr, "Critical: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
+        printf("Critical: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
         break;
     case QtFatalMsg:
-        fprintf(stderr, "Fatal: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
+        printf("Fatal: %s (%s:%d, %s)\n", localMsg.constData(), file, line, function);
         abort();
     }
 }
