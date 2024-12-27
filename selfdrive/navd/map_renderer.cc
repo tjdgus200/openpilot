@@ -107,22 +107,17 @@ MapRenderer::MapRenderer(const QMapLibre::Settings &settings, bool online) : m_s
 
 void MapRenderer::msgUpdate() {
   sm->update(1000);
-  printf("###### msgUpdate\n");
 
   if (sm->updated("carrotMan")) {
     auto carrotMan = (*sm)["carrotMan"].getCarrotMan();
     if (carrotMan.getActiveCarrot() > 1) {
 
         float bearing = carrotMan.getXPosAngle();
-        printf("updatePosition: lat=%f, lon=%f, bearing=%f\n", carrotMan.getXPosLat(), carrotMan.getXPosLon(), bearing);
         updatePosition(get_point_along_line(carrotMan.getXPosLat(), carrotMan.getXPosLon(), bearing, MAP_OFFSET), bearing);
-        printf("###### updatePosition\n");
       // TODO: use the static rendering mode instead
       // retry render a few times
       for (int i = 0; i < 5 && !rendered(); i++) {
-          printf("###### processEvents\n");
         QApplication::processEvents(QEventLoop::AllEvents, 100);
-        printf("###### update\n");
         update();
         printf("###### rendered\n");
         if (rendered()) {
@@ -133,24 +128,19 @@ void MapRenderer::msgUpdate() {
 
       // fallback to sending a blank frame
       if (!rendered()) {
-          printf("###### publish\n");
         publish(0, false);
       }
     }
-    printf("###### update1\n");
   }
 
-  printf("###### update2\n");
   if (sm->updated("navRoute")) {
     QList<QGeoCoordinate> route;
     auto coords = (*sm)["navRoute"].getNavRoute().getCoordinates();
     for (auto const &c : coords) {
       route.push_back(QGeoCoordinate(c.getLatitude(), c.getLongitude()));
     }
-    printf("###### updateRoute\n");
     updateRoute(route);
   }
-  printf("###### update3\n");
 
   // schedule next update
   timer->start(0);
@@ -185,6 +175,7 @@ void MapRenderer::update() {
   if ((vipc_server != nullptr) && loaded()) {
     publish((end_t - start_t) / 1000.0, true);
     last_llk_rendered = (*sm)["carrotMan"].getLogMonoTime();
+    printf("last_llk_rendered = %ld\n", last_llk_rendered);
   }
 }
 
