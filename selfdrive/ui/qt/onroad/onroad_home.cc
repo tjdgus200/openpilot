@@ -56,7 +56,6 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QOpenGLWidget(parent) {
   setAttribute(Qt::WA_OpaquePaintEvent);
   QObject::connect(uiState(), &UIState::uiUpdate, this, &OnroadWindow::updateState);
   QObject::connect(uiState(), &UIState::offroadTransition, this, &OnroadWindow::offroadTransition);
-  QObject::connect(uiState(), &UIState::primeChanged, this, &OnroadWindow::primeChanged);
 }
 
 void OnroadWindow::updateState(const UIState &s) {
@@ -130,17 +129,6 @@ void OnroadWindow::mousePressEvent(QMouseEvent* e) {
 
 void OnroadWindow::offroadTransition(bool offroad) {
   alerts->clear();
-}
-
-void OnroadWindow::primeChanged(bool prime) {
-#ifdef ENABLE_MAPS
-  if (map && (!prime && MAPBOX_TOKEN.isEmpty())) {
-    //nvg->map_settings_btn->setEnabled(false);
-    //nvg->map_settings_btn->setVisible(false);
-    map->deleteLater();
-    map = nullptr;
-  }
-#endif
 }
 
 void OnroadWindow::paintEvent(QPaintEvent *event) {

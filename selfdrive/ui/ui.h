@@ -64,6 +64,7 @@ typedef struct UIScene {
   float light_sensor = -1;
   bool started, ignition, is_metric;
   bool navigate_on_openpilot = false;
+  bool map_on_left;
   uint64_t started_frame;
 } UIScene;
 
