@@ -12,17 +12,21 @@ class OnroadWindow : public QOpenGLWidget, protected QOpenGLFunctions {
 
 public:
   OnroadWindow(QWidget* parent = 0);
+  bool isMapVisible() const { return map && map->isVisible(); }
 
 private:
   void paintEvent(QPaintEvent *event);
+  void mousePressEvent(QMouseEvent* e) override;
   OnroadAlerts *alerts;
   AnnotatedCameraWidget *nvg;
   QColor bg = bg_colors[STATUS_DISENGAGED];
   QColor bg_long = bg_colors[STATUS_DISENGAGED];
+  QWidget *map = nullptr;
   QHBoxLayout* split;
 
 private slots:
   void offroadTransition(bool offroad);
+  void primeChanged(bool prime);
   void updateState(const UIState &s);
 
 protected:
