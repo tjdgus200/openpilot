@@ -40,7 +40,7 @@ OnroadWindow::OnroadWindow(QWidget *parent) : QOpenGLWidget(parent) {
   }
 
   if (getenv("MAP_RENDER_VIEW")) {
-    CameraWidget *map_render = new CameraWidget("navd", VISION_STREAM_MAP, false, this);
+    CameraWidget *map_render = new CameraWidget("navd", VISION_STREAM_MAP, this);
     split->insertWidget(0, map_render);
   }
 
@@ -129,32 +129,14 @@ void OnroadWindow::mousePressEvent(QMouseEvent* e) {
 }
 
 void OnroadWindow::offroadTransition(bool offroad) {
-#ifdef ENABLE_MAPS
-  if (!offroad) {
-    if (map == nullptr && (uiState()->hasPrime() || !MAPBOX_TOKEN.isEmpty())) {
-      auto m = new MapPanel(get_mapbox_settings());
-      map = m;
-
-      QObject::connect(m, &MapPanel::mapPanelRequested, this, &OnroadWindow::mapPanelRequested);
-      QObject::connect(nvg->map_settings_btn, &MapSettingsButton::clicked, m, &MapPanel::toggleMapSettings);
-      nvg->map_settings_btn->setEnabled(true);
-
-      m->setFixedWidth(topWidget(this)->width() / 2 - UI_BORDER_SIZE);
-      split->insertWidget(0, m);
-
-      // hidden by default, made visible when navRoute is published
-      m->setVisible(false);
-    }
-  }
-#endif
   alerts->clear();
 }
 
 void OnroadWindow::primeChanged(bool prime) {
 #ifdef ENABLE_MAPS
   if (map && (!prime && MAPBOX_TOKEN.isEmpty())) {
-    nvg->map_settings_btn->setEnabled(false);
-    nvg->map_settings_btn->setVisible(false);
+    //nvg->map_settings_btn->setEnabled(false);
+    //nvg->map_settings_btn->setVisible(false);
     map->deleteLater();
     map = nullptr;
   }
