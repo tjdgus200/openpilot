@@ -178,7 +178,7 @@ void MapWindow::updateState(const UIState &s) {
     uiState()->scene.navigate_on_openpilot = nav_enabled;
   }
 
-  if (sm.updated("liveLocationKalman")) {
+  if (sm.updated("carrotMan")) {
     auto carrotMan = sm["carrotMan"].getCarrotMan();
 
     locationd_valid = carrotMan.getActiveCarrot() > 1;
