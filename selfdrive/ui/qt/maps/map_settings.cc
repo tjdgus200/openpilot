@@ -64,10 +64,9 @@ MapSettings::MapSettings(bool closeable, QWidget *parent) : QFrame(parent) {
 
       // NOO without Prime IP extraction
       if (notPrime) {
-          extern char* read_ip_address();
-        //ipAddress = QString("%1:8082").arg(wifi->getIp4Address());
-          ipAddress = QString(read_ip_address());
-        subtitle = new QLabel(tr("Manage at %1").arg(ipAddress), this);
+          Params params_memory = Params("/dev/shm/params");
+          ipAddress = QString::fromStdString(params_memory.get("NetworkAddress"));
+          subtitle = new QLabel(tr("Manage at %1").arg(ipAddress), this);
       } else {
         subtitle = new QLabel(tr("Manage at connect.comma.ai"), this);
       }
@@ -149,9 +148,8 @@ void MapSettings::refresh() {
 
   // NOO without Prime IP update
   if (notPrime) {
-      extern char* read_ip_address();
-      //ipAddress = QString("%1:8082").arg(wifi->getIp4Address());
-      ipAddress = QString(read_ip_address());
+      Params params_memory = Params("/dev/shm/params");
+      ipAddress = QString::fromStdString(params_memory.get("NetworkAddress"));
     subtitle->setText(tr("Manage at %1").arg(ipAddress));
   }
 }
