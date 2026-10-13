@@ -5,6 +5,10 @@ opt-in personal channel. The branch's signed `comma_host_release.json` selects
 the personal channel; official branches continue to send `host_release.json`.
 An invalid personal manifest never falls back silently to another model.
 
+Prepared release: [jetson-nav-rl-relay-20261013-v1](https://github.com/tjdgus200/openpilot/releases/tag/jetson-nav-rl-relay-20261013-v1).
+The `jetson-comma-relay-bootstrap.zip` asset is the one-time PC provisioning
+package. Its host source is `07f09c3364a70affc23a245658459c6e63142fc3`.
+
 | Boundary | Official Carrot branch | This personal branch |
 | --- | --- | --- |
 | Downloader | Jetson, configured HTTPS NAS | Comma, pinned HTTPS URLs |

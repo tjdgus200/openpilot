@@ -188,8 +188,12 @@ def test_network_peer_cannot_register_or_name_paths(change):
     local.validate_selection(value)
 
 
-def test_client_selects_local_profile_and_stock_manifest_still_verifies():
-  path = HERE.parents[1] / 'openpilot/selfdrive/modeld/jetlink/host_release.json'
+def test_client_selects_local_profile_and_stock_manifest_still_verifies(tmp_path, monkeypatch):
+  source = HERE.parents[1] / 'openpilot/selfdrive/modeld/jetlink'
+  for name in ('host_release.json', 'local_host_release.json'):
+    (tmp_path / name).write_bytes((source / name).read_bytes())
+  path = tmp_path / 'host_release.json'
+  monkeypatch.setattr(startup, 'RELEASE', path)
   selection = jetson_model.selected_release(path, required=True)
   assert selection['delivery'] == 'local'
   assert 'url' not in json.dumps(selection)

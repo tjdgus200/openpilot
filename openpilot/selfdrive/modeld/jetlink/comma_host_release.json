@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "delivery": "comma-relay",
+  "source_commit": "07f09c3364a70affc23a245658459c6e63142fc3",
+  "runtime": {
+    "arch": "aarch64",
+    "l4t": "36.4.7",
+    "tensorrt": "10.3.0"
+  },
+  "storage_format": 1,
+  "bundle": {
+    "sha256": "e9eda2eb4eff8038bd4c06b12e776df20fa7cc96e0ac425294f8e995f51df1a1",
+    "size": 64616020,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-nav-rl-relay-20261013-v1/host.tar.gz"
+  },
+  "model": {
+    "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
+    "size": 814591106,
+    "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
+  },
+  "signature": "fUvj4eThhkHKB4UEmWx8Bav6Rc0cofbOokY/HPy7sMTcq0+K4Bc4ejayAD/jV1r36JcnlkSQ4tz5ctD5sl0oCA=="
+}

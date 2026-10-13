@@ -44,7 +44,8 @@ def test_nav_pin_matches_upstream_fixture_and_keeps_parser_shapes():
   assert len(SPEC.state_pairs) == 5 and SPEC.output_nelem == 18580
   assert SPEC.packed_nelem == 65595 and SPEC.packed_nbytes == 262380
   selection = selected_release(ROOT / 'openpilot/selfdrive/modeld/jetlink/host_release.json')
-  assert selection['profile'] == 'nav-rl-80eedcdd-v1'
+  assert selection['delivery'] == 'comma-relay'
+  assert selection['model']['sha256'] == SPEC.sha256 and selection['model']['size'] == SPEC.nbytes
   parsed = parse_outputs(Parser(), SPEC, np.zeros(SPEC.output_nelem, np.float32))
   assert parsed['plan'].shape == (1, 33, 15) and parsed['action'].shape == (1, 4)
   assert all(np.isfinite(value).all() for value in parsed.values())

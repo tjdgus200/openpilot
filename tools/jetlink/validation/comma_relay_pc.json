@@ -10,8 +10,24 @@
     "openpilot/selfdrive/navigation/tests/test_route_engine.py (native Params/msgq unavailable)",
     "tools/jetlink/test_hud_health.py (pyray unavailable)"
   ],
-  "skip_reasons": ["native map rasterizer unavailable", "external Jetlink reference absent", "opt-in root integration disabled"],
+  "skip_reasons": [
+    "native map rasterizer unavailable",
+    "external Jetlink reference absent",
+    "opt-in root integration disabled"
+  ],
   "new_lint_findings": 0,
+  "published_host_source": "07f09c3364a70affc23a245658459c6e63142fc3",
+  "artifact_acceptance": {
+    "manifest_id": "edf3119a45118749e1366a19980357170c7f2176f8472b45c5e2314d10a29d5d",
+    "bundle_bytes": 64616020,
+    "bundle_sha256": "e9eda2eb4eff8038bd4c06b12e776df20fa7cc96e0ac425294f8e995f51df1a1",
+    "model_bytes": 814591106,
+    "simulated_usb_chunks": 3355,
+    "signature_full_hash_extract_isolated_activate_and_official_restore": "passed",
+    "gpu_probe": "stubbed; no physical device used",
+    "public_bundle_real_comma_downloader_sha256": "passed",
+    "public_model_url_head": "HTTP 200; length matches signed manifest"
+  },
   "relay_checks": [
     "independent official/personal signatures and strict channel selection",
     "resume, offset/length/hash corruption, symlink and archive traversal rejection",

@@ -24,9 +24,13 @@ IPAD = {'protocol': 3, 'backend': 'ort', 'device': 'ane-Apple_M4'}
 JETSON = {'protocol': 2, 'backend': 'trt', 'device': 'orin', 'carrot_host': 'jetson'}
 
 
-def test_real_bootstrap_hello_is_accepted_before_wifi_and_signed_update(monkeypatch):
+def test_real_bootstrap_hello_is_accepted_before_wifi_and_signed_update(monkeypatch, tmp_path):
   import boot_update
+  import update_host
   from openpilot.selfdrive.modeld.jetlink import startup
+  (tmp_path / 'trust').mkdir()
+  (tmp_path / 'trust/comma-relay-public.pem').write_bytes(startup.RELEASE.with_name('comma-relay-public.pem').read_bytes())
+  monkeypatch.setattr(update_host, 'ROOT', tmp_path)
   sent = []
   bootstrap = boot_update.BootstrapSession(SimpleNamespace(send_json=lambda *args: sent.append(args)), None)
   bootstrap.handle(SimpleNamespace(msg_type=P.Msg.HELLO_REQ, seq=1))
