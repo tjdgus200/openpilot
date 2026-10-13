@@ -61,6 +61,10 @@ def main():
   with tarfile.open(fileobj=io.BytesIO(archive), mode='r:') as source, tarfile.open(args.output, 'w:gz') as target:
     for member in source:
       if args.regular_files:
+        # This upstream symlink is dangling in carrot-nav. It describes the
+        # comma OS updater, which must never run in the Jetson DATA runtime.
+        if member.name == 'openpilot/system/hardware/comma/agnos.json':
+          continue
         normalized, content = relay_member(source, member)
         target.addfile(normalized, content)
       else:
