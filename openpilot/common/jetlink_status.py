@@ -16,6 +16,12 @@ def update_badge(value):
   if not isinstance(value, dict):
     value = {}
   state = value.get('state')
+  if state == 'waiting_offroad':
+    return 'Jetson 사용자 업데이트 · 오프로드 대기', 'loading'
+  if state == 'comma_downloading':
+    return '콤마에서 Jetson 사용자 업데이트 다운로드 중', 'loading'
+  if state in ('waiting_upload', 'comma_uploading'):
+    return '콤마 → Jetson 사용자 업데이트 전송 중', 'loading'
   if state == 'waiting_internet':
     return 'Jetson 업데이트 필요 · 인터넷 연결 대기', 'loading'
   if state == 'downloading':

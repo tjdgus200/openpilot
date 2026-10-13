@@ -12,6 +12,7 @@ import time
 import urllib.error
 
 import update_host as update
+import relay_manifest as relay
 
 CAPABILITY = 'carrot_boot_update_v1'
 LOCAL_CAPABILITY = 'carrot_local_release_v1'
@@ -63,6 +64,7 @@ class Gate:
     self.worker = None
     self.done = False
     self.error = ''
+    self.receiver = None
 
   def report(self, state, fraction=None):
     self.state, self.fraction = state, fraction
@@ -71,6 +73,8 @@ class Gate:
     return {'state': self.state, 'fraction': self.fraction, 'error': self.error}
 
   def select(self, manifest):
+    if self.worker is not None and self.worker.is_alive() and manifest != self.selected:
+      raise ValueError('An update is already in progress; retry selection after it stops')
     # Validate before trusting equality, downloading or granting permission.
     commit = update.selected_commit(manifest)
     if update.PROTECTED_MARKER.exists():
@@ -78,21 +82,27 @@ class Gate:
         raise ValueError('Protected DATA storage unavailable')
     if manifest != self.selected:
       self.next_try = 0.
+      self.receiver = None
+      if manifest.get('delivery') == relay.DELIVERY and not update.current_matches(manifest):
+        from relay_release import Receiver
+        self.receiver = Receiver(update.ROOT, manifest)
     self.selected = manifest
     self.source_commit = commit
     self.received = time.monotonic()
 
   def _install(self, manifest):
     try:
-      stage = 'verifying' if manifest.get('delivery') == 'local' else 'downloading'
+      stage = 'verifying' if manifest.get('delivery') in ('local', relay.DELIVERY) else 'downloading'
       self.report(stage, 0.)
       update.stage_manifest(manifest, progress=lambda fraction: self.report(stage, fraction))
+      if self.selected != manifest or not 0 <= time.monotonic() - self.received < 5:
+        raise ConnectionError('Selection lost before activation')
       self.report('verifying')
       # These services are still in wait_for_runtime(), but stop them before
       # swapping files so their next process imports the complete new release.
       subprocess.run(['systemctl', 'stop', 'carrot-jetlink', 'carrot-jetlink-hud'], check=True, timeout=45)
       update.activate()
-      if (update.ROOT / 'current/SOURCE_COMMIT').read_text().strip() != update.selected_commit(manifest):
+      if not update.current_matches(manifest):
         raise RuntimeError('Candidate validation failed; previous release retained')
       self.report('checking')
       self.error = ''
@@ -113,11 +123,13 @@ class Gate:
         self.report('checking')
       return
     manifest = self.selected
-    if (update.ROOT / 'current/SOURCE_COMMIT').read_text().strip() == self.source_commit:
+    if update.current_matches(manifest):
       update.atomic_json(READY, {'boot_id': BOOT_ID.read_text().strip(), 'source_commit': self.source_commit})
       READY.chmod(0o644)  # The unprivileged model/HUD guards must read this.
       self.report('ready')
       self.done = True
+    elif self.receiver is not None and not self.receiver.complete:
+      self.report('waiting_upload')
     elif time.monotonic() >= self.next_try:
       self.worker = threading.Thread(target=self._install, args=(manifest,), daemon=False)
       self.worker.start()
@@ -135,6 +147,7 @@ class BootstrapSession:
       self.last_seq = msg.seq
       self.transport.send_json(p.Msg.HELLO_RESP, msg.seq, {
         'protocol': p.VERSION, 'carrot_host': 'jetson', CAPABILITY: True, LOCAL_CAPABILITY: True,
+        relay.CAPABILITY: (update.ROOT / 'trust/comma-relay-public.pem').is_file(),
         wifi_capability: True, 'engine_state': 'none', 'loaded': None, 'sleep_after': 0,
       })
       return
@@ -143,6 +156,29 @@ class BootstrapSession:
     self.last_seq = msg.seq
     if msg.msg_type == wifi_message:
       receive_wifi(msg.payload)
+    elif msg.msg_type == relay.CANCEL:
+      if (self.gate.selected is not None and self.gate.selected.get('delivery') == relay.DELIVERY and
+          bytes(msg.payload) == bytes.fromhex(relay.identity(self.gate.selected))):
+        self.gate.selected = None
+        self.gate.received = 0.
+        self.gate.receiver = None
+        self.gate.report('waiting_offroad')
+    elif msg.msg_type in (relay.QUERY, relay.CHUNK, relay.FINISH):
+      try:
+        receiver = self.gate.receiver
+        if (receiver is None or self.gate.selected != receiver.manifest or self.gate.done or
+            (self.gate.worker is not None and self.gate.worker.is_alive())):
+          raise ValueError('Relay reception unavailable')
+        if msg.msg_type == relay.CHUNK:
+          value = receiver.chunk(msg.payload)
+        else:
+          if bytes(msg.payload) != bytes.fromhex(receiver.id):
+            raise ValueError('Relay request belongs to another release')
+          value = receiver.finish() if msg.msg_type == relay.FINISH else receiver.status()
+        self.gate.received = time.monotonic()
+        self.transport.send_json(relay.ACK, msg.seq, value)
+      except Exception:
+        self.transport.send_json(p.Msg.ERROR, msg.seq, {'error': 'relay_rejected', 'detail': 'Relay object rejected; retry or inspect host status'})
     elif msg.msg_type == MESSAGE:
       try:
         if not 0 < len(msg.payload) <= 65536:
@@ -150,7 +186,9 @@ class BootstrapSession:
         self.gate.select(json.loads(bytes(msg.payload)))
       except Exception:
         # Do not report incoming data: provisioning credentials must never leak.
-        self.gate.selected = None
+        if self.gate.worker is None or not self.gate.worker.is_alive():
+          self.gate.selected = None
+          self.gate.receiver = None
         self.gate.report('failed')
         self.gate.error = 'Selected release verification failed'
     elif msg.msg_type == p.Msg.STATE_REQ:

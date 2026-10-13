@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 
 HELPERS = ('local_release.py', 'update_host.py', 'boot_update.py', 'finalize_sd_image.py',
-           'wifi_protocol.py', 'hud_protocol.py', 'release-signing-public.pem')
+           'wifi_protocol.py', 'hud_protocol.py', 'release-signing-public.pem', 'relay_manifest.py', 'relay_release.py')
 
 
 def digest(path):
@@ -114,7 +114,7 @@ def install(package, runtime):
   backup = updater / 'before-local-experiments'
   backup.mkdir(mode=0o700, exist_ok=True)
   owned(backup, directory=True)
-  for name in ('local_release.py', 'update_host.py', 'boot_update.py'):
+  for name in ('local_release.py', 'relay_manifest.py', 'relay_release.py', 'boot_update.py', 'update_host.py'):
     destination = updater / name
     if destination.exists():
       owned(destination)

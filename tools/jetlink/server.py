@@ -114,5 +114,15 @@ class CarrotSession(Session):
 if __name__ == '__main__':
   if Path('/etc/nv_tegra_release').is_file():
     health_worker()
+    from update_host import release_cache
+    cache = release_cache(ROOT)
+    if cache != Path('/opt/carrot-jetlink/cache'):
+      # Unit files remain official. Only this personal source tree redirects its
+      # engine cache; returning to official sources restores the original cache.
+      if '--cache' in sys.argv:
+        index = sys.argv.index('--cache')
+        sys.argv[index + 1] = str(cache)
+      else:
+        sys.argv.extend(['--cache', str(cache)])
   server.Session = CarrotSession
   raise SystemExit(server.main())

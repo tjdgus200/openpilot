@@ -87,6 +87,8 @@ def fetch(url, path, sha256, size, progress=None):
 
 
 def validate_manifest(manifest):
+  if manifest.get('delivery') is not None:
+    raise ValueError('Official manifests cannot select another delivery channel')
   if manifest.get('format') != 1 or not re.fullmatch('[0-9a-f]{40}', str(manifest.get('source_commit', ''))):
     raise ValueError('Unsupported release manifest')
   if manifest.get('runtime') != {'arch': 'aarch64', 'l4t': '36.4.7', 'tensorrt': '10.3.0'}:
@@ -106,7 +108,7 @@ def validate_storage_compatibility(manifest):
 
 def probe_release(release):
   command = ['runuser', '-u', 'jetlink', '--', str(ROOT / 'venv/bin/python'),
-             str(release / 'tools/jetlink/probe_release.py'), str(ROOT / 'cache')]
+             str(release / 'tools/jetlink/probe_release.py'), str(release_cache(release))]
   process = subprocess.Popen(command, start_new_session=True)
   try:
     code = process.wait(timeout=960)
@@ -152,6 +154,9 @@ def check_bundle(candidate, manifest):
 
 
 def selected_commit(selection):
+  if selection.get('delivery') == 'comma-relay':
+    from relay_release import verify
+    return verify(ROOT, selection)['source_commit']
   if selection.get('delivery') == 'local':
     from local_release import resolve
     record = resolve(ROOT, selection)
@@ -164,6 +169,9 @@ def selected_commit(selection):
 
 
 def stage_manifest(manifest, progress=None):
+  if manifest.get('delivery') == 'comma-relay':
+    from relay_release import stage
+    return stage(ROOT, manifest, progress)
   if manifest.get('delivery') == 'local':
     from local_release import stage as stage_local
     stage_local(ROOT, manifest, progress)
@@ -173,7 +181,7 @@ def stage_manifest(manifest, progress=None):
   verify_signature(manifest)
   validate_storage_compatibility(manifest)
   commit = manifest['source_commit']
-  if (ROOT / 'current/SOURCE_COMMIT').read_text().strip() == commit:
+  if current_matches(manifest):
     return
   # Installation dependencies and kernel changes need a separately tested image.
   check_runtime(manifest)
@@ -205,6 +213,39 @@ def stage_manifest(manifest, progress=None):
   os.sync()
 
 
+def release_path(manifest):
+  if manifest.get('delivery') == 'comma-relay':
+    from relay_release import release_path as personal_path
+    return personal_path(ROOT, manifest)
+  return ROOT / 'releases' / manifest['source_commit']
+
+
+def release_cache(release):
+  if release.resolve().parent == (ROOT / 'personal/releases').resolve():
+    return ROOT / 'personal/cache' / release.name
+  return ROOT / 'cache'
+
+
+def valid_release(release):
+  return (not release.is_symlink() and release.is_dir() and release.resolve().parent in
+          ((ROOT / 'releases').resolve(), (ROOT / 'personal/releases').resolve()))
+
+
+def current_matches(manifest):
+  current = (ROOT / 'current').resolve()
+  if manifest.get('delivery') == 'comma-relay':
+    if current != release_path(manifest).resolve():
+      return False
+    try:
+      return ((current / 'SOURCE_COMMIT').read_text().strip() == manifest['source_commit'] and
+              json.loads((current / '.comma-relay.json').read_text()) == manifest)
+    except (OSError, ValueError):
+      return False
+  # A personal release with the same source commit never satisfies NAS/local.
+  return (current.parent != (ROOT / 'personal/releases').resolve() and
+          (current / 'SOURCE_COMMIT').read_text().strip() == selected_commit(manifest))
+
+
 def activate():
   pending = ROOT / 'updates/pending.json'
   transaction = ROOT / 'updates/transaction.json'
@@ -216,14 +257,16 @@ def activate():
   if transaction.exists():
     saved = json.loads(transaction.read_text())
     old = Path(saved['release'])
-    if old.is_symlink() or old.resolve().parent != (ROOT / 'releases').resolve() or not old.is_dir():
+    if not valid_release(old):
       raise ValueError('Invalid recovery release')
     link = ROOT / 'current.recovery'
     link.unlink(missing_ok=True)
     link.symlink_to(old)
     os.replace(link, ROOT / 'current')
     if saved['last_loaded'] is not None:
-      (ROOT / 'cache/last-loaded.json').write_text(saved['last_loaded'])
+      (release_cache(old) / 'last-loaded.json').write_text(saved['last_loaded'])
+    else:
+      (release_cache(old) / 'last-loaded.json').unlink(missing_ok=True)
     if pending.exists():
       os.replace(pending, pending.with_name('interrupted.json'))
     os.sync()  # Recovery must be durable before its retry record disappears.
@@ -232,18 +275,21 @@ def activate():
     os.sync()
     return
   manifest = json.loads(pending.read_text())
-  if manifest.get('delivery') == 'local':
+  if manifest.get('delivery') == 'comma-relay':
+    from relay_release import verify_staged
+    manifest = verify_staged(ROOT, manifest)
+  elif manifest.get('delivery') == 'local':
     from local_release import verify_staged
     manifest = verify_staged(ROOT, manifest)
   else:
     validate_manifest(manifest)
     verify_signature(manifest)
     validate_storage_compatibility(manifest)
-  release = ROOT / 'releases' / manifest['source_commit']
-  if release.is_symlink() or release.resolve().parent != (ROOT / 'releases').resolve():
+  release = release_path(manifest)
+  if not valid_release(release):
     raise ValueError('Invalid release directory')
   previous = (ROOT / 'current').resolve()
-  remembered = ROOT / 'cache/last-loaded.json'
+  remembered = release_cache(previous) / 'last-loaded.json'
   previous_model = remembered.read_bytes() if remembered.exists() else None
   saved = {'release': str(previous), 'last_loaded': previous_model.decode() if previous_model else None}
   atomic_json(transaction, saved)
@@ -280,6 +326,8 @@ def activate():
       os.replace(link, ROOT / 'current')
     if previous_model is not None:
       remembered.write_bytes(previous_model)
+    else:
+      remembered.unlink(missing_ok=True)
     atomic_json(ROOT / 'updates/status.json', {'state': 'rejected', 'error': str(error)[:240], 'updated': time.time()})
     if pending.exists():
       os.replace(pending, pending.with_name('rejected.json'))

@@ -14,7 +14,29 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
   manifest = selected_release(RELEASE, required=True)
   if manifest.get('delivery') == 'local' and peer.get('carrot_local_release_v1') is not True:
     raise ValueError('Install the PC-prepared package for this Jetson model on Jetson first')
+  sender = None
+  if manifest.get('delivery') == 'comma-relay':
+    from openpilot.selfdrive.modeld.jetlink.relay import Sender
+    if peer.get('carrot_comma_relay_v1') is not True:
+      raise ValueError('One-time PC installation of the personal relay receiver/public key is required')
+    sender = Sender(manifest, connected)
+  try:
+    _wait(client, peer, wifi, connected, publish, sleep, manifest, sender)
+  finally:
+    if sender is not None:
+      sender.close()
+  # The gate has no model. A fresh connection must greet the real server.
+  raise ConnectionError('Jetson boot gate ended; reconnecting to runtime')
+
+
+def _wait(client, peer, wifi, connected, publish, sleep, manifest, sender):
+  attempted = False
   while connected():
+    if sender is not None and attempted and not sender.parked():
+      from tools.jetlink import relay_manifest as wire  # noqa: TID251 -- shared standalone boot-updater protocol
+      client.t.send(wire.CANCEL, client._next_seq(), (bytes.fromhex(sender.id),))
+      publish('updating', peer=peer, host_update={'state': 'waiting_offroad'})
+      raise InterruptedError('Personal update cancelled on transition to onroad')
     # The release selection is independent of NetworkManager profile reads.
     # Network provisioning stays on its private channel and out of status/logs.
     client.t.send_json(MESSAGE, client._next_seq(), manifest)
@@ -26,6 +48,10 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
     publish('updating', peer=peer, host_update=value)
     if value.get('state') == 'ready':
       break
-    sleep(.5)
-  # The gate has no model. A fresh connection must greet the real server.
-  raise ConnectionError('Jetson boot gate ended; reconnecting to runtime')
+    if sender is not None and value.get('state') == 'waiting_upload':
+      attempted = True
+      if not sender.parked():
+        continue
+      state = sender.pump(client)
+      publish('updating', peer=peer, host_update={'state': state})
+    sleep(.05 if sender is not None else .5)

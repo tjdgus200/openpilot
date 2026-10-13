@@ -5,10 +5,11 @@ Base: `ajouatom/openpilot:carrot-nav` at
 `d6a92d91e2cada40ab588427d039b935ef063a1a`.
 
 This branch connects Carrot's existing map/route inputs to the Jetson transport
-and TensorRT host. It preserves the existing local experiment selector and the
-signed official Internet update path. **The new PC package must be registered
-on Jetson before this comma branch can activate its model.** The previously
-installed ResAction package cannot run this model by itself.
+and TensorRT host. The distributed branch now uses the separate signed
+[comma relay update path](COMMA_RELAY.md), while preserving official Internet
+updates and older local experiment profiles. **A one-time PC receiver/public-key
+installation is required on Jetson; after that comma delivers the host/model.**
+The previously installed ResAction package cannot run this model by itself.
 
 ## Exact model and runtime
 
@@ -58,7 +59,7 @@ payload. Only a queued legacy model's `prev_feat` tail is omitted in v3.
 All five next-state tensors must be finite and match the host buffers before
 feedback is committed; a bad state clears all histories.
 
-## One-time PC preparation and official restoration
+## Older full local package option (without a relay manifest)
 
 From this branch's committed checkout, with the Python dependencies installed:
 
@@ -85,7 +86,8 @@ before activation. A failed candidate retains the previous runtime.
 
 | Comma branch at Jetson boot | Selection |
 | --- | --- |
-| `codex/jetson-nav-rl` | Root-registered `nav-rl-80eedcdd-v1` |
+| Distributed `codex/jetson-nav-rl` | Separate signed comma relay manifest; see [COMMA_RELAY.md](COMMA_RELAY.md) |
+| Source checkout without `comma_host_release.json` | Root-registered `nav-rl-80eedcdd-v1` |
 | `codex/jetson-resaction` | Previously registered `resaction-2fb4ac4-v2` |
 | Official Carrot branch | Its signed official release via existing Internet updates |
 

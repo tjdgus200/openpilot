@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "date": "2026-10-13",
+  "base_commit": "38b06d6a481ad15e7a999abc53c85eb1e966743f",
+  "scope": "PC-only isolated Linux fixtures; no device installation or inference performance claim",
+  "suite": "tools/jetlink + navigation tests + generic model runtime",
+  "passed": 677,
+  "skipped": 11,
+  "excluded_files": [
+    "openpilot/selfdrive/navigation/tests/test_route_engine.py (native Params/msgq unavailable)",
+    "tools/jetlink/test_hud_health.py (pyray unavailable)"
+  ],
+  "skip_reasons": ["native map rasterizer unavailable", "external Jetlink reference absent", "opt-in root integration disabled"],
+  "new_lint_findings": 0,
+  "relay_checks": [
+    "independent official/personal signatures and strict channel selection",
+    "resume, offset/length/hash corruption, symlink and archive traversal rejection",
+    "insufficient storage preserves retained official data",
+    "personal source and engine cache isolation including identical source commits",
+    "transaction failure and simulated power loss recovery",
+    "personal-to-official restoration",
+    "sender-to-receiver protocol roundtrip through boot gate",
+    "offroad cancellation and frozen selection during transaction",
+    "one-time bootstrap signature/helper checks, official key preservation, key rotation rejection",
+    "regular-file export and runtime-owned personal cache restaging"
+  ],
+  "not_verified": [
+    "physical USB transport on comma 3 and Jetson",
+    "real power loss durability",
+    "new model TensorRT build, latency and sustained throughput on this Jetson",
+    "closed-loop driving safety"
+  ]
+}

@@ -22,14 +22,16 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
 
 def bootstrap(root, source, defer_this_boot=False):
   root, source = Path(root), Path(source)
+  names = ('finalize_sd_image.py', 'hud_protocol.py', 'release-signing-public.pem',
+           'wifi_protocol.py', 'local_release.py', 'relay_manifest.py', 'relay_release.py', 'boot_update.py', 'update_host.py')
+  contents = {name: (source / name).read_bytes() for name in names}
   target = root / 'opt/carrot-jetlink/updater'
   target.mkdir(parents=True, exist_ok=True)
   # Dependencies first, entry point last; enable only after every file is durable.
-  for name in ('finalize_sd_image.py', 'hud_protocol.py', 'release-signing-public.pem',
-               'wifi_protocol.py', 'local_release.py', 'boot_update.py', 'update_host.py'):
+  for name in names:
     temporary = target / (name + '.new')
     with temporary.open('wb') as stream:
-      stream.write((source / name).read_bytes())
+      stream.write(contents[name])
       stream.flush()
       os.fsync(stream.fileno())
     temporary.chmod(0o644)

@@ -38,6 +38,14 @@ def matching_release(path, required=False):
 
 
 def selected_release(path, required=False):
+  relay = Path(path).with_name('comma_host_release.json')
+  if relay.is_file():
+    from tools.jetlink.relay_manifest import verify  # noqa: TID251 -- shared standalone boot-updater protocol
+    value = verify(json.loads(relay.read_text()), relay.with_name('comma-relay-public.pem').read_text())
+    spec = read_spec()
+    if (value['model']['sha256'], value['model']['size']) != (spec['sha256'], spec['nbytes']):
+      raise ValueError('Comma relay release does not match this branch model')
+    return value
   local = Path(path).with_name('local_host_release.json')
   if not local.is_file():
     return matching_release(path, required)
