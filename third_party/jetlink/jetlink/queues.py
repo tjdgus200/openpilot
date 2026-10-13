@@ -18,6 +18,7 @@ dtype=np.float32 for openpilot's exact intermediates.
 """
 from __future__ import annotations
 
+import os
 import numpy as np
 
 from jetlink.spec import ModelSpec
@@ -207,6 +208,10 @@ class StatefulQueues:
     for name, output in spec.state_pairs.items():
       if inputs[name].shape != spec.input_shapes[name] or spec.output_shapes[output] != spec.input_shapes[name]:
         raise ValueError(f'State shape mismatch: {name}')
+    self._finite = lambda value: bool(np.isfinite(value).all())
+    if os.environ.get('JETLINK_FAST_HALF_CHECK') == '1':
+      from jetlink.finite import FiniteChecker
+      self._finite = FiniteChecker(max(int(np.prod(s)) for s in spec.output_shapes.values()))
     self.reset()
 
   def reset(self) -> None:
@@ -230,13 +235,14 @@ class StatefulQueues:
       for name, shape in self.spec.output_shapes.items():
         if name not in outputs or outputs[name].shape != shape:
           raise ValueError(f'Invalid stateful output shape: {name}')
-        if not np.isfinite(outputs[name]).all():
+        if not self._finite(outputs[name]):
           raise FloatingPointError(f'Non-finite stateful output: {name}')
       for name, output in self.spec.state_pairs.items():
         if outputs[output].dtype != self.state[name].dtype:
           raise ValueError(f'State feedback dtype mismatch: {name}')
       for name, output in self.spec.state_pairs.items():
-        np.copyto(self.state[name], outputs[output], casting='no')
+        if self.state[name] is not outputs[output]:
+          np.copyto(self.state[name], outputs[output], casting='no')
     except (ValueError, FloatingPointError):
       self.reset()
       raise

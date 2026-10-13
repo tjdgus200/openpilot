@@ -76,6 +76,10 @@ class TrtEngine:
     self.stream = cudart.stream_create()
 
     self.bindings: dict[str, Binding] = {}
+    self._host_allocations: set[int] = set()
+    self._started = False
+    self._shared_state_pairs = None
+    self._state_reuse_faulted = False
     for i in range(self.engine.num_io_tensors):
       name = self.engine.get_tensor_name(i)
       is_input = self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
@@ -87,6 +91,7 @@ class TrtEngine:
       nbytes = int(np.prod(shape)) * dtype.itemsize
       dev = cudart.malloc(nbytes)
       host = cudart.host_alloc(nbytes)
+      self._host_allocations.add(int(host))
       self.bindings[name] = Binding(name, shape, dtype, nbytes, int(dev), int(host),
                                     _np_from_ptr(int(host), shape, dtype), is_input)
       self.context.set_tensor_address(name, int(dev))
@@ -110,6 +115,32 @@ class TrtEngine:
     """Pinned array for an input. Write into it, then call run()."""
     return self.inputs[name].host
 
+  def share_state_host_buffers(self, pairs: dict[str, str]) -> None:
+    """Reuse the pinned next-state array as the next frame's host input.
+
+    Call before handing out host views or capturing a graph. Device input and
+    output allocations remain distinct. The single stream completes every H2D
+    read before D2H writes reuse its host source. run() synchronizes before
+    StatefulQueues validates every result; a rejected result resets all state
+    before another run. This removes only the extra host-to-host state copy.
+    Original allocations remain owned here, so aliasing cannot double-free.
+    """
+    if self._started or self.graph_exec is not None or self._shared_state_pairs is not None:
+      raise RuntimeError('state buffer sharing must be configured once, before warmup')
+    if not pairs or len(set(pairs.values())) != len(pairs):
+      raise ValueError('state feedback must have distinct input/output pairs')
+    checked = []
+    for name, output in pairs.items():
+      if name not in self.inputs or output not in self.outputs:
+        raise ValueError(f'unknown state binding: {name} -> {output}')
+      src, dst = self.inputs[name], self.outputs[output]
+      if src.shape != dst.shape or src.dtype != dst.dtype or src.nbytes != dst.nbytes:
+        raise ValueError(f'incompatible state bindings: {name} -> {output}')
+      checked.append((src, dst))
+    for src, dst in checked:
+      src.host_ptr, src.host = dst.host_ptr, dst.host
+    self._shared_state_pairs = dict(pairs)
+
   # -- execution ------------------------------------------------------------
 
   def load_inputs(self, values: dict[str, np.ndarray]) -> None:
@@ -131,6 +162,7 @@ class TrtEngine:
     launch jitter. Valid only because no buffer ever moves. Call after at least
     one warm run.
     """
+    self._started = True
     if self.graph_exec is not None:
       return True
     try:
@@ -156,12 +188,22 @@ class TrtEngine:
 
   def run(self) -> dict[str, np.ndarray]:
     """Run one frame. Returns views over pinned output memory, valid until the next run."""
+    if self._state_reuse_faulted:
+      raise RuntimeError('shared state transfer failed; reload the engine before another frame')
+    self._started = True
     t0 = time.perf_counter()
-    if self.graph_exec is not None:
-      cudart.graph_launch(self.graph_exec, self.stream)
-    else:
-      self._enqueue()
-    cudart.stream_sync(self.stream)
+    try:
+      if self.graph_exec is not None:
+        cudart.graph_launch(self.graph_exec, self.stream)
+      else:
+        self._enqueue()
+      cudart.stream_sync(self.stream)
+    except BaseException:
+      # A failed D2H may have overwritten only part of a shared host state.
+      # Do not silently reuse it on a later connection, even after RESET.
+      if self._shared_state_pairs is not None:
+        self._state_reuse_faulted = True
+      raise
     self.last_gpu_us = int((time.perf_counter() - t0) * 1e6)
     return {n: b.host for n, b in self.outputs.items()}
 
@@ -173,16 +215,21 @@ class TrtEngine:
   # reference back here, so a GC-driven close would free pages someone is still
   # writing into. Whoever swaps an engine out closes it.
   def close(self) -> None:
-    for b in self.bindings.values():
-      try:
-        cudart.free(b.device_ptr)
-        cudart.host_free(b.host_ptr)
-      except Exception:
-        pass
-    self.bindings.clear()
     if self.graph_exec is not None:
       cudart.graph_exec_destroy(self.graph_exec)
       self.graph_exec = None
+    for b in self.bindings.values():
+      try:
+        cudart.free(b.device_ptr)
+      except Exception:
+        pass
+    self.bindings.clear()
+    for ptr in self._host_allocations:
+      try:
+        cudart.host_free(ptr)
+      except Exception:
+        pass
+    self._host_allocations.clear()
     try:
       cudart.stream_destroy(self.stream)
     except Exception:

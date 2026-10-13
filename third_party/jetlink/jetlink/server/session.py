@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -454,6 +455,11 @@ class EngineHost:
   def _warm(self, engine, spec: ModelSpec) -> Loaded:
     from jetlink.queues import make_queues
     _check_shapes(engine, spec)
+    if spec.stateful and os.environ.get('JETLINK_SHARE_STATE_HOST') == '1':
+      share = getattr(engine, 'share_state_host_buffers', None)
+      if share is None:
+        raise RuntimeError('shared host state was requested for an unsupported backend')
+      share(spec.state_pairs)
     # Warm runs on zeros, so the first real frame pays for nothing lazy: CUDA
     # state and the graph capture for TensorRT, a first replay for the others.
     host_inputs = {n: engine.host_input(n) for n in engine.inputs}

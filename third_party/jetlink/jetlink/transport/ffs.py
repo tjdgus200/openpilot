@@ -437,13 +437,19 @@ class FfsTransport(StreamTransport):
     log.error("jetlink: the gadget's owner did not answer; dropping the link from here")
     self.unbind(self._owner_gadget)
 
-  def send(self, *args, **kwargs) -> None:
+  def send(self, msg_type, *args, **kwargs) -> None:
     # Reset the quantum at each message: a latched shrink would split every
     # later request across two writes and re-arm the dwc3 replay (see
     # write_chunk). The pressure that forced it is usually gone by the next
     # frame.
     self.write_chunk = type(self).write_chunk
-    super().send(*args, **kwargs)
+    # Experimental RL Nav request coalescing: its image+navigation payload
+    # exceeds 512 KiB. Keep uploads/HUD and the ENOMEM shrink path unchanged.
+    # A larger contiguous allocation can fail on a fragmented device; this is
+    # opt-in until sustained device testing establishes its tail behavior.
+    if msg_type == P.Msg.INFER_REQ and os.environ.get('JETLINK_COALESCE_INFER_WRITE') == '1':
+      self.write_chunk = max(self.write_chunk, 1 << 20)
+    super().send(msg_type, *args, **kwargs)
 
   def _write(self, bufs: list[memoryview]) -> int:
     self._ensure_epfiles()

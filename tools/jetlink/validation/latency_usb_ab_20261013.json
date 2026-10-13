@@ -1,0 +1,79 @@
+{
+  "A": {
+    "roundtrip_ms": {
+      "n": 240,
+      "mean": 50.40404727497313,
+      "median": 49.919184500140545,
+      "p95": 55.7795390004685,
+      "max": 62.655970999912824
+    },
+    "usb_send_ms": {
+      "n": 240,
+      "mean": 7.169735112521873,
+      "median": 6.800561499858304,
+      "p95": 9.19084599991038,
+      "max": 16.35039400025562
+    },
+    "server_ms": {
+      "n": 240,
+      "mean": 33.60856666666667,
+      "median": 33.6185,
+      "p95": 33.954,
+      "max": 34.23
+    },
+    "write_calls": [
+      2
+    ],
+    "write_bytes": [
+      671744
+    ]
+  },
+  "B": {
+    "roundtrip_ms": {
+      "n": 240,
+      "mean": 48.510896575010065,
+      "median": 48.17267249973156,
+      "p95": 53.008693999800016,
+      "max": 75.57424700007687
+    },
+    "usb_send_ms": {
+      "n": 240,
+      "mean": 5.336056337478112,
+      "median": 5.093869000120321,
+      "p95": 6.815118999838887,
+      "max": 12.623315000382718
+    },
+    "server_ms": {
+      "n": 240,
+      "mean": 33.539429166666665,
+      "median": 33.331,
+      "p95": 34.322,
+      "max": 35.475
+    },
+    "write_calls": [
+      1
+    ],
+    "write_bytes": [
+      671744
+    ]
+  },
+  "savings_ms": {
+    "roundtrip_ms": 1.8931506999630656,
+    "usb_send_ms": 1.8336787750437606
+  },
+  "kind": "fixed-input offroad USB/IPC comparison; not real-camera end-to-end measurement",
+  "order": [
+    "A1",
+    "B1",
+    "B2",
+    "A2"
+  ],
+  "warmup_per_phase": 15,
+  "measured_per_phase": 120,
+  "baseline_comma_commit": "ad4e0c33f637d7791cd1d943c2483e03b1647815",
+  "jetson_source_commit": "955a6f2d39a8cff5a46214113689e6cfba79533e",
+  "model_sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
+  "output_hashes_equal_for_same_input_sequence": true,
+  "persistent_installation": false,
+  "restored_offroad_and_official_usb_ready": true
+}
