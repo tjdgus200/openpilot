@@ -1,0 +1,78 @@
+# Comma-to-Jetson USB experiment delivery
+
+This branch adds a separate owner-signed USB release channel. The official
+Carrot NAS host allowlist, official signing public key, model selection,
+activation probe and rollback remain in place. No private key or published
+experiment manifest is included. Installing this branch alone selects the
+existing official release until a signed `usb_host_release.json` is published.
+The two performance experiments also remain default OFF.
+
+## Flow
+
+1. Enroll the owner's **public** Ed25519 key and receiver on Jetson once, using
+   a trusted local root console or recovery-mounted DATA. Wi-Fi/USB cannot enroll
+   a replacement trust root. Keep the private key on the release author's PC.
+2. Publish an immutable committed host bundle and the matching ONNX, sign their
+   hashes, sizes, URLs, source commit and unique profile. Put the signed manifest
+   and public key in `openpilot/selfdrive/modeld/jetlink/` on the custom branch.
+3. After comma updates that branch, the next Jetson boot advertises its USB
+   receiver. With comma offroad, comma downloads/caches the signed assets and
+   sends 256 KiB acknowledged chunks over the existing USB boot-gate transport.
+   Only comma needs Internet (or a complete cache); Jetson does not.
+4. Jetson independently verifies against its locally enrolled key, checks exact
+   lengths and SHA256, and registers an immutable root-owned local release.
+   Partial transfers are never activated. A disconnect restarts the transfer;
+   fully registered packages are reused. There is no chunk-resume protocol.
+5. The existing stopped-service stage/probe/transaction/rollback activates the
+   candidate before inference. Failure retains the old files and withholds
+   model readiness rather than silently using a mismatched model.
+6. Returning comma to an official branch removes the USB selection. On Jetson's
+   next boot the normal official signed NAS selection applies. Internet may be
+   necessary for official restoration. No official signing key is changed.
+
+Updates are not applied to an already-running inference session. Restart Jetson
+normally after updating comma, with the car parked/offroad. No recovery jumper
+is needed after initial enrollment. Existing current experiments can boot
+without retransmission. Missing receiver support fails with an explicit message.
+
+## One-time enrollment (Jetson/recovery Linux)
+
+After verifying the checkout and public key locally, with services stopped:
+
+```sh
+sudo python3 tools/jetlink/install_usb_receiver.py \
+  --runtime /opt/carrot-jetlink --public-key /path/to/owner-public.pem
+```
+
+For recovery use the mounted DATA runtime path instead of `/opt/carrot-jetlink`.
+The installer preserves the current release, official key and original updater
+backup; it refuses silent key rotation. Do not run this against a live runtime.
+Enrollment enables only the transfer capability, not either performance flag.
+
+## Preparing a release (author PC, Linux Python + pycryptodome)
+
+Use a private Ed25519 key outside the Git checkout. Export sources using
+`python3 tools/jetlink/build_host_bundle.py /path/host.tar.gz` from a clean commit.
+Publish assets at immutable HTTPS URLs and run:
+
+```sh
+python3 tools/jetlink/prepare_usb_release.py \
+  --bundle /path/host.tar.gz --model /path/model.onnx \
+  --private-key /private/owner-ed25519.pem --profile runtime-port-001 \
+  --bundle-url https://example.org/releases/runtime-port-001/host.tar.gz \
+  --model-url https://example.org/releases/runtime-port-001/model.onnx \
+  --output openpilot/selfdrive/modeld/jetlink
+```
+
+Commit `usb_host_release.json` and `usb_host_public.pem` only on the custom
+branch. Never publish the private key. The manifest references the earlier
+source bundle commit; the subsequent manifest commit need not equal it. Reuse
+neither profile nor source identity for different bundle contents. Model changes
+must also update and validate the comma-side model contract.
+
+## Validation status
+
+Initial implementation is pushed before tests at the user's request. Hardware
+USB delivery, power-loss behavior, Jetson TensorRT and end-to-end latency still
+require device validation. PC test results will be added after the first push.
+Do not interpret a signed package or finite synthetic probe as road validation.
