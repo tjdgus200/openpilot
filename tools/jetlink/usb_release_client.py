@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import urllib.request
 
-from tools.jetlink.usb_release import ACK, BEGIN, BLOCK, CHUNK, FINISH, HEADER, KINDS, NAMES, verify
+from tools.jetlink.usb_release import ACK, BEGIN, BLOCK, CHUNK, FINISH, HEADER, KINDS, NAMES, verify  # noqa: TID251
 
 
 def asset(item, cache, allowed):

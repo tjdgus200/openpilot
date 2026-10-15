@@ -40,7 +40,7 @@ def matching_release(path, required=False):
 def selected_release(path, required=False):
   usb = Path(path).with_name('usb_host_release.json')
   if usb.is_file():
-    from tools.jetlink.usb_release import verify, identity
+    from tools.jetlink.usb_release import verify, identity  # noqa: TID251 -- shared standalone host updater
     value = verify(json.loads(usb.read_text()), usb.with_name('usb_host_public.pem'))
     spec = read_spec()
     if identity(value['model']) != {'sha256': spec['sha256'], 'size': spec['nbytes']}:

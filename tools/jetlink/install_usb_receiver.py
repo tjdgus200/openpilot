@@ -9,9 +9,10 @@ from install_local_experiment import atomic_copy
 from local_release import owned
 
 FILES = ('finalize_sd_image.py', 'local_release.py', 'usb_release.py', 'boot_update.py', 'update_host.py')
+SOURCE = Path(__file__).resolve().parent
 
 
-def install(runtime, public_key, source=Path(__file__).resolve().parent):
+def install(runtime, public_key, source=SOURCE):
   from Crypto.PublicKey import ECC
   if os.geteuid() != 0:
     raise PermissionError('Enroll from the local root/recovery console')

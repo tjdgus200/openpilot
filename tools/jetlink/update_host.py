@@ -156,7 +156,9 @@ def selected_commit(selection):
     from usb_release import trusted, registered
     trusted(ROOT, selection)
     validate_storage_compatibility(selection)
-    if not registered(ROOT, selection):
+    # The boot client repeats its pin every 500 ms. Verify immutable catalog
+    # identity here; hash large assets at registration/staging/activation only.
+    if not registered(ROOT, selection, verify_files=False):
       raise ValueError('Transfer the signed USB package before selecting it')
     return selection['source_commit']
   if selection.get('delivery') == 'local':

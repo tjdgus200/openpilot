@@ -140,11 +140,15 @@ class BootstrapSession:
     import usb_release as usb
     if msg.msg_type == p.Msg.HELLO_REQ:
       self.last_seq = msg.seq
+      try:
+        current = (update.ROOT / 'current/SOURCE_COMMIT').read_text().strip()
+      except OSError:
+        current = None  # Preserve discovery/recovery even if current is unavailable.
       self.transport.send_json(p.Msg.HELLO_RESP, msg.seq, {
         'protocol': p.VERSION, 'carrot_host': 'jetson', CAPABILITY: True, LOCAL_CAPABILITY: True,
         wifi_capability: True, 'engine_state': 'none', 'loaded': None, 'sleep_after': 0,
         usb.CAPABILITY: (update.ROOT / 'updater/usb-experiment-public.pem').is_file(),
-        'usb_source_commit': (update.ROOT / 'current/SOURCE_COMMIT').read_text().strip(),
+        'usb_source_commit': current,
       })
       return
     if msg.seq <= self.last_seq:

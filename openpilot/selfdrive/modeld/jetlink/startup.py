@@ -16,8 +16,8 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
     raise ValueError('Install the PC-prepared package for this Jetson model on Jetson first')
   usb_change = False
   if manifest.get('delivery') == 'usb':
-    from tools.jetlink.usb_release import CAPABILITY as USB_CAPABILITY
-    from tools.jetlink.usb_release_client import upload
+    from tools.jetlink.usb_release import CAPABILITY as USB_CAPABILITY  # noqa: TID251 -- standalone updater package
+    from tools.jetlink.usb_release_client import upload  # noqa: TID251
     if peer.get(USB_CAPABILITY) is not True:
       raise ValueError('Install the USB receiver and enroll your experiment public key on Jetson once')
     usb_change = peer.get('usb_source_commit') != manifest['source_commit']

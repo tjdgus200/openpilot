@@ -1,6 +1,5 @@
 """Separately trusted USB experiments. Never fetch URLs or replace official keys."""
 import base64
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -74,7 +73,7 @@ def trusted(root, value):
   return verify(value, key)
 
 
-def registered(root, value):
+def registered(root, value, verify_files=True):
   from local_release import resolve, verify_assets
   directory = Path(root) / 'local-releases' / value['profile']
   if not directory.exists() and not directory.is_symlink():
@@ -82,7 +81,8 @@ def registered(root, value):
   existing = resolve(root, selection(value))
   if {k: existing[k] for k in record(value)} != record(value):
     raise ValueError('USB profile already identifies another release')
-  verify_assets(existing)
+  if verify_files:
+    verify_assets(existing)
   return True
 
 
