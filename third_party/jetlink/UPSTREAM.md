@@ -15,3 +15,18 @@ default protocol remain v2; these changes do not publish a new Jetson release.
 the production daemon now uses the extended `JetlinkClient`.
 Carrot's adapter, device-role policy, process placement and deployment tools are
 outside this directory. Updating the protocol requires testing both peers.
+
+Experimental port on `codex/jetson-nav-runtime-port`, based on carrot-nav
+`6f8aedb85357a8066d1df8451fb60c35902a7d7a`:
+- Device recurrence/reply-event design from zoompilot/jetlink
+  `d26001b4161f33bab28d806de6a99b96325a429b`,
+  `JetlinkKit/Sources/JetlinkTRT/TrtEngine.swift`, adapted to the existing Python
+  TensorRT backend. Carrot's every-state finite checks are retained through an
+  added NVRTC exponent-bit scan before the reply event.
+- `transport/aio_writer_native.py` derives from that revision's
+  `jetlink/transport/aio.py` under the existing MIT license. Completion tokens
+  and secondary results were added; `ffs_aio.py` supplies a bounded reaper and
+  keeps Carrot's existing v2/v3 framing, timeout and cleanup policy.
+Both paths are OFF by default. This is not an upgrade to Jetlink v0.8.7, a new
+signed host release, or a port of its held-output policy. See
+`docs/jetson_runtime_port_20261015.md` for validation and remaining limitations.

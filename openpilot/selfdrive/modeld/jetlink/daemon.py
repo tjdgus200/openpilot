@@ -23,7 +23,7 @@ from openpilot.selfdrive.modeld.jetlink.selection import ModelChanged, check_loa
 from openpilot.selfdrive.modeld.jetlink.startup import CAPABILITY as BOOT_UPDATE_CAPABILITY, wait_for_boot_update
 from jetlink.client import JetlinkClient
 from jetlink.transport.base import LinkError, LinkTimeout
-from jetlink.transport.ffs import FfsTransport
+from jetlink.transport.ffs_aio import AioFfsTransport, AioCleanupError
 
 GADGET = '/sys/kernel/config/usb_gadget/jetlink'
 ROLE = Path('/sys/class/power_supply/usb/typec_mode')
@@ -63,8 +63,8 @@ def update_affinity():
 def publish_hud(client, publisher):
   # Packet construction/Cap'n Proto encoding is in the publisher child. These
   # scopes measure only snapshot access and synchronous writes on the USB owner.
-  metrics = dict(display_snapshot_read_ms=0., display_hud_send_ms=0., display_media_read_ms=0.,
-                 display_media_send_ms=0., display_hud_bytes=0, display_media_bytes=0)
+  metrics = {'display_snapshot_read_ms': 0., 'display_hud_send_ms': 0., 'display_media_read_ms': 0.,
+             'display_media_send_ms': 0., 'display_hud_bytes': 0, 'display_media_bytes': 0}
   if publisher is not None:
     started = time.monotonic()
     try:
@@ -136,7 +136,7 @@ def publish(status, spec=None, **extra):
   os.replace(temporary, STATUS)
 
 
-class CarrotTransport(FfsTransport):
+class CarrotTransport(AioFfsTransport):
   def enable_read_pipeline(self):
     from openpilot.cereal import messaging
     sm = messaging.SubMaster(['carState', 'carControl', 'selfdriveState'])
@@ -204,7 +204,10 @@ class CarrotTransport(FfsTransport):
     reader = getattr(self, '_reader', None)
     watchdog = getattr(getattr(self, '_write_guard', None), 'thread', None)
     gadget = getattr(self, 'gadget', None)
-    super().close()
+    try:
+      super().close()
+    except AioCleanupError as exc:
+      raise UnsafeCleanupError(str(exc)) from exc
     if getattr(getattr(self, '_aio_reader', None), 'context', None) is not None:
       raise UnsafeCleanupError('FunctionFS AIO cleanup incomplete; refusing to rebind')
     if any(thread is not None and thread.is_alive() for thread in (reader, watchdog)):
