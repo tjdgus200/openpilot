@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tarfile
 from types import SimpleNamespace as NS
@@ -448,3 +449,23 @@ def test_boot_client_onroad_cannot_start_usb_upload(env, monkeypatch):
   with pytest.raises(ConnectionError, match='offroad'):
     startup.wait_for_boot_update(wire.client, peer, None, lambda: True, lambda *a, **k: None)
   assert not wire.types
+
+
+@pytest.mark.parametrize('crypto_first', [False, True])
+def test_aio_native_buffer_prototype_cannot_break_crypto_in_either_import_order(crypto_first):
+  # Isolate imports: mutation of ctypes.pythonapi at module import affects the
+  # entire process, including official signature validation after reconnect.
+  crypto = 'from Crypto.PublicKey import ECC\nfrom Crypto.Signature import eddsa\n'
+  aio = 'from jetlink.transport.aio_writer_native import address\n'
+  script = (crypto + aio if crypto_first else aio + crypto) + '''
+key = ECC.generate(curve='Ed25519')
+for payload in (b'abc', bytearray(b'abc'), memoryview(b'abc')):
+  ptr, size = address(payload)
+  assert ptr and size == 3
+  signature = eddsa.new(key, 'rfc8032').sign(bytes(payload))
+  eddsa.new(key.public_key(), 'rfc8032').verify(bytes(payload), signature)
+  assert address(payload)[1] == 3
+'''
+  result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True,
+                          env={**os.environ, 'PYTHONPATH': os.pathsep.join(sys.path)}, timeout=30)
+  assert result.returncode == 0, result.stderr

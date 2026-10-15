@@ -72,7 +72,26 @@ must also update and validate the comma-side model contract.
 
 ## Validation status
 
-Initial implementation is pushed before tests at the user's request. Hardware
-USB delivery, power-loss behavior, Jetson TensorRT and end-to-end latency still
-require device validation. PC test results will be added after the first push.
+The initial implementation (`1390d3c8`) was pushed before tests as requested.
+After corrections, the combined Linux/WSL regression suite reports **376 passed,
+1 skipped**. The skipped test needs an external upstream v3 reference checkout;
+it is not counted as a successful compatibility test. Three configuration
+warnings come from pytest plugins disabled in the standalone test environment.
+
+USB tests use real Ed25519 signatures, root-owned temporary files and a simulated
+USB transport. They cover multi-chunk delivery, wrong signatures/keys, malformed
+or replayed chunks, download corruption, onroad/disconnect interruption, cache
+reuse, disk budget, candidate rejection and official NAS restoration. Service
+commands and TensorRT probes are mocked; no installed device is modified.
+
+Combining AIO and signature tests exposed a real process-wide ctypes prototype
+collision: the AIO module modified cached CPython buffer-function declarations
+also used by PyCryptodome. It now uses private PYFUNCTYPE bindings. Two subprocess
+regression tests verify both import orders with actual signing/verification and
+buffer access. The boot HELLO also tolerates missing current-version metadata;
+large registered assets are not rehashed on every 500 ms selection heartbeat.
+They are still verified during transfer completion, staging and activation.
+
+Focused lint and `git diff --check` pass. Physical USB delivery, power-loss
+behavior, Jetson TensorRT and end-to-end latency still require device validation.
 Do not interpret a signed package or finite synthetic probe as road validation.

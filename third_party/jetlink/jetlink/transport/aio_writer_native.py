@@ -65,12 +65,15 @@ class _PyBuffer(ctypes.Structure):
               ('suboffsets', ctypes.c_void_p), ('internal', ctypes.c_void_p)]
 
 
-_get_buffer = ctypes.pythonapi.PyObject_GetBuffer
-_get_buffer.argtypes = [ctypes.py_object, ctypes.POINTER(_PyBuffer), ctypes.c_int]
-_get_buffer.restype = ctypes.c_int
-_release_buffer = ctypes.pythonapi.PyBuffer_Release
-_release_buffer.argtypes = [ctypes.POINTER(_PyBuffer)]
-_release_buffer.restype = None
+# Do not mutate ctypes.pythonapi's cached function objects. PyCryptodome also
+# declares these functions with its own (ABI-compatible, different Python type)
+# Py_buffer structure. Shared argtypes make signatures or AIO fail by import
+# order. PYFUNCTYPE gives each consumer a private prototype and retains the GIL
+# and CPython error checking required by the Python C API.
+_get_buffer = ctypes.PYFUNCTYPE(ctypes.c_int, ctypes.py_object, ctypes.POINTER(_PyBuffer), ctypes.c_int)(
+  ('PyObject_GetBuffer', ctypes.pythonapi))
+_release_buffer = ctypes.PYFUNCTYPE(None, ctypes.POINTER(_PyBuffer))(
+  ('PyBuffer_Release', ctypes.pythonapi))
 
 
 def address(buf) -> tuple[int, int]:

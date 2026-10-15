@@ -4,6 +4,11 @@ Base: official carrot-nav `6f8aedb85357a8066d1df8451fb60c35902a7d7a`.
 Reference: zoompilot/jetlink `d26001b4161f33bab28d806de6a99b96325a429b` (v0.8.7).
 Branch: `codex/jetson-nav-runtime-port` in the owner's fork.
 
+Follow-up: [owner-signed USB delivery](jetson_usb_experiment_update.md) adds an
+opt-in deployment mechanism. No signed experimental release or activation flags
+are shipped by default. Combined regression testing also corrected AIO's shared
+ctypes buffer prototype so it cannot break official/experimental signature checks.
+
 ## Scope and activation
 
 Two independently opt-in paths are ported. Defaults remain the existing runtime.
