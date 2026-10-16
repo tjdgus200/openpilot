@@ -28,7 +28,9 @@ PARAMS = ('ClusterHud', 'ClusterHudDebug', 'ClusterHudBrightness', 'ClusterHudOr
 
 class Publisher:
   """Keep cereal decoding, JSON and preview work outside the USB owner's GIL."""
-  def __init__(self, navi=False):
+  def __init__(self, navi=False, *, preview_fps=10):
+    if preview_fps not in (5, 10):
+      raise ValueError('HUD preview rate')
     import os
     self.media_socket = self.media_process = None
     if navi:
@@ -43,14 +45,21 @@ class Publisher:
     self.path = Path(f'/dev/shm/carrot-jetlink-display-{os.getpid()}.packet')
     self.last_sent = 0.
     self.process = subprocess.Popen(['chrt', '--other', '0', sys.executable,
-                                    str(Path(__file__).with_name('hud_publisher.py')), str(self.path)],
+                                    str(Path(__file__).with_name('hud_publisher.py')), str(self.path), str(preview_fps)],
                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
   def media_packet(self):
     if self.media_socket is not None:
       from hud_navi import CHUNK, HEADER as MEDIA_HEADER
       try:
-        return self.media_socket.recv(CHUNK + MEDIA_HEADER.size)
+        packet = self.media_socket.recv(CHUNK + MEDIA_HEADER.size)
+        if not packet:
+          # EOF stays readable forever. Retire it so the WLAN worker cannot
+          # spin on select() if the optional media producer exits.
+          self.media_socket.close()
+          self.media_socket = None
+          return None
+        return packet
       except BlockingIOError:
         pass
     return None
@@ -77,7 +86,8 @@ class Publisher:
       except subprocess.TimeoutExpired:
         self.media_process.kill()
         self.media_process.wait(timeout=1)
-      self.media_socket.close()
+      if self.media_socket is not None:
+        self.media_socket.close()
     self.process.terminate()
     try:
       self.process.wait(timeout=2)
@@ -89,7 +99,8 @@ class Publisher:
 
 
 class SnapshotBuilder:
-  def __init__(self):
+  def __init__(self, *, preview_fps=10):
+    self.preview_fps = preview_fps
     from openpilot.cereal import messaging
     from openpilot.common.params import Params
     self.sm = messaging.SubMaster(list(SERVICES))
@@ -126,7 +137,7 @@ class SnapshotBuilder:
                (self.params.get_bool('IsOnroad') or self.params.get_int('ClusterHudDebug') >= 1))
     if enabled and self.camera is None:
       from hud_camera import CameraPublisher
-      self.camera = CameraPublisher()
+      self.camera = CameraPublisher(fps=self.preview_fps)
     elif not enabled and self.camera is not None:
       self.camera.close()
       self.camera = None

@@ -139,7 +139,7 @@ class Runtime:
   def run(self):
     if self.role == 'send':
       from hud_protocol import Publisher
-      self.publisher = Publisher(navi=True)
+      self.publisher = Publisher(navi=True, preview_fps=5)
       for channel in LIMITS:
         self.start_thread(self.sender, channel)
     else:
@@ -215,7 +215,15 @@ class Runtime:
               if not 0 <= age < .3:
                 continue
             if not data and time.monotonic() < heartbeat:
-              self.stop.wait(.01)
+              # Snapshot generation is 10 Hz; do not re-read/decode the same
+              # tmpfs file 100 times/s. Media wakes on its local socket instead
+              # of polling, preserving ordered H.264 fragments without busy work.
+              delay = min(.05 if channel == 1 else .1, max(0., heartbeat - time.monotonic()))
+              media_socket = getattr(self.publisher, 'media_socket', None)
+              if channel == 2 and media_socket is not None:
+                select.select([media_socket], [], [], delay)
+              else:
+                self.stop.wait(delay)
               continue
             data = data or b''
             if len(data) > LIMITS[channel]:
@@ -312,7 +320,12 @@ def main():
   if os.getppid() == 1:
     return
   os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
-  os.nice(5)
+  # Only this display worker and its children are demoted. Never lower the
+  # USB/IPC owner's priority or use realtime scheduling for display traffic.
+  if role == 'send':
+    os.setpriority(os.PRIO_PROCESS, 0, 19)
+  else:
+    os.nice(5)
   control = socket.socket(fileno=fd)
   control.settimeout(2.)
   config = json.loads(control.recv(512))

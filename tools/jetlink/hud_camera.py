@@ -51,9 +51,11 @@ def preview_nv12(frame):
 
 
 class CameraPublisher:
-  def __init__(self):
+  def __init__(self, *, fps=10):
+    if fps not in (5, 10):
+      raise ValueError('HUD preview rate')
     self.path = Path(f'/dev/shm/carrot-jetlink-cameras-{os.getpid()}.json')
-    self.process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--publish', str(self.path)],
+    self.process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--publish', str(self.path), str(fps)],
                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
   @property
@@ -67,7 +69,9 @@ class CameraPublisher:
     return {}
 
   @staticmethod
-  def run(path):
+  def run(path, fps=10):
+    if fps not in (5, 10):
+      raise ValueError('HUD preview rate')
     from msgq.visionipc import VisionIpcClient, VisionStreamType
     from openpilot.common.display_scheduling import DisplayScheduler
     from openpilot.common.params import Params
@@ -97,7 +101,7 @@ class CameraPublisher:
       temporary = path.with_suffix('.tmp')
       temporary.write_text(json.dumps({'updated': time.monotonic(), 'cameras': result}))
       os.replace(temporary, path)
-      time.sleep(max(0, start + .1 - time.monotonic()))
+      time.sleep(max(0, start + 1. / fps - time.monotonic()))
 
   def close(self):
     self.process.terminate()
@@ -166,5 +170,5 @@ class RemoteRoadCamera:
       self.texture = None
 
 
-if __name__ == '__main__' and len(sys.argv) == 3 and sys.argv[1] == '--publish':
-  CameraPublisher.run(Path(sys.argv[2]))
+if __name__ == '__main__' and len(sys.argv) in (3, 4) and sys.argv[1] == '--publish':
+  CameraPublisher.run(Path(sys.argv[2]), int(sys.argv[3]) if len(sys.argv) == 4 else 10)
