@@ -68,7 +68,7 @@ from cluster_h264_pipeline import (
 from cluster_live import OpenpilotLiveSource
 from cluster_models import RouteOverlay, SimulatorInput
 from cluster_navi_overlay import merge_navi_overlay_state
-from cluster_profile import GcProfileHook, ProfileReporter, freeze_gc_after_init
+from cluster_profile import GcProfileHook, ProfileReporter, freeze_gc_after_init, restore_gc_after_run
 from cluster_renderer import ClusterUiRenderer
 from cluster_route_replay import (
     ROUTE_CORNER_SOURCE_CHOICES,
@@ -1020,6 +1020,7 @@ def run_demo(
         )
         return True
 
+    previous_gc_thresholds = None
     try:
         if hud_output_gate_param_reader is not None and not hud_output_gate_param_reader.allowed():
             print(
@@ -1130,7 +1131,7 @@ def run_demo(
                     flush=True,
                 )
         if gc_freeze_init:
-            freeze_gc_after_init(profile)
+            previous_gc_thresholds = freeze_gc_after_init(profile)
         while True:
             if stop_requested:
                 break
@@ -1909,37 +1910,45 @@ def run_demo(
                 report_frames = 0
                 last_report_time = now
     finally:
-        if usb_display is not None:
-            _set_cluster_hud_connected(False)
-        scheduler.update(False, force=True, child_pid=h264_pipeline.encoder_pid if h264_pipeline is not None else None)
-        if signal_installed:
-            signal.signal(signal.SIGTERM, previous_sigterm_handler)
-        if gc_hook is not None:
+        try:
+            # Restore even if a later native-resource close raises an exception.
+            restore_gc_after_run(previous_gc_thresholds)
+            if usb_display is not None:
+                _set_cluster_hud_connected(False)
+            scheduler.update(False, force=True, child_pid=h264_pipeline.encoder_pid if h264_pipeline is not None else None)
+            if signal_installed:
+                signal.signal(signal.SIGTERM, previous_sigterm_handler)
+            if gc_hook is not None:
+                try:
+                    gc.callbacks.remove(gc_hook)
+                except ValueError:
+                    pass
+            network_address_provider.close()
+            if cluster_core_usage_sampler is not None:
+                cluster_core_usage_sampler.close()
+            renderer.release_nv12_dmabuf_output()
+            if h264_pipeline is not None:
+                h264_pipeline.close()
+            if usb_pipeline is not None:
+                usb_pipeline.close()
+            if controller is not None:
+                controller.close()
+            if route_tools_window is not None:
+                route_tools_window.close()
+            if route_source is not None:
+                route_source.close()
+            if live_source is not None:
+                live_source.close()
+            if navi_source is not None:
+                navi_source.close()
+        finally:
+            # A transport close may wait or receive the manager's SIGINT. Release
+            # graphics first, even if an earlier cleanup step was interrupted.
             try:
-                gc.callbacks.remove(gc_hook)
-            except ValueError:
-                pass
-        network_address_provider.close()
-        if cluster_core_usage_sampler is not None:
-            cluster_core_usage_sampler.close()
-        renderer.release_nv12_dmabuf_output()
-        if h264_pipeline is not None:
-            h264_pipeline.close()
-        if usb_pipeline is not None:
-            usb_pipeline.close()
-        if controller is not None:
-            controller.close()
-        if route_tools_window is not None:
-            route_tools_window.close()
-        if route_source is not None:
-            route_source.close()
-        if live_source is not None:
-            live_source.close()
-        if navi_source is not None:
-            navi_source.close()
-        if usb_display is not None:
-            usb_display.close()
-        renderer.close()
+                renderer.close()
+            finally:
+                if usb_display is not None:
+                    usb_display.close()
 
 
 def parse_args() -> argparse.Namespace:
