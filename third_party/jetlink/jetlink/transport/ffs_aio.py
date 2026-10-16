@@ -105,7 +105,10 @@ class AioWriter:
         with self.cv:
           for token, result, result2 in events:
             request = self.pending.pop(token, None)
-            if request is None or result2 or result != request[0]:
+            # C3's 4.9 FunctionFS calls ki_complete(iocb, ret, ret).
+            # New kernels leave res2 zero. Accept only those two successful
+            # forms; negative, short, mismatched and unknown completions fail.
+            if request is None or result != request[0] or result2 not in (0, result):
               failure = f'bad completion token={token}, result={result}, result2={result2}'
           if self.pending and time.monotonic() >= min(d for _, d in self.pending.values()):
             failure = 'completion deadline expired'

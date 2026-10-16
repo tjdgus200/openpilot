@@ -87,13 +87,28 @@ def test_partial_submit_and_out_of_order_reap_preserve_bytes_and_copy_lifetime(w
   assert len(w.aio.submissions) > 1 and not aborted
 
 
-@pytest.mark.parametrize('kind', ['negative', 'short', 'secondary', 'unknown'])
+@pytest.mark.parametrize('secondary', [0, 16384])
+def test_functionfs_modern_and_c3_legacy_success_completion(writer, secondary):
+  w, aborted = writer
+  w.aio.gate.clear()
+  w.write([memoryview(b'x' * 16384)], time.monotonic() + 1)
+  token, count, _ = w.aio.events[0]
+  assert count == 16384
+  w.aio.events[0] = (token, count, secondary)
+  w.aio.gate.set()
+  eventually(lambda: not w.pending)
+  w.check()
+  assert not aborted
+
+
+@pytest.mark.parametrize('kind', ['negative', 'legacy_negative', 'short', 'legacy_short', 'secondary', 'unknown'])
 def test_bad_completion_poison_link_without_retransmission(writer, kind):
   w, aborted = writer
   w.aio.gate.clear()
   w.write([memoryview(b'payload')], time.monotonic() + 1)
   token, count, _ = w.aio.events[0]
-  w.aio.events[0] = {'negative': (token, -errno.EIO, 0), 'short': (token, count - 1, 0),
+  w.aio.events[0] = {'negative': (token, -errno.EIO, 0), 'legacy_negative': (token, -errno.EIO, -errno.EIO),
+                     'short': (token, count - 1, 0), 'legacy_short': (token, count - 1, count - 1),
                      'secondary': (token, count, 1), 'unknown': (token + 99, count, 0)}[kind]
   if kind == 'unknown':
     w.aio.events.append((token, count, 0))  # real completion still must be reaped
