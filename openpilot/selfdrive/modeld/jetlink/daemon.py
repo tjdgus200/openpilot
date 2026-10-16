@@ -38,6 +38,7 @@ from hud_protocol import Publisher, HUD_CAPABILITY, HUD_MESSAGE
 from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE
 from hud_navi import send_ready_after_reply, send_ready_during_inference, PUMP_CAPABILITY
 from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, Publisher as WifiPublisher
+from runtime_port_options import apply as apply_runtime_port_options
 
 
 class UnsafeCleanupError(LinkError):
@@ -400,6 +401,7 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
 
 def main():
   global TRANSPORT_MODE, SESSION_MODE, ACTIVE_UDC, SESSION_DETACHED
+  apply_runtime_port_options()
   logging.basicConfig(level=logging.INFO)
   TRANSPORT_MODE = transport_mode()
   SESSION_MODE = TRANSPORT_MODE

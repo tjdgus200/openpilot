@@ -6,6 +6,8 @@ import sys
 import time
 
 if __name__ == '__main__':
+  from runtime_port_options import apply
+  apply()
   if Path('/etc/nv_tegra_release').is_file():
     from install_updates import migrate_running_release
     migrate_running_release()
@@ -71,6 +73,7 @@ class CarrotSession(Session):
       obj = {**obj, HUD_CAPABILITY: sys.platform == 'linux', NAVI_CAPABILITY: sys.platform == 'linux',
              PUMP_CAPABILITY: sys.platform == 'linux', WIFI_CAPABILITY: host == 'jetson', 'carrot_host': host}
       if host == 'jetson':
+        obj['carrot_device_state_enabled'] = os.getenv('CARROT_TRT_DEVICE_STATE') == '1'
         obj['carrot_source_commit'] = (ROOT / 'SOURCE_COMMIT').read_text().strip()
         obj['carrot_boot_update_installed'] = Path('/opt/carrot-jetlink/boot-update-required').is_file()
     return super()._send_json(msg_type, seq, obj, flags)

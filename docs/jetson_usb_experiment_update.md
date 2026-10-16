@@ -6,7 +6,15 @@ activation probe and rollback remain in place. The owner's enrolled public key
 is included; no private key or published experiment manifest is included.
 Installing this branch alone selects the
 existing official release until a signed `usb_host_release.json` is published.
-The two performance experiments also remain default OFF.
+The 2026-10-16 owner test release explicitly enables both experiments through
+`tools/jetlink/runtime_port_options.json`. This file is part of the signed source
+bundle, not a persistent system environment override. Removing it leaves both
+options off; an explicit process environment value of `0` overrides it. Official
+branch/release restoration therefore does not inherit these experiment settings.
+Before activation, the candidate compares host and device state feedback using
+the same TensorRT engine over 32 deterministic frames, including a reset halfway
+through, and rejects nonfinite or differing outputs (rtol/atol 1e-4). This is a
+bounded numerical check, not road validation.
 
 ## Flow
 
