@@ -1,6 +1,5 @@
 """Before activation only: imports, pinned engine load/build and finite inference."""
 from pathlib import Path
-from model_pin import read_spec
 import sys
 import subprocess
 import time
@@ -10,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / 'third_party/jetlink')]
 
 
-def main():
+def run_probe():
+  from model_pin import read_spec
   from runtime_port_options import apply
   apply()
   import numpy as np
@@ -57,4 +57,5 @@ def main():
 
 
 if __name__ == '__main__':
-  main()
+  from probe_report import run
+  run(run_probe)
