@@ -28,9 +28,7 @@ PARAMS = ('ClusterHud', 'ClusterHudDebug', 'ClusterHudBrightness', 'ClusterHudOr
 
 class Publisher:
   """Keep cereal decoding, JSON and preview work outside the USB owner's GIL."""
-  def __init__(self, navi=False, *, preview_fps=10):
-    if preview_fps not in (5, 10):
-      raise ValueError('HUD preview rate')
+  def __init__(self, navi=False):
     import os
     self.media_socket = self.media_process = None
     if navi:
@@ -45,7 +43,7 @@ class Publisher:
     self.path = Path(f'/dev/shm/carrot-jetlink-display-{os.getpid()}.packet')
     self.last_sent = 0.
     self.process = subprocess.Popen(['chrt', '--other', '0', sys.executable,
-                                    str(Path(__file__).with_name('hud_publisher.py')), str(self.path), str(preview_fps)],
+                                    str(Path(__file__).with_name('hud_publisher.py')), str(self.path)],
                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
   def media_packet(self):
@@ -99,8 +97,7 @@ class Publisher:
 
 
 class SnapshotBuilder:
-  def __init__(self, *, preview_fps=10):
-    self.preview_fps = preview_fps
+  def __init__(self):
     from openpilot.cereal import messaging
     from openpilot.common.params import Params
     self.sm = messaging.SubMaster(list(SERVICES))
@@ -137,7 +134,7 @@ class SnapshotBuilder:
                (self.params.get_bool('IsOnroad') or self.params.get_int('ClusterHudDebug') >= 1))
     if enabled and self.camera is None:
       from hud_camera import CameraPublisher
-      self.camera = CameraPublisher(fps=self.preview_fps)
+      self.camera = CameraPublisher()
     elif not enabled and self.camera is not None:
       self.camera.close()
       self.camera = None

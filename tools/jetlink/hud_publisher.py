@@ -9,7 +9,7 @@ import time
 from hud_protocol import SnapshotBuilder, HEADER
 
 
-def main(path, preview_fps=10):
+def main(path):
   from openpilot.common.display_scheduling import DisplayScheduler
   from openpilot.common.params import Params
   ctypes.CDLL(None).prctl(1, signal.SIGTERM, 0, 0, 0)
@@ -20,7 +20,7 @@ def main(path, preview_fps=10):
   signal.signal(signal.SIGTERM, stop)
   scheduler = DisplayScheduler(7, enabled=True)
   params = Params()
-  builder = SnapshotBuilder(preview_fps=preview_fps)
+  builder = SnapshotBuilder()
   next_warning = 0.
   try:
     while True:
@@ -46,4 +46,4 @@ def main(path, preview_fps=10):
 
 
 if __name__ == '__main__':
-  main(Path(sys.argv[1]), int(sys.argv[2]) if len(sys.argv) > 2 else 10)
+  main(Path(sys.argv[1]))
