@@ -3,9 +3,9 @@
 This branch adds a separate owner-signed USB release channel. The official
 Carrot NAS host allowlist, official signing public key, model selection,
 activation probe and rollback remain in place. The owner's enrolled public key
-is included; no private key or published experiment manifest is included.
-Installing this branch alone selects the
-existing official release until a signed `usb_host_release.json` is published.
+is included; no private key is included. This owner test branch now includes a
+signed `usb_host_release.json` for source `3225eef6`, published as
+[jetson-usb-20261016-3225eef6](https://github.com/tjdgus200/openpilot/releases/tag/jetson-usb-20261016-3225eef6).
 The 2026-10-16 owner test release explicitly enables both experiments through
 `tools/jetlink/runtime_port_options.json`. This file is part of the signed source
 bundle, not a persistent system environment override. Removing it leaves both
@@ -13,7 +13,9 @@ options off; an explicit process environment value of `0` overrides it. Official
 branch/release restoration therefore does not inherit these experiment settings.
 Before activation, the candidate compares host and device state feedback using
 the same TensorRT engine over 32 deterministic frames, including a reset halfway
-through, and rejects nonfinite or differing outputs (rtol/atol 1e-4). This is a
+through, and rejects nonfinite or differing driving outputs (rtol/atol 1e-4).
+Each mode runs in a separate, sequential process so the first TensorRT engine
+and CUDA context are released before loading the second. This is a
 bounded numerical check, not road validation.
 
 ## Flow
@@ -71,9 +73,10 @@ boot policy and L4T 36.4.7. Only DATA updater files/public key were changed;
 APP and QSPI were not written. Fresh read-only readback verified the installed
 files. On the device's ARM64 Python environment, a signed non-installable test
 manifest was accepted, a modified one rejected, and a simulated boot HELLO
-advertised `carrot_usb_release_v1`. No experimental bundle was staged or
-activated. Normal reboot was requested after unmounting; actual comma USB
-transfer and normal-boot behavior still require verification.
+advertised `carrot_usb_release_v1`. At the enrollment stage no experimental bundle was activated. Subsequent
+physical USB delivery on 2026-10-16 activated source `3225eef6`; the running
+Orin reported that source and `carrot_device_state_enabled=true`. No APP/QSPI
+flash was needed. The signed acceptance checks were retained.
 
 ## Preparing a release (author PC, Linux Python + pycryptodome)
 
@@ -118,6 +121,8 @@ buffer access. The boot HELLO also tolerates missing current-version metadata;
 large registered assets are not rehashed on every 500 ms selection heartbeat.
 They are still verified during transfer completion, staging and activation.
 
-Focused lint and `git diff --check` pass. Physical USB delivery, power-loss
-behavior, Jetson TensorRT and end-to-end latency still require device validation.
+Focused lint and `git diff --check` pass. Physical USB delivery and the Orin
+TensorRT runtime were exercised on 2026-10-16; see the linked runtime report
+for bench measurements. Power-loss behavior and actual vehicle operation
+still require validation.
 Do not interpret a signed package or finite synthetic probe as road validation.
