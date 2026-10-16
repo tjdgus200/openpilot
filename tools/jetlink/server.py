@@ -33,8 +33,20 @@ class DisplayTelemetry:
   def __init__(self, original):
     self.original = original
     self.health = health_worker() if Path('/etc/nv_tegra_release').is_file() else None
+    self.hud_startup = None
+    self.next_hud_startup = 0.
 
   def read(self):
+    now = time.monotonic()
+    if now >= self.next_hud_startup:
+      self.next_hud_startup = now + 1.
+      self.hud_startup = None
+      try:
+        with Path('/dev/shm/carrot-jetlink-hud-startup.json').open() as stream:
+          value = json.loads(stream.read(4097))
+        self.hud_startup = {k: value[k] for k in ('stage', 'updated', 'pid', 'error_type', 'trace') if k in value}
+      except (OSError, ValueError, KeyError, TypeError):
+        pass
     connected = False
     try:
       status = json.loads(Path('/dev/shm/carrot-jetlink-hud-status.json').read_text())
@@ -42,6 +54,7 @@ class DisplayTelemetry:
     except (OSError, ValueError, KeyError, TypeError):
       pass
     return {**self.original.read(), 'carrot_hud_connected': connected,
+            'carrot_hud_startup': self.hud_startup,
             **({'carrot_health': self.health.read()} if self.health else {})}
 
 

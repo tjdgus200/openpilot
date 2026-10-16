@@ -5,12 +5,29 @@ import os
 from pathlib import Path
 import sys
 import time
+import traceback
 import types
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'openpilot/selfdrive/carrot/cluster'))
 from hud_protocol import read_snapshot, SERVICES
+
+
+def report_stage(stage, error=None):
+  """Bounded startup diagnostics: no payload, settings, exception text or locals."""
+  value = {'stage': stage, 'updated': time.monotonic(), 'pid': os.getpid()}
+  if error is not None:
+    value['error_type'] = type(error).__name__
+    value['trace'] = [{'file': Path(f.filename).name, 'line': f.lineno, 'function': f.name}
+                      for f in traceback.extract_tb(error.__traceback__)[-5:]]
+  path = Path('/dev/shm/carrot-jetlink-hud-startup.json')
+  try:
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(value))
+    temporary.replace(path)
+  except OSError:
+    pass
 
 
 def require_usb_display(scan, expected):
@@ -129,13 +146,16 @@ class RemoteSubMaster:
 
 def main():
   if '--help' not in sys.argv:
+    report_stage('waiting_runtime')
     from boot_update import wait_for_runtime
     wait_for_runtime()
   if '--help' not in sys.argv:
+    report_stage('waiting_activation')
     settings = DisplayParams()
     while not (settings.get_int('ClusterHud') == 1 and
                (settings.get_bool('IsOnroad') or settings.get_int('ClusterHudDebug') >= 1)):
       time.sleep(.2)
+    report_stage('loading_renderer')
   from openpilot.cereal import log
   params_module = types.ModuleType('openpilot.common.params')
   params_module.Params = DisplayParams
@@ -190,6 +210,7 @@ def main():
   from hud_health import HealthRenderer
   cluster.ClusterUiRenderer = HealthRenderer
   if '--help' not in sys.argv:
+    report_stage('waiting_usb_panel')
     scan = cluster.find_supported_usb_product
     wait_for_usb_display(scan, cluster.product_id_for_hud_mode(1))
     # The common PC renderer falls back to an invisible window if the USB
@@ -223,9 +244,16 @@ def main():
     cluster.main()
   else:
     from display_owner import panel_owner
+    report_stage('waiting_panel_owner')
     with panel_owner(hud=True):
+      report_stage('renderer_started')
       cluster.main()
 
 
 if __name__ == '__main__':
-  main()
+  try:
+    main()
+  except Exception as error:
+    if '--help' not in sys.argv:
+      report_stage('failed', error)
+    raise
