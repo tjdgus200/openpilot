@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "delivery": "usb",
+  "profile": "runtime-port-20261016-294b0055",
+  "source_commit": "294b00551324fdc4e2adc12ddcd66f305f33b113",
+  "runtime": {
+    "arch": "aarch64",
+    "l4t": "36.4.7",
+    "tensorrt": "10.3.0"
+  },
+  "storage_format": 1,
+  "bundle": {
+    "sha256": "933b33ce777f1ab1bbd387e89cf76fe8052e2681edc55afc2ade116dfd903a36",
+    "size": 64671325,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-usb-20261016-294b0055/host.tar.gz"
+  },
+  "model": {
+    "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
+    "size": 814591106,
+    "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
+  },
+  "signature": "IJ4yfL4gvkiAuRpfqBbUz5ZGsUn27KD73PhCKQaP8gNfP4km99sSRb2eJv2/GuviBCNir+QIdTrcUQwlhQM3Dw=="
+}
