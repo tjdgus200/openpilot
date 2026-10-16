@@ -1,15 +1,18 @@
 """Before activation only: imports, pinned engine load/build and finite inference."""
 from pathlib import Path
-from model_pin import read_spec
 import sys
 import subprocess
 import time
+import os
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / 'third_party/jetlink')]
 
 
 def main():
+  from model_pin import read_spec
+  from runtime_port_options import apply
+  apply()
   import numpy as np
   import server  # noqa: F401 -- verify the application entry point's imports
   # Importing hud alone misses the renderer imports inside main(). Exercise
@@ -21,6 +24,9 @@ def main():
   from jetlink.server.cache import EngineCache
   from jetlink.server.session import EngineHost, Request
   spec = read_spec(ROOT)
+  if os.getenv('CARROT_TRT_DEVICE_STATE') == '1':
+    from probe_device_recurrence import check
+    check(Path(sys.argv[1]), spec)
   host = EngineHost(EngineCache(Path(sys.argv[1]), TrtBackend()))
   try:
     host.request(Request(spec['sha256'], spec['nbytes'], spec['frame_skip']), None)

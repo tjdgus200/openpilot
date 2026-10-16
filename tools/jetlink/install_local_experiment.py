@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 
 HELPERS = ('local_release.py', 'update_host.py', 'boot_update.py', 'finalize_sd_image.py',
-           'wifi_protocol.py', 'hud_protocol.py', 'release-signing-public.pem')
+           'wifi_protocol.py', 'hud_protocol.py', 'release-signing-public.pem', 'usb_release.py')
 
 
 def digest(path):
