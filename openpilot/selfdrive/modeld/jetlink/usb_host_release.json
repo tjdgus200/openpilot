@@ -1,8 +1,8 @@
 {
   "format": 1,
   "delivery": "usb",
-  "profile": "runtime-fixed-20261016-4656397a",
-  "source_commit": "4656397a3f1118c04e30fb372821c920eb28e9ef",
+  "profile": "runtime-isolated-20261016-3225eef6",
+  "source_commit": "3225eef6bc89d756fdb1b8510a5afc9130cdf0ee",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -10,14 +10,14 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "d28aadcfe6d676a5602e4630ae535451bad4e35855b8e98cbc4bf7a2dd593512",
-    "size": 64673280,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-usb-20261016-4656397a/host.tar.gz"
+    "sha256": "2835007f47c7b8c9125a8d06801656be053e3890915808b2374439f738c426e2",
+    "size": 64673841,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-usb-20261016-3225eef6/host.tar.gz"
   },
   "model": {
     "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
     "size": 814591106,
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
   },
-  "signature": "m7X88X7GxrWHoTsK/yjSIelSWHp8wT5lHUcGZstsN9jtf2nzlkqNmwBvXow2xqeOgjyUjUMv12W50pf8YOF+Dg=="
+  "signature": "A0aq8O09+1aslWGFjFRX7X/3jIAIzgjWOiDV8BBNjc5VOO5QHx95jOYN1E9Wadd1dGkD+DY71UL6BfLcIEpwAA=="
 }

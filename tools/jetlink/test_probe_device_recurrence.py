@@ -18,9 +18,12 @@ def test_sequential_isolated_probes_and_output_checks(monkeypatch, tmp_path, cor
     modes.append(mode)
     values = np.zeros((32, 2), np.float32)
     if mode == '1':
-      if corrupt == 'difference': values[-1, 0] = 1
-      if corrupt == 'nan': values[-1, 0] = np.nan
-      if corrupt == 'shape': values = values[:31]
+      if corrupt == 'difference':
+        values[-1, 0] = 1
+      if corrupt == 'nan':
+        values[-1, 0] = np.nan
+      if corrupt == 'shape':
+        values = values[:31]
     np.save(args[-1], values, allow_pickle=False)
   monkeypatch.setattr(probe.subprocess, 'run', child)
   if corrupt:
