@@ -131,7 +131,7 @@ class TrtEngine:
     from jetlink.server.backends.base import load_inputs
     load_inputs(self, values)
 
-  def _enqueue(self) -> None:
+  def _enqueue(self, *, capturing=False) -> None:
     for b in self.inputs.values():
       if self.device_state is not None and b.name in self.device_state.input_names:
         continue
@@ -148,7 +148,7 @@ class TrtEngine:
       cudart.memcpy_d2h_async(b.host_ptr, b.device_ptr, b.nbytes, self.stream)
     if self.device_state is not None:
       self.device_state.enqueue_check()
-      cudart.event_record(self.device_state.reply, self.stream)
+      cudart.event_record(self.device_state.reply, self.stream, external=capturing)
       self.device_state.enqueue_feedback()
 
   def capture_graph(self) -> bool:
@@ -165,7 +165,7 @@ class TrtEngine:
     try:
       cudart.stream_begin_capture(self.stream)
       capturing = True
-      self._enqueue()
+      self._enqueue(capturing=True)
       capturing = False  # EndCapture also terminates an invalidated capture.
       graph = cudart.stream_end_capture(self.stream)
       self.graph_exec = cudart.graph_instantiate(graph)

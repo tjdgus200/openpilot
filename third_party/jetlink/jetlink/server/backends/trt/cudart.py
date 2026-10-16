@@ -89,9 +89,10 @@ def event_create():
   return check(_rt.cudaEventCreateWithFlags(1 | 2))
 
 
-def event_record(event, stream: int) -> None:
-  # External: a captured graph must actually record the event on every replay.
-  check(_rt.cudaEventRecordWithFlags(event, stream, 1))
+def event_record(event, stream: int, *, external=False) -> None:
+  # External records a graph node during capture. It is invalid in a plain
+  # warm/enqueue run on Orin; use the default event flag outside capture.
+  check(_rt.cudaEventRecordWithFlags(event, stream, 1 if external else 0))
 
 
 def event_sync(event) -> None:

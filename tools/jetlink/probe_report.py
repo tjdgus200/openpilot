@@ -11,7 +11,7 @@ import urllib.request
 
 
 def destination(config):
-  if set(config) != {'url', 'expires'} or time.time() >= config['expires']:
+  if set(config) != {'url', 'expires'} or time.time() >= config['expires']:  # noqa: TID251 -- signed wall-clock expiry
     return None
   url = urllib.parse.urlsplit(config['url'])
   if (url.scheme != 'http' or url.username or url.password or url.query or url.fragment

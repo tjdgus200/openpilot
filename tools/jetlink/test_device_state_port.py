@@ -53,7 +53,9 @@ class Cuda:
   def memcpy_d2d_async(self, *a): self.copy('d2d', *a)
   def memset_async(self, ptr, n, stream): self.add(('zero', n), lambda: self.bytes(ptr, n).fill(0))
   def event_create(self): return 11
-  def event_record(self, event, stream): self.add(('event', event), lambda: None)
+  def event_record(self, event, stream, *, external=False):
+    assert external == (self.capture is not None), 'external event must be limited to graph capture'
+    self.add(('event', event), lambda: None)
 
   def event_sync(self, event):
     while self.todo:

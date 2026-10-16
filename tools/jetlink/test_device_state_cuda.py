@@ -51,9 +51,12 @@ def test_actual_gpu_finite_scan_graph_event_recurrence_and_reset(monkeypatch):
     state.enqueue_check()
     cuda.stream_sync(stream)
     state.validate()
+    # The same event must work before capture, as in TrtEngine.warm().
+    cuda.event_record(state.reply, stream)
+    cuda.event_sync(state.reply)
     cuda.stream_begin_capture(stream)
     state.enqueue_check()
-    cuda.event_record(state.reply, stream)
+    cuda.event_record(state.reply, stream, external=True)
     state.enqueue_feedback()
     graph = cuda.stream_end_capture(stream)
     executable = cuda.graph_instantiate(graph)
