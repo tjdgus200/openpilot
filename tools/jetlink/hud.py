@@ -235,6 +235,10 @@ def main():
         self.next_status = now + 1
       return result
   cluster.TuringUsbDisplay = Display
+  # This adapter always drives the Jetson's local USB panel. The shared
+  # renderer also supports an S3 Wi-Fi output, whose config is comma-only.
+  cluster.load_wifi_config = lambda: None
+  cluster.create_display = Display
   # Jetson has no video encoder block. Keep inference CPU/GPU headroom and
   # use the existing software encoder at the normal 10 FPS cluster rate.
   sys.argv = [__file__, '--input', 'live', '--output', 'usb', '--fps', '10',
