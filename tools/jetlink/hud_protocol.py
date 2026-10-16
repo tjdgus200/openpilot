@@ -50,7 +50,14 @@ class Publisher:
     if self.media_socket is not None:
       from hud_navi import CHUNK, HEADER as MEDIA_HEADER
       try:
-        return self.media_socket.recv(CHUNK + MEDIA_HEADER.size)
+        packet = self.media_socket.recv(CHUNK + MEDIA_HEADER.size)
+        if not packet:
+          # EOF stays readable forever. Retire it so the WLAN worker cannot
+          # spin on select() if the optional media producer exits.
+          self.media_socket.close()
+          self.media_socket = None
+          return None
+        return packet
       except BlockingIOError:
         pass
     return None
@@ -77,7 +84,8 @@ class Publisher:
       except subprocess.TimeoutExpired:
         self.media_process.kill()
         self.media_process.wait(timeout=1)
-      self.media_socket.close()
+      if self.media_socket is not None:
+        self.media_socket.close()
     self.process.terminate()
     try:
       self.process.wait(timeout=2)

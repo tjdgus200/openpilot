@@ -23,7 +23,7 @@ from openpilot.selfdrive.modeld.jetlink.selection import ModelChanged, check_loa
 from openpilot.selfdrive.modeld.jetlink.startup import CAPABILITY as BOOT_UPDATE_CAPABILITY, wait_for_boot_update
 from jetlink.client import JetlinkClient
 from jetlink.transport.base import LinkError, LinkTimeout
-from jetlink.transport.ffs import FfsTransport
+from jetlink.transport.ffs_aio import AioFfsTransport, AioCleanupError
 
 GADGET = '/sys/kernel/config/usb_gadget/jetlink'
 ROLE = Path('/sys/class/power_supply/usb/typec_mode')
@@ -34,10 +34,12 @@ ACTIVE_UDC = None
 SESSION_DETACHED = False
 log = logging.getLogger('carrot.jetlink')
 sys.path.insert(0, str(VENDOR.parents[1] / 'tools/jetlink'))
-from hud_protocol import Publisher, HUD_CAPABILITY, HUD_MESSAGE
+from hud_protocol import Publisher, HUD_MESSAGE
+from hud_wifi import publisher as display_publisher
 from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE
 from hud_navi import send_ready_after_reply, send_ready_during_inference, PUMP_CAPABILITY
 from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, Publisher as WifiPublisher
+from runtime_port_options import apply as apply_runtime_port_options
 
 
 class UnsafeCleanupError(LinkError):
@@ -63,8 +65,8 @@ def update_affinity():
 def publish_hud(client, publisher):
   # Packet construction/Cap'n Proto encoding is in the publisher child. These
   # scopes measure only snapshot access and synchronous writes on the USB owner.
-  metrics = dict(display_snapshot_read_ms=0., display_hud_send_ms=0., display_media_read_ms=0.,
-                 display_media_send_ms=0., display_hud_bytes=0, display_media_bytes=0)
+  metrics = {'display_snapshot_read_ms': 0., 'display_hud_send_ms': 0., 'display_media_read_ms': 0.,
+             'display_media_send_ms': 0., 'display_hud_bytes': 0, 'display_media_bytes': 0}
   if publisher is not None:
     started = time.monotonic()
     try:
@@ -136,7 +138,7 @@ def publish(status, spec=None, **extra):
   os.replace(temporary, STATUS)
 
 
-class CarrotTransport(FfsTransport):
+class CarrotTransport(AioFfsTransport):
   def enable_read_pipeline(self):
     from openpilot.cereal import messaging
     sm = messaging.SubMaster(['carState', 'carControl', 'selfdriveState'])
@@ -204,7 +206,10 @@ class CarrotTransport(FfsTransport):
     reader = getattr(self, '_reader', None)
     watchdog = getattr(getattr(self, '_write_guard', None), 'thread', None)
     gadget = getattr(self, 'gadget', None)
-    super().close()
+    try:
+      super().close()
+    except AioCleanupError as exc:
+      raise UnsafeCleanupError(str(exc)) from exc
     if getattr(getattr(self, '_aio_reader', None), 'context', None) is not None:
       raise UnsafeCleanupError('FunctionFS AIO cleanup incomplete; refusing to rebind')
     if any(thread is not None and thread.is_alive() for thread in (reader, watchdog)):
@@ -228,7 +233,7 @@ class CarrotTransport(FfsTransport):
 
 
 def serve_local(listener, client, peer, wifi=None):
-  publisher = Publisher(navi=bool(peer.get(NAVI_CAPABILITY))) if peer.get(HUD_CAPABILITY) else None
+  publisher = display_publisher(client, peer, Publisher)
   phase = PhasePublisher()
   try:
     _serve_local(listener, client, peer, publisher, phase, wifi)
@@ -397,6 +402,7 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
 
 def main():
   global TRANSPORT_MODE, SESSION_MODE, ACTIVE_UDC, SESSION_DETACHED
+  apply_runtime_port_options()
   logging.basicConfig(level=logging.INFO)
   TRANSPORT_MODE = transport_mode()
   SESSION_MODE = TRANSPORT_MODE
