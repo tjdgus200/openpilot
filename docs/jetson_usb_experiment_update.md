@@ -2,8 +2,9 @@
 
 This branch adds a separate owner-signed USB release channel. The official
 Carrot NAS host allowlist, official signing public key, model selection,
-activation probe and rollback remain in place. No private key or published
-experiment manifest is included. Installing this branch alone selects the
+activation probe and rollback remain in place. The owner's enrolled public key
+is included; no private key or published experiment manifest is included.
+Installing this branch alone selects the
 existing official release until a signed `usb_host_release.json` is published.
 The two performance experiments also remain default OFF.
 
@@ -48,6 +49,23 @@ For recovery use the mounted DATA runtime path instead of `/opt/carrot-jetlink`.
 The installer preserves the current release, official key and original updater
 backup; it refuses silent key rotation. Do not run this against a live runtime.
 Enrollment enables only the transfer capability, not either performance flag.
+
+### Enrollment recorded 2026-10-16
+
+The owner's Orin received the USB receiver based on `227d0267` and the public
+key in `openpilot/selfdrive/modeld/jetlink/usb_host_public.pem`. Its Ed25519 public
+key DER SHA256 fingerprint is
+`231b3468f502fcaa66994220f885a8e9e0993135a42b0491e2ebb7aa9dd66316`.
+The private signing key stays on the owner's PC, outside this repository.
+
+Installation preserved the official `989386eb` runtime, official trust key,
+boot policy and L4T 36.4.7. Only DATA updater files/public key were changed;
+APP and QSPI were not written. Fresh read-only readback verified the installed
+files. On the device's ARM64 Python environment, a signed non-installable test
+manifest was accepted, a modified one rejected, and a simulated boot HELLO
+advertised `carrot_usb_release_v1`. No experimental bundle was staged or
+activated. Normal reboot was requested after unmounting; actual comma USB
+transfer and normal-boot behavior still require verification.
 
 ## Preparing a release (author PC, Linux Python + pycryptodome)
 
