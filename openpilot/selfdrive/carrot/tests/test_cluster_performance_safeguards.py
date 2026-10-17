@@ -640,8 +640,12 @@ def test_cluster_autorun_falls_back_only_for_h264_initialization(monkeypatch):
   carrot_package = importlib.import_module("selfdrive.carrot")
   cluster_run = types.ModuleType("selfdrive.carrot.cluster_run")
   calls = []
+  lifecycle = []
+  cluster_run.configure_cluster_graphics = lambda: lifecycle.append("graphics")
 
   def run_cluster(*, exit_on_error):
+    assert lifecycle and lifecycle[0] == "graphics"
+    lifecycle.append("main")
     assert exit_on_error is False
     calls.append(sys.argv[:])
     if len(calls) == 1:
@@ -663,6 +667,7 @@ def test_cluster_autorun_falls_back_only_for_h264_initialization(monkeypatch):
 
   assert calls[0][calls[0].index("--usb-h264-backend") + 1] == "native"
   assert calls[1][calls[1].index("--usb-h264-backend") + 1] == "ffmpeg"
+  assert lifecycle == ["graphics", "main", "main"]
 
 
 def test_h264_start_classifies_only_initialization_errors(monkeypatch):
@@ -712,8 +717,12 @@ def test_cluster_autorun_does_not_fallback_after_runtime_failure(monkeypatch):
   carrot_package = importlib.import_module("selfdrive.carrot")
   cluster_run = types.ModuleType("selfdrive.carrot.cluster_run")
   calls = []
+  lifecycle = []
+  cluster_run.configure_cluster_graphics = lambda: lifecycle.append("graphics")
 
   def run_cluster(*, exit_on_error):
+    assert lifecycle and lifecycle[0] == "graphics"
+    lifecycle.append("main")
     assert exit_on_error is False
     calls.append(sys.argv[:])
     raise RuntimeError("render loop failed")
@@ -734,6 +743,7 @@ def test_cluster_autorun_does_not_fallback_after_runtime_failure(monkeypatch):
       )
 
   assert len(calls) == 1
+  assert lifecycle == ["graphics", "main"]
 
 
 def test_native_h264_queue_keeps_config_keyframe_and_latest_access_unit():
