@@ -618,8 +618,7 @@ def main() -> None:
             except OSError as exc:
                 detail = " ".join(str(exc).split())[:160]
                 print(
-                    f"[cluster_autorun] S3 Wi-Fi discovery unavailable "
-                    f"({type(exc).__name__}: {detail}); retrying in {RETRY_INTERVAL_S:.0f}s",
+                    f"[cluster_autorun] S3 Wi-Fi discovery unavailable ({type(exc).__name__}: {detail}); retrying in {RETRY_INTERVAL_S:.0f}s",
                     flush=True,
                 )
                 time.sleep(RETRY_INTERVAL_S)
