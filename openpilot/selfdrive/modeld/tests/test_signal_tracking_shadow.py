@@ -52,7 +52,7 @@ def test_production_uses_only_one_validated_tracker_even_with_comparison_flag():
 @pytest.mark.parametrize('prediction', ['red', 'green', 'unknown'])
 def test_comparison_never_writes_control_transport(prediction):
   calls = []
-  result = dict(state=prediction, tracks=[])
+  result = {'state': prediction, 'tracks': []}
   publish_control_observation(result, 4, 2., 'test', comparison=True, publisher=lambda *a: calls.append(a))
   assert calls == []
   publish_control_observation(result, 4, 2., 'test', comparison=False, publisher=lambda *a: calls.append(a))
@@ -69,7 +69,30 @@ def test_stale_output_cannot_be_green(age):
 def test_cpu_and_rate_budget(wall, cpu):
   delay = next_delay(wall, cpu)
   assert wall + delay >= .05
-  assert cpu / (cpu + delay) <= .5
+  assert cpu / (wall + delay) <= .5
+
+
+def test_preemption_counts_towards_cpu_rest_without_catchup():
+  assert next_delay(.08, .03) == 0
+  assert next_delay(.04, .03) == pytest.approx(.02)
+  assert next_delay(.01, .01) == pytest.approx(.04)
+  assert next_delay(.5, .1) == 0
+
+
+def test_two_plane_matches_packed_conversion_with_random_padding():
+  import cv2
+  rng = np.random.default_rng(16)
+  w, h, stride = 1344, 760, 1408
+  offset = stride*h+128
+  raw = rng.integers(0, 256, offset+stride*h//2, dtype=np.uint8)
+  packed = np.concatenate((raw[:stride*h].reshape(h, stride)[:, :w],
+                           raw[offset:].reshape(h//2, stride)[:, :w]), axis=0)
+  expected = cv2.cvtColor(packed, cv2.COLOR_YUV2RGB_NV12)
+  frame = SimpleNamespace(width=w, height=h, stride=stride, uv_offset=offset, data=raw)
+  result = copy_nv12_rgb(frame)
+  np.testing.assert_array_equal(result, expected)
+  raw[:] = 0
+  np.testing.assert_array_equal(result, expected)
 
 
 def test_nv12_padding_and_no_input_mutation():
@@ -114,7 +137,7 @@ def test_worker_modes_select_engines_and_bound_transport(monkeypatch, tmp_path, 
   from openpilot.selfdrive.modeld import signal_tracking_shadow as worker
   from openpilot.selfdrive.carrot import signal_assist_runtime
   from openpilot.selfdrive.carrot import signal_display
-  from tools.signal_analysis import signal_tracker
+  from tools.signal_analysis import signal_tracker  # noqa: TID251 - test the repository-root signal tools
   from openpilot.selfdrive.carrot import signal_mode
   if single:
     monkeypatch.setattr(worker, 'DIRECTORY', tmp_path)
@@ -138,7 +161,7 @@ def test_worker_modes_select_engines_and_bound_transport(monkeypatch, tmp_path, 
     def process(self, image, timestamp):
       assert image is rgb
       calls.append((self.trial, timestamp, self.robust))
-      return dict(state='green' if self.trial else 'red', reason='test', tracks=[])
+      return {'state': 'green' if self.trial else 'red', 'reason': 'test', 'tracks': []}
   class Camera:
     frame_id = 7
     def __init__(self, *args):
@@ -169,7 +192,7 @@ def test_worker_modes_select_engines_and_bound_transport(monkeypatch, tmp_path, 
   assert len(published) == (0 if comparison else 1)
   assert len(displays) == 1
   assert displays[0]['prediction'] == ('green' if comparison or revalidated else 'red')
-  records = {name: record for name, record in events}
+  records = dict(events)
   assert records['signalTrackingShadow']['prediction'] == ('green' if single or revalidated and not comparison else 'red')
   if comparison and not single:
     assert calls[0][1] == calls[1][1]
