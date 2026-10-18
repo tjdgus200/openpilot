@@ -20,6 +20,7 @@ from openpilot.selfdrive.modeld.jetlink.compat import ProtocolChoice
 from openpilot.selfdrive.modeld.jetlink.mobile import transport_mode, setup_gadget, MobileCable, AutoTransport, MobileLinkError
 from openpilot.selfdrive.modeld.jetlink.contracts import model_name
 from openpilot.selfdrive.modeld.jetlink.selection import ModelChanged, check_loaded
+from openpilot.selfdrive.modeld.jetlink.usb_power import UsbPowerGuard
 from openpilot.selfdrive.modeld.jetlink.startup import CAPABILITY as BOOT_UPDATE_CAPABILITY, wait_for_boot_update
 from jetlink.client import JetlinkClient
 from jetlink.transport.base import LinkError, LinkTimeout
@@ -437,8 +438,10 @@ def main():
   usb_mode = None
   tcp_seen = False
   mobile_unavailable = False
+  usb_power = UsbPowerGuard()
   try:
     while True:
+      usb_power.step()
       update_affinity()
       if cleanup_error:
         publish('blocked', peer=None, error=cleanup_error)

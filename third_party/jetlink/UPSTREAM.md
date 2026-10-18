@@ -30,3 +30,12 @@ Experimental port on `codex/jetson-nav-runtime-port`, based on carrot-nav
 Both paths are OFF by default. This is not an upgrade to Jetlink v0.8.7, a new
 signed host release, or a port of its held-output policy. See
 `docs/jetson_runtime_port_20261015.md` for validation and remaining limitations.
+
+USB input-current policy port: zoompilot/jetlink
+`491cf1ef8d6786ed51cf995e18fc8721389066c6` (2026-10-16),
+`jetlink/comma/owner.py:steer_draw` and `scripts/comma/jetlink-root.sh:cmd_draw`.
+Carrot's always-running daemon applies the zero-current voter only with a
+verified empty USB-C port, across its configured transport modes. Its dedicated
+helper verifies the vote and preserves foreign forced votes. It does not import
+upstream's role switching, VM tuning, runtime or model catalog. See
+`docs/jetlink_usb_power_20261018.md` for power sequencing and validation limits.

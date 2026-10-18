@@ -2,6 +2,7 @@
 
 # Offline bootstrap payloads must match Linux image bytes on every workstation.
 tools/jetlink/*.py text eol=lf
+tools/jetlink/usb_power.sh text eol=lf
 
 # Store bundled artifacts as ordinary Git blobs, without LFS bandwidth usage.
 # Keep their exact bytes on every platform. Larger external models stay on NAS.
