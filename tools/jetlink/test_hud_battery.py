@@ -92,6 +92,63 @@ def test_passive_socket_is_bounded_and_retired_on_page_or_vehicle_change(tmp_pat
     assert source.report is None
 
 
+def test_half_second_reports_cache_values_without_renewing_receive_age(monkeypatch):
+    source = b.BatteryPublisher()
+    source.vehicle, source.next_profile = 'KIA_PV5', 100
+    source.decoder = b.PassiveDecoder([signal()])
+    source.messaging = NS(recv_one_or_none=lambda sock: None)
+    monkeypatch.setattr(b.time, 'monotonic', lambda: 10.0)
+    source.decoder.metrics['max_temp_c'] = 32, 10
+    first = source.update('KIA_PV5', True, 10)
+    source.decoder.metrics['max_temp_c'] = 33, 10.1
+    assert source.update('KIA_PV5', True, 10.499) is first
+    second = source.update('KIA_PV5', True, 10.5)
+    assert second['fields']['max_temp_c'] == {'value': 33, 'age_s': pytest.approx(0.4)}
+    assert source.update('KIA_PV5', True, 10.999) is second
+    assert source.update('KIA_PV5', True, 11)['sampled_at'] == 11
+    # A late worker emits once, rather than replaying missed report slots.
+    assert source.update('KIA_PV5', True, 20)['fields'] == {}
+    assert source.next_report == 20.5
+
+
+def test_can_admission_stops_after_budget_before_draining_queue(monkeypatch):
+    source = b.BatteryPublisher()
+    source.vehicle, source.next_profile = 'KIA_PV5', 100
+    source.decoder = b.PassiveDecoder([signal()])
+    queue = [event(single(b'\x62\xab\xcd\x20')) for _ in range(3)]
+    source.messaging = NS(recv_one_or_none=lambda sock: queue.pop())
+    clock = iter([10.0, 10.001, 10.003])
+    monkeypatch.setattr(b.time, 'monotonic', lambda: next(clock))
+    assert source.update('KIA_PV5', True, 10)['fields']['max_temp_c']['value'] == 32
+    assert len(queue) == 2
+
+
+def test_unrelated_can_payload_is_not_copied_and_frame_scan_stays_bounded():
+    decoder = b.PassiveDecoder([signal()])
+    # No dat attribute: unrelated payloads must never be accessed or copied.
+    skipped = [NS(src=1, address=0x613), NS(src=129, address=0x612), NS(src=0, address=0x612)]
+    sample = event(single(b'\x62\xab\xcd\x20'))
+    sample.can = skipped + sample.can
+    decoder.consume(sample, 10)
+    assert decoder.metrics['max_temp_c'] == (32, 10)
+    decoder.metrics.clear()
+    sample.can = [skipped[0]] * 512 + [event(single(b'\x62\xab\xcd\x21')).can[0]]
+    decoder.consume(sample, 10)
+    assert not decoder.metrics
+
+
+def test_two_hz_reports_keep_temperature_history_at_one_hz():
+    decoder = b.PassiveDecoder([signal()])
+    for tick in range(1201):
+        stamp = tick * 0.5
+        decoder.metrics['max_temp_c'] = 20 + stamp * 0.01, stamp
+        decoder.packet(stamp)
+        assert len(decoder.history) <= 302
+    assert all(second[0] - first[0] >= 1
+               for first, second in zip(decoder.history, list(decoder.history)[1:], strict=False))
+    assert decoder.packet(600)['fields']['temp_change_5min_c']['value'] == pytest.approx(3.01)
+
+
 def test_thermal_power_does_not_infer_cooling_or_heating():
     decoder = b.PassiveDecoder([signal('thermal_power_kw', signed=False, scale=0.1)])
     decoder.decode_payload(1, 0x612, b'\x62\xab\xcd\x18', 10)
@@ -226,7 +283,7 @@ def test_remote_ages_do_not_require_synchronized_clocks_or_reset_each_snapshot()
 
 def test_optional_source_failure_does_not_break_other_snapshots():
     builder = object.__new__(hud_protocol.SnapshotBuilder)
-    builder.params = NS(get_int=lambda key: 8)
+    builder.params = NS(get=lambda key: b'8')
     builder.sm = {'carParams': NS(carFingerprint='KIA_PV5')}
     builder.battery_retry_at = 0
     calls = []
@@ -240,7 +297,7 @@ def test_optional_source_failure_does_not_break_other_snapshots():
     assert result == {'version': 1, 'sampled_at': 10, 'status': 'waiting', 'fields': {}}
     assert calls == ['close'] and builder.battery is None and builder.battery_retry_at == 15
     assert builder.battery_snapshot(11)['fields'] == {}
-    builder.params = NS(get_int=lambda key: 0)
+    builder.params = NS(get=lambda key: b'0')
     assert builder.battery_snapshot(12) is None
 
 
@@ -270,11 +327,33 @@ def test_battery_layout_has_no_removed_fields_and_preserves_alert_order(monkeypa
 
 def test_mode_selection_defaults_and_valid_zero_rendering():
     assert normalize_cluster_screen_mode('battery') == normalize_cluster_screen_mode(8) == 8
-    assert normalize_cluster_screen_mode(9) == normalize_cluster_screen_mode(None) == 0
+    assert normalize_cluster_screen_mode(9) == normalize_cluster_screen_mode(None) == 8
+    assert normalize_cluster_screen_mode('default') == normalize_cluster_screen_mode(b'') == 8
+    assert renderer.ClusterUiRenderer().screen_mode == 8
+    # Existing numeric choices are not silently changed by the new default.
+    for mode in range(-1, 9):
+        assert normalize_cluster_screen_mode(str(mode).encode()) == mode
     data = panel_from_wire(packet_from_metrics({'soc_percent': (0, 10), 'max_temp_c': (0, 10)}, 10))
     state = replace(standby_state(), battery=data)
     assert state.battery.value('soc_percent') == 0
     assert isinstance(state.battery, BatteryPanelData)
+
+
+@pytest.mark.parametrize('stored_mode,enabled', [(None, True), (b'8', True), (b'0', False), (b'7', False)])
+def test_publisher_matches_default_and_saved_page_selection(stored_mode, enabled, monkeypatch):
+    builder = object.__new__(hud_protocol.SnapshotBuilder)
+    builder.params = NS(get=lambda key: stored_mode)
+    builder.sm = {'carParams': NS(carFingerprint='KIA_PV5')}
+    builder.battery, builder.battery_retry_at = None, 0
+    calls = []
+    class Source:
+        def update(self, *args):
+            calls.append(args)
+            return {'status': 'profile_required', 'fields': {}}
+    monkeypatch.setattr(b, 'BatteryPublisher', Source)
+    result = builder.battery_snapshot(10)
+    assert bool(calls) == enabled
+    assert (result is not None) == enabled
 
 
 def test_battery_update_does_not_invalidate_the_driving_scene_cache():

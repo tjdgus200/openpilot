@@ -17,6 +17,7 @@ PROFILE_PATH = Path('/data/jetlink/pv5-battery-profile.json')
 MAX_PROFILE_BYTES = 8192
 MAX_SIGNALS = 16
 MAX_MESSAGE_BYTES = 1024
+REPORT_INTERVAL_S = 0.5
 SOURCE_LIMITS = {
     'pack_voltage_v': (0.0, 1500.0), 'pack_current_a': (-2000.0, 2000.0),
     'max_cell_v': (0.0, 5.0), 'min_cell_v': (0.0, 5.0),
@@ -186,7 +187,8 @@ class PassiveDecoder:
         for index, frame in enumerate(event.can):
             if index >= 512:
                 break
-            if frame.src < 128:
+            # Skip unrelated traffic before copying its payload into Python.
+            if (frame.src, frame.address) in self.addresses:
                 self.feed(frame.src, frame.address, bytes(frame.dat), stamp)
 
     def packet(self, now):
@@ -267,7 +269,9 @@ class BatteryPublisher:
                     break
                 self.decoder.consume(event, now)
         if self.report is None or now >= self.next_report:
-            self.next_report = now + 1.0
+            # Only these small metrics refresh at 2 Hz; the HUD/preview loop
+            # and the bounded 1 Hz temperature history retain their cadence.
+            self.next_report = now + REPORT_INTERVAL_S
             self.report = (self.decoder.packet(now) if self.decoder is not None else
                            packet_from_metrics({}, now, 'profile_required'))
         return self.report

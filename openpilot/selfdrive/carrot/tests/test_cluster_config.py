@@ -12,6 +12,7 @@ from cluster_config import (
   CLUSTER_PANEL_LAYOUT_DRIVING_LEFT,
   CLUSTER_PANEL_LAYOUT_DRIVING_RIGHT,
   CLUSTER_SCREEN_MODE_DEBUG_SYSTEM,
+  CLUSTER_SCREEN_MODE_INITIAL,
   CLUSTER_SCREEN_MODE_FULLSCREEN_3D,
   CLUSTER_SCREEN_MODE_TRIP_REPORT,
   cluster_camera_view_is_road_camera,
@@ -43,7 +44,7 @@ def test_cluster_h264_auto_bitrate_preserves_per_frame_budget_through_60_fps():
 def test_cluster_screen_mode_five_selects_trip_report():
   assert normalize_cluster_screen_mode(5) == CLUSTER_SCREEN_MODE_TRIP_REPORT
   assert normalize_cluster_screen_mode("trip-report") == CLUSTER_SCREEN_MODE_TRIP_REPORT
-  assert normalize_cluster_screen_mode("navi-debug") == 0
+  assert normalize_cluster_screen_mode("navi-debug") == CLUSTER_SCREEN_MODE_INITIAL
 
 
 def test_cluster_screen_mode_two_selects_debug_system():

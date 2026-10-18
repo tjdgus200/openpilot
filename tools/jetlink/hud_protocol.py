@@ -146,7 +146,10 @@ class SnapshotBuilder:
 
   def battery_snapshot(self, now):
     try:
-      enabled = self.params.get_int('ClusterHudScreenMode') == 8
+      from openpilot.selfdrive.carrot.cluster.cluster_config import (
+        CLUSTER_SCREEN_MODE_BATTERY, CLUSTER_SCREEN_MODE_PARAM, normalize_cluster_screen_mode,
+      )
+      enabled = normalize_cluster_screen_mode(self.params.get(CLUSTER_SCREEN_MODE_PARAM)) == CLUSTER_SCREEN_MODE_BATTERY
       if not enabled and self.battery is None:
         return None
       if not enabled:

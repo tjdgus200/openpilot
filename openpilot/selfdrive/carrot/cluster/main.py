@@ -28,7 +28,7 @@ from cluster_config import (
     CLUSTER_RADAR_DISPLAY_PARAM,
     CLUSTER_RADAR_INFO_PARAM,
     CLUSTER_RADAR_SOURCE_COLOR_PARAM,
-    CLUSTER_SCREEN_MODE_DEFAULT,
+    CLUSTER_SCREEN_MODE_INITIAL,
     CLUSTER_SCREEN_MODE_DEBUG,
     CLUSTER_SCREEN_MODE_DEBUG_GRAPH,
     CLUSTER_SCREEN_MODE_DEBUG_GRAPH_RIGHT,
@@ -378,11 +378,12 @@ class ClusterScreenModeParamReader:
 
     def read(self) -> int:
         if self._params is None:
-            return 0
+            return CLUSTER_SCREEN_MODE_INITIAL
         try:
-            return normalize_cluster_screen_mode(self._params.get_int(CLUSTER_SCREEN_MODE_PARAM))
+            # get_int() turns an unset key into 0, hiding the initial choice.
+            return normalize_cluster_screen_mode(self._params.get(CLUSTER_SCREEN_MODE_PARAM))
         except Exception:
-            return 0
+            return CLUSTER_SCREEN_MODE_INITIAL
 
 
 class ClusterCameraViewModeParamReader:
@@ -814,7 +815,7 @@ def run_demo(
     elif screen_mode_param_reader is not None:
         active_screen_mode = screen_mode_param_reader.read()
     else:
-        active_screen_mode = CLUSTER_SCREEN_MODE_DEFAULT
+        active_screen_mode = CLUSTER_SCREEN_MODE_INITIAL
     camera_view_override = (
         normalize_cluster_camera_view_mode(camera_view_mode)
         if camera_view_mode is not None
@@ -2330,7 +2331,7 @@ def parse_args() -> argparse.Namespace:
         "--screen-mode",
         default=None,
         help=("HUD screen override: 3d-fullscreen, default, debug-system, trip-report, navi, or battery; "
-              + f"default reads {CLUSTER_SCREEN_MODE_PARAM}."),
+              + f"when omitted, reads {CLUSTER_SCREEN_MODE_PARAM} (unset: battery)."),
     )
     parser.add_argument(
         "--cluster-hud-mode",
