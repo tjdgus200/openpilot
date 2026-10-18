@@ -60,6 +60,9 @@ def _np_from_ptr(ptr: int, shape, dtype) -> np.ndarray:
 
 class TrtEngine:
   def __init__(self, plan_path: str, log_severity=trt.Logger.WARNING, device: int | None = None):
+    # Kept out of runtime_port_options.json: PC-only evidence must never turn
+    # this experiment on in an existing owner's automatic Jetson release.
+    self.input_fastpath = os.getenv('CARROT_TRT_INPUT_FASTPATH', '0') == '1'
     self.logger = trt.Logger(log_severity)
     # Absent on a TensorRT that dropped the V2 plugin family; the driving
     # models use no plugins either way.

@@ -1,6 +1,14 @@
 # Jetlink vendored runtime
 
 Source: https://github.com/zoompilot/jetlink
+
+Local input-staging experiment (2026-10-19): `input_cast.c`/`input_cast.py` and
+`direct_inputs.py` provide a default-OFF native uint8 conversion and direct
+compact-map staging into fixed TensorRT host inputs. The manual
+`CARROT_TRT_INPUT_FASTPATH=1` gate is not added to owner release defaults or
+deployment manifests. This is a local implementation, not an upstream version
+upgrade. See `docs/jetson_input_optimization_20261019.md` for PC-only evidence.
+
 Revision: `194ff6dc71cd27282378fff155e94daa7770152b` (0.3.0a1).
 The v2 runtime is retained. `transport/base.py` adds a per-connection
 `wire_protocol` selection hook; its default remains v2. See LICENSE.
