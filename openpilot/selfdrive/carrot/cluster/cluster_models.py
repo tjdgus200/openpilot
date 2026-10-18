@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from cluster_battery import BatteryPanelData
 from cluster_config import DEFAULT_LANE_WIDTH_M, WHITE
 
 CruiseDisplayState = Literal["off", "paused", "engaged"]
@@ -511,6 +512,7 @@ class ClusterUiState:
     recorded_cutin_active: bool = False
     recorded_cutin_sound: bool = False
     alert: ClusterAlert | None = None
+    battery: BatteryPanelData | None = None
 
 
 @dataclass(frozen=True, slots=True)

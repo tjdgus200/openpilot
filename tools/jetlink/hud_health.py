@@ -1,9 +1,12 @@
 """Jetson-local temperature display; never substitute it for vehicle statistics."""
 import math
 import time
+from dataclasses import replace
 
 from host_health import STATUS
 from openpilot.common.jetlink_status import _fresh
+from cluster_battery import remote_panel
+from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
                               EGPU_STATUS_CENTER_X, TOP_STATUS_CENTER_Y, rl, rl_color)
 
@@ -47,6 +50,9 @@ class HealthRenderer(ClusterUiRenderer):
   def render(self, state, signal_lights=None):
     self.host_health = _fresh(STATUS, time.monotonic())
     self.host_badge_drawn = False
+    if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
+      from hud_protocol import read_snapshot
+      state = replace(state, battery=remote_panel(read_snapshot(), time.monotonic()))
     super().render(state, signal_lights)
 
   def _temperature_badge(self, x, y):

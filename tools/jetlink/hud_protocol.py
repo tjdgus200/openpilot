@@ -112,8 +112,12 @@ class SnapshotBuilder:
     self.camera = None
     from openpilot.selfdrive.carrot.cluster.cluster_system_monitor import NetworkAddressProvider
     self.network = NetworkAddressProvider()
+    self.battery = None
+    self.battery_retry_at = 0.0
 
   def close(self):
+    if self.battery is not None:
+      self.battery.close()
     if self.camera is not None:
       self.camera.close()
     self.network.close()
@@ -139,6 +143,31 @@ class SnapshotBuilder:
       self.camera.close()
       self.camera = None
     return self.camera.latest if self.camera is not None else {}
+
+  def battery_snapshot(self, now):
+    try:
+      enabled = self.params.get_int('ClusterHudScreenMode') == 8
+      if not enabled and self.battery is None:
+        return None
+      if not enabled:
+        self.battery.close()
+        self.battery = None
+        return None
+      if now < self.battery_retry_at:
+        return {'version': 1, 'sampled_at': now, 'status': 'waiting', 'fields': {}}
+      if self.battery is None:
+        from hud_battery import BatteryPublisher
+        self.battery = BatteryPublisher()
+      vehicle = self.sm['carParams'].carFingerprint
+      return self.battery.update(vehicle, True, now)
+    except Exception:
+      # Optional battery telemetry must not expire the other HUD services.
+      # Retry slowly without forwarding exception text or CAN payloads.
+      if self.battery is not None:
+        self.battery.close()
+      self.battery = None
+      self.battery_retry_at = now + 5.0
+      return {'version': 1, 'sampled_at': now, 'status': 'waiting', 'fields': {}}
 
   def packet(self):
     from openpilot.cereal import log
@@ -172,6 +201,9 @@ class SnapshotBuilder:
               'external_compute_label': device_badge[0] if device_badge and device_badge[1] == 'active' else '',
               'received': self.sm.recv_time, 'mono': self.sm.logMonoTime,
               'valid': self.sm.valid, 'alive': self.sm.alive, 'cameras': self.camera_previews()}
+    battery = self.battery_snapshot(now)
+    if battery is not None:
+      record['battery_hud'] = battery
     data = json.dumps(record, separators=(',', ':')).encode()
     if len(data) > 96 * 1024:
       record['cameras'] = {}
