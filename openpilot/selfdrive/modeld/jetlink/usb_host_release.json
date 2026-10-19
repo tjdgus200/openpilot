@@ -1,8 +1,8 @@
 {
   "format": 1,
   "delivery": "usb",
-  "profile": "aux-cpu-wifi-20261019-93788f61",
-  "source_commit": "93788f61fcf3c983c0540f1a5a52476c6c02aa74",
+  "profile": "hud-autostart-20261019-05c74953",
+  "source_commit": "05c749539332e4220c336f6b74b3af20f5d6dd20",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -10,14 +10,14 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "86b90d67c1b62713cf78134e23c2267e0bd95ba49217621a6ecd4c439c75a1ea",
-    "size": 81643822,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-aux-cpu-wifi-20261019-93788f61/host.tar.gz"
+    "sha256": "84c12dd2f25534545d79d833ae852d2bd624e6056e2776b2e1403cdb5d85c011",
+    "size": 81644263,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-autostart-20261019-05c74953/host.tar.gz"
   },
   "model": {
     "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
     "size": 814591106,
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
   },
-  "signature": "226XIGbohht8wuKH5oLFSSZyj/nk+URla/75PdYvYzbGZga8MvWxMaKC+5KO7yI5Jz8NMyXfC0MqwIvknvmWBw=="
+  "signature": "UgNZY8VWs85EQF1Ow20poVcOfkSOlmUIWFaiCW5UsaPDulPbHNLK53RBL0OWDUbfYbBnAJq9dOiAYFXzIIqzDw=="
 }

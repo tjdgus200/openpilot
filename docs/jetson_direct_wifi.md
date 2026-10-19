@@ -300,3 +300,16 @@ Initialization is not zero-time, and data expiry/brightness-loss handling remain
 unchanged. This fixes a demonstrated source-level startup gate; it does not
 establish the cause of the owner's reported Wi-Fi retrying state or claim a
 physical-panel pass on the disconnected device.
+
+The handoff source `05c749539332e4220c336f6b74b3af20f5d6dd20` is published as
+[`jetson-hud-autostart-20261019-05c74953`](https://github.com/tjdgus200/openpilot/releases/tag/jetson-hud-autostart-20261019-05c74953).
+The owner-signed package is81,644,263bytes, SHA-256
+`84c12dd2f25534545d79d833ae852d2bd624e6056e2776b2e1403cdb5d85c011`.
+Compared with the previous93788f61 package, only hud.py, its hotplug regression
+and SOURCE_COMMIT differ. The same owner public key verifies the selection.
+PC164 focused checks passed; one unchanged isolated boot-display fixture was
+excluded because WSL system Python lacks PIL. The exported entrypoint passed.
+The branch selector prepares installation through the existing offroad USB
+boot receiver on the next normal Jetson boot. No device installation or physical
+screen confirmation was possible after the owner disconnected. The reported
+Wi-Fi retrying/waiting condition remains separate and unconfirmed.
