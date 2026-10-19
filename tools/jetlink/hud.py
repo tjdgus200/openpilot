@@ -46,6 +46,37 @@ def wait_for_usb_display(scan, expected, sleep=time.sleep):
     sleep(1.)
 
 
+class _BrightnessSample:
+  def __init__(self, source):
+    self.source = source
+    self.unavailable = False
+
+  def screen_brightness_percent(self):
+    value = self.source.screen_brightness_percent() if self.source is not None else None
+    self.unavailable = value is None
+    return value
+
+
+class StableBrightness:
+  """Hold display brightness on missing input; never retain vehicle validity.
+
+  Keep the common resolver's manual, camera and explicit offroad behavior.
+  Only its unavailable-input fallback is replaced after the first resolution.
+  One instance belongs to one Jetson renderer, with no timers or extra I/O.
+  """
+  def __init__(self, resolver):
+    self.resolver = resolver
+    self.last = None
+
+  def __call__(self, setting, live_source, *, auto_enabled):
+    sample = _BrightnessSample(live_source)
+    value = self.resolver(setting, sample, auto_enabled=auto_enabled)
+    if sample.unavailable and self.last is not None:
+      return self.last
+    self.last = value
+    return value
+
+
 class DisplayParams:
   """Only this renderer sees this adapter; no vehicle Params can be written."""
   def __init__(self, *args, **kwargs):
@@ -209,6 +240,9 @@ def main():
   cluster_navi_source.NaviIpcMediaSource = RemoteNaviSource
   vehicle_stats = VehicleSystemStats()
   import main as cluster
+  # A WLAN gap invalidates RemoteSubMaster as before. It must not turn an
+  # explicit off/last brightness into the common renderer's default 80%.
+  cluster.resolved_usb_brightness = StableBrightness(cluster.resolved_usb_brightness)
   from hud_health import HealthRenderer
   cluster.ClusterUiRenderer = HealthRenderer
   if '--help' not in sys.argv:

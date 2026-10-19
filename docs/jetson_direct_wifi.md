@@ -132,3 +132,32 @@ must be distinguished. No speculative renderer change, stale-data-limit increase
 reboot or brightness override was installed after disconnection. The retained
 automatic brightness setting is unchanged. This feature's short network pass
 must not be reported as resolution of the physical panel flicker.
+
+## Brightness fallback mitigation
+
+The owner subsequently requested a countermeasure for this demonstrated input-
+loss path. `hud.py` now wraps the common brightness resolver only inside the
+Jetson renderer. Once a brightness is resolved, missing automatic input retains
+that value, including zero/off. A manual change updates the retained value too,
+so switching back to automatic during a gap does not resurrect an older automatic
+value. Fresh camera/device/offroad values still use the common resolver and can
+explicitly turn the panel off. A new renderer retains the original startup
+fallback until input exists; no value is persisted to vehicle Params or disk.
+
+The wrapper samples its input once and adds no thread, timer, network request or
+file read. HUD packet expiry, `RemoteSubMaster` alive/valid flags, and vehicle
+standby behavior are unchanged. Holding screen illumination must not make stale
+vehicle data current or affect inference, controls or a comma-connected panel.
+PC regression passed **69 tests**, including the common live-source behavior,
+HUD/health/hotplug checks, and new missing-input cases. The new tests cover
+zero/off preservation, repeated loss, recovery, manual-to-auto changes,
+per-renderer state, and actual 0.5-second HUD packet expiry using cereal messages.
+Six additional Windows standard-library source-branch checks also passed; those
+isolated checks do not exercise native cereal decoding or graphics. No new
+inference benchmark or physical-panel pass is implied.
+
+This is a source-level mitigation for missing-input brightness fallback, not a
+confirmed fix for the owner's physical panel incident. Installation requires an
+updated Jetson package: changing comma's source alone cannot replace the running
+Jetson renderer. Device observation and synchronized brightness/service/USB logs
+remain pending while the owner has disconnected the phone.
