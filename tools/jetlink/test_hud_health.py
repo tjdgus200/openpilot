@@ -85,3 +85,16 @@ def test_freshness_and_vehicle_alert_precedence(monkeypatch, tmp_path):
   calls.clear()
   renderer._draw_alert_overlay(None)
   assert calls == ['strip', 'text', 'vehicle']
+
+
+@pytest.mark.parametrize('value,expected', [(0,'0.0 W'), (7.67296,'7.7 W'), (25,'25.0 W'), (None,'-- W'), (True,'-- W'), (-1,'-- W'), (float('nan'),'-- W'), (float('inf'),'-- W'), (201,'-- W')])
+def test_power_label_has_units_and_rejects_unavailable_or_invalid_values(value, expected):
+  assert hud.power_label({'power_w':value}) == expected
+
+
+def test_expired_health_does_not_keep_old_power(tmp_path):
+  import json
+  path = tmp_path/'health.json'
+  path.write_text(json.dumps({'updated':10.,'power_w':12.4}))
+  assert hud.power_label(hud._fresh(path, 10.5)) == '12.4 W'
+  assert hud.power_label(hud._fresh(path, 14.)) == '-- W'

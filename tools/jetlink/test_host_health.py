@@ -75,3 +75,45 @@ def test_hello_telemetry_never_becomes_current_health(tmp_path, monkeypatch):
   assert status.diagnostics()['temp_c'] is None
   monkeypatch.setattr(status.time, 'monotonic', lambda: 15.)
   assert status.badge() == ('jetSON ERROR', 'error')
+
+
+
+def power_sensor(root, number=0, rail='VDD_IN', voltage='5048', current='1520', name='ina3221'):
+  monitor = root / f'hwmon{number}'
+  monitor.mkdir()
+  (monitor / 'name').write_text(name)
+  for channel in (1, 2, 3):
+    (monitor / f'in{channel}_label').write_text(rail if channel == 1 else 'VDD_SOC')
+    (monitor / f'in{channel}_input').write_text(voltage)
+    (monitor / f'curr{channel}_input').write_text(current)
+  return monitor
+
+
+def test_total_module_power_uses_millivolts_times_milliamps_without_summing(tmp_path):
+  from host_health import module_power
+  sensor = power_sensor(tmp_path)
+  assert abs(module_power(tmp_path) - 7.67296) < 1e-9
+  # CPU/GPU/SOC readings overlap VDD_IN and must never be added to it.
+  (sensor / 'curr2_input').write_text('999999')
+  assert abs(module_power(tmp_path) - 7.67296) < 1e-9
+  (sensor / 'curr1_input').write_text('0')
+  assert module_power(tmp_path) == 0.
+
+
+def test_power_missing_ambiguous_or_invalid_is_unavailable_not_guessed(tmp_path):
+  from host_health import module_power
+  assert module_power(tmp_path) is None
+  sensor = power_sensor(tmp_path, rail='VDD_CPU_GPU_CV')
+  assert module_power(tmp_path) is None
+  (sensor / 'in1_label').write_text('VDD_IN')
+  for voltage, current in [('0','1000'), ('5000','-1'), ('nan','1000'), ('5000','inf'), ('60000','100000')]:
+    (sensor / 'in1_input').write_text(voltage)
+    (sensor / 'curr1_input').write_text(current)
+    assert module_power(tmp_path) is None
+  (sensor / 'in1_input').write_text('5000')
+  (sensor / 'curr1_input').write_text('1000')
+  power_sensor(tmp_path, number=1)
+  assert module_power(tmp_path) is None
+  # A non-INA sensor with the same label cannot become our power source.
+  (sensor / 'name').write_text('unrelated')
+  assert abs(module_power(tmp_path) - 7.67296) < 1e-9

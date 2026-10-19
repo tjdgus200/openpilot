@@ -1,4 +1,4 @@
-"""Jetson-local temperature display; never substitute it for vehicle statistics."""
+"""Jetson-local temperature/module power; never substitute vehicle statistics."""
 import math
 import time
 from dataclasses import replace
@@ -24,6 +24,14 @@ def temperature_label(health):
   severity = health.get('thermal_severity', 'unknown')
   color = {'ok': NORMAL, 'warning': WARNING, 'error': ERROR}.get(severity, UNKNOWN)
   return f'{value:.1f}°C', color
+
+
+def power_label(health):
+  value = health.get('power_w')
+  if (not isinstance(value, (int, float)) or isinstance(value, bool)
+      or not math.isfinite(value) or not 0 <= value <= 200):
+    return '-- W'
+  return f'{value:.1f} W'
 
 
 def health_banner(health, language):
@@ -114,7 +122,7 @@ class HealthRenderer(ClusterUiRenderer):
     rect = rl.Rectangle(x - 52, y - 17, 104, 60)
     rl.draw_rectangle_rounded(rect, .25, 8, rl_color((0, 0, 0), 190))
     rl.draw_rectangle_rounded_lines_ex(rect, .25, 8, 2., rl_color(color))
-    self._draw_text('jetSON', x, y, 19, color, anchor='center')
+    self._draw_text(power_label(self.host_health), x, y, 19, (245, 245, 245), anchor='center')
     self._draw_text(label, x, y + 26, 20, color, anchor='center')
     self.host_badge_drawn = True
 

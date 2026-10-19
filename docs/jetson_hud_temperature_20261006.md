@@ -59,3 +59,30 @@ pin selects this release through the existing offroad staging/boot activation
 path; the NAS stable channel and SD installation image are unchanged.
 Focused checks: 65 passed, 5 platform skips; Wiki tests: 25 passed; user-guide
 and generated Wiki validation passed. Physical host activation is unvalidated.
+
+
+## Owner power badge extension (2026-10-19)
+
+The owner requested replacement of the `jetSON` label, not another row.
+The existing badge now shows `power_w` as one-decimal watts above the existing
+maximum internal temperature. Geometry, font size, warning colors/priority and
+HUD frame rate are retained. Power has no invented warning threshold.
+
+NVIDIA documents INA3221 `in*_input` in millivolts, `curr*_input` in milliamps,
+and the Orin Nano/NX `VDD_IN` rail as **total module power**:
+[NVIDIA Jetson Linux36.4.3 power-monitor guide](https://docs.nvidia.com/jetson/archives/r36.4.3/DeveloperGuide/SD/PlatformPowerAndPerformance/JetsonOrinNanoSeriesJetsonOrinNxSeriesAndJetsonAgxOrinSeries.html#software-based-power-consumption-modeling).
+Use voltage×current/1,000,000 for watts. Do not sum CPU/GPU/SOC rails into VDD_IN
+or equate this with carrier/USB-display/adapter total power. Sampling these two
+nodes is not simultaneous laboratory power measurement and can miss brief peaks.
+
+`host_health.py` reads only an unambiguous INA3221 rail named VDD_IN in the
+existing one-second worker. No sysfs write, extra thread/process, GPU work,
+subprocess or inference-frame sensor read is added. Missing/ambiguous sensors,
+read failures and invalid values yield null/`-- W`, never a guessed mode rating.
+The existing three-second health freshness bound clears stale watt readings.
+
+The actual connected Orin exposed hwmon1/ina3221, channel1 VDD_IN; an initial
+read was5048mV and1520mA, or7.67296W. This is a single stationary sample, not a
+sustained inference-power benchmark. Source/renderer regression and signed
+activation are recorded after the updated package is applied. This HUD change
+is excluded from both public Wi-Fi and inference-review commits.
