@@ -1,8 +1,8 @@
 {
   "format": 1,
   "delivery": "usb",
-  "profile": "hud-placement-20261019-004b116e",
-  "source_commit": "004b116e185067a842607e4e56005091a69720de",
+  "profile": "direct-only-20261019-82cee5cc",
+  "source_commit": "82cee5cc092d44f9eeddde545457ddfa3ef188f4",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -10,14 +10,14 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "2aa69cbfe2fd871d7032161f7d6ebd7383df8d8a9164ad573fab2702238aa623",
-    "size": 64715135,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-placement-20261019-004b116e/host.tar.gz"
+    "sha256": "303c631e6ca6427bc23d84386a24741e411017724b4caadd7c8b053eb1229bd0",
+    "size": 64714866,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-direct-only-20261019-82cee5cc/host.tar.gz"
   },
   "model": {
     "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
     "size": 814591106,
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
   },
-  "signature": "yCVisG7CpUR+oQvQQKvOrlS3tFDxxvIyUiq4RgmDt3s366DwAqELOxusQKzQMsRzN2+zd0+t5h5kB1NPpQN2CQ=="
+  "signature": "i1t1QmDJolxCBaQRmoG/V+SJnJ98LEzzO0rJTaD7zrgnpp4jXSi9Wo3XV4Zey2QQT1E9L0tWdYr0fYMaiUB6CA=="
 }
