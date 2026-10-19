@@ -35,7 +35,8 @@ ACTIVE_UDC = None
 SESSION_DETACHED = False
 log = logging.getLogger('carrot.jetlink')
 sys.path.insert(0, str(VENDOR.parents[1] / 'tools/jetlink'))
-from hud_protocol import Publisher, HUD_CAPABILITY, HUD_MESSAGE
+from hud_protocol import Publisher, HUD_MESSAGE
+from hud_wifi import publisher as display_publisher
 from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE
 from hud_navi import send_ready_after_reply, send_ready_during_inference, PUMP_CAPABILITY
 from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, Publisher as WifiPublisher
@@ -229,7 +230,7 @@ class CarrotTransport(FfsTransport):
 
 
 def serve_local(listener, client, peer, wifi=None):
-  publisher = Publisher(navi=bool(peer.get(NAVI_CAPABILITY))) if peer.get(HUD_CAPABILITY) else None
+  publisher = display_publisher(client, peer, Publisher)
   phase = PhasePublisher()
   try:
     _serve_local(listener, client, peer, publisher, phase, wifi)
