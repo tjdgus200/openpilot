@@ -200,3 +200,24 @@ No firmware, vehicle control, forced-onroad setting, or brightness override was
 installed for this verification. These bounded stationary checks establish the
 missing-input brightness policy, not the original flicker cause, visible
 onroad stability or loaded 20Hz performance.
+
+
+### Owner-requested offroad visibility (2026-10-19)
+
+This subsequent policy supersedes the zero/off preservation described above.
+The Jetson HUD now remains visible offroad, including when the forwarded
+ClusterHudDebug mode is zero. A renderer-local gate maps that mode to 1 while
+preserving modes 1–3. It does not write Params, fake IsOnroad/deviceState, start
+vehicle processes or alter the comma's own HUD output gate.
+
+Automatic brightness has a 10% minimum, including fresh offroad zero. Missing
+input holds the last resolved output at no less than 10%, and first-input startup
+uses 10% instead of the common default80. Manual positive settings, including
+values below10, remain exact; explicit manual zero still turns the panel off.
+Service shutdown or removal of panel power also remains effective. No render
+rate, inference policy, packet freshness or driving control changes are added.
+
+Vehicle service validity still expires on reception loss; only the display stays
+lit. Tests cover both brightness transitions and the actual common offroad gate
+reader with unchanged vehicle Params. Deployment and native-device results for
+this policy are recorded after the signed package is applied.

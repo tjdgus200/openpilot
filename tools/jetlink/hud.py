@@ -60,10 +60,12 @@ class _BrightnessSample:
 class StableBrightness:
   """Hold display brightness on missing input; never retain vehicle validity.
 
-  Keep the common resolver's manual, camera and explicit offroad behavior.
-  Only its unavailable-input fallback is replaced after the first resolution.
+  Automatic output stays at least 10 percent, including fresh offroad input.
+  Manual/explicit-off output still follows the common resolver.
   One instance belongs to one Jetson renderer, with no timers or extra I/O.
   """
+  MIN_AUTO_BRIGHTNESS = 10
+
   def __init__(self, resolver):
     self.resolver = resolver
     self.last = None
@@ -71,10 +73,24 @@ class StableBrightness:
   def __call__(self, setting, live_source, *, auto_enabled):
     sample = _BrightnessSample(live_source)
     value = self.resolver(setting, sample, auto_enabled=auto_enabled)
-    if sample.unavailable and self.last is not None:
-      return self.last
+    if sample.unavailable:
+      value = self.last if self.last is not None else self.MIN_AUTO_BRIGHTNESS
+    if auto_enabled and setting == 0:
+      value = max(self.MIN_AUTO_BRIGHTNESS, value)
     self.last = value
     return value
+
+
+class AlwaysVisibleGate:
+  """Keep this Jetson panel available without changing vehicle Params/state."""
+  def __init__(self, reader):
+    self.reader = reader
+
+  def read_mode(self):
+    return max(1, self.reader.read_mode())
+
+  def allowed(self):
+    return True
 
 
 class DisplayParams:
@@ -240,9 +256,11 @@ def main():
   cluster_navi_source.NaviIpcMediaSource = RemoteNaviSource
   vehicle_stats = VehicleSystemStats()
   import main as cluster
-  # A WLAN gap invalidates RemoteSubMaster as before. It must not turn an
-  # explicit off/last brightness into the common renderer's default 80%.
+  # Keep the Jetson HUD dimly visible offroad without retaining stale vehicle
+  # validity. Missing input holds the last brightness; explicit manual off works.
   cluster.resolved_usb_brightness = StableBrightness(cluster.resolved_usb_brightness)
+  gate_reader = cluster.ClusterHudOutputGateParamReader
+  cluster.ClusterHudOutputGateParamReader = lambda: AlwaysVisibleGate(gate_reader())
   from hud_health import HealthRenderer
   cluster.ClusterUiRenderer = HealthRenderer
   if '--help' not in sys.argv:
