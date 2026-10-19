@@ -23,6 +23,7 @@ from Crypto.Cipher import AES
 
 from hud_protocol import HUD_PACKET, HEADER as SNAPSHOT_HEADER
 from hud_navi import CHUNK, HEADER as MEDIA_HEADER, HostForwarder
+from hud_wifi_route import select_link
 
 MAGIC = b'CHW1'
 HEADER = struct.Struct('!QIf')  # sequence, plaintext length, source age seconds
@@ -103,18 +104,19 @@ def wlan_addresses():
   return result
 
 
-def target_address():
+def target_addresses():
   value = json.loads(Path('/dev/shm/carrot-jetlink.json').read_text())
   if not 0 <= time.monotonic() - value['updated'] < 3 or value.get('peer', {}).get('carrot_host') != 'jetson':
-    return None
+    return ()
   if not 0 <= time.monotonic() - value.get('telemetry_updated', 0.) < 5:
-    return None
+    return ()
+  result = []
   for item in value.get('telemetry', {}).get('carrot_health', {}).get('addresses', []):
     address = ipaddress.ip_address(item['address'])
     if (item['interface'].startswith('wl') and address.version == 4 and address.is_private
         and not (address.is_loopback or address.is_link_local or address.is_unspecified)):
-      return str(address)
-  return None
+      result.append(str(address))
+  return result
 
 
 class Runtime:
@@ -122,7 +124,7 @@ class Runtime:
     self.role, self.key, self.port, self.control = role, key, port, control
     self.stop = threading.Event()
     self.network = ()
-    self.target = None
+    self.link = None
     self.state = {1: 'waiting_wifi', 2: 'waiting_wifi'}
     self.bytes = {1: 0, 2: 0}
     self.channel_locks = {1: threading.Lock(), 2: threading.Lock()}
@@ -154,15 +156,16 @@ class Runtime:
         if time.monotonic() >= next_network:
           try:
             self.network = tuple(wlan_addresses())
-            self.target = target_address() if self.role == 'send' else None
+            self.link = select_link(self.network, target_addresses()) if self.role == 'send' else None
           except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
-            self.network, self.target = (), None
+            self.network, self.link = (), None
           next_network = time.monotonic() + 1.
           # Diagnostic status contains no key, payload, vehicle data or SSID.
           temporary = STATUS.with_suffix('.tmp')
           try:
             temporary.write_text(json.dumps({'updated': time.monotonic(), 'role': self.role,
-                                            'snapshot': self.state[1], 'media': self.state[2], 'bytes': self.bytes}))
+                                            'snapshot': self.state[1], 'media': self.state[2], 'bytes': self.bytes,
+                                            'interface': self.link[0] if self.link else None}))
             os.replace(temporary, STATUS)
           except OSError:
             pass
@@ -185,15 +188,12 @@ class Runtime:
         for _ in range(64):
           if not self.publisher.media_packet():
             break
-      network, target = self.network, self.target
-      if not network or not target:
+      link = self.link
+      if not link:
         self.stop.wait(.2)
         continue
       try:
-        interface, source = network[0]
-        route = json.loads(subprocess.check_output(['ip', '-j', 'route', 'get', target, 'from', source], timeout=1., text=True))
-        if not route or route[0].get('dev') != interface:
-          raise ValueError('HUD requires a WLAN route')
+        interface, source, target = link
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
           sock.settimeout(BUDGET)
           sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -203,7 +203,7 @@ class Runtime:
           _, key = authenticate(sock, self.key, channel)
           sequence, heartbeat = 0, 0.
           media_start = True
-          while not self.stop.is_set() and self.network == network and self.target == target:
+          while not self.stop.is_set() and self.link == link:
             data = self.publisher.packet() if channel == 1 else self.publisher.media_packet()
             if data and channel == 2 and media_start:
               if len(data) <= MEDIA_HEADER.size or MEDIA_HEADER.unpack_from(data)[2] != 0:

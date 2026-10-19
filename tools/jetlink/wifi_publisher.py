@@ -10,6 +10,7 @@ import sys
 import time
 
 from wifi_protocol import HEADER, LIMIT, validate
+from wifi_direct_netlink import INTERFACE as DIRECT_INTERFACE, profile_id as direct_profile_id
 from openpilot.common.jetson_model import selected_release
 
 
@@ -27,6 +28,11 @@ def collect():
   ids = [row.split(':')[0] for row in rows if row.endswith(':802-11-wireless')]
   ids.sort(key=lambda uid: uid not in active)
   profiles = []
+  direct = None
+  try:
+    direct_id = direct_profile_id()
+  except OSError:
+    direct_id = None
   for uid in ids[:8]:
     if not re.fullmatch('[0-9a-f-]{36}', uid):
       continue
@@ -38,8 +44,11 @@ def collect():
     if len(fields) != 5:
       continue
     ssid, mode, hidden, security, password = fields
-    if mode not in ('infrastructure', ''):
-      continue  # Never import comma's access-point/tethering profile as a client.
+    is_direct = mode == 'ap' and uid == direct_id and uid in active
+    if mode not in ('infrastructure', '') and not is_direct:
+      continue  # Only the explicitly owned, active Jetson AP is importable.
+    if is_direct and nm('-g', 'connection.interface-name', 'connection', 'show', 'uuid', uid) != DIRECT_INTERFACE:
+      continue
     if security in ('wpa-psk', 'sae') and not password:
       raise RuntimeError('Saved Wi-Fi secret unavailable')
     profile = dict(id=uid, ssid=ssid, hidden=hidden in ('yes', 'true'), active=uid in active,
@@ -48,7 +57,17 @@ def collect():
       validate(dict(version=1, owner='0' * 64, profiles=[profile]))
     except ValueError:
       continue
-    profiles.append(profile)
+    if is_direct:
+      direct = profile
+    else:
+      profiles.append(profile)
+  if direct is not None:
+    # Stable order/active selection prevents phone disconnect/rejoin from
+    # reconnecting Jetson or changing its HUD path. Keep ordinary fallbacks.
+    profiles.sort(key=lambda p: p['id'])
+    for p in profiles:
+      p['active'] = False
+    profiles = [direct, *profiles[:7]]
   return profiles
 
 
@@ -73,8 +92,16 @@ def main(fd):
   channel.setblocking(False)
   profiles = None
   refresh = 0
+  next_ap = 0
   while True:
     now = time.monotonic()
+    if now >= next_ap:
+      try:
+        from wifi_direct import ensure
+        ensure()
+      except Exception:
+        pass  # Failure of this display side channel must not block USB.
+      next_ap = now + 30
     if now >= refresh:
       try:
         profiles = collect()
