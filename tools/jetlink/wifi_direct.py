@@ -20,11 +20,11 @@ import time
 
 from persistent_state import durable_write
 from wifi_direct_netlink import INTERFACE, Wireless, profile_id
+from hud_wifi_route import DIRECT_SUBNETS as SUBNETS
 
 STATUS = Path('/dev/shm/carrot-jetlink-direct-wifi.json')
 PRIVATE = Path('/data/carrot-jetlink-direct-wifi')
 PROFILE = Path('/run/NetworkManager/system-connections/carrot-jetson-direct.nmconnection')
-SUBNETS = ('172.29.77.0/24', '172.29.78.0/24', '10.203.77.0/24')
 
 
 def offroad():

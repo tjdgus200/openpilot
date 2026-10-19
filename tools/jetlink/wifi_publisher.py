@@ -34,52 +34,32 @@ def direct_client_id(uid):
 
 
 def collect():
+  # Read only the owned AP's secret. Phone/router profiles stay on comma and
+  # never become Jetson peer-data fallbacks, even while the AP is unavailable.
   active = nm('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines()
-  rows = nm('-t', '-f', 'UUID,TYPE', 'connection', 'show').splitlines()
-  ids = [row.split(':')[0] for row in rows if row.endswith(':802-11-wireless')]
-  ids.sort(key=lambda uid: uid not in active)
-  profiles = []
-  direct = None
   try:
-    direct_id = direct_profile_id()
+    uid = direct_profile_id()
   except OSError:
-    direct_id = None
-  for uid in ids[:8]:
-    if not re.fullmatch('[0-9a-f-]{36}', uid):
-      continue
-    fields = nm('--show-secrets', '-g',
-      '802-11-wireless.ssid,802-11-wireless.mode,802-11-wireless.hidden,802-11-wireless-security.key-mgmt,802-11-wireless-security.psk',
-      'connection', 'show', 'uuid', uid).split('\n')
-    # Empty trailing fields are meaningful; query output is normalized below.
-    fields += [''] * (5 - len(fields))
-    if len(fields) != 5:
-      continue
-    ssid, mode, hidden, security, password = fields
-    is_direct = mode == 'ap' and uid == direct_id and uid in active
-    if mode not in ('infrastructure', '') and not is_direct:
-      continue  # Only the explicitly owned, active Jetson AP is importable.
-    if is_direct and nm('-g', 'connection.interface-name', 'connection', 'show', 'uuid', uid) != DIRECT_INTERFACE:
-      continue
-    if security in ('wpa-psk', 'sae') and not password:
-      raise RuntimeError('Saved Wi-Fi secret unavailable')
-    profile = dict(id=direct_client_id(uid) if is_direct else uid, ssid=ssid, hidden=hidden in ('yes', 'true'), active=uid in active,
-                   security=security or 'open', password=password)
-    try:
-      validate(dict(version=1, owner='0' * 64, profiles=[profile]))
-    except ValueError:
-      continue
-    if is_direct:
-      direct = profile
-    else:
-      profiles.append(profile)
-  if direct is not None:
-    # Stable order/active selection prevents phone disconnect/rejoin from
-    # reconnecting Jetson or changing its HUD path. Keep ordinary fallbacks.
-    profiles.sort(key=lambda p: p['id'])
-    for p in profiles:
-      p['active'] = False
-    profiles = [direct, *profiles[:7]]
-  return profiles
+    return []
+  if uid not in active:
+    return []
+  if nm('-g', 'connection.interface-name', 'connection', 'show', 'uuid', uid) != DIRECT_INTERFACE:
+    return []
+  fields = nm('--show-secrets', '-g',
+    '802-11-wireless.ssid,802-11-wireless.mode,802-11-wireless.hidden,802-11-wireless-security.key-mgmt,802-11-wireless-security.psk',
+    'connection', 'show', 'uuid', uid).split('\n')
+  fields += [''] * (5 - len(fields))
+  if len(fields) != 5:
+    return []
+  ssid, mode, hidden, security, password = fields
+  if mode != 'ap' or security not in ('wpa-psk', 'sae'):
+    return []
+  if not password:
+    raise RuntimeError('Saved direct Wi-Fi secret unavailable')
+  profile = dict(id=direct_client_id(uid), ssid=ssid, hidden=hidden in ('yes', 'true'),
+                 active=True, security=security, password=password)
+  validate(dict(version=1, owner='0' * 64, profiles=[profile]))
+  return [profile]
 
 
 def road_state(raw):

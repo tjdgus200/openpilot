@@ -71,7 +71,7 @@ def test_open_and_sae_and_psk_hex():
     assert ('[wifi-security]' in data) == (security != 'open')
 
 
-def test_sender_uses_saved_secrets_and_excludes_hotspot(monkeypatch):
+def test_sender_never_imports_phone_or_unowned_hotspot(monkeypatch):
   uid = config()['profiles'][0]['id']
   hotspot = '22345678-1234-1234-1234-123456789abc'
   def nm(*args):
@@ -84,8 +84,8 @@ def test_sender_uses_saved_secrets_and_excludes_hotspot(monkeypatch):
     assert '--show-secrets' in args
     return 'phone\ninfrastructure\nno\nwpa-psk\nsynthetic'
   monkeypatch.setattr(sender, 'nm', nm)
-  profiles = sender.collect()
-  assert len(profiles) == 1 and profiles[0]['id'] == uid
+  monkeypatch.setattr(sender, 'direct_profile_id', lambda: '32345678-1234-1234-1234-123456789abc')
+  assert sender.collect() == []
 
 
 def test_connected_wifi_is_not_interrupted():

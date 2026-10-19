@@ -80,12 +80,12 @@ def test_only_owned_active_ap_is_provisioned_and_phone_state_is_irrelevant(monke
   monkeypatch.setattr(sender, 'direct_profile_id', lambda: direct)
   monkeypatch.setattr(sender, 'direct_client_id', lambda uid: uid)
   before = sender.collect()
-  assert [p['id'] for p in before] == [direct, phone]
-  assert [p['active'] for p in before] == [True, False]
+  assert [p['id'] for p in before] == [direct]
+  assert [p['active'] for p in before] == [True]
   active.remove(phone)
   assert sender.collect() == before
   active.clear()
-  assert [p['id'] for p in sender.collect()] == [phone]
+  assert sender.collect() == []
 
 
 def test_only_ap_recreation_or_boot_changes_legacy_client_identity(monkeypatch):
@@ -211,3 +211,23 @@ def test_failed_power_restore_still_cleans_owned_ap():
   ap.close()
   assert ap.previous_power_save is None
   wireless.delete.assert_called_once_with(41)
+
+
+def test_direct_only_never_falls_back_to_phone_or_gateway():
+  direct = (INTERFACE, '172.29.77.1')
+  phone = ('wlan0', '10.164.54.41')
+  assert select_link([phone], ['10.164.54.121'], lambda *_: pytest.fail('phone queried')) is None
+  assert select_link([direct, phone], ['10.164.54.121'], lambda *_: pytest.fail('fallback queried')) is None
+  assert select_link([direct], ['172.29.78.42'], lambda *_: pytest.fail('other subnet queried')) is None
+  assert select_link([direct], ['172.29.77.42'], lambda *_: [{'dev':INTERFACE,'gateway':'172.29.77.2'}]) is None
+  assert select_link([direct], ['172.29.77.42'], lambda *_: [{'dev':'wlan0'}]) is None
+
+
+def test_receiver_only_listens_on_direct_network_and_accepts_comma_gateway():
+  from hud_wifi_route import receiver_addresses, receiver_peer
+  assert receiver_addresses([('wlP1p1s0','10.164.54.121'),('eth0','172.29.77.42')]) == []
+  assert receiver_addresses([('wlP1p1s0','172.29.77.42')]) == [('wlP1p1s0','172.29.77.42')]
+  assert receiver_peer('172.29.77.42','172.29.77.1')
+  assert not receiver_peer('172.29.77.42','172.29.77.3')
+  assert not receiver_peer('172.29.77.42','10.164.54.41')
+  assert receiver_peer('10.203.77.42','10.203.77.1')

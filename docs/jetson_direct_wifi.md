@@ -13,21 +13,22 @@ station/AP concurrency, avoids overlapping IPv4 subnets, and never reconfigures
 root-only identity file retains a generated password across restarts; credentials
 are never added to Params, HUD, diagnostic status or this repository.
 
-The existing private USB provisioner exports only this explicitly owned, active
-AP as a client profile. Other AP/tethering profiles remain excluded. Jetson's
-existing network importer handles the client connection and persisted fallback
-profiles; this feature does not replace its signed model runtime. The direct
-profile stays first and active regardless of the phone's association state.
-Each recreated AP interface/boot gets a distinct client-profile UUID, retaining
-its SSID/password. This lets the immutable legacy importer reconsider its
-preferred connection after an AP restart instead of indefinitely accepting a
-connected phone fallback. It does not rotate credentials or churn profiles when
-the phone disconnects/rejoins. No protected Jetson OS patch is required.
+The private USB provisioner exports only the explicitly owned, active AP as
+one client profile. It does not read or forward the phone/home network secrets.
+An inactive AP exports no client profile. Once the direct profile is installed,
+the existing transactional importer removes its previously imported fallback
+profiles; manually configured networks remain untouched. Each recreated AP
+interface/boot gets a distinct client-profile UUID with the retained SSID/key,
+so the legacy importer retries the direct connection after an AP restart.
 
-The HUD sender selects an actual WLAN route to a fresh USB-advertised Jetson
-address, preferring the direct interface. It keys connection lifetime to the
-selected link rather than the entire interface list, so losing the unrelated
-Internet interface does not force a HUD reconnect. There is no USB HUD fallback.
+Peer Wi-Fi data uses **only the direct AP**. The sender requires `wljetson0`,
+one of the configured direct subnets, its `.1` gateway address, a same-subnet
+Jetson address and an on-link route with no next-hop gateway. It never selects
+`wlan0`, a phone/router address or a USB interface. The receiver binds only a
+direct-subnet WLAN address, accepts only that subnet's comma gateway, and still
+requires the existing authenticated encryption. A missing direct link waits for
+reconnection; vehicle data expires at its existing age limit. Phone association
+changes do not authorize a fallback. The main driving-model USB path is separate.
 
 Only the owned AP's power-save flag is disabled while it is serving Jetson;
 the Internet station's power policy is unchanged. The original AP value is
@@ -221,3 +222,17 @@ Vehicle service validity still expires on reception loss; only the display stays
 lit. Tests cover both brightness transitions and the actual common offroad gate
 reader with unchanged vehicle Params. Deployment and native-device results for
 this policy are recorded after the signed package is applied.
+
+
+## Direct-only policy follow-up (2026-10-19)
+
+The previous version preferred the AP but retained phone profiles/routes as
+fallbacks. The owner now explicitly requires direct-only peer data. The new
+policy removes both fallbacks, preserves the original authenticated transport
+and checks the receiving address and source gateway as well as the sending
+interface. It does not promise uninterrupted radio service: before this change,
+Jetson NetworkManager recorded `supplicant-timeout` and `ssid-not-found` losses,
+while the comma AP supervisor still reported active. A route policy cannot by
+itself prove that the underlying radio problem is fixed. PC checks cover phone
+and next-hop rejection, isolated-subnet selection, receiver admission and retained
+phone-loss behavior. Device follow-up is recorded after deployment.
