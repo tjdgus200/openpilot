@@ -1,8 +1,8 @@
 {
   "format": 1,
   "delivery": "usb",
-  "profile": "hud-usb-fix-20261016-d07e9f35",
-  "source_commit": "d07e9f35c5e07584a29f3717a4016b7cbb7e3e5c",
+  "profile": "battery-hud-20261019-85b13334",
+  "source_commit": "85b133344eaf909f8a99f5744587cc7c881f0bec",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -10,14 +10,14 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "4c5827751c88c390f77b64d08503ac5e0776ef913f75b09efe3f2ae497efd81e",
-    "size": 64678418,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-usb-fix-20261016-d07e9f35/host.tar.gz"
+    "sha256": "df682fed6a603cddd51e69acff902e61c055f7eae46490d1832d176f9e4fbebc",
+    "size": 64696697,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-battery-hud-20261019-85b13334/host.tar.gz"
   },
   "model": {
     "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
     "size": 814591106,
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
   },
-  "signature": "qjLEylTTUjHr4ZNiLsgnfcA7X44MBmpq3o5UX5wr5lF+fXyfX70KC5lmGjlYhEQHiTS3tarjmJSE8OVsdwyEAA=="
+  "signature": "/otwNRgRdkx12M94Ery8hcU8ejldz0nESoGk+2lcMm9BPkXSzKuUxogm35ogBMnthRqlEAEXpGuZPf6vQBBCBw=="
 }
