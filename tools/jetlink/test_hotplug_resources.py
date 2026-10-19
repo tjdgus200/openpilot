@@ -133,7 +133,7 @@ def test_preview_worker_follows_display_lifetime(monkeypatch):
   import hud_camera
   from openpilot.common import jetlink_status
   monkeypatch.setattr(jetlink_status, '_fresh', lambda *a: {})
-  settings = {'ClusterHud': 0, 'IsOnroad': True, 'ClusterHudDebug': 0}
+  settings = {'ClusterHud': 0, 'IsOnroad': True, 'ClusterHudDebug': 0, 'ClusterHudCameraViewMode': 2}
   created, closed = [], []
 
   def camera():
@@ -172,7 +172,7 @@ def test_jetson_panel_heartbeat_enables_preview_with_vehicle_switch_off(monkeypa
   monkeypatch.setattr(hud_camera, 'CameraPublisher', camera)
   builder = object.__new__(hud_protocol.SnapshotBuilder)
   builder.camera = None
-  settings = {'ClusterHud': 0, 'IsOnroad': True, 'ClusterHudDebug': 0}
+  settings = {'ClusterHud': 0, 'IsOnroad': True, 'ClusterHudDebug': 0, 'ClusterHudCameraViewMode': 2}
   builder.params = NS(get_int=lambda k: settings[k], get_bool=lambda k: settings[k])
   assert builder.camera_previews() == {'road': 'frame'} and len(created) == 1
   record['telemetry_updated'] = 17.
@@ -185,6 +185,35 @@ def test_jetson_panel_heartbeat_enables_preview_with_vehicle_switch_off(monkeypa
   assert builder.camera_previews() == {} and len(created) == 1
   settings['ClusterHudDebug'] = 1
   assert builder.camera_previews() == {'road': 'frame'} and len(created) == 2
+
+
+def test_preview_worker_runs_only_in_camera_views(monkeypatch):
+  import hud_protocol
+  import hud_camera
+  from openpilot.common import jetlink_status
+  monkeypatch.setattr(jetlink_status, '_fresh', lambda *a: {})
+  settings = {'ClusterHud': 1, 'IsOnroad': True, 'ClusterHudDebug': 0, 'ClusterHudCameraViewMode': 0}
+  created, closed = [], []
+  def camera():
+    created.append(True)
+    return NS(latest={'road': 'frame'}, close=lambda: closed.append(True))
+  monkeypatch.setattr(hud_camera, 'CameraPublisher', camera)
+  builder = object.__new__(hud_protocol.SnapshotBuilder)
+  builder.params = NS(get_int=lambda k: settings[k], get_bool=lambda k: settings[k])
+  builder.camera = None
+  for mode in (0, 1, -1, 9):
+    settings['ClusterHudCameraViewMode'] = mode
+    assert builder.camera_previews() == {} and not created
+  for mode in (2, 3, 4):
+    settings['ClusterHudCameraViewMode'] = mode
+    assert builder.camera_previews() == {'road': 'frame'}
+  assert len(created) == 1 and not closed
+  settings['ClusterHudCameraViewMode'] = 1
+  assert builder.camera_previews() == {} and len(closed) == 1
+  settings['ClusterHudCameraViewMode'] = 2
+  assert builder.camera_previews() == {'road': 'frame'} and len(created) == 2
+  settings['ClusterHud'] = 0
+  assert builder.camera_previews() == {} and len(closed) == 2
 
 
 def test_daemon_freezes_startup_graph_but_new_session_cycles_are_collected():

@@ -134,7 +134,10 @@ class SnapshotBuilder:
       host_display = False
     # A host panel can start rendering without a camera preview. Only its
     # fresh output heartbeat starts this worker; no panel means no allocation.
-    enabled = ((host_display or self.params.get_int('ClusterHud') == 1) and
+    # The 3D/default views never consume JPEG previews. Do not receive,
+    # resample and encode both camera streams unless a camera view is selected.
+    camera_view = self.params.get_int('ClusterHudCameraViewMode') in (2, 3, 4)
+    enabled = (camera_view and (host_display or self.params.get_int('ClusterHud') == 1) and
                (self.params.get_bool('IsOnroad') or self.params.get_int('ClusterHudDebug') >= 1))
     if enabled and self.camera is None:
       from hud_camera import CameraPublisher
