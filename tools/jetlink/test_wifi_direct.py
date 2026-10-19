@@ -231,3 +231,35 @@ def test_receiver_only_listens_on_direct_network_and_accepts_comma_gateway():
   assert not receiver_peer('172.29.77.42','172.29.77.3')
   assert not receiver_peer('172.29.77.42','10.164.54.41')
   assert receiver_peer('10.203.77.42','10.203.77.1')
+
+
+@pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')
+@pytest.mark.parametrize('cached, expected', [('*:5745 MHz', ('a',149)), ('*:5180', ('a',36)),
+                                            ('*:2412 MHz', ('bg',1)), ('*:2462 MHz', ('bg',11)),
+                                            (':5745 MHz', None)])
+def test_actual_nmcli_frequency_units_and_no_station(monkeypatch, cached, expected):
+  import wifi_direct as direct
+  monkeypatch.setattr(direct, 'nm', lambda *args: cached)
+  assert direct.station_channel() == expected
+
+
+@pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')
+@pytest.mark.parametrize('cached', ['*:unknown', '*:5500 MHz', '*:5181 MHz'])
+def test_active_station_parse_failure_never_silently_selects_channel36(monkeypatch, cached):
+  import wifi_direct as direct
+  monkeypatch.setattr(direct, 'nm', lambda *args: cached)
+  with pytest.raises(ValueError):
+    direct.channel()
+
+
+@pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')
+def test_phone_loss_keeps_existing_ap_channel_and_returned_station_requests_alignment(monkeypatch):
+  import wifi_direct as direct
+  ap = direct.AccessPoint(Mock(), Mock())
+  ap.band_channel = ('a',149)
+  monkeypatch.setattr(direct, 'station_channel', lambda: None)
+  assert not ap.needs_rechannel()
+  monkeypatch.setattr(direct, 'station_channel', lambda: ('a',149))
+  assert not ap.needs_rechannel()
+  monkeypatch.setattr(direct, 'station_channel', lambda: ('bg',1))
+  assert ap.needs_rechannel()

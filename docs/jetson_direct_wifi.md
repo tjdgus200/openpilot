@@ -236,3 +236,23 @@ while the comma AP supervisor still reported active. A route policy cannot by
 itself prove that the underlying radio problem is fixed. PC checks cover phone
 and next-hop rejection, isolated-subnet selection, receiver admission and retained
 phone-loss behavior. Device follow-up is recorded after deployment.
+
+
+## Shared-radio channel correction (2026-10-19)
+
+The actual comma cache returned `*:5745 MHz` (station channel149), but the old
+parser accepted digits only and silently chose AP channel36. This was a concrete
+configuration error during the reported disconnects. Parse both unit-bearing and
+numeric frequencies. A malformed or unsupported active channel now refuses AP
+activation rather than silently choosing a different channel. Without an active
+station, initial AP setup may use36; losing a phone leaves an already active AP
+on its current channel. Offroad supervision realigns an AP when a returning
+station uses another supported channel. It does not restart an AP onroad.
+Changing the Internet station's band/channel while driving remains unvalidated.
+
+An isolated125s Jetson-station awake trial retained radio connection at118/120
+samples but HUD at only30/120, with about1.88MB payload. Its original power-save
+setting was restored. This did not resolve the fault and is not made permanent.
+The channel parser/recovery correction passed153 focused PC checks. Actual
+same-channel connectivity is recorded after installation; the configuration
+error is proven, its complete attribution of every radio loss is not.

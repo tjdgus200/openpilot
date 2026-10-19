@@ -300,6 +300,8 @@ Display contains 34 settings. External-HUD settings control the layout and outpu
 
 Jetson HUD Wi-Fi data uses only this branch’s direct comma AP–Jetson link. Phone/home-router fallback paths are disabled. When the direct link is lost, it waits for reconnection and vehicle data expires at its existing age limit. The phone may still provide optional Internet access to comma.
 
+The Internet station and direct AP use the same supported channel. Losing the phone keeps an existing AP on its current channel; needed channel realignment is performed only offroad. Direct-link recovery after changing the phone Wi-Fi band/channel while driving is not yet validated.
+
 S3 Wi-Fi output requires a TURZX 9.2-inch display, a powered hub, and C4/S3 on the same 2.4 GHz network. Follow the [initial registration instructions](../../../tools/esp32s3_display/README.md) to register once over USB or import the registration file from the phone setup page. A registered S3 reconnects after reboot or an IP change. This path defaults to JPEG quality 50 and a 15 FPS target regardless of `ClusterHudEncoder`, allowing up to 10 FPS while the eGPU is active (direct USB keeps its 5 FPS cap). Actual speed depends on image content and wireless conditions; C4 vehicle measurements remain separate. Remove the registration file and restart HUD to restore direct USB output.
 
 The [NAS installer and setup guide](https://upload.shind0.synology.me/models/carrot-s3/index.html) provides the N16R8 board checklist, wiring, browser firmware installation, phone/C4 registration and firmware ZIP. S3 1.1.0 confirms and retries shutdown; updating preserves existing registration.

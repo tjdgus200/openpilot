@@ -49,14 +49,30 @@ def choose_subnet(routes):
   return next(s for s in SUBNETS if not any(ipaddress.ip_network(s).overlaps(r) for r in occupied))
 
 
-def channel():
+def station_channel():
   # Query the existing scan cache only; never trigger a scan or move wlan0.
   rows = nm('-t', '-f', 'IN-USE,FREQ', 'device', 'wifi', 'list', 'ifname', 'wlan0', '--rescan', 'no').splitlines()
-  freq = next((int(r.split(':')[1]) for r in rows if r.startswith('*:') and r.split(':')[1].isdigit()), 5180)
+  current = next((r.partition(':')[2].strip() for r in rows if r.startswith('*:')), None)
+  if current is None:
+    return None
+  # nmcli emits "5745 MHz" on AGNOS, not just "5745". A parsing failure
+  # must never silently put a shared-radio AP on a different default channel.
+  match = re.fullmatch(r'(\d+)(?:\s+MHz)?', current, re.IGNORECASE)
+  if match is None:
+    raise ValueError('Station frequency unavailable')
+  freq = int(match[1])
   if freq in range(2412, 2473, 5):
     return 'bg', (freq - 2407) // 5
+  if (freq - 5000) % 5:
+    raise ValueError('Station channel unsupported for direct AP')
   number = (freq - 5000) // 5
-  return ('a', number) if number in (36, 40, 44, 48, 149, 153, 157, 161) else ('a', 36)
+  if number not in (36, 40, 44, 48, 149, 153, 157, 161):
+    raise ValueError('Station channel unsupported for direct AP')
+  return 'a', number
+
+
+def channel():
+  return station_channel() or ('a', 36)
 
 
 def configuration():
@@ -97,6 +113,7 @@ class AccessPoint:
     self.wireless, self.command = wireless, command
     self.index = self.value = None
     self.previous_power_save = None
+    self.band_channel = None
     self.stage = 'idle'
 
   def start(self):
@@ -131,6 +148,7 @@ class AccessPoint:
     self.command('connection', 'load', str(PROFILE))
     self.stage = 'activate'
     self.command('--wait', '12', 'connection', 'up', 'uuid', value['uuid'], 'ifname', INTERFACE)
+    self.band_channel = (band, number)
     self.stage = 'power_save'
     self.previous_power_save = self.wireless.power_save(self.index)
     self.awake()
@@ -147,6 +165,10 @@ class AccessPoint:
 
   def active(self):
     return self.value is not None and self.value['uuid'] in self.command('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines()
+
+  def needs_rechannel(self):
+    desired = station_channel()
+    return desired is not None and desired != self.band_channel
 
   def close(self):
     previous, self.previous_power_save = self.previous_power_save, None
@@ -171,6 +193,7 @@ class AccessPoint:
         except (RuntimeError, subprocess.SubprocessError):
           pass
       self.value = None
+      self.band_channel = None
 
 
 def ensure():
@@ -226,8 +249,12 @@ def serve(trial=0):
             else:
               state = 'waiting_offroad'
           else:
-            ap.awake()
-            state = 'active'
+            if offroad() and ap.needs_rechannel():
+              ap.close()
+              state = 'active' if ap.start() else 'waiting_offroad'
+            else:
+              ap.awake()
+              state = 'active'
         except (OSError, ValueError, RuntimeError, StopIteration, KeyError, subprocess.SubprocessError):
           ap.close()
           state, retry = 'unavailable', now + 30.
