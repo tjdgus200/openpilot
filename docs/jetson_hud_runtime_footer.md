@@ -77,8 +77,35 @@ one ten-second window and correctly returned unavailable after inference stopped
 An independent 40-second sampler process used 0.070 CPU seconds (about 0.175% of
 one core); this is sampler overhead, not total HUD rendering or CAN decoding cost.
 These figures do not validate vehicle control, camera latency or all-frame 20 Hz.
-The subsequent resource-row relocation, display colors and BSD cue require
-activation of a newer signed package; the initial package cannot display them.
+The subsequent [layout/BSD package](https://github.com/tjdgus200/openpilot/releases/tag/jetson-hud-layout-bsd-20261019-4c243306)
+contains committed source `4c243306`, passed **332 packaged regression tests**
+with one isolated-root skip, and passed the exported entry-point check. It was
+installed through the signed USB boot receiver. Comma reported the matching
+source, both Jetson services were active, and the owner confirmed the enlarged
+bottom row and relocated inference statistics on the physical panel. Synthetic
+dark/light, left/right layout renders checked the colored values and both BSD
+edge directions without overlap; actual vehicle BSD signaling remains untested.
+
+With this final HUD enabled, a second finite offroad probe completed **600
+synthetic frames in 30.001 seconds**, with no errors and finite outputs. Across
+all 600 replies, Jetson GPU-wall timing was mean/p99/max **24.756/26.647/26.818 ms**;
+server total **26.151/28.049/28.933 ms**; local client round trip
+**40.756/49.189/53.836 ms**. This excludes camera preprocessing and output
+publication. The observed worst round trip still exceeded 50 ms, so these
+results are not a strict all-frame 20 Hz guarantee. A live ten-second display
+window showed 25.0/26.6/26.7 ms and expired after inference stopped.
+
+The independent sampler process consumed 0.078 CPU seconds over 40 seconds
+(about 0.194% of one core). The entire HUD/encoder service group consumed
+18.375 CPU seconds over the same interval, approximately 46% of one CPU core,
+not 46% of the six-core Orin. Collection of that service counter adds two
+read-only systemctl calls outside inference. These short synthetic tests do not
+establish driving safety or a long-duration resource bound. Korean/English
+user-doc checks and the staged 195-setting/587-page Wiki structure check passed.
+Only this custom branch's descriptions were changed; the official Wiki was not
+published with unmerged features. On-device probe directories were removed,
+the authorized SSH key retained, and original automatic brightness/offroad/view
+settings restored. At a desk, automatic brightness can turn the display off.
 
 The split battery-rate candidate was compared on the desk comma using synthetic
 receive-only CAN objects (80 unrelated frames plus one configured reply), decoder,
