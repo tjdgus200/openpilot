@@ -159,5 +159,44 @@ inference benchmark or physical-panel pass is implied.
 This is a source-level mitigation for missing-input brightness fallback, not a
 confirmed fix for the owner's physical panel incident. Installation requires an
 updated Jetson package: changing comma's source alone cannot replace the running
-Jetson renderer. Device observation and synchronized brightness/service/USB logs
-remain pending while the owner has disconnected the phone.
+Jetson renderer. The reconnect and bounded receive-gap results below supersede the initial
+disconnected-device observation; physical flicker attribution remains open.
+
+
+### Reconnected-device check and signed deployment (2026-10-19)
+
+The comma was confirmed offroad (`IsOffroad=1`, `IsOnroad=0`) before device
+changes. A 30-second baseline collected 60 samples: no expired snapshots,
+HUD restarts or classified USB/service errors were observed. Fresh deviceState
+reported started=false and screenBrightnessPercent=0 throughout. That baseline
+did not reproduce the owner's flicker. Setting 0 means automatic brightness;
+its resolved offroad output of zero intentionally turns the panel off.
+
+Published owner-signed source `ad7c0961` and selected it with comma commit
+`41075673`. The existing USB boot updater verified and activated the package,
+including its isolated model execution check. Inference and HUD returned active,
+and comma reported ready with USB model transport and connected Wi-Fi HUD.
+The enrolled public key, model identity, runtime ABI and inference implementation
+are unchanged. The package also contains the already published direct-Wi-Fi
+helpers; comparison with the previous installed bundle found changes confined
+to those helpers, the brightness wrapper, its regression and SOURCE_COMMIT.
+Expanded native-PC regression passed **112 tests**, with no failures or skips;
+the exported HUD entrypoint check passed separately.
+
+A 20-second native Jetson diagnostic suspended only the HUD Wi-Fi receive worker
+for two seconds, with independent automatic resume and a finally resume. It
+compared the original and new resolvers against the real received HUD data,
+without injecting vehicle state or reading the Wi-Fi credential packet. All
+18 expired 100ms samples invalidated deviceState alive/valid flags. For these
+samples the original resolver calculated 80 while the new resolver retained
+zero. Fresh data recovered; the receiver resumed and the actual HUD process
+kept PID 35900 with no restart. This sampled resolver comparison did not
+instrument actual USB brightness commands or measure physical panel luminance.
+The owner subsequently observed a continuously off panel, consistent with the
+fresh offroad automatic input, rather than a visible-HUD continuity test.
+
+The previous runtime is retained by the existing single previous-release record.
+No firmware, vehicle control, forced-onroad setting, or brightness override was
+installed for this verification. These bounded stationary checks establish the
+missing-input brightness policy, not the original flicker cause, visible
+onroad stability or loaded 20Hz performance.
