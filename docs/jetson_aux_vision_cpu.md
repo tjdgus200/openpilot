@@ -126,3 +126,40 @@ trust remain separate. No automatic ShareData enable is added. With an old or
 missing host, results stay unavailable and automatic initiation is vetoed when
 the feature is requested. Do not interpret GitHub delivery as installation on
 a disconnected device, or PC checks as onroad/cruise/map coexistence validation.
+
+### Delivery record
+
+Source `93788f61fcf3c983c0540f1a5a52476c6c02aa74` is packaged as
+[`jetson-aux-cpu-wifi-20261019-93788f61`](https://github.com/tjdgus200/openpilot/releases/tag/jetson-aux-cpu-wifi-20261019-93788f61).
+The bundle is81,643,822bytes with SHA-256
+`86b90d67c1b62713cf78134e23c2267e0bd95ba49217621a6ecd4c439c75a1ea`.
+Both existing auxiliary model hashes match the source files, and59 pinned main
+runtime/model-pin/renderer files are unchanged from the prior installed package.
+The exported HUD entrypoint check passed outside the checkout. A further49 PC
+delivery checks passed, covering signed USB transfer/rejection, retained main
+stateful-session behavior, legacy HUD negotiation, isolated optional-worker
+startup failure and an authenticated low-rate session across a >1s request gap. The owner-signed
+selector uses the previously enrolled public key; no new key registration is
+required on the previously prepared device. PC validation and public delivery
+are complete; the owner disconnected before installation of this package.
+
+On the next desk connection, update the matching comma installation branch
+`codex/jetson-nav-runtime-port`, then power-cycle Jetson normally without a
+recovery jumper. Its existing boot receiver verifies and installs the selected
+package through comma USB. Keep `ShareData=0` while confirming runtime readiness;
+paired real-camera and loaded coexistence validation remain outstanding. No
+vehicle controls or kernel scheduling policies were changed for this delivery.
+
+### Direct-AP availability caveat
+
+The owner subsequently reported the boot display alternating retrying/waiting
+with only a USB192.168.60.x address. That indicates no displayed direct-WLAN
+address, not a proven Wi-Fi driver or model failure. Current code creates or
+recreates the comma AP only offroad and only realigns a live AP offroad. Cold
+boot directly into onroad, or a shared-radio station channel change onroad, may
+therefore leave the direct link unavailable. Direct-only policy deliberately
+removes phone/router fallback; it does not itself guarantee AP availability.
+Which condition occurred in the vehicle is unconfirmed. This delivery retains
+the existing guard and does not attempt live network reconfiguration or claim
+that the reported connection failure is fixed. No device diagnostics were
+started after the owner disconnected.
