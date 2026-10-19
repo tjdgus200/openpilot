@@ -4,6 +4,19 @@ from types import ModuleType
 from openpilot.selfdrive.carrot.server.services import device_info
 
 
+def test_direct_ap_network_view_reads_station_cache_without_scanning(monkeypatch):
+  from types import SimpleNamespace
+  from openpilot.common import wifi_coexistence
+  monkeypatch.setattr(wifi_coexistence, 'direct_ap_active', lambda: True)
+  calls = []
+  def run(args, **kwargs):
+    calls.append(args)
+    return SimpleNamespace(returncode=0, stdout='yes:synthetic:wpa2:80\n')
+  monkeypatch.setattr(device_info.subprocess, 'run', run)
+  assert device_info.get_wifi_networks()[0]['connected']
+  assert calls[0][-4:] == ['ifname', 'wlan0', '--rescan', 'no']
+
+
 class _Hardware:
   def get_device_type(self):
     return "tici"
