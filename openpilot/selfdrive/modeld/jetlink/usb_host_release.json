@@ -1,8 +1,8 @@
 {
   "format": 1,
   "delivery": "usb",
-  "profile": "hud-layout-bsd-20261019-4c243306",
-  "source_commit": "4c2433061b5dd084b173084676efc3f18ef686ae",
+  "profile": "hud-brightness-20261019-ad7c0961",
+  "source_commit": "ad7c096106860c3f6ee1405fb96edf7872931bb8",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -10,14 +10,14 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "d4a935a1328270ea5f1fa11a3d729d7ae23bafc3256e412767786ca7179815f4",
-    "size": 64702187,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-layout-bsd-20261019-4c243306/host.tar.gz"
+    "sha256": "849d6e5df836c956c9d10db0943907186a2523e402c660882994d4c607ef42d7",
+    "size": 64712203,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-brightness-20261019-ad7c0961/host.tar.gz"
   },
   "model": {
     "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
     "size": 814591106,
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
   },
-  "signature": "mAg0PTr9YaUEsmIol1XPgKovdHQQ4i4yo8TsCEeu/ugDy9YThV6V9cqxL7zHtwIthAavCg/2jhTrFetOjlbWCA=="
+  "signature": "PRneTOE9eYehkaC2hdflA/h19m8uFXMOogYhAUfhlK3R16A0zp9wCU4yiEiFTtpk6QF1uLWH7uFtDZh5NFA7BQ=="
 }
