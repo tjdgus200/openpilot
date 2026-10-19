@@ -1,0 +1,23 @@
+{
+  "format": 2,
+  "delivery": "usb",
+  "integrity": "sha256",
+  "profile": "wifi-recovery-20261019-15a80f65",
+  "source_commit": "15a80f65642506da1f04d2286f27142e7ed5743f",
+  "runtime": {
+    "arch": "aarch64",
+    "l4t": "36.4.7",
+    "tensorrt": "10.3.0"
+  },
+  "storage_format": 1,
+  "bundle": {
+    "sha256": "d36ba90b7d07b336ab50f03329d4e3437765a83369bf0e3153e3a8430e709dd5",
+    "size": 81649877,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-wifi-recovery-20261019-15a80f65/host.tar.gz"
+  },
+  "model": {
+    "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
+    "size": 814591106,
+    "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
+  }
+}

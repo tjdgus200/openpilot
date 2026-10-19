@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import urllib.request
 
-from tools.jetlink.usb_release import ACK, BEGIN, BLOCK, CHUNK, FINISH, HEADER, KINDS, NAMES, verify  # noqa: TID251
+from tools.jetlink.usb_release import ACK, BEGIN, BLOCK, CHUNK, FINISH, HEADER, KINDS, NAMES, verify_manifest  # noqa: TID251
 
 
 def asset(item, cache, allowed):
@@ -50,7 +50,7 @@ def asset(item, cache, allowed):
 
 
 def upload(client, manifest, key, cache, allowed, progress):
-  verify(manifest, key)
+  verify_manifest(manifest, key)
   def exchange(kind, payload, raw=False, timeout=30):
     if not allowed():
       raise ConnectionError('USB update requires offroad or fresh Park/inactive state and USB connection')
@@ -66,9 +66,11 @@ def upload(client, manifest, key, cache, allowed, progress):
     if not isinstance(value, dict):
       raise ValueError('Invalid USB update acknowledgement')
     if value.get('ok') is not True:
-      raise ValueError('Jetson rejected USB update: ' + str(value.get('error', 'invalid reply')))
+      stage = {BEGIN: 'begin', CHUNK: 'transfer', FINISH: 'verify'}[kind]
+      raise ValueError(f'Jetson rejected USB update [{stage}]: ' + str(value.get('error', 'invalid reply')))
     return value
   # An already registered package needs no network. BEGIN cannot activate it.
+  progress('checking_usb', None)
   result = exchange(BEGIN, manifest, timeout=120)
   if result.get('complete') is True:
     return

@@ -1,4 +1,9 @@
-"""Separately trusted USB experiments. Never fetch URLs or replace official keys."""
+"""Owner USB experiments: signed, or locally enabled SHA-256-only delivery.
+
+SHA-256 detects corruption; it does not authenticate the package author.
+The optional local policy grants this physical USB channel installation rights.
+Never fetch URLs, enable a policy from USB data, or replace official keys.
+"""
 import base64
 import json
 import os
@@ -10,6 +15,9 @@ import tempfile
 from urllib.parse import urlsplit
 
 CAPABILITY = 'carrot_usb_release_v1'
+SHA256_CAPABILITY = 'carrot_usb_sha256_v1'
+SHA256_POLICY = 'usb-sha256-policy.json'
+SHA256_POLICY_VALUE = {'format': 1, 'integrity': 'sha256', 'transport': 'usb'}
 BEGIN, CHUNK, FINISH, ACK = 0x4010, 0x4011, 0x4012, 0x4013
 BLOCK = 256 * 1024
 HEADER = struct.Struct('<BQ')
@@ -23,8 +31,16 @@ def canonical(value):
 
 
 def validate(value):
-  fields = {'format', 'delivery', 'profile', 'source_commit', 'runtime', 'storage_format', 'bundle', 'model', 'signature'}
-  if (not isinstance(value, dict) or set(value) != fields or type(value['format']) is not int or value['format'] != 1
+  fields = {'format', 'delivery', 'profile', 'source_commit', 'runtime', 'storage_format', 'bundle', 'model'}
+  if not isinstance(value, dict) or type(value.get('format')) is not int:
+    raise ValueError('Invalid USB release contract')
+  if value['format'] == 1:
+    fields.add('signature')
+  elif value['format'] == 2 and value.get('integrity') == 'sha256':
+    fields.add('integrity')
+  else:
+    raise ValueError('Invalid USB integrity mode')
+  if (set(value) != fields
       or value['delivery'] != 'usb' or value['runtime'] != RUNTIME or type(value['storage_format']) is not int
       or value['storage_format'] != 1 or re.fullmatch('[a-z][a-z0-9-]{0,63}', str(value['profile'])) is None
       or re.fullmatch('[0-9a-f]{40}', str(value['source_commit'])) is None):
@@ -42,14 +58,38 @@ def validate(value):
 
 
 def verify(value, key_path):
+  validate(value)
+  if value['format'] != 1:
+    raise ValueError('Expected a signed USB release')
   from Crypto.PublicKey import ECC
   from Crypto.Signature import eddsa
-  validate(value)
   key = ECC.import_key(Path(key_path).read_text())
   if key.has_private() or key.curve != 'Ed25519':
     raise ValueError('Expected an Ed25519 public key')
   eddsa.new(key, 'rfc8032').verify(canonical(value), base64.b64decode(value['signature'], validate=True))
   return value
+
+
+def verify_manifest(value, key_path=None):
+  """Client-side format checks; expected SHA/length remain pinned in Git."""
+  validate(value)
+  return verify(value, key_path) if value['format'] == 1 else value
+
+
+def sha256_enabled(root):
+  from local_release import owned
+  try:
+    updater = Path(root) / 'updater'
+    policy = updater / SHA256_POLICY
+    owned(updater, directory=True)
+    owned(policy)
+    if policy.stat().st_size > 256:
+      return False
+    value = json.loads(policy.read_text())
+    return (isinstance(value, dict) and type(value.get('format')) is int
+            and value == SHA256_POLICY_VALUE)
+  except (OSError, ValueError, TypeError):
+    return False
 
 
 def identity(item):
@@ -67,6 +107,11 @@ def record(value):
 
 def trusted(root, value):
   from local_release import owned
+  validate(value)
+  if value['format'] == 2:
+    if not sha256_enabled(root):
+      raise ValueError('SHA-256 USB delivery requires local owner policy installation')
+    return value
   key = Path(root) / 'updater/usb-experiment-public.pem'
   owned(key.parent, directory=True)
   owned(key)

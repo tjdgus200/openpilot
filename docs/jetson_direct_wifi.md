@@ -475,3 +475,47 @@ cleanup blocking. One unchanged boot-display fixture still requires PIL absent
 from WSL system Python and is excluded; three inherited pytest configuration
 warnings remain. Korean/English user-doc validation passed. No device, AP,
 external simulation or bridge process was accessed or stopped.
+
+
+## Optional SHA-256-only owner USB delivery (2026-10-20)
+
+Host/model downloads were already public plaintext. Format2 removes the signature
+field only for the owner's physical USB channel, retaining Git-pinned SHA-256
+and exact sizes. SHA-256 detects corruption, not author identity: an attacker
+able to replace both the expected hashes and assets can satisfy it. Official
+NAS signature verification and its trust root remain unchanged.
+
+A root-owned, non-writable local `updater/usb-sha256-policy.json` opts the receiver
+in. Install with `install_usb_receiver.py --runtime <runtime> --sha256` from a
+stopped/recovery-mounted device; no private or public experiment key is required.
+The receiver files precede the policy's atomic publication. USB messages cannot
+enable the policy. Existing enrollment keys and the official key are preserved.
+The old installed receiver needs this one-time local change; a comma-only update
+cannot make an unsupported unsigned message override its signature checks.
+
+Comma selects format2 only after the boot peer advertises
+`carrot_usb_sha256_v1=true`. Older receivers use a valid legacy signed selection
+only when its source/model/bundle identity exactly matches the requested format2
+release. Reject after SHA capability never silently retries a different trust
+mode. Status records expose `host_update.integrity`; USB rejection messages now
+identify begin/transfer/verify without disclosing packet content or secrets.
+
+All length/hash, root ownership, protected-DATA, free-space, model/runtime ABI,
+execution probe, previous-release retention and parked/offroad checks remain.
+Matching previously registered content can be reused across format1/format2;
+neither mode activates partial files. Boot-only receiver behavior and official
+return selection are unchanged. The current format2 file uses the same already
+published source15a80f65 bundle/model bytes and URLs. It is not a claim that
+changing trust mode fixes the still-unconfirmed device rejection.
+
+See [local installation and operation](../tools/jetlink/USB_SHA256_KO.md).
+
+PC validation:644 checks passed. The keyless path completes registration and
+activation in an isolated simulated USB environment with Crypto imports denied.
+Wrong hashes/lengths, runtime/format mismatch, unowned/invalid policy and changed
+legacy content are refused; loss of parked permission stops registration and a
+busy activation cannot accept a new transfer. Official NAS and signed-USB
+rejection checks remain enforced. One unchanged PIL-dependent boot-display
+fixture is excluded and three inherited pytest warnings remain. Localized docs
+passed validation. Public asset URLs returned200 with matching expected lengths.
+No device connection or vehicle validation was performed.

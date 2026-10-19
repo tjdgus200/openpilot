@@ -47,7 +47,9 @@ def test_nav_pin_matches_upstream_fixture_and_keeps_parser_shapes():
   assert selection['model'] == {
     'url': 'https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx',
     'sha256': SPEC.sha256, 'size': SPEC.nbytes}
-  assert 'signature' in selection and selection.get('delivery') != 'local'
+  assert selection['format'] == 2 and selection['integrity'] == 'sha256' and 'signature' not in selection
+  legacy = selected_release(ROOT / 'openpilot/selfdrive/modeld/jetlink/host_release.json', prefer_sha256=False)
+  assert 'signature' in legacy and legacy['model'] == selection['model']
   parsed = parse_outputs(Parser(), SPEC, np.zeros(SPEC.output_nelem, np.float32))
   assert parsed['plan'].shape == (1, 33, 15) and parsed['action'].shape == (1, 4)
   assert all(np.isfinite(value).all() for value in parsed.values())

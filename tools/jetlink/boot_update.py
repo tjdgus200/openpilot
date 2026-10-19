@@ -144,10 +144,12 @@ class BootstrapSession:
         current = (update.ROOT / 'current/SOURCE_COMMIT').read_text().strip()
       except OSError:
         current = None  # Preserve discovery/recovery even if current is unavailable.
+      sha256_usb = usb.sha256_enabled(update.ROOT)
       self.transport.send_json(p.Msg.HELLO_RESP, msg.seq, {
         'protocol': p.VERSION, 'carrot_host': 'jetson', CAPABILITY: True, LOCAL_CAPABILITY: True,
         wifi_capability: True, 'engine_state': 'none', 'loaded': None, 'sleep_after': 0,
-        usb.CAPABILITY: (update.ROOT / 'updater/usb-experiment-public.pem').is_file(),
+        usb.CAPABILITY: (update.ROOT / 'updater/usb-experiment-public.pem').is_file() or sha256_usb,
+        usb.SHA256_CAPABILITY: sha256_usb,
         'usb_source_commit': current,
       })
       return
