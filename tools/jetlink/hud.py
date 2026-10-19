@@ -178,6 +178,8 @@ def main():
   from hud_camera import RemoteRoadCamera
   cluster_live_camera.LiveRoadCamera = RemoteRoadCamera
   import cluster_system_monitor
+  # Capture the real host sampler before the vehicle-only compatibility adapter.
+  import hud_runtime_stats  # noqa: F401
   from hud_stats import VehicleSystemStats, VehicleCpuOverlay, VehicleNetworkAddress
   cluster_system_monitor.SystemStatsSampler = VehicleSystemStats
   cluster_system_monitor.ClusterProcessCoreUsageSampler = VehicleCpuOverlay

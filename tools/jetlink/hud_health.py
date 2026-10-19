@@ -47,6 +47,26 @@ def health_banner(health, language):
 
 
 class HealthRenderer(ClusterUiRenderer):
+  def _draw_cluster_core_usage(self, text, *, right_x=DESIGN_WIDTH):
+    from hud_runtime_stats import RuntimeFooterSampler, footer_lines
+    if not hasattr(self, '_runtime_footer'):
+      self._runtime_footer = RuntimeFooterSampler()
+    lines = footer_lines(self._system_stats.sample(), self._runtime_footer.sample(), self.language)
+    x = right_x - 4
+    for y, line in zip((451, 471), lines):
+      self._draw_text(self._ellipsize_text(line, 16, 760), x, y, 16, self._current_theme().muted, anchor='right')
+
+  def _draw_battery_status(self, text, left, width, color):
+    # Keep the complete availability message clear of the two diagnostic rows.
+    self._draw_text(self._ellipsize_text(text, 16, width), left, 55, 16, color)
+
+  def close(self):
+    footer = getattr(self, '_runtime_footer', None)
+    if footer is not None:
+      footer.close()
+      del self._runtime_footer
+    super().close()
+
   def render(self, state, signal_lights=None):
     self.host_health = _fresh(STATUS, time.monotonic())
     self.host_badge_drawn = False

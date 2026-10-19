@@ -39,3 +39,9 @@ verified empty USB-C port, across its configured transport modes. Its dedicated
 helper verifies the vote and preserves foreign forced votes. It does not import
 upstream's role switching, VM tuning, runtime or model catalog. See
 `docs/jetlink_usb_power_20261018.md` for power sequencing and validation limits.
+
+Owner HUD diagnostics extension (2026-10-19): a local read-only `display_stats`
+control command summarizes the existing bounded FrameStats deque over ten seconds.
+It runs on the control client thread, does not change the ordinary stats event,
+engine, inference messages or USB framing, and excludes rows from before an
+observed engine replacement. The HUD reads it at 1 Hz outside its render thread.

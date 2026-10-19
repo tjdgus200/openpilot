@@ -108,6 +108,21 @@ class FrameStats:
       'window_s': round(seconds, 1),
     }
 
+  def display_summary(self, since: float = 0.0) -> dict | None:
+    """Read-only ten-second display window; called outside the frame path."""
+    rows = [r for r in self.window(10.0) if r[0] >= since]
+    if not rows:
+      return None
+    def distribution(index):
+      values = sorted(r[index] / 1000.0 for r in rows)
+      at = .99 * (len(values) - 1)
+      low = int(at)
+      p99 = values[low] + (values[min(low + 1, len(values) - 1)] - values[low]) * (at - low)
+      return {'mean': sum(values) / len(values), 'p99': p99, 'max': values[-1]}
+    return {'window_s': 10.0, 'count': len(rows),
+            'last_frame_age_s': max(0.0, time.perf_counter() - rows[-1][0]),
+            'infer_ms': distribution(2), 'server_ms': distribution(1)}
+
 
 @dataclass(frozen=True)
 class Request:

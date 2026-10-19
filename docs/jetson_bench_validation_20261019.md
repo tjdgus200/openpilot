@@ -105,6 +105,14 @@ the existing 10 Hz preview cadence when requested. Model camera buffers, transfo
 inference contracts and validity checks are unchanged. PC HUD/battery/hotplug/Wi-Fi
 regression: **120 passed**, with three existing pytest configuration warnings.
 
+After installing `c4b12c57` on comma and restarting only the offroad jetlinkd, a
+separate bounded real-camera check selected 3D/road/3D/wide/3D views. The 3D phases
+sent zero JPEG frames; the requested camera phases observed approximately
+10.06/9.96 Hz and 101/100 distinct frames per stream. Original view/debug settings,
+CPU power state and camera shutdown were verified afterward. This validates source
+preview delivery, not optical display FPS. Test directories were removed from both
+devices after collecting the private evidence.
+
 ## Remaining limits
 
 There is no validated PV5 battery receive-signal profile in this change. Bench

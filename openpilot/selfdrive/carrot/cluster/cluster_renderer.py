@@ -4073,7 +4073,10 @@ class ClusterUiRenderer:
             # Reserve a fixed right column so English/Korean labels cannot overlap values.
             self._draw_text(self._ellipsize_text(label, 20, width * 0.56), left, y, 20, theme.muted)
             self._draw_text(self._ellipsize_text(value, 26, width * 0.4), right, y, 26, theme.text, anchor='right')
-        self._draw_text(self._ellipsize_text(labels[data.status], 16, width - 48), left, 462, 16, theme.muted)
+        self._draw_battery_status(labels[data.status], left, width - 48, theme.muted)
+
+    def _draw_battery_status(self, text, left, width, color) -> None:
+        self._draw_text(self._ellipsize_text(text, 16, width), left, 462, 16, color)
 
     def _draw_alert_overlay(self, alert: ClusterAlert | None) -> None:
         if alert is None or alert.size <= 0 or not (alert.text1 or alert.text2):
