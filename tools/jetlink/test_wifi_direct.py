@@ -101,6 +101,17 @@ def test_only_ap_recreation_or_boot_changes_legacy_client_identity(monkeypatch):
   assert sender.direct_client_id(uid) not in (first, second)
 
 
+def test_coexistence_hint_fails_closed_for_stale_or_foreign_status(tmp_path, monkeypatch):
+  from openpilot.common import wifi_coexistence as coexistence
+  path = tmp_path/'status.json'
+  monkeypatch.setattr(coexistence, 'STATUS', path)
+  monkeypatch.setattr(coexistence.time, 'monotonic', lambda: 100.)
+  assert not coexistence.direct_ap_active()
+  for state, interface, updated, expected in [('active','wljetson0',99.,True),('active','wljetson0',80.,False),('active','wljetson0',101.,False),('unavailable','wljetson0',99.,False),('active','wlan0',99.,False)]:
+    path.write_text(json.dumps(dict(state=state,interface=interface,updated=updated)))
+    assert coexistence.direct_ap_active() is expected
+
+
 @pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')
 def test_ap_start_refuses_onroad_before_any_network_operation(monkeypatch):
   import wifi_direct as direct

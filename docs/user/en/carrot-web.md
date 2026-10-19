@@ -135,6 +135,9 @@ notice for physical validation limits of each installation path.
 - `Web Settings`: configure the Drive layout, video, HUD, AR, and other web-only display options.
 - `Info`: view and copy the device type, branch, commit, identifiers, and network information.
 
+While the dedicated Jetson Wi-Fi is active, the web network list uses cached scan results
+to reduce repeated scans that can interfere with HUD traffic. Open the device's network settings to scan explicitly.
+
 ### Git Commands
 
 - `git pull`: fetch and integrate new commits for the current branch.
