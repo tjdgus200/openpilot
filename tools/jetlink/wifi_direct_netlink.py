@@ -100,7 +100,10 @@ class Wireless:
       raise ValueError('Reserved interface already exists')
     payload = attribute(1, struct.pack('I', station['phy'])) + attribute(4, INTERFACE.encode() + b'\0') + attribute(5, struct.pack('I', 3))
     self.query(self.family, 7, 5, payload)
-    return next(r['index'] for r in self.interfaces() if r['name'] == INTERFACE and r['type'] == 3)
+    # NM/firmware may already have changed this newly created vdev to managed
+    # while registering it. Ownership is the successful NEW plus this new
+    # name/index, not a transient mode. NM's explicit AP activation sets mode.
+    return next(r['index'] for r in self.interfaces() if r['name'] == INTERFACE)
 
   def delete(self, index):
     # Never remove an interface that has been replaced or reused by another owner.

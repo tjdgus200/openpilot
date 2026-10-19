@@ -32,6 +32,17 @@ def test_modes_alone_do_not_authorize_concurrent_ap():
     attributes(b'\x03\0\x01\0')
 
 
+def test_created_interface_is_owned_even_if_mode_changes_during_registration():
+  from wifi_direct_netlink import Wireless
+  w = object.__new__(Wireless)
+  w.family = 42
+  station = {'name': 'wlan0', 'index': 11, 'type': 2, 'phy': 0}
+  observed = iter([[station], [station, {'name': INTERFACE, 'index': 35, 'type': 2, 'phy': 0}]])
+  w.interfaces = lambda: next(observed)
+  w.query = lambda *a: [{1: struct.pack('I', 0), **combinations()[0]}] if a[1] == 1 else []
+  assert w.create() == 35
+
+
 def test_direct_route_survives_phone_loss_without_reconnect():
   direct = (INTERFACE, '172.29.77.1')
   phone = ('wlan0', '10.164.54.41')
