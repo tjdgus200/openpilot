@@ -439,8 +439,18 @@ def main():
   tcp_seen = False
   mobile_unavailable = False
   usb_power = UsbPowerGuard()
+  next_ap = 0.
   try:
     while True:
+      # Prepare the independent AP while initially offroad, before waiting for
+      # a late-booting Jetson/USB HELLO. Never wait for NM in the USB owner.
+      if TRANSPORT_MODE not in ('ios', 'android') and time.monotonic() >= next_ap:
+        try:
+          from wifi_direct import ensure
+          ensure()
+        except Exception:
+          pass
+        next_ap = time.monotonic() + 5.
       usb_power.step()
       update_affinity()
       if cleanup_error:

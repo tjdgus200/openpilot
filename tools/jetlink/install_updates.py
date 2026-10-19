@@ -10,8 +10,16 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
   """A signed runtime can migrate its own updater without per-car SSH setup.
 
   Published images already grant the jetlink service account passwordless sudo.
-  Enable only next boot so installing never interrupts the current session.
+  Enable the updater only next boot. Networking helpers use a volatile,
+  independent copy; restarting their importer does not restart NetworkManager.
   """
+  if (runtime / 'current/tools/jetlink/wifi_runtime.py').is_file():
+    try:
+      subprocess.run(['sudo', '-n', sys.executable, str(runtime / 'current/tools/jetlink/install_updates.py'),
+                      '--wifi-runtime'], check=True, timeout=30,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+      print('Wi-Fi runtime migration deferred; immutable recovery retained', file=sys.stderr)
   # The protected image restores /etc into RAM each boot. Apply the owner's
   # awake policy from the selected signed runtime, not by changing the base OS.
   policy = runtime / 'current/tools/jetlink/wifi_power.py'
@@ -132,10 +140,14 @@ WantedBy=timers.target
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument('--wifi-runtime', action='store_true', help='Use approved networking helpers from independent RAM storage')
   parser.add_argument('--boot-display-runtime', action='store_true', help='Use the signed display runtime for this boot only')
   parser.add_argument('--bootstrap-only', action='store_true', help='Migrate an installed runtime; enable from its next boot without OS writes')
   args = parser.parse_args()
-  if args.boot_display_runtime:
+  if args.wifi_runtime:
+    from wifi_runtime import configure as configure_network
+    configure_network()
+  elif args.boot_display_runtime:
     configure_runtime_boot_display()
   elif args.bootstrap_only:
     source = Path('/opt/carrot-jetlink/current/tools/jetlink')

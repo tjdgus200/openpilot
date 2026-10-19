@@ -15,6 +15,35 @@ from wifi_direct_netlink import INTERFACE as DIRECT_INTERFACE, profile_id as dir
 from openpilot.common.jetson_model import selected_release
 
 
+def ap_generation(now):
+  # Cheap tmpfs hint, not a NetworkManager scan or a credential read.
+  try:
+    value = json.loads(Path('/dev/shm/carrot-jetlink-direct-wifi.json').read_text())
+    if (0 <= now - value['updated'] < 10 and value.get('state') in ('active', 'degraded')
+        and type(value.get('index')) is int):
+      return value['index']
+  except (OSError, ValueError, KeyError, TypeError):
+    pass
+  return None
+
+
+def ap_diagnostic(now):
+  try:
+    value = json.loads(Path('/dev/shm/carrot-jetlink-direct-wifi.json').read_text())
+    if not 0 <= now - value['updated'] < 10:
+      return ''
+    reason = value.get('reason')
+    if reason in ('station_channel_unsupported', 'station_frequency_unavailable'):
+      return 'comma_ap_channel_unavailable'
+    if value.get('state') == 'waiting_offroad':
+      return 'comma_ap_waiting_offroad'
+    if value.get('state') in ('unavailable', 'degraded'):
+      return 'comma_ap_unavailable'
+  except (OSError, ValueError, KeyError, TypeError):
+    pass
+  return ''
+
+
 def nm(*args):
   result = subprocess.run(['nmcli', '--escape', 'no', *args], capture_output=True,
                           text=True, timeout=2, env=dict(os.environ, LC_ALL='C'))
@@ -84,6 +113,7 @@ def main(fd):
   profiles = None
   refresh = 0
   next_ap = 0
+  generation = None
   while True:
     now = time.monotonic()
     if now >= next_ap:
@@ -92,11 +122,13 @@ def main(fd):
         ensure()
       except Exception:
         pass  # Failure of this display side channel must not block USB.
-      next_ap = now + 30
-    if now >= refresh:
+      next_ap = now + 5
+    current = ap_generation(now)
+    if now >= refresh or current != generation:
       try:
         profiles = collect()
-        refresh = now + 30
+        refresh = now + (30 if profiles else 2)
+        generation = current
       except Exception:
         # Do not send an empty deletion set after an access/query failure.
         profiles = None
@@ -105,6 +137,7 @@ def main(fd):
       raw = params.get('IsOnroad')
       onroad = road_state(raw)
       value = dict(version=1, owner=owner, profiles=profiles, onroad=onroad)
+      value['direct_ap_reason'] = ap_diagnostic(now)
       if manifest is not None:
         value['jetson_release'] = manifest
       data = json.dumps(value, separators=(',', ':')).encode()

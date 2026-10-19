@@ -66,6 +66,9 @@ def collect():
       pass
   return {'stage': read_json(STAGE), 'storage': read_json('/run/carrot-storage.json'),
           'units': units, 'addresses': addresses[:4], 'wifi': network.get('state', 'waiting'),
+          'wifi_reason': network.get('reason', '') if network.get('reason') in
+          ('rollback_failed', 'profile_install_failed', 'connect_failed', 'persist_failed', 'network_activation_failed',
+           'comma_ap_channel_unavailable', 'comma_ap_waiting_offroad', 'comma_ap_unavailable') else '',
           'uptime': int(time.monotonic()), 'temp_c': max(temperatures, default=None)}
 
 

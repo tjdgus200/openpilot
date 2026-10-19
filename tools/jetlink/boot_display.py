@@ -21,7 +21,8 @@ def lines(status):
   rows = [
     ('시스템 보호', 'SYSTEM STORAGE', storage),
     ('부팅 단계', 'BOOT STAGE', stage.get('stage', 'starting')),
-    ('무선 네트워크', 'WI-FI', str(status.get('wifi', 'waiting'))),
+    ('무선 네트워크', 'WI-FI', str(status.get('wifi', 'waiting')) +
+     (' / ' + status['wifi_reason'] if status.get('wifi_reason') else '')),
     ('접속 주소', 'IP ADDRESS', ' / '.join(status.get('addresses', [])) or 'Waiting for network'),
     ('원격 접속', 'SSH', units.get('ssh', {}).get('ActiveState', 'waiting')),
     ('콤마 USB 서비스', 'COMMA USB SERVICE', units.get('carrot-jetlink', {}).get('ActiveState', 'waiting')),

@@ -125,10 +125,12 @@ class Worker:
   def __init__(self, directory=DIRECTORY, command=nm, persist=lambda: None):
     self.directory, self.command, self.persist = directory, command, persist
     self.applied = None
+    self.attempted = None
     self.next_attempt = 0
     self.state = 'starting'
     self.count = 0
     self.recovered = False
+    self.stage, self.reason = 'starting', ''
 
   def rollback(self):
     journal = self.directory / '.carrot-wifi-rollback.json'
@@ -159,10 +161,19 @@ class Worker:
     journal.unlink()
 
   def step(self, packet, now):
-    if now < self.next_attempt:
+    value = packet[1] if packet is not None else None
+    identity = (value['owner'], value['profiles']) if value is not None and value['profiles'] else None
+    # New credentials/AP identity bypass an old retry deadline exactly once.
+    # Repeating a failed identity every 2s must not trigger activation storms.
+    new_profile = identity is not None and identity != self.attempted
+    if now < self.next_attempt and not new_profile:
       return self.state
     self.next_attempt = now + 30
+    if identity is not None:
+      self.attempted = identity
+    self.reason = ''
     try:
+      self.stage = 'rollback'
       if not self.recovered:
         try:
           self.rollback()
@@ -174,12 +185,11 @@ class Worker:
         self.recovered = True
       # Snapshot profiles before replacement. Failed credentials must not remove
       # the only previously working network, even across a service restart.
-      value = packet[1] if packet is not None else None
-      identity = (value['owner'], value['profiles']) if value is not None else None
       changed = value is not None and bool(value['profiles']) and identity != self.applied
       old = {p.name: p.read_text(encoding='utf-8') for p in self.directory.glob(PREFIX + '*.nmconnection') if not p.is_symlink()}
       if changed:
         try:
+          self.stage = 'profile_install'
           journal = self.directory / '.carrot-wifi-rollback.json'
           rendered = [render(value['owner'], p, 100 - i) for i, p in enumerate(value['profiles'])]
           desired = {PREFIX + uid + '.nmconnection': content for uid, content in rendered}
@@ -187,10 +197,12 @@ class Worker:
           atomic(journal, json.dumps({'old': old, 'new': new}), 0o600)
           ids = install(value, self.directory, self.command)
           preferred = next((uid for uid, p in zip(ids, value['profiles']) if p['active']), None)
+          self.stage = 'connect'
           self.state = connect(ids, self.command, preferred=preferred, force=old != desired)
           active = self.command('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines()
           if self.state != 'connected' or not set(active).intersection(ids):
             raise RuntimeError('Candidate Wi-Fi not connected')
+          self.stage = 'persist'
           self.persist()
           self.applied = identity
           journal.unlink()
@@ -200,10 +212,18 @@ class Worker:
           connect(saved_ids(self.directory), self.command)
           raise
       else:
+        self.stage = 'connect'
         self.state = connect(saved_ids(self.directory), self.command)
       self.count = len(saved_ids(self.directory))
+      self.reason = 'network_activation_failed' if self.state == 'retrying' else ''
+      if value is not None and not value['profiles'] and value.get('direct_ap_reason') in (
+          'comma_ap_channel_unavailable', 'comma_ap_waiting_offroad', 'comma_ap_unavailable'):
+        self.reason = value['direct_ap_reason']
+      if self.state == 'connected':
+        self.stage = 'idle'
     except Exception:
       self.state = 'retrying'
+      self.reason = self.stage + '_failed'
       self.recovered = False
     return self.state
 
@@ -238,7 +258,8 @@ def main():
       state = worker.step(read_packet(), time.monotonic())
     except Exception:
       state = 'retrying'
-    atomic(STATUS, json.dumps({'state': state, 'profiles': worker.count, 'updated': time.monotonic()}) + '\n', 0o644)
+    atomic(STATUS, json.dumps({'state': state, 'stage': worker.stage, 'reason': worker.reason,
+                              'profiles': worker.count, 'updated': time.monotonic()}) + '\n', 0o644)
     time.sleep(2)
 
 

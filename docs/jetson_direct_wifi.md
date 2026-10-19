@@ -340,3 +340,58 @@ The owner install branch selects this package for its existing offroad USB
 boot receiver. Actual installation/display and Wi-Fi association verification
 remain pending after device disconnection; no recovery jumper or key change is
 needed on the previously prepared device.
+
+
+## AP recovery correction (2026-10-19)
+
+The installed712ff224 and then-current3f54355f control flow were reproduced
+on PC with a synthetic power-query exception: the working AP was deleted and
+the next onroad pass waited for offroad. This proves the code failure path,
+not that it caused the reported vehicle incident.
+
+Maintenance query/power errors now preserve the owned AP, address lease and
+TCP sessions. Only a confirmed inactive AP/partial failed activation or a
+validated offroad channel realignment can enter destructive recovery. Startup
+power-default failures do not prevent AP control. AP preparation begins in the
+normal-priority USB daemon before waiting for a Jetson HELLO; it does not wait
+for NetworkManager and never delays driving startup. Check offroad again before
+vdev creation and activation; genuine missing-AP recovery remains offroad-only.
+
+A tracked versioned policy marker distinguishes compatible updates from return
+to software without this direct-only feature. A changed controller defers
+onroad; offroad it releases its lock/socket without deleting the AP. The next
+controller validates the reserved interface, unique connection identity and AP
+mode before adopting it without activation/deactivation. Removing/changing the
+policy marker retires the owned AP; unrelated interfaces are never adopted.
+The pre-fix controller cannot gain this handover retroactively: install the
+first corrected version parked/offroad.
+
+Empty publisher results retry after2s, AP-generation changes trigger refresh,
+and AP control restarts are checked every5s. Steady credentials remain cached
+for30s. Jetson processes a newly received owner/profile identity immediately
+through an old retry deadline, but identical failed packets retain30s backoff.
+The protected image's immutable worker is not silently assumed to update: the
+signed runtime copies the four networking helpers to independent hash-versioned
+RAM storage and installs a volatile service override. It restarts only that
+importer, skips an outstanding profile transaction and retains the base recovery
+worker for boot/failure. NetworkManager and active WLAN links are not restarted
+by this migration. Model/USB inference, authentication and data expiry stay
+unchanged.
+
+Channel parse/unsupported-channel errors preserve an existing AP and receive
+secret-free reason codes. The shared radio still needs a supported common
+channel: cold startup on an unsupported/DFS phone channel is not made safe by
+forcing an arbitrary different channel. No general DFS/6GHz or onroad roaming
+support is claimed. The dashboard distinguishes importer and comma-AP reasons;
+no nmcli output, SSID, credentials or vehicle payload is recorded.
+
+Validation: focused PC regressions cover transient query failures, update
+handover/adoption, official return, channel refusal, activation/road-transition
+races, one-time immediate retry, repeated-failure backoff, RAM migration and
+transaction protection. Devices are disconnected: actual installation, optical
+HUD continuity and long-duration vehicle reconnection remain unverified.
+
+Final PC result:279 passed, one unchanged isolated boot-display fixture
+excluded because WSL system Python lacks PIL. Existing USB signing/update,
+USB power, runtime-option and HUD regressions are included. Three inherited
+pytest configuration warnings remain. Localized user-doc validation passed.
