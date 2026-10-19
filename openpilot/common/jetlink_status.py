@@ -16,12 +16,15 @@ def update_badge(value):
   if not isinstance(value, dict):
     value = {}
   state = value.get('state')
+  if state == 'waiting_park':
+    return 'Jetson 업데이트 대기 · P단 정차·보조기능 해제 필요', 'loading'
   if state == 'waiting_internet':
     return 'Jetson 업데이트 필요 · 인터넷 연결 대기', 'loading'
-  if state == 'downloading':
+  if state in ('downloading', 'transferring'):
     fraction = value.get('fraction')
     percent = f' {int(fraction * 100)}%' if isinstance(fraction, (int, float)) and 0 <= fraction <= 1 else ''
-    return f'Jetson 업데이트 다운로드 중{percent}', 'loading'
+    label = '다운로드' if state == 'downloading' else 'USB 전송'
+    return f'Jetson 업데이트 {label} 중{percent}', 'loading'
   if state == 'verifying':
     return 'Jetson 업데이트 검증·적용 중', 'loading'
   if state == 'failed':

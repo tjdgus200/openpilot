@@ -18,7 +18,7 @@ from openpilot.selfdrive.modeld.jetlink.phase import Publisher as PhasePublisher
 from openpilot.selfdrive.modeld.jetlink.mac import prepare, PreparationDeferred
 from openpilot.selfdrive.modeld.jetlink.compat import ProtocolChoice
 from openpilot.selfdrive.modeld.jetlink.mobile import transport_mode, setup_gadget, MobileCable, AutoTransport, MobileLinkError
-from openpilot.selfdrive.modeld.jetlink.contracts import model_name
+from openpilot.selfdrive.modeld.jetlink.contracts import model_name, JETSON_SPEC
 from openpilot.selfdrive.modeld.jetlink.selection import ModelChanged, check_loaded
 from openpilot.selfdrive.modeld.jetlink.usb_power import UsbPowerGuard
 from openpilot.selfdrive.modeld.jetlink.startup import CAPABILITY as BOOT_UPDATE_CAPABILITY, wait_for_boot_update
@@ -562,6 +562,13 @@ def main():
         publish('loading', peer=peer)
         from openpilot.common.params import Params
         params = Params()
+        from openpilot.common.jetson_model import is_jetson
+        from openpilot.selfdrive.modeld.jetlink.update_permission import Permission, wait_for_permission
+        setup_permission = Permission(params) if is_jetson(peer) else None
+        needs_jetson_setup = setup_permission is not None and peer.get('loaded') != JETSON_SPEC.sha256
+        def setup_allowed():
+          return setup_permission.allowed() if setup_permission is not None else (
+            params.get_bool('IsOffroad') and not params.get_bool('IsOnroad'))
         last_progress = 0.
 
         def progress(stage, fraction, message, current_peer=peer):
@@ -571,7 +578,14 @@ def main():
             last_progress = time.monotonic()
 
         peer = wait_for_selection(client, peer, progress)
-        prepare(client, peer, lambda current=params: current.get_bool('IsOffroad') and not current.get_bool('IsOnroad'),
+        if needs_jetson_setup:
+          def waiting_for_park():
+            progress('waiting-park', None, 'Jetson setup waits for Park, standstill and disabled driving assistance')
+            if wifi is not None:
+              wifi.send(client)
+            client.state()
+          wait_for_permission(setup_permission, host_attached, waiting_for_park)
+        prepare(client, peer, setup_allowed,
                 host_attached, progress, mode=session_mode())
         spec = client.spec
         if spec is None:
@@ -583,7 +597,11 @@ def main():
           owner.enable_read_pipeline()
         # Warm independently of camera/modeld; every real session resets state.
         for frame in range(10):
+          if needs_jetson_setup and not setup_allowed():
+            raise PreparationDeferred('Jetson preparation requires offroad or fresh Park/inactive state')
           client.infer(np.zeros(spec.warped_shape, np.uint8), np.zeros(spec.packed_nelem, np.float32), frame, reset=True)
+        if needs_jetson_setup and not setup_allowed():
+          raise PreparationDeferred('Jetson preparation requires offroad or fresh Park/inactive state')
         log.info('Jetlink ready: %s', peer)
         serve_local(listener, client, peer, wifi)
       except PreparationDeferred as exc:

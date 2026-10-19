@@ -444,10 +444,14 @@ def test_boot_client_onroad_cannot_start_usb_upload(env, monkeypatch):
   monkeypatch.setattr(startup, 'RELEASE', env.tmp / 'host_release.json')
   (env.tmp / 'usb_host_public.pem').write_bytes(env.public.read_bytes())
   monkeypatch.setitem(sys.modules, 'openpilot.common.params', NS(Params=lambda: NS(get_bool=lambda k: k == 'IsOnroad')))
+  monkeypatch.setattr(startup, 'Permission', lambda _, **kw: NS(allowed=lambda: False))
   peer = {'carrot_host': 'jetson', startup.CAPABILITY: True, usb.CAPABILITY: True, 'usb_source_commit': 'a' * 40}
   wire = Wire()
+  wire.client.state = lambda: {'carrot_update': {'state': 'checking'}}
+  attached = [True]
   with pytest.raises(ConnectionError, match='offroad'):
-    startup.wait_for_boot_update(wire.client, peer, None, lambda: True, lambda *a, **k: None)
+    startup.wait_for_boot_update(wire.client, peer, None, lambda: attached[0], lambda *a, **k: None,
+                                sleep=lambda _: attached.__setitem__(0, False))
   assert not wire.types
 
 

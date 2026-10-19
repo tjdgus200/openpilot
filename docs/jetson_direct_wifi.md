@@ -395,3 +395,42 @@ Final PC result:279 passed, one unchanged isolated boot-display fixture
 excluded because WSL system Python lacks PIL. Existing USB signing/update,
 USB power, runtime-option and HUD regressions are included. Three inherited
 pytest configuration warnings remain. Localized user-doc validation passed.
+
+
+## Parked onroad USB update permission (2026-10-19)
+
+Comma no longer equates the onroad screen with a moving vehicle for the
+owner's USB boot-gate update. Offroad permission remains unchanged. Onroad
+requires an explicitly idle bootstrap peer and fresh (<250ms), valid/alive
+carState, selfdriveState and carControl: healthy CAN, Park, standstill,
+abs(vEgo)<0.01m/s, disabled stock ACC, selfdrive enabled/active false, and
+carControl enabled/latActive/longActive false. No messages/Params are forged.
+Unknown or contradictory Params, missing data and runtime peers fail closed.
+The receiver still requires a normal Jetson reboot, existing enrollment and
+comma Internet for uncached files; no Jetson WLAN or receiver migration is
+needed for this client-side permission change. The selected host package
+remains source15a80f65.
+
+Permission is resampled at most20Hz and age/vehicle conditions are checked
+again per callback, including each asset hash/download block and USB exchange.
+The boot gate remains alive and displays waiting_park until approval. Bulk
+transfer/cache work temporarily leaves FIFO/core7 for SCHED_OTHER/CPUs0–3 and
+restores the prior scheduling in finally. No new realtime priorities are used.
+Leaving Park, enabling assistance, losing fresh data or unplugging stops an
+unregistered transfer without selecting/activating it. Once a signed release
+has been explicitly selected, the unused host's existing atomic installation
+may complete; this change cannot cancel a legacy activation already running.
+Normal runtime peers cannot enter the boot-gate upload path. New Jetson engine
+preparation and warmup also recheck offroad/parked permission before READY;
+normal preloaded reconnect behavior and the existing model-join policy remain
+unchanged. Other Mac/phone setup stays offroad-only.
+
+PC tests simulate parked upload with WLAN/Internet unavailable (cached assets),
+movement/ACC/assistance/stale/invalid/unknown CAN denial, shift-out mid-transfer,
+waiting-to-approved progression, idle-peer admission, model setup and scheduling
+restoration. Actual car/Jetson installation and vehicle validation are pending.
+
+Final parked-update PC result:358 passed, one unchanged isolated boot-display
+fixture excluded for missing WSL system-Python PIL, three inherited pytest
+configuration warnings. Localized user-doc validation passed. No vehicle,
+phone, Jetson service or active simulation was accessed or changed.

@@ -2,6 +2,7 @@
 from pathlib import Path
 import time
 from openpilot.common.jetson_model import selected_release
+from openpilot.selfdrive.modeld.jetlink.update_permission import Permission, bulk_scheduling, wait_for_permission
 
 CAPABILITY = 'carrot_boot_update_v1'
 MESSAGE = 0x4003
@@ -23,14 +24,24 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
     usb_change = peer.get('usb_source_commit') != manifest['source_commit']
     if usb_change:
       from openpilot.common.params import Params
-      params = Params()
+      permission = Permission(Params(), allow_parked=(peer.get('engine_state') == 'none'
+                                                     and 'loaded' in peer and peer['loaded'] is None))
       def allowed():
-        return connected() and params.get_bool('IsOffroad') and not params.get_bool('IsOnroad')
-      upload(client, manifest, RELEASE.with_name('usb_host_public.pem'), Path('/data/jetson-usb-cache'), allowed,
-             lambda state, fraction: publish('updating', peer=peer, host_update={'state': state, 'fraction': fraction}))
+        return connected() and permission.allowed()
+      with bulk_scheduling():
+        # A newly opened subscriber initially has no messages. Keep the boot
+        # gate alive and show the reason instead of resetting its USB session.
+        def waiting():
+          publish('updating', peer=peer, host_update={'state': 'waiting_park', 'fraction': None})
+          if wifi is not None:
+            wifi.send(client)
+          client.state()
+        wait_for_permission(permission, connected, waiting, sleep)
+        upload(client, manifest, RELEASE.with_name('usb_host_public.pem'), Path('/data/jetson-usb-cache'), allowed,
+               lambda state, fraction: publish('updating', peer=peer, host_update={'state': state, 'fraction': fraction}))
   while connected():
     if usb_change and not allowed():
-      raise ConnectionError('USB activation requires offroad state; retry parked')
+      raise ConnectionError('USB activation requires offroad or fresh Park/inactive state')
     # The release selection is independent of NetworkManager profile reads.
     # Network provisioning stays on its private channel and out of status/logs.
     client.t.send_json(MESSAGE, client._next_seq(), manifest)

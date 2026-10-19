@@ -18,7 +18,7 @@ def asset(item, cache, allowed):
     with path.open('rb') as stream:
       while data := stream.read(1 << 20):
         if not allowed():
-          raise ConnectionError('USB update requires offroad and connected state')
+          raise ConnectionError('USB update requires offroad or fresh Park/inactive state and USB connection')
         digest.update(data)
     return digest.hexdigest() == item['sha256']
   if matches():
@@ -26,14 +26,14 @@ def asset(item, cache, allowed):
   partial = path.with_suffix('.part')
   try:
     if not allowed():
-      raise ConnectionError('USB update requires offroad and connected state')
+      raise ConnectionError('USB update requires offroad or fresh Park/inactive state and USB connection')
     with urllib.request.urlopen(item['url'], timeout=30) as source, partial.open('wb') as output:
       if not source.url.startswith('https://'):
         raise ValueError('Insecure asset redirect')
       count, digest = 0, hashlib.sha256()
       while data := source.read(BLOCK):
         if not allowed():
-          raise ConnectionError('USB update interrupted by onroad/disconnect')
+          raise ConnectionError('USB update interrupted by loss of parked/offroad permission or USB')
         count += len(data)
         if count > item['size']:
           raise ValueError('Oversized USB update asset')
@@ -53,7 +53,7 @@ def upload(client, manifest, key, cache, allowed, progress):
   verify(manifest, key)
   def exchange(kind, payload, raw=False, timeout=30):
     if not allowed():
-      raise ConnectionError('USB update requires offroad and connected state')
+      raise ConnectionError('USB update requires offroad or fresh Park/inactive state and USB connection')
     seq = client._next_seq()
     if raw:
       client.t.send(kind, seq, [payload], timeout=timeout)

@@ -24,11 +24,11 @@ class PreparationDeferred(RuntimeError):
   pass
 
 
-def require_setup(offroad, connected):
+def require_setup(offroad, connected, message='Jetlink model setup requires ignition off'):
   if not connected():
     raise PreparationDeferred('Jetlink host disconnected; waiting for reconnection')
   if not offroad():
-    raise PreparationDeferred('Jetlink model setup requires ignition off')
+    raise PreparationDeferred(message)
 
 
 def model_file(offroad, connected, progress, cache=CACHE):
@@ -119,15 +119,16 @@ def prepare(client, peer, offroad, connected, progress, cache=CACHE, mode='usb')
     if mode not in ('usb', 'auto'):
       raise ValueError('Jetson requires USB mode')
     # Model provisioning belongs to the signed Jetson updater, never the
-    # Mac/phone downloader. A pending load/build must stay offroad.
+    # Mac/phone downloader. The Jetson caller can approve fresh Park/inactive
+    # state onroad; other peers retain their existing offroad-only policy.
     def stopped():
-      require_setup(offroad, connected)
+      require_setup(offroad, connected, 'Jetson setup requires ignition off or fresh Park/inactive state')
       return False
 
     if not connected():
       raise PreparationDeferred('Jetson disconnected')
     if peer.get('loaded') != JETSON_SPEC.sha256:
-      require_setup(offroad, connected)
+      stopped()
     try:
       result = client.ensure_engine(JETSON_SPEC.sha256, JETSON_SPEC.nbytes,
                                     frame_skip=JETSON_SPEC.frame_skip, build_timeout=30, should_stop=stopped)
