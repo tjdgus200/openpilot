@@ -1,8 +1,8 @@
 {
   "format": 1,
   "delivery": "usb",
-  "profile": "hud-immediate-20261019-5cad3319",
-  "source_commit": "5cad3319ab6164677e6fde5e1766c689d5843d5d",
+  "profile": "wifi-recovery-20261019-15a80f65",
+  "source_commit": "15a80f65642506da1f04d2286f27142e7ed5743f",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -10,14 +10,14 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "f7153c5a9872702ef5ed592917f3c0ca53582047294ff32225f642fdcdddf6a7",
-    "size": 81645046,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-immediate-20261019-5cad3319/host.tar.gz"
+    "sha256": "d36ba90b7d07b336ab50f03329d4e3437765a83369bf0e3153e3a8430e709dd5",
+    "size": 81649877,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-wifi-recovery-20261019-15a80f65/host.tar.gz"
   },
   "model": {
     "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
     "size": 814591106,
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
   },
-  "signature": "aLdHmhZukXe6ihkUgXQi9hm98cmVABJ0jeQkYvCLue38b8Wx+BGK/iAKBjx2t6+VPiKoyrXWVYQBRFVKBWSPBA=="
+  "signature": "bEeZMrivf85cg1L7ODAZ0cl014uihsVljJesGWoW53FYXwk9ou2d4XVvUpEUAY3zOmVf8q+T8Ozhs/5z4KHVDQ=="
 }
