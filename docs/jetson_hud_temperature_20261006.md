@@ -76,7 +76,7 @@ or equate this with carrier/USB-display/adapter total power. Sampling these two
 nodes is not simultaneous laboratory power measurement and can miss brief peaks.
 
 `host_health.py` reads only an unambiguous INA3221 rail named VDD_IN in the
-existing one-second worker. No sysfs write, extra thread/process, GPU work,
+existing worker every0.5seconds. Thermal/storage/network refresh stays at1second. Scheduling subtracts I/O duration and retains a50ms minimum sleep after an overrun, avoiding catch-up bursts. No sysfs write, extra thread/process, GPU work,
 subprocess or inference-frame sensor read is added. Missing/ambiguous sensors,
 read failures and invalid values yield null/`-- W`, never a guessed mode rating.
 The existing three-second health freshness bound clears stale watt readings.
@@ -86,3 +86,13 @@ read was5048mV and1520mA, or7.67296W. This is a single stationary sample, not a
 sustained inference-power benchmark. Source/renderer regression and signed
 activation are recorded after the updated package is applied. This HUD change
 is excluded from both public Wi-Fi and inference-review commits.
+
+
+The initial one-second power version3cd796c8 was signed and applied after its
+normal execution probe first encountered CUDA out-of-memory. Only this task's
+finished transfer-asset caches were advised DONTNEED; no files, global memory
+policy, model checks or power/clock settings were changed. The same probe then
+passed and services resumed. This temporal association does not establish a
+universal memory-failure cause or a new inference optimization. The owner
+confirmed watts and temperature were both visible. The subsequent requested
+cadence is0.5seconds for power, retaining1second for the slower sensors/network.

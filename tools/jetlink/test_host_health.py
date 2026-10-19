@@ -117,3 +117,61 @@ def test_power_missing_ambiguous_or_invalid_is_unavailable_not_guessed(tmp_path)
   # A non-INA sensor with the same label cannot become our power source.
   (sensor / 'name').write_text('unrelated')
   assert abs(module_power(tmp_path) - 7.67296) < 1e-9
+
+
+
+def test_power_half_second_cadence_preserves_slow_sensor_network_rate(tmp_path, monkeypatch):
+  import host_health as h
+  clock = [0.]
+  counts = {'thermal':0,'storage':0,'network':0,'power':0}
+  rows, sleeps = [], []
+  def thermal():
+    counts['thermal'] += 1
+    clock[0] += .07
+    return {'temp_c':40+counts['thermal']}
+  def storage(value):counts['storage'] += 1
+  def network():
+    counts['network'] += 1
+    return []
+  def power():
+    counts['power'] += 1
+    clock[0] += .002
+    return float(counts['power'])
+  def sleep(duration):
+    sleeps.append(duration)
+    rows.append(json.loads((tmp_path/'health.json').read_text()))
+    clock[0] += duration
+    if len(rows)==4:raise StopIteration
+  monkeypatch.setattr(h,'STATUS',tmp_path/'health.json')
+  monkeypatch.setattr(h,'thermal_health',thermal)
+  monkeypatch.setattr(h,'storage_health',storage)
+  monkeypatch.setattr(h,'network_addresses',network)
+  monkeypatch.setattr(h,'module_power',power)
+  monkeypatch.setattr(h.time,'monotonic',lambda:clock[0])
+  monkeypatch.setattr(h.time,'sleep',sleep)
+  worker=object.__new__(h.HostHealth);worker.error=None;worker.snapshot={}
+  import pytest
+  with pytest.raises(StopIteration):worker._run()
+  assert counts=={'thermal':2,'storage':2,'network':2,'power':4}
+  assert [row['updated'] for row in rows]==[0.,.5,1.,1.5]
+  assert [row['power_w'] for row in rows]==[1.,2.,3.,4.]
+  assert rows[0]['temp_c']==rows[1]['temp_c'] and rows[2]['temp_c']==rows[3]['temp_c']
+  assert sleeps[0] < sleeps[1] and all(.05<=delay<=.5 for delay in sleeps)
+
+
+def test_sensor_overrun_keeps_a_sleep_instead_of_busy_catch_up(tmp_path, monkeypatch):
+  import host_health as h
+  import pytest
+  clock=[0.];sleeps=[]
+  def power():clock[0]+=1.2;return 7.
+  def sleep(delay):sleeps.append(delay);raise StopIteration
+  monkeypatch.setattr(h,'STATUS',tmp_path/'health.json')
+  monkeypatch.setattr(h,'thermal_health',lambda:{})
+  monkeypatch.setattr(h,'storage_health',lambda value:None)
+  monkeypatch.setattr(h,'network_addresses',lambda:[])
+  monkeypatch.setattr(h,'module_power',power)
+  monkeypatch.setattr(h.time,'monotonic',lambda:clock[0])
+  monkeypatch.setattr(h.time,'sleep',sleep)
+  worker=object.__new__(h.HostHealth);worker.error=None;worker.snapshot={}
+  with pytest.raises(StopIteration):worker._run()
+  assert sleeps==[.05]

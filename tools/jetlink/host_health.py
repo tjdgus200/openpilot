@@ -11,6 +11,8 @@ import time
 STATUS = Path('/dev/shm/carrot-jetlink-health.json')
 THERMAL = Path('/sys/class/thermal')
 HWMON = Path('/sys/class/hwmon')
+POWER_POLL_SECONDS = .5
+SLOW_POLL_SECONDS = 1.
 
 
 def storage_health(value, status=Path('/run/carrot-storage.json'), marker=Path('/etc/carrot-jetlink-protected.json')):
@@ -142,16 +144,19 @@ class HostHealth:
     return {**value, 'age_s': age} if 0 <= age < 3 else {}
 
   def _run(self):
+    next_slow, slow = 0., {}
     while True:
       started = time.monotonic()
       try:
-        value = thermal_health()
-        value['power_w'] = module_power()
-        storage_health(value)
-        try:
-          value['addresses'] = network_addresses()
-        except (OSError, ValueError, subprocess.SubprocessError):
-          value['addresses'] = []
+        if started >= next_slow:
+          slow = thermal_health()
+          storage_health(slow)
+          try:
+            slow['addresses'] = network_addresses()
+          except (OSError, ValueError, subprocess.SubprocessError):
+            slow['addresses'] = []
+          next_slow = started + SLOW_POLL_SECONDS
+        value = {**slow, 'power_w': module_power()}
         error = self.error
         if error and 0 <= started - error[0] < 30:
           value.update(severity='error', reason=error[1], runtime_error=True)
@@ -162,7 +167,8 @@ class HostHealth:
         os.replace(temporary, STATUS)
       except Exception:
         pass  # Expiry exposes failure; diagnostics cannot terminate inference.
-      time.sleep(1)
+      # Account for I/O time without catch-up bursts after a slow sensor.
+      time.sleep(max(.05, POWER_POLL_SECONDS - (time.monotonic() - started)))
 
 
 _health = None
