@@ -98,3 +98,26 @@ def test_expired_health_does_not_keep_old_power(tmp_path):
   path.write_text(json.dumps({'updated':10.,'power_w':12.4}))
   assert hud.power_label(hud._fresh(path, 10.5)) == '12.4 W'
   assert hud.power_label(hud._fresh(path, 14.)) == '-- W'
+
+
+def test_normal_badge_is_next_to_wifi_with_ten_pixel_gap():
+  renderer = object.__new__(hud.HealthRenderer)
+  calls = []
+  renderer._temperature_badge = lambda x, y: calls.append((x, y))
+  renderer._draw_egpu_status(NS())
+  x, y = calls[0]
+  assert x - 52 == hud.WIFI_STATUS_CENTER_X + hud.WIFI_STATUS_ICON_SIZE * .5 + 10
+  assert y - 17 + 30 == hud.TOP_STATUS_CENTER_Y
+
+
+@pytest.mark.parametrize('width', [120, 230, 340])
+def test_status_clock_keeps_clear_of_badge_and_custom_clock_position_is_preserved(monkeypatch, width):
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer._measure_text = lambda *_: (width, 48)
+  calls = []
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_center_clock', lambda self, state, *, center_x: calls.append(center_x))
+  renderer._draw_center_clock(NS(center_clock_text='12:34:56'))
+  badge_right = hud.WIFI_STATUS_CENTER_X + hud.WIFI_STATUS_ICON_SIZE * .5 + 10 + 104
+  assert calls[0] - width * .5 >= badge_right + 16
+  renderer._draw_center_clock(NS(center_clock_text='12:34:56'), center_x=960)
+  assert calls[-1] == 960

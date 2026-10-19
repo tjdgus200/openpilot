@@ -96,3 +96,21 @@ passed and services resumed. This temporal association does not establish a
 universal memory-failure cause or a new inference optimization. The owner
 confirmed watts and temperature were both visible. The subsequent requested
 cadence is0.5seconds for power, retaining1second for the slower sensors/network.
+
+
+## Owner placement change (2026-10-19)
+
+In driving layouts with a Wi-Fi status icon, place the existing 104×60 power
+and temperature badge ten design pixels to its right. Center both on the same
+status row and shift the center clock right as needed to prevent overlap.
+The panel's existing left/right transform still applies. Full-navigation/graph
+layouts without that row keep the upper-right fallback. Sampling remains0.5s
+for watts and1s for slower health fields; this layout change adds no workers,
+network traffic or inference work.
+
+The installed0.5s version404b9861 produced17 device samples with16 intervals:
+mean0.500500s, minimum0.500355s, maximum0.500531s. This verifies that bounded
+sampling interval, not loaded driving performance. Owner confirmed watts and
+temperature visible before this placement change. Focused PC checks for this
+placement passed142 cases, including three clock widths and the explicit
+full-navigation clock position. Physical placement confirmation remains pending.

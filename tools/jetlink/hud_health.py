@@ -8,7 +8,7 @@ from openpilot.common.jetlink_status import _fresh
 from cluster_battery import remote_panel
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
-                              EGPU_STATUS_CENTER_X, TOP_STATUS_CENTER_Y,
+                              WIFI_STATUS_CENTER_X, WIFI_STATUS_ICON_SIZE, TOP_CLOCK_CENTER_X, TOP_STATUS_CENTER_Y,
                               NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W, CAMERA_BACKGROUND_W, rl, rl_color)
 
 NORMAL = (100, 225, 170)
@@ -128,7 +128,15 @@ class HealthRenderer(ClusterUiRenderer):
 
   def _draw_egpu_status(self, state):
     # The normal status row's transform also follows left/right panel swaps.
-    self._temperature_badge(EGPU_STATUS_CENTER_X + 20, TOP_STATUS_CENTER_Y)
+    x = WIFI_STATUS_CENTER_X + WIFI_STATUS_ICON_SIZE * .5 + 10 + 52
+    self._temperature_badge(x, TOP_STATUS_CENTER_Y - 13)
+
+  def _draw_center_clock(self, state, *, center_x=TOP_CLOCK_CENTER_X):
+    if center_x == TOP_CLOCK_CENTER_X and state.center_clock_text:
+      width, _ = self._measure_text(state.center_clock_text, 48)
+      badge_right = WIFI_STATUS_CENTER_X + WIFI_STATUS_ICON_SIZE * .5 + 10 + 104
+      center_x = max(TOP_CLOCK_CENTER_X + 100, badge_right + 16 + width * .5)
+    super()._draw_center_clock(state, center_x=center_x)
 
   def _draw_alert_overlay(self, alert):
     rl.rl_push_matrix()
