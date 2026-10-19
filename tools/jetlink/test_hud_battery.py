@@ -92,7 +92,7 @@ def test_passive_socket_is_bounded_and_retired_on_page_or_vehicle_change(tmp_pat
     assert source.report is None
 
 
-def test_half_second_reports_cache_values_without_renewing_receive_age(monkeypatch):
+def test_slow_reports_cache_values_for_one_second_without_renewing_receive_age(monkeypatch):
     source = b.BatteryPublisher()
     source.vehicle, source.next_profile = 'KIA_PV5', 100
     source.decoder = b.PassiveDecoder([signal()])
@@ -101,14 +101,36 @@ def test_half_second_reports_cache_values_without_renewing_receive_age(monkeypat
     source.decoder.metrics['max_temp_c'] = 32, 10
     first = source.update('KIA_PV5', True, 10)
     source.decoder.metrics['max_temp_c'] = 33, 10.1
-    assert source.update('KIA_PV5', True, 10.499) is first
+    assert source.update('KIA_PV5', True, 10.05) is first
     second = source.update('KIA_PV5', True, 10.5)
-    assert second['fields']['max_temp_c'] == {'value': 33, 'age_s': pytest.approx(0.4)}
-    assert source.update('KIA_PV5', True, 10.999) is second
-    assert source.update('KIA_PV5', True, 11)['sampled_at'] == 11
+    assert second['fields']['max_temp_c'] == {'value': 32, 'age_s': pytest.approx(0.5)}
+    third = source.update('KIA_PV5', True, 11)
+    assert third['fields']['max_temp_c'] == {'value': 33, 'age_s': pytest.approx(0.9)}
+    assert third['sampled_at'] == 11
     # A late worker emits once, rather than replaying missed report slots.
     assert source.update('KIA_PV5', True, 20)['fields'] == {}
-    assert source.next_report == 20.5
+    assert source.next_report == 21
+    assert source.next_power_report == 20.1
+
+
+def test_power_can_change_at_ten_hz_without_refreshing_slow_values_or_stale_age(monkeypatch):
+    source = b.BatteryPublisher()
+    source.vehicle, source.next_profile = 'KIA_PV5', 100
+    source.decoder = b.PassiveDecoder([signal()])
+    source.messaging = NS(recv_one_or_none=lambda sock: None)
+    monkeypatch.setattr(b.time, 'monotonic', lambda: 10.0)
+    source.decoder.metrics = {'max_temp_c': (32, 10), 'pack_power_kw': (10, 10)}
+    source.update('KIA_PV5', True, 10)
+    source.decoder.metrics = {'max_temp_c': (33, 10.1), 'pack_power_kw': (-5, 10.1)}
+    second = source.update('KIA_PV5', True, 10.1)
+    assert second['fields']['pack_power_kw'] == {'value': -5, 'age_s': pytest.approx(0)}
+    assert second['fields']['max_temp_c'] == {'value': 32, 'age_s': pytest.approx(.1)}
+    assert len(source.decoder.history) == 1
+    source.decoder.metrics.pop('pack_power_kw')
+    assert 'pack_power_kw' not in source.update('KIA_PV5', True, 10.21)['fields']
+    assert source.update('KIA_PV5', True, 15.2)['fields'] == {}
+    source.close()
+    assert not source.slow_metrics and source.next_power_report == 0
 
 
 def test_can_admission_stops_after_budget_before_draining_queue(monkeypatch):

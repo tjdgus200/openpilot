@@ -131,16 +131,45 @@ class RuntimeFooterSampler:
     self.local.close()
 
 
-def footer_lines(vehicle, host, language='ko'):
-  def percentage(value):
-    return '--%' if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100 else f'{value:.0f}%'
-  first = (f"comma CPU {percentage(vehicle.cpu_used_percent)} MEM {percentage(vehicle.memory_used_percent)}"
-           f"  |  Jetson CPU {percentage(host.get('cpu_percent'))} MEM {percentage(host.get('memory_percent'))} GPU {percentage(host.get('gpu_percent'))}")
+TEXT = (215, 220, 225)
+NORMAL = (255, 255, 255)
+CAUTION = (255, 165, 60)
+HIGH = (255, 80, 80)
+UNKNOWN = (155, 160, 165)
+
+
+def metric_color(value, kind):
+  if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+    return UNKNOWN
+  # Display-only headroom cues, never fault classification or control input.
+  # High GPU utilization alone is not an error or a reason to reduce inference.
+  warn, high = {'cpu': (80, 95), 'memory': (85, 95), 'infer': (35, 50)}.get(kind, (math.inf, math.inf))
+  return HIGH if value >= high else CAUTION if value >= warn else NORMAL
+
+
+def footer_segments(vehicle, host, language='ko'):
+  result = []
+  def usage(label, value, kind):
+    valid = not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and 0 <= value <= 100
+    result.extend(((label, TEXT), (f'{value:.0f}%' if valid else '--%', metric_color(value if valid else None, kind))))
+  usage('COMMA CPU:', vehicle.cpu_used_percent, 'cpu')
+  usage(' MEM:', vehicle.memory_used_percent, 'memory')
+  usage(' | ORIN CPU:', host.get('cpu_percent'), 'cpu')
+  usage(' MEM:', host.get('memory_percent'), 'memory')
+  usage(' GPU:', host.get('gpu_percent'), 'gpu')
+  return tuple(result)
+
+
+def inference_segments(host):
+  result = [('Inf10s ', TEXT)]
   timing = valid_timing(host.get('timing'))
-  if timing:
-    values = timing['infer_ms']
-    second = (f"Jetson infer 10s  AVG {values['mean']:.1f}  P99 {values['p99']:.1f}  MAX {values['max']:.1f} ms"
-              f"  (n={timing['count']})")
-  else:
-    second = 'Jetson infer 10s  AVG --  P99 --  MAX -- ms'
-  return first, second
+  for label, key in (('AVG:', 'mean'), (' P99:', 'p99'), (' MAX:', 'max')):
+    value = timing['infer_ms'][key] if timing else None
+    result.extend(((label, TEXT), ('--' if value is None else f'{value:.1f}', metric_color(value, 'infer'))))
+  result.append(('ms', TEXT))
+  return tuple(result)
+
+
+def footer_lines(vehicle, host, language='ko'):
+  return (''.join(text for text, _ in footer_segments(vehicle, host, language)),
+          ''.join(text for text, _ in inference_segments(host)))

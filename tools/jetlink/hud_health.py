@@ -8,7 +8,8 @@ from openpilot.common.jetlink_status import _fresh
 from cluster_battery import remote_panel
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
-                              EGPU_STATUS_CENTER_X, TOP_STATUS_CENTER_Y, rl, rl_color)
+                              EGPU_STATUS_CENTER_X, TOP_STATUS_CENTER_Y,
+                              NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W, CAMERA_BACKGROUND_W, rl, rl_color)
 
 NORMAL = (100, 225, 170)
 WARNING = (255, 205, 70)
@@ -47,17 +48,47 @@ def health_banner(health, language):
 
 
 class HealthRenderer(ClusterUiRenderer):
-  def _draw_cluster_core_usage(self, text, *, right_x=DESIGN_WIDTH):
-    from hud_runtime_stats import RuntimeFooterSampler, footer_lines
+  def _host_metrics(self):
+    from hud_runtime_stats import RuntimeFooterSampler
     if not hasattr(self, '_runtime_footer'):
       self._runtime_footer = RuntimeFooterSampler()
-    lines = footer_lines(self._system_stats.sample(), self._runtime_footer.sample(), self.language)
-    x = right_x - 4
-    for y, line in zip((451, 471), lines):
-      self._draw_text(self._ellipsize_text(line, 16, 760), x, y, 16, self._current_theme().muted, anchor='right')
+    return self._runtime_footer.sample()
+
+  def _draw_runtime_line(self, segments, right_x, y, max_width, size, key):
+    if not hasattr(self, '_runtime_line_layouts'):
+      self._runtime_line_layouts = {}
+    cached = self._runtime_line_layouts.get(key)
+    if cached is None or cached[0] != segments:
+      widths = [self._measure_text(text, size)[0] for text, _ in segments]
+      while sum(widths) > max_width and size > 12:
+        size -= 1
+        widths = [self._measure_text(text, size)[0] for text, _ in segments]
+      self._runtime_line_layouts[key] = segments, size, widths
+    _, size, widths = self._runtime_line_layouts[key]
+    width = sum(widths)
+    x = right_x - 4 - width
+    # Stable contrast for white/amber/red values in both light and dark themes.
+    rl.draw_rectangle(int(x - 4), int(y - size * .7), int(width + 8), int(size * 1.4 + 2), rl_color((0, 0, 0), 205))
+    for (text, color), advance in zip(segments, widths):
+      self._draw_text(text, x, y, size, color)
+      x += advance
+
+  def _draw_cluster_core_usage(self, text, *, right_x=DESIGN_WIDTH):
+    from hud_runtime_stats import footer_segments
+    segments = footer_segments(self._system_stats.sample(), self._host_metrics(), self.language)
+    self._draw_runtime_line(segments, right_x, 464, 760, 21, 'resources')
+
+  def _draw_battery_panel(self, state):
+    super()._draw_battery_panel(state)
+    from hud_runtime_stats import inference_segments
+    right = self._information_panel_x(NAVI_LIVE_PANEL_X) + NAVI_LIVE_PANEL_W - 20
+    if right > DESIGN_WIDTH - 130:
+      right = DESIGN_WIDTH - 135  # Leave the independent host-temperature badge clear.
+    self._draw_runtime_line(inference_segments(self._host_metrics()), right, 32,
+                            NAVI_LIVE_PANEL_W * .5 - 32, 18, 'infer')
 
   def _draw_battery_status(self, text, left, width, color):
-    # Keep the complete availability message clear of the two diagnostic rows.
+    # Keep the complete availability message clear of the diagnostic footer.
     self._draw_text(self._ellipsize_text(text, 16, width), left, 55, 16, color)
 
   def close(self):
@@ -68,11 +99,14 @@ class HealthRenderer(ClusterUiRenderer):
     super().close()
 
   def render(self, state, signal_lights=None):
+    from hud_protocol import read_snapshot
+    from hud_bsd import warning_sides
+    snapshot = read_snapshot()
+    self._bsd_warning = warning_sides(state, snapshot, time.monotonic())
     self.host_health = _fresh(STATUS, time.monotonic())
     self.host_badge_drawn = False
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
-      from hud_protocol import read_snapshot
-      state = replace(state, battery=remote_panel(read_snapshot(), time.monotonic()))
+      state = replace(state, battery=remote_panel(snapshot, time.monotonic()))
     super().render(state, signal_lights)
 
   def _temperature_badge(self, x, y):
@@ -92,6 +126,14 @@ class HealthRenderer(ClusterUiRenderer):
     rl.rl_push_matrix()
     rl.rl_scalef(self.width / DESIGN_WIDTH, self.height / DESIGN_HEIGHT, 1.)
     try:
+      # Fixed geometry reuses the current frame; no new detector, CAN poll or
+      # process. Existing vehicle alerts are still drawn last over this cue.
+      left, right = getattr(self, '_bsd_warning', (False, False))
+      panel = self._driving_panel_offset_design_x()
+      for active, x in ((left, panel + 7), (right, panel + CAMERA_BACKGROUND_W - 21)):
+        if active:
+          rl.draw_rectangle(int(x - 7), 82, 28, int(DESIGN_HEIGHT - 100), rl_color((255, 30, 30), 80))
+          rl.draw_rectangle(int(x), 82, 14, int(DESIGN_HEIGHT - 100), rl_color((255, 30, 30), 255))
       if not self.host_badge_drawn:
         # Full navigation/graph modes omit the driving status row.
         self._temperature_badge(DESIGN_WIDTH - 66, TOP_STATUS_CENTER_Y)

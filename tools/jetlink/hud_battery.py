@@ -17,7 +17,8 @@ PROFILE_PATH = Path('/data/jetlink/pv5-battery-profile.json')
 MAX_PROFILE_BYTES = 8192
 MAX_SIGNALS = 16
 MAX_MESSAGE_BYTES = 1024
-REPORT_INTERVAL_S = 0.5
+REPORT_INTERVAL_S = 1.0
+POWER_INTERVAL_S = 0.1
 SOURCE_LIMITS = {
     'pack_voltage_v': (0.0, 1500.0), 'pack_current_a': (-2000.0, 2000.0),
     'max_cell_v': (0.0, 5.0), 'min_cell_v': (0.0, 5.0),
@@ -223,17 +224,19 @@ class BatteryPublisher:
     def __init__(self, profile_path=PROFILE_PATH):
         self.path = profile_path
         self.vehicle = None
-        self.next_profile = self.next_report = 0.0
+        self.next_profile = self.next_report = self.next_power_report = 0.0
         self.decoder = self.socket = None
         self.report = None
         self.messaging = None
         self.profile_bytes = None
+        self.slow_metrics = {}
 
     def close(self):
         self.socket = self.decoder = self.messaging = None
         self.report = self.profile_bytes = None
         self.vehicle = None
-        self.next_profile = self.next_report = 0.0
+        self.next_profile = self.next_report = self.next_power_report = 0.0
+        self.slow_metrics = {}
 
     def update(self, vehicle, enabled, now):
         if not enabled:
@@ -253,6 +256,8 @@ class BatteryPublisher:
             if raw != self.profile_bytes or signals is None or self.decoder is None:
                 self.socket = self.decoder = None
                 self.report = None
+                self.slow_metrics = {}
+                self.next_report = self.next_power_report = 0.0
                 self.profile_bytes = raw
                 if signals is not None:
                     from openpilot.cereal import messaging
@@ -268,10 +273,23 @@ class BatteryPublisher:
                 if event is None:
                     break
                 self.decoder.consume(event, now)
-        if self.report is None or now >= self.next_report:
-            # Only these small metrics refresh at 2 Hz; the HUD/preview loop
-            # and the bounded 1 Hz temperature history retain their cadence.
+        if self.decoder is not None:
+            if self.report is None or now >= self.next_report:
+                self.next_report = now + REPORT_INTERVAL_S
+                # Validate ranges and advance the bounded temperature history
+                # only at 1 Hz. Preserve original receive stamps in the cache.
+                self.decoder.packet(now)
+                self.slow_metrics = {k: v for k, v in self.decoder.metrics.items()
+                                     if k in METRICS and k != 'pack_power_kw'}
+            if self.report is None or now >= self.next_power_report:
+                self.next_power_report = now + POWER_INTERVAL_S
+                metrics = dict(self.slow_metrics)
+                if 'pack_power_kw' in self.decoder.metrics:
+                    metrics['pack_power_kw'] = self.decoder.metrics['pack_power_kw']
+                # Rebase ages, never refresh receive stamps. The existing 10 Hz
+                # HUD worker supplies the cadence; no new wakeup or CAN request.
+                self.report = packet_from_metrics(metrics, now, 'receiving')
+        elif self.report is None or now >= self.next_report:
             self.next_report = now + REPORT_INTERVAL_S
-            self.report = (self.decoder.packet(now) if self.decoder is not None else
-                           packet_from_metrics({}, now, 'profile_required'))
+            self.report = packet_from_metrics({}, now, 'profile_required')
         return self.report

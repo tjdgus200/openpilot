@@ -9,7 +9,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT/'tools/jetlink'), str(ROOT/'third_party/jetlink'),
                str(ROOT/'openpilot/selfdrive/carrot/cluster')]
-from hud_runtime_stats import gpu_percent, footer_lines, valid_timing, RuntimeFooterSampler
+from hud_runtime_stats import (gpu_percent, footer_lines, valid_timing, RuntimeFooterSampler,
+                               metric_color, NORMAL, CAUTION, HIGH, UNKNOWN)
 from jetlink.server.session import FrameStats
 from jetlink.server.control import ControlServer
 
@@ -30,9 +31,19 @@ def test_gpu_load_units_and_invalid_values(tmp_path, raw, expected):
 def test_footer_separates_hosts_and_names_timing_scope():
   lines = footer_lines(NS(cpu_used_percent=12., memory_used_percent=49.),
                        {'cpu_percent': 8., 'memory_percent': 27., 'gpu_percent': 53.7, 'timing': timing()})
-  assert 'comma CPU 12% MEM 49%' in lines[0]
-  assert 'Jetson CPU 8% MEM 27% GPU 54%' in lines[0]
-  assert '10s' in lines[1] and 'AVG 25.0' in lines[1] and 'P99 28.0' in lines[1] and 'MAX 31.0' in lines[1]
+  assert len(lines) == 2
+  assert 'COMMA CPU:12% MEM:49%' in lines[0]
+  assert 'ORIN CPU:8% MEM:27% GPU:54%' in lines[0]
+  assert '10s' in lines[1] and 'AVG:25.0' in lines[1] and 'P99:28.0' in lines[1] and 'MAX:31.0' in lines[1]
+
+
+def test_resource_colors_are_display_only_and_gpu_load_is_not_a_fault():
+  assert metric_color(None,'cpu') == UNKNOWN
+  assert metric_color(79,'cpu') == NORMAL and metric_color(80,'cpu') == CAUTION
+  assert metric_color(95,'cpu') == HIGH
+  assert metric_color(85,'memory') == CAUTION and metric_color(95,'memory') == HIGH
+  assert metric_color(35,'infer') == CAUTION and metric_color(50,'infer') == HIGH
+  assert metric_color(100,'gpu') == NORMAL
 
 
 @pytest.mark.parametrize('field,value', [('count', True), ('count', 2001), ('last_frame_age_s', 2.),
