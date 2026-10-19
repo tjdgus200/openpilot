@@ -1515,6 +1515,20 @@ class CarState(CarStateBase):
 
     lane_info = self.cam_0x2a4 if self.cam_0x2a4 is not None else self.cam_0x362
 
+    # A cached/default type zero is not proof of a currently observed dashed line.
+    # Keep this receive-time validity distinct from the later ONNX merge in card.
+    ret.laneTypeSources.oemTracked = True
+    ret.laneTypeSources.oemDiscoveryComplete = self.controls_ready_count >= 125
+    lane_fresh = False
+    for parser in (self.cp_cam, self.cp_alt):
+      if parser is None:
+        continue
+      for name in ('CAM_0x2a4', 'CAM_0x362'):
+        if parser.vl.get(name) is lane_info and lane_info is not None:
+          stamp = self._vehicle_navi_message_timestamp(parser, name)
+          ret.laneTypeSources.oemAvailable = stamp > 0
+          lane_fresh = stamp > 0 and 0 <= parser._last_update_nanos - stamp <= 300_000_000
+
     if lane_info is not None:
       left_lane_prob = lane_info["LEFT_LANE_PROB"]
       right_lane_prob = lane_info["RIGHT_LANE_PROB"]
@@ -1526,6 +1540,10 @@ class CarState(CarStateBase):
       right_lane_info = right_lane_color * 10 + right_lane_type
       ret.leftLaneLine = left_lane_info
       ret.rightLaneLine = right_lane_info
+      ret.laneTypeSources.leftOem = left_lane_info
+      ret.laneTypeSources.rightOem = right_lane_info
+      ret.laneTypeSources.leftOemValid = lane_fresh and left_lane_prob > 0 and left_lane_type in (0, 1, 3, 4, 5, 7, 8)
+      ret.laneTypeSources.rightOemValid = lane_fresh and right_lane_prob > 0 and right_lane_type in (0, 1, 3, 4, 5, 7, 8)
 
     # Manual Speed Limit Assist is a feature that replaces non-adaptive cruise control on EV CAN FD platforms.
     # It limits the vehicle speed, overridable by pressing the accelerator past a certain point.

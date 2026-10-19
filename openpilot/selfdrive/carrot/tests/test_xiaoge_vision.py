@@ -299,7 +299,11 @@ def test_vision_payload_never_reports_unevaluated_blindspot_as_valid(vision_serv
 
 
 @pytest.fixture
-def vision_service(message_transport):
+def vision_service(message_transport, monkeypatch):
+  # Existing camera/ROI tests use the reference CPU engines. Production wiring
+  # is remote-only and separately checked by test_vision_cpu.py.
+  monkeypatch.setattr(v_asm_server, 'remote_vasm', v_asm_server.VASMInference)
+  monkeypatch.setattr(v_asm_server, 'RemoteLaneInference', v_asm_server.LaneInference)
   service = VASMService(v_asm_server.DEFAULT_MODEL_PATH)
   assert service.inference.valid, service.inference.error
   assert service.lane_inference.valid, service.lane_inference.error
@@ -332,23 +336,23 @@ def test_runtime_settings_load_from_and_persist_to_params(vision_service):
   vision_service._refresh_settings_from_params(force=True)
   assert vision_service.threshold == 0.96
   assert vision_service.smoothing_seconds == 0.30
-  assert vision_service.base_interval_seconds == 0.35
+  assert vision_service.base_interval_seconds == 0.5  # Legacy faster settings are capped without rewriting Params.
   assert vision_service.lane_threshold == 0.40
   assert vision_service.lane_interval_seconds == 0.55
 
   vision_service.set_settings({
     "threshold": 0.9,
     "smoothingSeconds": 0.2,
-    "baseIntervalSeconds": 0.15,
+    "baseIntervalSeconds": 0.65,
     "laneThreshold": 0.3,
-    "laneIntervalSeconds": 0.45,
+    "laneIntervalSeconds": 0.75,
   })
   assert params.values == {
     "OnnxBsdThreshold": 90,
     "OnnxBsdSmoothingMs": 200,
-    "OnnxBsdIntervalMs": 150,
+    "OnnxBsdIntervalMs": 650,
     "OnnxLaneThreshold": 30,
-    "OnnxLaneIntervalMs": 450,
+    "OnnxLaneIntervalMs": 750,
   }
 
 
@@ -415,6 +419,10 @@ def test_camera_loop_infers_and_snapshots_padded_allocation(monkeypatch, vision_
   class FakeClient:
     delivered = False
     polls = 0
+
+    @property
+    def timestamp_sof(self):
+      return time.monotonic_ns()
 
     def __init__(self, *_args):
       self.connected = False

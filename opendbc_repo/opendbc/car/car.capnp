@@ -282,6 +282,23 @@ struct CarState {
   rightBlinkerStalkCount @101 :UInt8; # +1 (wrapping) on every right turn-signal lever press
   blinkerLever @102 :UInt8;           # turn-signal lever position: 0 released, 1 one-touch (half) detent, 2 latched
   blinkerLamp @103 :UInt8;            # turn-signal lamp right now (no hold): 0 dark, 1 left lit, 2 right lit
+  laneTypeSources @104 :LaneTypeSources;
+
+  struct LaneTypeSources {
+    oemTracked @0 :Bool; # producer explicitly distinguishes missing/stale from dashed zero
+    leftOemValid @1 :Bool;
+    rightOemValid @2 :Bool;
+    leftOem @3 :Int16;
+    rightOem @4 :Int16;
+    visionRequired @5 :Bool;
+    leftAutoHold @6 :Bool; # veto automatic initiation only; never grants permission
+    rightAutoHold @7 :Bool;
+    leftVision @8 :Int16;
+    rightVision @9 :Int16;
+    visionFresh @10 :Bool;
+    oemAvailable @11 :Bool; # native lane-type message observed, even if currently undecided
+    oemDiscoveryComplete @12 :Bool;
+  }
 
   # Optional original vehicle receive signal. Separate from torque/override.
   struct SteeringTouch {

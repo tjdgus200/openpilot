@@ -1,3 +1,15 @@
+# This branch: Jetson CPU over Wi-Fi
+
+이 브랜치에서는 두 ONNX를 Jetson CPU에서 실행하고 입력·결과를 Wi-Fi로만 전달합니다. 차량 차선 종류는 우선 보존·검증하며 미검사·만료·불확실 상태는 자동 차선변경 시작을 보류합니다. 전방 거리 검출기를 추가한 기능은 아닙니다.
+
+Both ONNX models run on Jetson CPU, with lossless inputs/results over authenticated Wi-Fi only. Native lane types are preserved and corroborated; unknown, stale or unevaluated observations veto automatic initiation. This is not a new forward-distance detector.
+
+본 분기의 실행·유효성·자원 제한과 검증 범위 / current behavior and validation limits:
+[Jetson CPU auxiliary vision](../../../../docs/jetson_aux_vision_cpu.md).
+The earlier local-comma reference below describes the upstream implementation before this offload; it does not override the branch behavior above.
+
+---
+
 # Xiaoge Vision: V-ASM and Lane Detection
 
 ## 中文
@@ -251,7 +263,7 @@ BSD 신뢰도 기본값은 94%이고 조정 범위는 0-100%입니다. 활성화
 
 `Latency`는 영상 전처리, 모델 계산, 후처리 한 번에 걸린 실제 시간이며 스레드 대기도 포함합니다. 웹 통신
 지연이 아닙니다. `Interval`은 추론 시작 간격만 제한하므로 줄여도 모델 계산 자체가 빨라지지는 않습니다.
-장치의 카메라·추론 스레드는 일반 작업용 CPU 0~3번을 사용하고, OpenCV 계산 스레드는 최대 두 개로 제한합니다.
+콤마의 카메라·전처리 스레드는 일반 작업용 CPU 0~3번을 사용하고 OpenCV 스레드는 한 개로 제한합니다. ONNX 계산은 Jetson의 별도 일반 스케줄링 CPU 작업자에서 한 스레드로 실행합니다.
 실시간 주행 작업이 사용하는 코어와의 경쟁을 피하기 위한 배치입니다. 카메라는 대기 없이 수신을 확인하고, 프레임이 없으면
 Python에서 잠시 쉬어 VisionIPC 대기가 GIL을 잡고 다른 스레드를 막지 않도록 합니다.
 원시 상태 JSON의 `lane.inference.threadCpuMs`와 `inference.threadCpuMs`는 각각 차선 및 V-ASM 추론
@@ -272,3 +284,5 @@ PYTHONPATH="$PWD/pydeps:$PWD${PYTHONPATH:+:$PYTHONPATH}" python -m openpilot.sel
 
 `camerad`가 실행 중이어야 합니다. 로컬 V-ASM 다각형 설정은 이 디렉터리의 `v_asm_config.json`에
 저장되며 Git에서 무시됩니다.
+
+이전 브랜치의 빠른 설정이 남아 있어도 이 CPU 이전 버전은 차선·BSD 계산 간격을 각각 최소 500ms로 제한합니다. BSD는 좌우 합계 최대 2Hz이며 감지 직후에도 더 빨리 요청하지 않습니다. 이는 초기 시험용 부하 한도이며, 20Hz 주행 추론과의 실차 동시 실행이 검증된 주기는 아닙니다. 설치 패키지를 준비해도 `ShareData`는 자동으로 켜지지 않습니다. 세부 구조와 검증 한계는 [Jetson CPU 이전 설명](../../../../docs/jetson_aux_vision_cpu.md)을 참조하세요.

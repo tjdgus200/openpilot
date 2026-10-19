@@ -13,15 +13,15 @@ PORT = 7716
 
 
 class Worker:
-  def __init__(self, role, key):
+  def __init__(self, role, key, script='hud_wifi_worker.py', port=PORT):
     self.socket, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     self.process = None
     try:
       self.process = subprocess.Popen(
-        [sys.executable, str(Path(__file__).with_name('hud_wifi_worker.py')), role, str(child.fileno())],
+        [sys.executable, str(Path(__file__).with_name(script)), role, str(child.fileno())],
         pass_fds=(child.fileno(),), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
       self.socket.settimeout(2.)
-      self.socket.send(json.dumps({'key': key, 'port': PORT}).encode())
+      self.socket.send(json.dumps({'key': key, 'port': port}).encode())
       if self.socket.recv(64) != b'ready':
         raise RuntimeError('HUD Wi-Fi worker did not initialize')
     except BaseException:
@@ -48,13 +48,19 @@ class WifiPublisher:
   """No per-frame USB work or WLAN waits in the inference owner."""
   def __init__(self, client):
     self.worker = None
+    self.vision = None
     key = secrets.token_hex(32)
     seq = client._next_seq()
-    client.t.send_json(REQUEST, seq, {'key': key})
+    client.t.send_json(REQUEST, seq, {'key': key, 'aux_cpu': True})
     result = json.loads(bytes(client._expect(RESPONSE, seq, 3.).payload))
-    if result != {'ready': True}:
+    if result.get('ready') is not True:
       raise RuntimeError('HUD Wi-Fi receiver unavailable')
     self.worker = Worker('send', key)
+    if result.get('aux_cpu') is True:
+      try:
+        self.vision = Worker('send', key, 'vision_cpu.py', 7717)
+      except (OSError, RuntimeError):
+        pass  # No auxiliary vision result may interfere with driving model/HUD startup.
 
   def packet(self):
     return None
@@ -63,6 +69,9 @@ class WifiPublisher:
     return None
 
   def close(self):
+    if self.vision is not None:
+      self.vision.close()
+      self.vision = None
     if self.worker is not None:
       self.worker.close()
 

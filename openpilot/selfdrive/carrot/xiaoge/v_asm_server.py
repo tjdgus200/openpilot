@@ -22,6 +22,7 @@ from openpilot.selfdrive.carrot.xiaoge.lane_inference import DEFAULT_LANE_MODEL_
 from openpilot.selfdrive.carrot.xiaoge.nv12 import nv12_y_plane, pack_nv12
 from openpilot.selfdrive.carrot.xiaoge.v_asm_inference import DEFAULT_MODEL_PATH, VASMInference
 from openpilot.selfdrive.carrot.xiaoge.xiaoge_vision import XIAOGE_BLINDSPOT_TIMEOUT_NS, XIAOGE_LANE_TIMEOUT_NS
+from openpilot.selfdrive.carrot.xiaoge.remote import RemoteLaneInference, remote_vasm
 
 try:
   import cv2
@@ -42,10 +43,10 @@ MIN_THRESHOLD = 0.0
 MAX_THRESHOLD = 1.0
 MIN_SMOOTHING_SECONDS = 0.1
 MAX_SMOOTHING_SECONDS = 0.5
-MIN_BASE_INTERVAL_SECONDS = 0.05
+MIN_BASE_INTERVAL_SECONDS = 0.5
 MAX_BASE_INTERVAL_SECONDS = 1.0
-BASE_INTERVAL_SECONDS = 0.25
-FOLLOWUP_INTERVAL_SECONDS = 0.15
+BASE_INTERVAL_SECONDS = 0.5
+FOLLOWUP_INTERVAL_SECONDS = 0.5
 FOLLOWUP_WINDOW_SECONDS = 1.5
 VASM_MIN_LANE_WIDTH_METERS = 2.0
 CAMERA_TIMEOUT_SECONDS = 2.0
@@ -58,9 +59,9 @@ PARAM_REFRESH_SECONDS = 1.0
 PARAM_SETTING_DEFAULTS = {
   "OnnxBsdThreshold": 94,
   "OnnxBsdSmoothingMs": 200,
-  "OnnxBsdIntervalMs": 250,
+  "OnnxBsdIntervalMs": 500,
   "OnnxLaneThreshold": 25,
-  "OnnxLaneIntervalMs": 400,
+  "OnnxLaneIntervalMs": 500,
 }
 
 
@@ -146,7 +147,7 @@ class VASMService:
     self.snapshot_responses = {"wide": 0, "road": 0}
     self.vasm_inference_lock = threading.Lock()
     self.publish_lock = threading.Lock()
-    self.inference = VASMInference(model_path)
+    self.inference = remote_vasm(model_path)
     self.inference.load()
     self.config = self._read_config()
     if self.config:
@@ -187,10 +188,10 @@ class VASMService:
     }
 
     # Lane inference engine setup
-    self.lane_inference = LaneInference(DEFAULT_LANE_MODEL_PATH)
+    self.lane_inference = RemoteLaneInference(DEFAULT_LANE_MODEL_PATH)
     self.lane_inference.load()
     self.lane_threshold = 0.25
-    self.lane_interval_seconds = 0.40
+    self.lane_interval_seconds = 0.50
     self.lane_camera_error = "waiting for road camera"
     self.last_road_jpeg: bytes | None = None
     self.last_road_frame_at = 0.0
@@ -229,9 +230,9 @@ class VASMService:
     with self.lock:
       self.threshold = min(max(values["OnnxBsdThreshold"], 0), 100) / 100.0
       self.smoothing_seconds = min(max(values["OnnxBsdSmoothingMs"], 100), 500) / 1000.0
-      self.base_interval_seconds = min(max(values["OnnxBsdIntervalMs"], 50), 1000) / 1000.0
+      self.base_interval_seconds = min(max(values["OnnxBsdIntervalMs"], 500), 1000) / 1000.0
       self.lane_threshold = min(max(values["OnnxLaneThreshold"], 0), 100) / 100.0
-      self.lane_interval_seconds = min(max(values["OnnxLaneIntervalMs"], 50), 2000) / 1000.0
+      self.lane_interval_seconds = min(max(values["OnnxLaneIntervalMs"], 500), 2000) / 1000.0
 
   def _persist_settings(self, values: dict[str, int]) -> None:
     if self.params is None:
@@ -291,8 +292,8 @@ class VASMService:
       raise ValueError(f"baseIntervalSeconds must be {MIN_BASE_INTERVAL_SECONDS:.2f} to {MAX_BASE_INTERVAL_SECONDS:.2f}")
     if not 0.0 <= lane_threshold <= 1.0:
       raise ValueError("laneThreshold must be 0.0 to 1.0")
-    if not 0.05 <= lane_interval_seconds <= 2.0:
-      raise ValueError("laneIntervalSeconds must be 0.05 to 2.0")
+    if not 0.5 <= lane_interval_seconds <= 2.0:
+      raise ValueError("laneIntervalSeconds must be 0.5 to 2.0")
 
     self._persist_settings({
       "OnnxBsdThreshold": round(threshold * 100),
@@ -333,9 +334,11 @@ class VASMService:
         }
       lane_timestamp = self.lane_result["updatedMonoTimeNanos"]
       lane_fresh = bool(road_camera_available and self.lane_inference.valid and self.lane_result["valid"] and
-                        lane_timestamp > 0 and 0 <= now_nanos - lane_timestamp <= XIAOGE_LANE_TIMEOUT_NS)
+                        lane_timestamp > 0 and 0 <= now_nanos - lane_timestamp <= 1_000_000_000)
       return {
         "standalone": False,
+        "processor": "jetson_cpu_wifi",
+        "transport": "wifi",
         "integrated": True,
         "model": {
           "path": str(self.inference.model_path),
@@ -437,6 +440,7 @@ class VASMService:
       "type": "xiaogeVision",
       "version": 1,
       "lane": {
+        "processor": "jetson_cpu_wifi",
         "leftLine": lane["leftLine"],
         "rightLine": lane["rightLine"],
         "valid": status["lane"]["resultFresh"],
@@ -496,6 +500,9 @@ class VASMService:
           time.sleep(CAMERA_POLL_INTERVAL_SECONDS)
           continue
         now = time.monotonic()
+        captured_ns = int(getattr(client, 'timestamp_sof', 0))
+        if not 0 < captured_ns <= time.monotonic_ns() or time.monotonic_ns() - captured_ns > 250_000_000:
+          continue
         self._refresh_settings_from_params()
         eligible_sides = self._update_vasm_gate()
         publish_clear = False
@@ -518,7 +525,9 @@ class VASMService:
             self.vasm_result["updatedMonoTimeNanos"] = time.monotonic_ns()
           else:
             side = self.next_side if self.next_side in eligible_sides else eligible_sides[0]
-            interval = FOLLOWUP_INTERVAL_SECONDS if now < self.followup_until[side] else self.base_interval_seconds
+            # This CPU port does not accelerate repeat requests below the
+            # configured interval. Both sides together have at most a 2Hz cap.
+            interval = self.base_interval_seconds
             if now - self.last_inference_at < interval:
               continue
         if not eligible_sides:
@@ -549,7 +558,7 @@ class VASMService:
           self.last_inference_at = self.last_side_at[side] = now
           if active:
             self.followup_until[side] = now + FOLLOWUP_WINDOW_SECONDS
-          updated_nanos = time.monotonic_ns()
+          updated_nanos = captured_ns
           self.vasm_result[side] = self.inference.active[side]
           self.vasm_result["side"] = side
           self.vasm_result["updatedMonoTimeNanos"] = updated_nanos
@@ -582,6 +591,9 @@ class VASMService:
           time.sleep(CAMERA_POLL_INTERVAL_SECONDS)
           continue
         now = time.monotonic()
+        captured_ns = int(getattr(client, 'timestamp_sof', 0))
+        if not 0 < captured_ns <= time.monotonic_ns() or time.monotonic_ns() - captured_ns > 250_000_000:
+          continue
         self._refresh_settings_from_params()
         frame = nv12_y_plane(buffer.data, buffer.width, buffer.height, buffer.stride)
         with self.lock:
@@ -615,7 +627,7 @@ class VASMService:
             self._lane_fps_window_count = 0
 
           self.last_lane_inference_at = now
-          res["updatedMonoTimeNanos"] = time.monotonic_ns()
+          res["updatedMonoTimeNanos"] = captured_ns
           self.lane_result = res
         self.publish_vision_result()
       except (OSError, ValueError, cv2.error) as error:
@@ -730,7 +742,7 @@ def create_server(host: str = HOST, port: int = PORT, model_path: Path = DEFAULT
   if sys.platform == "linux":
     from openpilot.common.realtime import set_core_affinity
     set_core_affinity([0, 1, 2, 3])
-  cv2.setNumThreads(2)
+  cv2.setNumThreads(1)
   service = VASMService(model_path)
   Handler.service = service
   server = ThreadingHTTPServer((host, port), Handler)

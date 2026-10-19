@@ -240,6 +240,7 @@ class Car:
     CS.leftBlindspotOnnx = left_vision
     CS.rightBlindspotOnnx = right_vision
     CS.blindspotSplitSourcesValid = True
+    CS.laneTypeSources.visionRequired = self.params.get_bool('ShareData')
     apply_xiaoge_vision_result(CS, self.xiaoge_vision_result, sm_done_ns)
     #self.t1 = time.monotonic()
 

@@ -65,9 +65,19 @@ Vehicle BSD is an assistive signal. It cannot cover every fast-closing vehicle, 
 
 ### `ShareData` — ONNX lane and BSD detection
 
+**Jetson CPU / Wi-Fi path on this branch**
+
+With `ShareData` enabled on this branch, Jetson CPU runs lane classification and left/right near-threat classification. comma sends the original preprocessed pixels losslessly over Wi-Fi and merges returned observations into vehicle state. Neither images nor auxiliary decisions fall back to USB or local comma ONNX execution. Both ends need compatible sources and identical copies of the two ONNX models.
+
+A fresh definite OEM solid/boundary marking cannot be cleared by ONNX dashed output. OEM dashed plus ONNX solid vetoes automatic initiation. ONNX replaces the type only when native classification is unavailable. A capable vehicle's currently undecided or expired signal does not become replacement permission.
+
+Automatic lane-change initiation additionally requires a dashed observation no older than one second from capture and an evaluated, clear requested side within 1.5 seconds. WLAN loss, an unevaluated side, model mismatch or unknown results veto automatic initiation. This is an additional veto, never a substitute for geometry, OEM BSD or adjacent-lane radar checks. Link loss alone does not abort an already crossing maneuver; existing driver-torque confirmation policies remain.
+
+V-ASM classifies near threats in the configured left/right regions. It is not a general forward-object detector and does not estimate vehicle distance or position. Existing BSD-ignore settings do not turn unknown auxiliary observations into automatic permission. Interval settings specify minimum request spacing; compute and network load can lengthen actual intervals.
+
 Enable **Carrot Web → Settings → Driving → Steering → ONNX Lane & BSD → ONNX Lane and BSD Detection**. It defaults to off; an existing saved enabled value is preserved. When enabled, the service starts after onroad initialization and model/CAN/Panda readiness have settled for 0.5 seconds. Engaging cruise is not required. It stops offroad and waits again at the next onroad start.
 
-- **On:** the comma device computes lane types and camera BSD. Inference does not run on the phone. Solid/dashed classification runs continuously. BSD alternates between every configured side whose model-estimated lane width is at least 2 m; speed and lane-change direction do not gate detection.
+- **On:** Jetson CPU on this branch computes lane types and camera BSD. Inference does not run on the phone. Solid/dashed classification runs continuously. BSD alternates between every configured side whose model-estimated lane width is at least 2 m; speed and lane-change direction do not gate detection.
 - **Off:** the vision service stops. Its last results expire after their validity period; vehicle-provided lane information and BSD remain available. The setting and mici status display update within a few seconds.
 
 The detail screen exposes these persistent device settings:
@@ -75,10 +85,10 @@ The detail screen exposes these persistent device settings:
 | Setting | Range · default | Effect |
 |---|---:|---|
 | Lane confidence `OnnxLaneThreshold` | 0–100% · 25% | Accept lane classifications at or above this confidence |
-| Lane interval `OnnxLaneIntervalMs` | 50–2000ms · 400ms | Shorter intervals update more often but may increase device load |
+| Lane interval `OnnxLaneIntervalMs` | 500–2000ms · 500ms | Shorter intervals update more often but may increase device load |
 | BSD confidence `OnnxBsdThreshold` | 0–100% · 94% | Activate camera BSD when the near-vehicle class reaches this confidence |
 | BSD hold time `OnnxBsdSmoothingMs` | 100–500ms · 200ms | Smooth confidence; once active, BSD clears 15 percentage points below the activation threshold |
-| BSD interval `OnnxBsdIntervalMs` | 50–1000ms · 250ms | Shorter intervals check more often but may increase device load |
+| BSD interval `OnnxBsdIntervalMs` | 500–1000ms · 500ms | Shorter intervals check more often but may increase device load |
 
 The ONNX detail screen keeps the feature toggle at the top and shows the wide-camera BSD detection-area editor in a separate card directly below it. Runtime state, lane/BSD tuning, and diagnostics open from the simple **Expand/Collapse advanced settings** text at the editor's lower right and are collapsed by default. The routine camera-waiting state is not shown beside that text. Select left or right above the image, then choose a point from the basic rectangular picker at the image's upper left, where entries use `1(L)` and `1(R)`, or tap its numbered label directly. Tap the selected point again or briefly tap an empty position to clear the selection; dragging anywhere in the editor while a point is selected moves only that point. Zoom, viewport panning, and whole-area dragging are omitted so they cannot compete with point movement. When no point is selected, a short tap on an empty position adds a new point without a separate mode. The selection state takes priority in the lower-left image status. Each newly received camera JPEG replaces the single last-frame copy in browser cache and current-session memory. If a new frame is unavailable, the editor shows that last frame, then a more strongly dimmed default road example when no cached frame exists. The example keeps the earlier compact editor height and fills the entire editor with the road graphic without an empty upper band. The point picker and real-image reminder overlay the detection graphic, while points, labels, and area lines remain on a separate crisp layer above the dim background. The example cannot be used to save an area. Saving is allowed only after receiving a real image in the current session; otherwise the editor asks the user to refresh the real image and set the area again. The invisible touch target remains generous. Use **Refresh image**, **Undo point**, **Reset points**, and **Save area** for the primary workflow. The two equal-width **View road camera** and **View wide camera** buttons directly below those actions open their images in pop-up dialogs. Mounting position and vehicle geometry affect the detection area; adjust it while parked and treat the result only as driver assistance.
 
@@ -135,3 +145,5 @@ Separate two questions:
 With immediate-entry settings, the sequence “signal first, then check behind” is especially dangerous. The system can chiefly control when entry is permitted; the driver must select the moment that is actually safe.
 
 Related: [Understanding Settings](settings.md) · [Cruise and Following Gap](cruise-gap.md)
+
+The initial CPU-port trial cap is 2Hz lane and 2Hz BSD total across both sides. Stored faster values are capped at 500ms with no accelerated follow-up. These are provisional load limits, not vehicle-validated safe update periods.

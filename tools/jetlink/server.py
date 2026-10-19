@@ -3,6 +3,7 @@ import os
 import json
 from pathlib import Path
 import sys
+import importlib.util
 import time
 
 if __name__ == '__main__':
@@ -75,11 +76,15 @@ class CarrotSession(Session):
     super().__init__(*args, **kwargs)
     from jetlink.transport.usbbulk import UsbBulkTransport
     self.hud_wifi_supported = supported() and isinstance(self.t, UsbBulkTransport)
+    self.aux_cpu_supported = bool(self.hud_wifi_supported and importlib.util.find_spec('cv2') and
+                                  all((ROOT / 'openpilot/selfdrive/carrot/xiaoge/assets' / name).is_file()
+                                      for name in ('lane.onnx', 'v_asm_model.onnx')))
     if sys.platform == 'linux':
       self.t = ReadAheadTransport(self.t)
     self.telemetry = DisplayTelemetry(self.telemetry)
     self.navi = HostForwarder() if sys.platform == 'linux' else None
     self.hud_wifi = None
+    self.aux_cpu = None
 
   def _send_json(self, msg_type, seq, obj, flags=0):
     if msg_type == P.Msg.ENGINE_RESP and obj.get('state') == 'failed' and self.telemetry.health is not None:
@@ -89,7 +94,8 @@ class CarrotSession(Session):
         'jetson' if Path('/etc/nv_tegra_release').is_file() else 'unknown')
       obj = {**obj, HUD_CAPABILITY: sys.platform == 'linux', NAVI_CAPABILITY: sys.platform == 'linux',
              PUMP_CAPABILITY: sys.platform == 'linux', WIFI_CAPABILITY: host == 'jetson', 'carrot_host': host,
-             HUD_WIFI_CAPABILITY: self.hud_wifi_supported}
+             HUD_WIFI_CAPABILITY: self.hud_wifi_supported,
+             'carrot_aux_cpu_wifi_v1': self.aux_cpu_supported}
       if host == 'jetson':
         obj['carrot_device_state_enabled'] = os.getenv('CARROT_TRT_DEVICE_STATE') == '1'
         obj['carrot_source_commit'] = (ROOT / 'SOURCE_COMMIT').read_text().strip()
@@ -102,6 +108,8 @@ class CarrotSession(Session):
         return
       self.last_seq = msg.seq
       ready = False
+      aux_ready = False
+      request = {}
       try:
         if not self.hud_wifi_supported or len(msg.payload) > 128:
           raise ValueError('HUD Wi-Fi negotiation unavailable')
@@ -114,9 +122,21 @@ class CarrotSession(Session):
           self.hud_wifi = None
         self.hud_wifi = Worker('receive', key)
         ready = True
+        if self.aux_cpu is not None:
+          self.aux_cpu.close()
+          self.aux_cpu = None
+        if request.get('aux_cpu') is True and self.aux_cpu_supported:
+          try:
+            self.aux_cpu = Worker('receive', key, 'vision_cpu.py', 7717)
+            aux_ready = True
+          except (OSError, RuntimeError):
+            pass
       except (OSError, ValueError, KeyError, TypeError, RuntimeError):
         pass  # Never log the session key or affect the model contract.
-      self._send_json(HUD_WIFI_RESPONSE, msg.seq, {'ready': ready})
+      response = {'ready': ready}
+      if isinstance(request, dict) and request.get('aux_cpu') is True:
+        response['aux_cpu'] = aux_ready
+      self._send_json(HUD_WIFI_RESPONSE, msg.seq, response)
       return
     if msg.msg_type == WIFI_MESSAGE:
       if msg.seq > self.last_seq:
@@ -148,6 +168,9 @@ class CarrotSession(Session):
       pass  # An unavailable display does not stop inference.
 
   def close(self):
+    if self.aux_cpu is not None:
+      self.aux_cpu.close()
+      self.aux_cpu = None
     if self.hud_wifi is not None:
       self.hud_wifi.close()
       self.hud_wifi = None

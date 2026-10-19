@@ -464,7 +464,12 @@ class DesireHelper:
                                     not atc_lane_change_retry_line_blocked
               start_gate = (side.lane_change_available_geom and self.lane_change_delay == 0) or \
                            side.lane_line_info_edge_detect or solid_line_blocked or block_released_auto or atc_line_release
-              if start_gate and not lever_undecided:
+              vision_sources = getattr(carstate, 'laneTypeSources', None)
+              vision_auto_hold = bool(vision_sources is not None and vision_sources.visionRequired and
+                                      (vision_sources.leftAutoHold if blinker_state == BLINKER_LEFT else vision_sources.rightAutoHold))
+              # Additional veto only at initiation. Do not interrupt an already
+              # crossing maneuver or change existing driver-torque/BSD policy.
+              if start_gate and not lever_undecided and not (vision_auto_hold and not torque_applied):
                 if solid_line_blocked:
                   if atc_line_release or (torque_applied and not (bsd_active and block_lanechange_bsd)):
                     self.lane_change_state = LaneChangeState.laneChangeStarting
