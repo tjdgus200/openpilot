@@ -102,6 +102,7 @@ def test_partial_activation_can_remove_only_its_owned_interface(tmp_path, monkey
   def command(*args):
     if 'up' in args:
       raise RuntimeError('activation rejected')
+    return '30 (disconnected)'
   ap = direct.AccessPoint(wireless, command)
   with pytest.raises(RuntimeError):
     ap.start()

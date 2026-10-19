@@ -104,5 +104,5 @@ class Wireless:
 
   def delete(self, index):
     # Never remove an interface that has been replaced or reused by another owner.
-    if any(r['name'] == INTERFACE and r['index'] == index and r['type'] == 3 for r in self.interfaces()):
+    if any(r['name'] == INTERFACE and r['index'] == index for r in self.interfaces()):
       self.query(self.family, 8, 5, attribute(3, struct.pack('I', index)))

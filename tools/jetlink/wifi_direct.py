@@ -96,22 +96,41 @@ class AccessPoint:
   def __init__(self, wireless, command=nm):
     self.wireless, self.command = wireless, command
     self.index = self.value = None
+    self.stage = 'idle'
 
   def start(self):
     if not offroad():
       return False
+    self.stage = 'identity'
     value = configuration()
     routes = json.loads(subprocess.check_output(['ip', '-j', '-4', 'route', 'show'], text=True, timeout=3))
     if any(r.get('dev') != INTERFACE and r.get('dst', 'default') != 'default'
            and ipaddress.ip_network(value['subnet']).overlaps(ipaddress.ip_network(r['dst'], strict=False)) for r in routes):
       raise ValueError('Direct Wi-Fi subnet conflict')
+    self.stage = 'channel'
     band, number = channel()
+    self.stage = 'interface'
     self.index = self.wireless.create()
     self.value = value
+    self.stage = 'register_device'
+    until = time.monotonic() + 3.
+    while True:
+      try:
+        if self.command('-g', 'GENERAL.STATE', 'device', 'show', INTERFACE):
+          break
+      except RuntimeError:
+        pass
+      if time.monotonic() >= until:
+        raise RuntimeError('Direct Wi-Fi device registration timeout')
+      time.sleep(.2)
+    self.command('device', 'set', INTERFACE, 'autoconnect', 'no', 'managed', 'yes')
+    self.stage = 'profile'
     PROFILE.parent.mkdir(parents=True, exist_ok=True)
     durable_write(PROFILE, render(value, band, number).encode(), 0o600)
     self.command('connection', 'load', str(PROFILE))
+    self.stage = 'activate'
     self.command('--wait', '12', 'connection', 'up', 'uuid', value['uuid'], 'ifname', INTERFACE)
+    self.stage = 'active'
     return True
 
   def active(self):
@@ -187,7 +206,7 @@ def serve(trial=0):
           ap.close()
           state, retry = 'unavailable', now + 30.
       # No SSID, password, peer identity or vehicle payload in diagnostics.
-      durable_write(STATUS, json.dumps({'state': state, 'interface': INTERFACE, 'updated': now}).encode(), 0o644)
+      durable_write(STATUS, json.dumps({'state': state, 'stage': ap.stage, 'interface': INTERFACE, 'updated': now}).encode(), 0o644)
       stop.wait(2.)
   finally:
     if ap is not None:
