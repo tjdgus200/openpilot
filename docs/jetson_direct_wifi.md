@@ -328,3 +328,15 @@ a connection-waiting strip; existing vehicle alerts retain precedence. The
 normal speed block returns when current vehicle data arrives. RemoteSubMaster
 validity, snapshot expiry, model execution, network recovery and frame rate are
 unchanged. Visibility is not an indication that the model or Wi-Fi is ready.
+
+Immediate-dashboard source `5cad3319ab6164677e6fde5e1766c689d5843d5d` is published
+as [`jetson-hud-immediate-20261019-5cad3319`](https://github.com/tjdgus200/openpilot/releases/tag/jetson-hud-immediate-20261019-5cad3319).
+Bundle81,645,046bytes; SHA-256
+`f7153c5a9872702ef5ed592917f3c0ca53582047294ff32225f642fdcdddf6a7`.
+Only HUD startup/presentation, their regressions and source identity differ from
+05c74953. PC169 focused checks passed, with the same unrelated isolated PIL
+fixture excluded. Exported entrypoint and existing-key client selection passed.
+The owner install branch selects this package for its existing offroad USB
+boot receiver. Actual installation/display and Wi-Fi association verification
+remain pending after device disconnection; no recovery jumper or key change is
+needed on the previously prepared device.
