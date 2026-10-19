@@ -15,3 +15,13 @@ default protocol remain v2; these changes do not publish a new Jetson release.
 the production daemon now uses the extended `JetlinkClient`.
 Carrot's adapter, device-role policy, process placement and deployment tools are
 outside this directory. Updating the protocol requires testing both peers.
+
+
+Isolated optional inference review on official carrot-nav74955c98:
+GPU recurrence/reply-event design and native FunctionFS AIO writer are adapted
+from zoompilot/jetlink d26001b4161f33bab28d806de6a99b96325a429b under MIT.
+Carrot retains full-state finite validation, wire framing and serial inference.
+The native uint8-to-binary16/direct compact-map staging path is an owner-side
+optional implementation, not a complete Jetlink release upgrade. All three
+options default off; no deployment manifest, model or Wi-Fi changes are included.
+See docs/jetson_inference_review.md for evidence and remaining validation.

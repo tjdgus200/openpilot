@@ -202,6 +202,7 @@ class StatefulQueues:
     from jetlink.finite import native_checker
     self._native_finite = native_checker()
     self.spec = spec
+    self._fast_inputs = None
     self.state = {name: inputs[name] for name in spec.state_pairs}
     # NumPy's aarch64 float16 isfinite path is scalar. IEEE binary16 is
     # non-finite exactly when all five exponent bits are set, for BOTH signs
@@ -229,7 +230,9 @@ class StatefulQueues:
       self.reset()
       raise ValueError('Non-finite stateful scalar input')
     image = dest['new_img']
-    if image.dtype == np.float16:
+    if self._fast_inputs is not None:
+      self._fast_inputs.copy_image(warped, dest)
+    elif image.dtype == np.float16:
       np.take(_U8_TO_F16_BITS, warped.reshape(-1), out=image.reshape(-1).view(np.uint16), mode='clip')
     else:
       image[...] = warped
@@ -237,6 +240,25 @@ class StatefulQueues:
     for name, size in zip(self.spec.packed_shapes, self.spec.packed_sizes, strict=True):
       dest[name][...] = packed[offset:offset + size].reshape(dest[name].shape)
       offset += size
+
+  def configure_input_fastpath(self, dest):
+    from jetlink.direct_inputs import DirectInputs
+    if self._fast_inputs is not None:
+      raise RuntimeError('Direct inputs already configured')
+    self._fast_inputs = DirectInputs(self.spec, dest)
+
+  def step_compact_into(self, warped, compact, dest):
+    if self._fast_inputs is None:
+      raise RuntimeError('Direct compact inputs are not enabled')
+    if warped.shape != self.spec.warped_shape or warped.dtype != np.uint8:
+      raise ValueError('Invalid stateful frame shape/type')
+    try:
+      values = self._fast_inputs.compact_fields(compact)
+    except ValueError:
+      self.reset()
+      raise
+    self._fast_inputs.copy_image(warped, dest)
+    self._fast_inputs.copy_fields(values, dest)
 
   def _all_finite(self, value):
     if self._native_finite is not None:
@@ -266,5 +288,45 @@ class StatefulQueues:
       raise
 
 
-def make_queues(spec, host_inputs):
-  return StatefulQueues(spec, host_inputs) if spec.stateful else PolicyQueues(spec)
+class DeviceStateQueues(StatefulQueues):
+  """Same scalar/image preparation; validated recurrence belongs to the GPU.
+
+  Bindings/shapes/dtypes are validated at load. The engine checks every state
+  element on device before its reply event; driving outputs remain CPU checked.
+  Host state buffers are retained for the existing binding lifetime contract,
+  but are neither uploaded nor downloaded per frame.
+  """
+  def __init__(self, spec, host_inputs, device_state):
+    self.device_state = device_state
+    if set(spec.state_pairs) != device_state.input_names or set(spec.state_pairs.values()) != device_state.output_names:
+      raise ValueError('Device state pairs differ from model contract')
+    super().__init__(spec, host_inputs)
+
+  def reset(self):
+    super().reset()
+    self.device_state.reset()
+
+  def feedback(self, outputs):
+    try:
+      if set(outputs) != {'outputs'} or outputs['outputs'].shape != self.spec.output_shapes['outputs']:
+        raise ValueError('Invalid device-state driving output shape')
+      if not self._all_finite(outputs['outputs']):
+        raise FloatingPointError('Non-finite driving output')
+      self.device_state.validate()
+    except (ValueError, FloatingPointError):
+      self.reset()
+      raise
+
+
+def make_queues(spec, host_inputs, device_state=None, *, input_fastpath=False):
+  if device_state is not None:
+    if not spec.stateful:
+      raise ValueError('Device recurrence requires a stateful model')
+    queues = DeviceStateQueues(spec, host_inputs, device_state)
+  else:
+    queues = StatefulQueues(spec, host_inputs) if spec.stateful else PolicyQueues(spec)
+  if input_fastpath:
+    if not spec.stateful:
+      raise ValueError('Direct inputs require a stateful TensorRT model')
+    queues.configure_input_fastpath(host_inputs)
+  return queues
