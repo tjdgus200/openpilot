@@ -121,3 +121,27 @@ def test_status_clock_keeps_clear_of_badge_and_custom_clock_position_is_preserve
   assert calls[0] - width * .5 >= badge_right + 16
   renderer._draw_center_clock(NS(center_clock_text='12:34:56'), center_x=960)
   assert calls[-1] == 960
+
+
+@pytest.mark.parametrize('snapshot', [None, (1., {}),
+    (1., {'alive': {'carState': True}, 'valid': {'carState': False}, 'events': {'carState': 'encoded'}}),
+    (1., {'alive': {'carState': False}, 'valid': {'carState': True}, 'events': {'carState': 'encoded'}}),
+    (1., {'alive': {'carState': True}, 'valid': {'carState': True}, 'events': {}})])
+def test_waiting_dashboard_does_not_present_default_or_stale_speed(snapshot):
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer._vehicle_data_current = hud.vehicle_data_ready(snapshot)
+  calls = []
+  renderer._draw_speed_panel_bg = lambda: calls.append('background')
+  renderer._draw_text_with_stroke = lambda text, *a, **kw: calls.append(text)
+  renderer._draw_speed_block(NS(speed_kph=0.))
+  assert calls == ['background', '--']
+
+
+def test_valid_vehicle_data_restores_normal_speed_renderer(monkeypatch):
+  snapshot = (1., {'alive': {'carState': True}, 'valid': {'carState': True}, 'events': {'carState': 'encoded'}})
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer._vehicle_data_current = hud.vehicle_data_ready(snapshot)
+  calls = []
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_speed_block', lambda *a, **kw: calls.append(kw))
+  renderer._draw_speed_block(NS(), tpms_offset_x=7.)
+  assert calls == [{'tpms_offset_x': 7.}]

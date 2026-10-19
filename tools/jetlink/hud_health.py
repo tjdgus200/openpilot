@@ -9,12 +9,21 @@ from cluster_battery import remote_panel
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
                               WIFI_STATUS_CENTER_X, WIFI_STATUS_ICON_SIZE, TOP_CLOCK_CENTER_X, TOP_STATUS_CENTER_Y,
-                              NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W, CAMERA_BACKGROUND_W, rl, rl_color)
+                              NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W, CAMERA_BACKGROUND_W,
+                              SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y, SPEED_VALUE_FONT_SIZE, rl, rl_color)
 
 NORMAL = (100, 225, 170)
 WARNING = (255, 205, 70)
 ERROR = (255, 90, 90)
 UNKNOWN = (190, 190, 190)
+
+
+def vehicle_data_ready(snapshot):
+  if snapshot is None:
+    return False
+  value = snapshot[1]
+  return bool(value.get('alive', {}).get('carState') and value.get('valid', {}).get('carState')
+              and value.get('events', {}).get('carState'))
 
 
 def temperature_label(health):
@@ -110,12 +119,22 @@ class HealthRenderer(ClusterUiRenderer):
     from hud_protocol import read_snapshot
     from hud_bsd import warning_sides
     snapshot = read_snapshot()
+    self._vehicle_data_current = vehicle_data_ready(snapshot)
     self._bsd_warning = warning_sides(state, snapshot, time.monotonic())
     self.host_health = _fresh(STATUS, time.monotonic())
     self.host_badge_drawn = False
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
       state = replace(state, battery=remote_panel(snapshot, time.monotonic()))
     super().render(state, signal_lights)
+
+  def _draw_speed_block(self, state, *, tpms_offset_x=0.):
+    if getattr(self, '_vehicle_data_current', False):
+      return super()._draw_speed_block(state, tpms_offset_x=tpms_offset_x)
+    # A disconnected dashboard is visible, but a default/stale 0 is not a
+    # measured stationary vehicle. Hide gear/cruise values in this block too.
+    self._draw_speed_panel_bg()
+    self._draw_text_with_stroke('--', SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y,
+                                SPEED_VALUE_FONT_SIZE, UNKNOWN, (0, 0, 0), 3, anchor='center')
 
   def _temperature_badge(self, x, y):
     label, color = temperature_label(self.host_health)
@@ -154,6 +173,11 @@ class HealthRenderer(ClusterUiRenderer):
         # Full navigation/graph modes omit the driving status row.
         self._temperature_badge(DESIGN_WIDTH - 66, TOP_STATUS_CENTER_Y)
       message, color = health_banner(self.host_health, self.language)
+      if not getattr(self, '_vehicle_data_current', True):
+        waiting = '콤마 데이터 연결 대기 · 차량 정보 없음' if self.language == 'ko' else 'Waiting for comma data · Vehicle data unavailable'
+        message = waiting + (' · ' + message if message else '')
+        if color != ERROR:
+          color = WARNING
       vehicle_alert = alert is not None and alert.size > 0 and (alert.text1 or alert.text2)
       if message and not vehicle_alert:
         rl.draw_rectangle(0, 0, int(DESIGN_WIDTH), 32, rl_color((0, 0, 0), 220))

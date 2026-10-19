@@ -313,3 +313,18 @@ The branch selector prepares installation through the existing offroad USB
 boot receiver on the next normal Jetson boot. No device installation or physical
 screen confirmation was possible after the owner disconnected. The reported
 Wi-Fi retrying/waiting condition remains separate and unconfirmed.
+
+## Dashboard before network data (2026-10-19)
+
+The owner subsequently requested immediate dashboard startup, superseding the
+first-fresh-snapshot wait above. After the unchanged signed-runtime approval,
+initialize the renderer and acquire the USB panel without waiting for network,
+ignition, debug mode or a snapshot. The early status display remains available
+for runtime/storage failures and before renderer initialization completes.
+
+The Jetson-only renderer shows `--` instead of a default/stale measured speed
+when carState is absent, not alive, invalid or missing its event. It also shows
+a connection-waiting strip; existing vehicle alerts retain precedence. The
+normal speed block returns when current vehicle data arrives. RemoteSubMaster
+validity, snapshot expiry, model execution, network recovery and frame rate are
+unchanged. Visibility is not an indication that the model or Wi-Fi is ready.

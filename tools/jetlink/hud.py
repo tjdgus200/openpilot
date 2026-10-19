@@ -46,19 +46,14 @@ def wait_for_usb_display(scan, expected, sleep=time.sleep):
     sleep(1.)
 
 
-def wait_for_hud_input(reader=None, sleep=time.sleep):
-  """Hand off after a fresh snapshot, independently of ignition/debug toggles.
-
-  The session receiver handles authentication and the direct-WLAN policy.
-  read_snapshot rejects missing, expired and future-dated records. An IP or
-  active USB service alone must not replace the useful boot status screen.
-  """
-  reader = read_snapshot if reader is None else reader
-  while True:
-    snapshot = reader()
-    if snapshot is not None:
-      return snapshot
-    sleep(.1)
+def prepare_renderer(wait=None):
+  """Start the dashboard after runtime approval, even without vehicle data."""
+  report_stage('waiting_runtime')
+  if wait is None:
+    from boot_update import wait_for_runtime
+    wait = wait_for_runtime
+  wait()
+  report_stage('loading_renderer')
 
 
 class _BrightnessSample:
@@ -208,13 +203,7 @@ class RemoteSubMaster:
 
 def main():
   if '--help' not in sys.argv:
-    report_stage('waiting_runtime')
-    from boot_update import wait_for_runtime
-    wait_for_runtime()
-  if '--help' not in sys.argv:
-    report_stage('waiting_hud_data')
-    wait_for_hud_input()
-    report_stage('loading_renderer')
+    prepare_renderer()
   from openpilot.cereal import log
   params_module = types.ModuleType('openpilot.common.params')
   params_module.Params = DisplayParams
