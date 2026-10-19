@@ -160,6 +160,7 @@ def test_partial_activation_can_remove_only_its_owned_interface(tmp_path, monkey
   wireless.delete.assert_called_once_with(41)
   profile = (tmp_path/'ap.nmconnection').read_text()
   assert 'interface-name=wljetson0' in profile and 'never-default=true' in profile
+  assert 'powersave=2\n' in profile
 
 
 @pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')
@@ -172,18 +173,18 @@ def test_subnet_avoids_existing_wifi_and_vpn_routes():
 
 
 @pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')
-def test_ap_power_policy_never_changes_internet_station_and_restores_on_close():
+def test_ap_power_policy_also_keeps_station_awake_and_restores_only_owned_ap_on_close():
   import wifi_direct as direct
   wireless = Mock()
   wireless.power_save.return_value = 1
-  wireless.interfaces.return_value = [{'name': INTERFACE, 'index': 41}, {'name': 'wlan0', 'index': 11}]
+  wireless.interfaces.return_value = [{'name': INTERFACE, 'index': 41}, {'name': 'wlan0', 'index': 11, 'type': 2}, {'name': 'p2p0', 'index': 12, 'type': 10}]
   ap = direct.AccessPoint(wireless, Mock())
   ap.index = 41
   ap.previous_power_save = 1
   ap.awake()
-  wireless.set_power_save.assert_called_once_with(41, 0)
+  assert [call.args for call in wireless.set_power_save.call_args_list] == [(41, 0), (11, 0)]
   ap.close()
-  assert [call.args for call in wireless.set_power_save.call_args_list] == [(41, 0), (41, 1)]
+  assert [call.args for call in wireless.set_power_save.call_args_list] == [(41, 0), (11, 0), (41, 1)]
   wireless.delete.assert_called_once_with(41)
 
 

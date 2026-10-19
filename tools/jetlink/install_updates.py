@@ -12,6 +12,15 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
   Published images already grant the jetlink service account passwordless sudo.
   Enable only next boot so installing never interrupts the current session.
   """
+  # The protected image restores /etc into RAM each boot. Apply the owner's
+  # awake policy from the selected signed runtime, not by changing the base OS.
+  policy = runtime / 'current/tools/jetlink/wifi_power.py'
+  if policy.is_file():
+    try:
+      subprocess.run(['sudo', '-n', sys.executable, str(policy)], check=True, timeout=30,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+      print('Wi-Fi awake policy could not be applied', file=sys.stderr)
   if Path('/etc/systemd/system/carrot-jetlink-boot-display.service').is_file():
     migrate_boot_display(runtime)
   if not (runtime / 'current/tools/jetlink/boot_update.py').is_file():

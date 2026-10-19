@@ -51,6 +51,7 @@ def test_move_to_another_comma_and_password_change_preserves_manual_profiles(tmp
   first = host.install(config(), tmp_path, run)
   path = next(tmp_path.glob('carrot-usb-*'))
   assert 'ssid=\\ssynthetic:한글\\swifi\\s' in path.read_text(encoding='utf-8')
+  assert 'powersave=2\n' in path.read_text(encoding='utf-8')
   host.install(config(password='changed synthetic'), tmp_path, run)
   assert 'psk=changed\\ssynthetic' in path.read_text(encoding='utf-8')
   second = host.install(config('b'), tmp_path, run)

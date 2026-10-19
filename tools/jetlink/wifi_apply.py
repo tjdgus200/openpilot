@@ -33,7 +33,7 @@ def render(owner, profile, priority):
   uid = str(uuid.uuid5(uuid.NAMESPACE_URL, 'carrot-usb:' + owner + ':' + profile['id']))
   text = ('[connection]\nid=' + PREFIX + uid + '\nuuid=' + uid + '\ntype=wifi\n'
           'autoconnect=true\nautoconnect-retries=0\nautoconnect-priority=' + str(priority) + '\n'
-          '[wifi]\nmode=infrastructure\nssid=' + nm_escape(profile['ssid']) + '\n'
+          '[wifi]\nmode=infrastructure\npowersave=2\nssid=' + nm_escape(profile['ssid']) + '\n'
           'hidden=' + ('true' if profile['hidden'] else 'false') + '\n')
   if profile['security'] != 'open':
     text += ('[wifi-security]\nkey-mgmt=' + profile['security'] + '\npsk=' +

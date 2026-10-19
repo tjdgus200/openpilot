@@ -256,3 +256,28 @@ setting was restored. This did not resolve the fault and is not made permanent.
 The channel parser/recovery correction passed153 focused PC checks. Actual
 same-channel connectivity is recorded after installation; the configuration
 error is proven, its complete attribution of every radio loss is not.
+
+## Owner-requested Wi-Fi awake policy (2026-10-19)
+
+The owner subsequently moved comma and Orin directly beside each other and
+reported the connection recovered. The owner separately requests Wi-Fi power
+saving disabled on both devices, superseding the temporary trial's restoration
+policy above. Before applying this policy, comma AP power saving was off, but
+comma's station and Orin's station were on. Set NetworkManager powersave=2 on
+saved Wi-Fi profiles and in the new-connection default, and immediately disable
+kernel power saving on station/AP interfaces. P2P discovery interfaces are not
+connected data links and are excluded.
+
+The direct AP profile and future imported Jetson profiles explicitly disable
+power saving. Comma's existing low-priority AP supervisor keeps the Internet
+station awake too, without reconnecting it. The selected signed Jetson runtime
+reapplies the volatile default at startup on the protected image. This adds no
+per-frame work or persistent polling thread. An unavailable startup policy logs
+a concise error rather than preventing model startup. NetworkManager is only
+asked to reload configuration, not restart or reactivate links. Persistent
+profile writes are skipped when already disabled. Radio power consumption may
+increase; no measured wattage, latency reduction or driving stability guarantee
+is inferred from the setting alone.
+
+NetworkManager documents 2 as disable, 3 as enable, 1 as ignore and 0 as the global
+default: https://networkmanager.dev/docs/api/latest/settings-802-11-wireless.html

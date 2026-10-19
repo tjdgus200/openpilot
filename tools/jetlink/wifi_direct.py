@@ -1,6 +1,7 @@
 """Branch-owned comma AP, independent of the optional phone Internet uplink.
 
-This low-priority control worker never touches wlan0 or starts an AP onroad.
+This low-priority worker never reconnects wlan0 or starts an AP onroad.
+The owner requests power saving disabled on both connected Wi-Fi interfaces.
 Its secret stays in a root-only file and the existing private USB provisioning.
 Returning to a branch without this helper tears down only its own AP.
 """
@@ -21,6 +22,7 @@ import time
 from persistent_state import durable_write
 from wifi_direct_netlink import INTERFACE, Wireless, profile_id
 from hud_wifi_route import DIRECT_SUBNETS as SUBNETS
+from wifi_power import configure as configure_power
 
 STATUS = Path('/dev/shm/carrot-jetlink-direct-wifi.json')
 PRIVATE = Path('/data/carrot-jetlink-direct-wifi')
@@ -102,7 +104,7 @@ def configuration():
 def render(value, band, number):
   gateway = str(ipaddress.ip_network(value['subnet']).network_address + 1)
   return ('[connection]\nid=Carrot Jetson direct\nuuid=' + value['uuid'] + '\ntype=wifi\ninterface-name=' + INTERFACE + '\nautoconnect=false\n'
-          '[wifi]\nmode=ap\nssid=' + value['ssid'] + '\nband=' + band + '\nchannel=' + str(number) + '\n'
+          '[wifi]\nmode=ap\npowersave=2\nssid=' + value['ssid'] + '\nband=' + band + '\nchannel=' + str(number) + '\n'
           '[wifi-security]\nkey-mgmt=wpa-psk\nproto=rsn\npairwise=ccmp\ngroup=ccmp\npsk=' + value['password'] + '\n'
           '[ipv4]\nmethod=shared\naddress1=' + gateway + '/24\nnever-default=true\n'
           '[ipv6]\nmethod=disabled\n')
@@ -156,12 +158,15 @@ class AccessPoint:
     return True
 
   def awake(self):
-    # Only the AP we created. Never change wlan0's Internet profile or power
-    # policy. This driver otherwise stalls AP data after its station disconnects.
+    # Preserve AP ownership checks. The shared-radio Internet station must also
+    # stay awake; this changes no channel, network selection, or connection.
     if not any(r['name'] == INTERFACE and r['index'] == self.index for r in self.wireless.interfaces()):
       raise ValueError('Direct AP ownership lost')
     if self.index is not None and self.wireless.power_save(self.index) != 0:
       self.wireless.set_power_save(self.index, 0)
+    for interface in self.wireless.interfaces():
+      if interface['name'] == 'wlan0' and interface.get('type') == 2 and self.wireless.power_save(interface['index']) != 0:
+        self.wireless.set_power_save(interface['index'], 0)
 
   def active(self):
     return self.value is not None and self.value['uuid'] in self.command('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines()
@@ -225,6 +230,7 @@ def serve(trial=0):
     lock.close()
     return
   low_priority()
+  configure_power()
   stop = threading.Event()
   for sig in (signal.SIGTERM, signal.SIGINT):
     signal.signal(sig, lambda *_: stop.set())
