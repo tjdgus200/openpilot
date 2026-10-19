@@ -40,4 +40,9 @@ changed by this display feature.
 PC checks cover missing/invalid GPU values, host separation, stale statistics,
 ten-second expiry, p99, read-only history, engine replacement and actual control
 reply framing, alongside the existing battery/HUD/Wi-Fi regression suite.
-Actual activation, layout and runtime sampling must also be checked on Jetson.
+The owner-signed [runtime-footer package](https://github.com/tjdgus200/openpilot/releases/tag/jetson-runtime-footer-20261019-960eaaf4)
+contains committed source `960eaaf4`, with the unchanged model and runtime contract.
+The packaged regression suite passed **317 tests**, with one isolated-root
+integration skip. The exported HUD entry point also passed outside the checkout.
+Dark/light, normal/swapped-panel layout fixtures were checked with the actual
+renderer. Actual activation and runtime sampling must also be checked on Jetson.
