@@ -96,6 +96,7 @@ class AccessPoint:
   def __init__(self, wireless, command=nm):
     self.wireless, self.command = wireless, command
     self.index = self.value = None
+    self.previous_power_save = None
     self.stage = 'idle'
 
   def start(self):
@@ -130,13 +131,31 @@ class AccessPoint:
     self.command('connection', 'load', str(PROFILE))
     self.stage = 'activate'
     self.command('--wait', '12', 'connection', 'up', 'uuid', value['uuid'], 'ifname', INTERFACE)
+    self.stage = 'power_save'
+    self.previous_power_save = self.wireless.power_save(self.index)
+    self.awake()
     self.stage = 'active'
     return True
+
+  def awake(self):
+    # Only the AP we created. Never change wlan0's Internet profile or power
+    # policy. This driver otherwise stalls AP data after its station disconnects.
+    if not any(r['name'] == INTERFACE and r['index'] == self.index for r in self.wireless.interfaces()):
+      raise ValueError('Direct AP ownership lost')
+    if self.index is not None and self.wireless.power_save(self.index) != 0:
+      self.wireless.set_power_save(self.index, 0)
 
   def active(self):
     return self.value is not None and self.value['uuid'] in self.command('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines()
 
   def close(self):
+    previous, self.previous_power_save = self.previous_power_save, None
+    if self.index is not None and previous is not None:
+      try:
+        if any(r['name'] == INTERFACE and r['index'] == self.index for r in self.wireless.interfaces()):
+          self.wireless.set_power_save(self.index, previous)
+      except OSError:
+        pass  # Still tear down our AP if the driver disappeared during close.
     try:
       if self.value is not None:
         self.command('--wait', '3', 'connection', 'down', 'uuid', self.value['uuid'])
@@ -207,12 +226,15 @@ def serve(trial=0):
             else:
               state = 'waiting_offroad'
           else:
+            ap.awake()
             state = 'active'
         except (OSError, ValueError, RuntimeError, StopIteration, KeyError, subprocess.SubprocessError):
           ap.close()
           state, retry = 'unavailable', now + 30.
       # No SSID, password, peer identity or vehicle payload in diagnostics.
-      durable_write(STATUS, json.dumps({'state': state, 'stage': ap.stage, 'interface': INTERFACE, 'updated': now}).encode(), 0o644)
+      durable_write(STATUS, json.dumps({'state': state, 'stage': ap.stage, 'interface': INTERFACE,
+                                      'power_save': 0 if ap.previous_power_save is not None else None,
+                                      'updated': now}).encode(), 0o644)
       stop.wait(2.)
   finally:
     if ap is not None:

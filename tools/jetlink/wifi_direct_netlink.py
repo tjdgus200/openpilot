@@ -90,6 +90,14 @@ class Wireless:
     return [{'name': r[4].rstrip(b'\0').decode(), 'index': integer(r[3]), 'type': integer(r[5]), 'phy': integer(r[1])}
             for r in self.query(self.family, 5, 0x301)]
 
+  def power_save(self, index):
+    return integer(self.query(self.family, 62, payload=attribute(3, struct.pack('I', index)))[0][93])
+
+  def set_power_save(self, index, enabled):
+    if enabled not in (0, 1):
+      raise ValueError('Invalid power-save state')
+    self.query(self.family, 61, 5, attribute(3, struct.pack('I', index)) + attribute(93, struct.pack('I', enabled)))
+
   def create(self):
     rows = self.interfaces()
     station = next(r for r in rows if r['name'] == 'wlan0' and r['type'] == 2)
