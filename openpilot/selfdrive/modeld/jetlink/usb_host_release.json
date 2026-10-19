@@ -1,8 +1,8 @@
 {
   "format": 1,
   "delivery": "usb",
-  "profile": "hud-power-20261019-3cd796c8",
-  "source_commit": "3cd796c8deae796c5622f068f22dadb02fe92711",
+  "profile": "hud-power-2hz-20261019-404b9861",
+  "source_commit": "404b98612790b0c60d2f6ccadde429306e3c0318",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -10,14 +10,14 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "e3cace8205fb82f8999328c3327b73d407edee9c7f4ae6b1d5721fc1b9e4022f",
-    "size": 64713502,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-power-20261019-3cd796c8/host.tar.gz"
+    "sha256": "8d76dd77593c2949ec3562c699ca8035d28b431eee54eb51b9f43040399b248d",
+    "size": 64714661,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-power-2hz-20261019-404b9861/host.tar.gz"
   },
   "model": {
     "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
     "size": 814591106,
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
   },
-  "signature": "MRFKOtUfAuCrCRUFrcE3MnPrFq43jplxQZp/UOngR6UzxK8Ud0+mVvl3YyM0ys1Pxi04s1Od0HhyCnv1XX1kDQ=="
+  "signature": "KYAm4EVoBLOzlQ2uAsgZkLzVEHS/vrttmq5YzUTA1tNcOi/zlK9cxK4/G1nKMYlIr2k0DZ6Y79xJjyqEL0L8AQ=="
 }
