@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 
 from wifi_protocol import HEADER, LIMIT, validate
 from wifi_direct_netlink import INTERFACE as DIRECT_INTERFACE, profile_id as direct_profile_id
@@ -20,6 +21,16 @@ def nm(*args):
   if result.returncode:
     raise RuntimeError('NetworkManager query unavailable')
   return result.stdout.rstrip('\n')
+
+
+def direct_client_id(uid):
+  # Legacy protected Jetson workers do not reconsider their preferred profile
+  # after roaming to a fallback. A new AP instance is a new client connection
+  # identity, so their existing transactional importer retries it exactly once.
+  # Phone association changes leave both inputs unchanged; no periodic churn.
+  boot = str(uuid.UUID(Path('/proc/sys/kernel/random/boot_id').read_text().strip()))
+  index = int((Path('/sys/class/net') / DIRECT_INTERFACE / 'ifindex').read_text())
+  return str(uuid.uuid5(uuid.UUID(uid), f'client:{boot}:{index}'))
 
 
 def collect():
@@ -51,7 +62,7 @@ def collect():
       continue
     if security in ('wpa-psk', 'sae') and not password:
       raise RuntimeError('Saved Wi-Fi secret unavailable')
-    profile = dict(id=uid, ssid=ssid, hidden=hidden in ('yes', 'true'), active=uid in active,
+    profile = dict(id=direct_client_id(uid) if is_direct else uid, ssid=ssid, hidden=hidden in ('yes', 'true'), active=uid in active,
                    security=security or 'open', password=password)
     try:
       validate(dict(version=1, owner='0' * 64, profiles=[profile]))

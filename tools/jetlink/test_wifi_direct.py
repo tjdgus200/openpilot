@@ -78,6 +78,7 @@ def test_only_owned_active_ap_is_provisioned_and_phone_state_is_irrelevant(monke
     return ('phone\ninfrastructure' if uid == phone else 'syntheticAP\nap') + '\nno\nwpa-psk\nsynthetic password'
   monkeypatch.setattr(sender, 'nm', nm)
   monkeypatch.setattr(sender, 'direct_profile_id', lambda: direct)
+  monkeypatch.setattr(sender, 'direct_client_id', lambda uid: uid)
   before = sender.collect()
   assert [p['id'] for p in before] == [direct, phone]
   assert [p['active'] for p in before] == [True, False]
@@ -85,6 +86,19 @@ def test_only_owned_active_ap_is_provisioned_and_phone_state_is_irrelevant(monke
   assert sender.collect() == before
   active.clear()
   assert [p['id'] for p in sender.collect()] == [phone]
+
+
+def test_only_ap_recreation_or_boot_changes_legacy_client_identity(monkeypatch):
+  values = {'boot_id': '12345678-1234-1234-1234-123456789abc', 'ifindex': '35'}
+  monkeypatch.setattr(Path, 'read_text', lambda p, *a, **k: values[p.name])
+  uid = '12345678-1234-1234-1234-123456789abd'
+  first = sender.direct_client_id(uid)
+  assert sender.direct_client_id(uid) == first
+  values['ifindex'] = '36'
+  second = sender.direct_client_id(uid)
+  assert second != first
+  values['boot_id'] = '12345678-1234-1234-1234-123456789abe'
+  assert sender.direct_client_id(uid) not in (first, second)
 
 
 @pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')

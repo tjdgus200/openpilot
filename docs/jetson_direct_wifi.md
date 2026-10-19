@@ -18,6 +18,11 @@ AP as a client profile. Other AP/tethering profiles remain excluded. Jetson's
 existing network importer handles the client connection and persisted fallback
 profiles; this feature does not replace its signed model runtime. The direct
 profile stays first and active regardless of the phone's association state.
+Each recreated AP interface/boot gets a distinct client-profile UUID, retaining
+its SSID/password. This lets the immutable legacy importer reconsider its
+preferred connection after an AP restart instead of indefinitely accepting a
+connected phone fallback. It does not rotate credentials or churn profiles when
+the phone disconnects/rejoins. No protected Jetson OS patch is required.
 
 The HUD sender selects an actual WLAN route to a fresh USB-advertised Jetson
 address, preferring the direct interface. It keys connection lifetime to the
