@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
-from hud import require_usb_display, wait_for_usb_display
+from hud import require_usb_display, wait_for_usb_display, wait_for_hud_input
 
 
 def test_host_switch_is_independent_but_ignition_and_preferences_are_forwarded(monkeypatch):
@@ -31,6 +31,42 @@ def test_absent_display_waits_until_it_arrives_without_window_fallback():
     return next(replies)
   wait_for_usb_display(scan, 0x0092, sleeps.append)
   assert sleeps == [1., 1.] and expected == [0x0092] * 3
+
+
+@pytest.mark.parametrize('params', [{}, {'ClusterHud': 'MA==', 'IsOnroad': 'MA==', 'ClusterHudDebug': 'MA=='}])
+def test_first_hud_data_starts_display_without_ignition_or_debug(params):
+  snapshot = (1., {'version': 1, 'params': params})
+  records = iter([None, None, snapshot])
+  sleeps = []
+  assert wait_for_hud_input(lambda: next(records), sleeps.append) == snapshot
+  assert sleeps == [.1, .1]
+
+
+def test_handoff_uses_actual_snapshot_expiry_and_waits_through_stale_future_and_missing_input(tmp_path, monkeypatch):
+  import json
+  import time
+  import hud_protocol as protocol
+  packet = tmp_path/'snapshot.packet'
+  monkeypatch.setattr(protocol, 'HUD_PACKET', packet)
+  monkeypatch.setattr(protocol, '_cached_snapshot', None)
+  monkeypatch.setattr(protocol, '_next_snapshot_read', 0.)
+  payload = json.dumps({'version': 1, 'params': {}}).encode()
+  def write(age):
+    packet.write_bytes(protocol.HEADER.pack(time.monotonic() - age) + payload)
+    protocol._next_snapshot_read = 0.
+  write(10.)
+  sleeps = []
+  def sleep(delay):
+    sleeps.append(delay)
+    if len(sleeps) == 1:
+      write(-100.)  # A future timestamp is not readiness.
+    elif len(sleeps) == 2:
+      packet.unlink()
+      protocol._next_snapshot_read = 0.
+    else:
+      write(.01)
+  result = wait_for_hud_input(protocol.read_snapshot, sleep)
+  assert result[1]['params'] == {} and sleeps == [.1, .1, .1]
 
 
 def test_unplug_between_scan_and_open_retries_instead_of_window_mode():

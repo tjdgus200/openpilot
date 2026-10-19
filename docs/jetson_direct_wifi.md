@@ -281,3 +281,22 @@ is inferred from the setting alone.
 
 NetworkManager documents 2 as disable, 3 as enable, 1 as ignore and 0 as the global
 default: https://networkmanager.dev/docs/api/latest/settings-802-11-wireless.html
+
+## HUD handoff on first data (2026-10-19)
+
+The always-visible renderer adapter was previously behind an older startup
+condition requiring IsOnroad or ClusterHudDebug>=1. A fresh offroad snapshot with
+debug0 therefore left the blue status screen running despite connected transport.
+Remove that extra condition: after the unchanged signed-runtime readiness gate,
+wait for the first read_snapshot() result and initialize the existing HUD. The
+snapshot reader still rejects missing, expired (500ms) and future-dated input.
+An IP address or an active USB service is not sufficient for handoff.
+
+The existing panel ownership lock still releases boot diagnosis only when the
+renderer has loaded and requests the USB panel. No global Params, ignition,
+driving process, CAN control, frame rate or networking priority is changed. No
+network restart or onroad AP-start policy change is part of this handoff fix.
+Initialization is not zero-time, and data expiry/brightness-loss handling remain
+unchanged. This fixes a demonstrated source-level startup gate; it does not
+establish the cause of the owner's reported Wi-Fi retrying state or claim a
+physical-panel pass on the disconnected device.

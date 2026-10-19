@@ -1,4 +1,4 @@
-"""Run the existing Carrot renderer using read-only, USB-forwarded cereal data."""
+"""Run the Carrot renderer using read-only, session-forwarded cereal data."""
 import base64
 import json
 import os
@@ -44,6 +44,21 @@ def wait_for_usb_display(scan, expected, sleep=time.sleep):
       print('Waiting for Jetson USB display', flush=True)
       announced = True
     sleep(1.)
+
+
+def wait_for_hud_input(reader=None, sleep=time.sleep):
+  """Hand off after a fresh snapshot, independently of ignition/debug toggles.
+
+  The session receiver handles authentication and the direct-WLAN policy.
+  read_snapshot rejects missing, expired and future-dated records. An IP or
+  active USB service alone must not replace the useful boot status screen.
+  """
+  reader = read_snapshot if reader is None else reader
+  while True:
+    snapshot = reader()
+    if snapshot is not None:
+      return snapshot
+    sleep(.1)
 
 
 class _BrightnessSample:
@@ -197,11 +212,8 @@ def main():
     from boot_update import wait_for_runtime
     wait_for_runtime()
   if '--help' not in sys.argv:
-    report_stage('waiting_activation')
-    settings = DisplayParams()
-    while not (settings.get_int('ClusterHud') == 1 and
-               (settings.get_bool('IsOnroad') or settings.get_int('ClusterHudDebug') >= 1)):
-      time.sleep(.2)
+    report_stage('waiting_hud_data')
+    wait_for_hud_input()
     report_stage('loading_renderer')
   from openpilot.cereal import log
   params_module = types.ModuleType('openpilot.common.params')

@@ -300,6 +300,8 @@ Display contains 34 settings. External-HUD settings control the layout and outpu
 
 Jetson HUD Wi-Fi data uses only this branch’s direct comma AP–Jetson link. Phone/home-router fallback paths are disabled. When the direct link is lost, it waits for reconnection and vehicle data expires at its existing age limit. The phone may still provide optional Internet access to comma.
 
+After receiving its first fresh HUD snapshot, Jetson automatically switches from the startup screen to the dashboard. Ignition, cruise and debug mode are not additional requirements; renderer initialization still takes time. The startup screen remains until data arrives, and reception loss never makes old vehicle information valid.
+
 The Internet station and direct AP use the same supported channel. Losing the phone keeps an existing AP on its current channel; needed channel realignment is performed only offroad. Direct-link recovery after changing the phone Wi-Fi band/channel while driving is not yet validated.
 
 This branch disables Wi-Fi power saving on comma's station/direct AP and Jetson's WLAN. It sets saved profiles and the default for new connections; Jetson runtime startup reapplies volatile configuration on protected images. It does not restart networking or add work to driving inference loops. WLAN power consumption may increase.
