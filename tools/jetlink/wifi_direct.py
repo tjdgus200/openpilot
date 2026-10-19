@@ -165,6 +165,14 @@ def ensure():
                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
+def low_priority():
+  os.setpriority(os.PRIO_PROCESS, 0, 19)
+  os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
+  # A USB worker can inherit a big-core-only affinity. Move this independent
+  # root control worker to little CPUs rather than intersecting that mask.
+  os.sched_setaffinity(0, set(range(min(4, os.cpu_count() or 1))))
+
+
 def serve(trial=0):
   if os.geteuid() != 0:
     raise PermissionError('Direct Wi-Fi requires its root control worker')
@@ -174,9 +182,7 @@ def serve(trial=0):
   except BlockingIOError:
     lock.close()
     return
-  os.setpriority(os.PRIO_PROCESS, 0, 19)
-  os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
-  os.sched_setaffinity(0, set(os.sched_getaffinity(0)) & {0, 1, 2, 3})
+  low_priority()
   stop = threading.Event()
   for sig in (signal.SIGTERM, signal.SIGINT):
     signal.signal(sig, lambda *_: stop.set())

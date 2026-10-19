@@ -101,6 +101,19 @@ def test_ap_start_refuses_onroad_before_any_network_operation(monkeypatch):
 
 
 @pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')
+def test_ap_control_does_not_inherit_usb_big_core_placement(monkeypatch):
+  import wifi_direct as direct
+  seen = []
+  monkeypatch.setattr(direct.os, 'setpriority', lambda *args: None)
+  monkeypatch.setattr(direct.os, 'sched_setscheduler', lambda *args: None)
+  monkeypatch.setattr(direct.os, 'cpu_count', lambda: 8)
+  monkeypatch.setattr(direct.os, 'sched_getaffinity', lambda _: {7})
+  monkeypatch.setattr(direct.os, 'sched_setaffinity', lambda pid, mask: seen.append(mask))
+  direct.low_priority()
+  assert seen == [{0, 1, 2, 3}]
+
+
+@pytest.mark.skipif(sys.platform == 'win32', reason='Linux AP supervisor uses fcntl')
 def test_partial_activation_can_remove_only_its_owned_interface(tmp_path, monkeypatch):
   import wifi_direct as direct
   monkeypatch.setattr(direct, 'offroad', lambda: True)
