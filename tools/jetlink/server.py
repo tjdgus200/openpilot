@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hud_protocol import HUD_CAPABILITY, HUD_MESSAGE, MAX_HUD_BYTES, HUD_PACKET, HEADER
 from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE, HostForwarder
 from hud_navi import PUMP_CAPABILITY
+from hud_wifi import CAPABILITY as HUD_WIFI_CAPABILITY, REQUEST as HUD_WIFI_REQUEST, RESPONSE as HUD_WIFI_RESPONSE, Worker, supported
 from host_reader import ReadAheadTransport
 from host_health import health_worker
 from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, MESSAGE as WIFI_MESSAGE, receive as receive_wifi
@@ -57,10 +58,13 @@ class CarrotSession(Session):
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
+    from jetlink.transport.usbbulk import UsbBulkTransport
+    self.hud_wifi_supported = supported() and isinstance(self.t, UsbBulkTransport)
     if sys.platform == 'linux':
       self.t = ReadAheadTransport(self.t)
     self.telemetry = DisplayTelemetry(self.telemetry)
     self.navi = HostForwarder() if sys.platform == 'linux' else None
+    self.hud_wifi = None
 
   def _send_json(self, msg_type, seq, obj, flags=0):
     if msg_type == P.Msg.ENGINE_RESP and obj.get('state') == 'failed' and self.telemetry.health is not None:
@@ -69,13 +73,35 @@ class CarrotSession(Session):
       host = 'mac' if sys.platform == 'darwin' else (
         'jetson' if Path('/etc/nv_tegra_release').is_file() else 'unknown')
       obj = {**obj, HUD_CAPABILITY: sys.platform == 'linux', NAVI_CAPABILITY: sys.platform == 'linux',
-             PUMP_CAPABILITY: sys.platform == 'linux', WIFI_CAPABILITY: host == 'jetson', 'carrot_host': host}
+             PUMP_CAPABILITY: sys.platform == 'linux', WIFI_CAPABILITY: host == 'jetson', 'carrot_host': host,
+             HUD_WIFI_CAPABILITY: self.hud_wifi_supported}
       if host == 'jetson':
         obj['carrot_source_commit'] = (ROOT / 'SOURCE_COMMIT').read_text().strip()
         obj['carrot_boot_update_installed'] = Path('/opt/carrot-jetlink/boot-update-required').is_file()
     return super()._send_json(msg_type, seq, obj, flags)
 
   def handle(self, msg):
+    if msg.msg_type == HUD_WIFI_REQUEST:
+      if msg.seq <= self.last_seq:
+        return
+      self.last_seq = msg.seq
+      ready = False
+      try:
+        if not self.hud_wifi_supported or len(msg.payload) > 128:
+          raise ValueError('HUD Wi-Fi negotiation unavailable')
+        request = json.loads(bytes(msg.payload))
+        key = request['key']
+        if not isinstance(key, str) or len(key) != 64 or len(bytes.fromhex(key)) != 32:
+          raise ValueError('HUD Wi-Fi session key')
+        if self.hud_wifi is not None:
+          self.hud_wifi.close()
+          self.hud_wifi = None
+        self.hud_wifi = Worker('receive', key)
+        ready = True
+      except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+        pass  # Never log the session key or affect the model contract.
+      self._send_json(HUD_WIFI_RESPONSE, msg.seq, {'ready': ready})
+      return
     if msg.msg_type == WIFI_MESSAGE:
       if msg.seq > self.last_seq:
         self.last_seq = msg.seq
@@ -84,7 +110,7 @@ class CarrotSession(Session):
     if msg.msg_type == NAVI_MESSAGE:
       if msg.seq > self.last_seq:
         self.last_seq = msg.seq
-        if self.navi is not None:
+        if self.navi is not None and self.hud_wifi is None:
           self.navi.send(msg.payload)
       return
     if msg.msg_type != HUD_MESSAGE:
@@ -92,6 +118,8 @@ class CarrotSession(Session):
     if msg.seq <= self.last_seq:
       return
     self.last_seq = msg.seq
+    if self.hud_wifi is not None:
+      return  # Exactly one HUD input after WLAN negotiation; no USB fallback.
     if not 0 < len(msg.payload) <= MAX_HUD_BYTES:
       return  # Display data must never change or invalidate a model result.
     temporary = HUD_PACKET.with_suffix('.tmp')
@@ -104,6 +132,9 @@ class CarrotSession(Session):
       pass  # An unavailable display does not stop inference.
 
   def close(self):
+    if self.hud_wifi is not None:
+      self.hud_wifi.close()
+      self.hud_wifi = None
     if self.navi is not None:
       self.navi.close()
     if isinstance(self.t, ReadAheadTransport):
