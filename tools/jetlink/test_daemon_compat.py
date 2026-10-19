@@ -65,10 +65,15 @@ def test_phone_checks_data_role_not_power_role(tmp_path, monkeypatch, mode):
   ('auto', 'usb-v2'), ('auto', 'usb-exhausted'), ('auto', 'usb-pinned'),
   ('auto', 'usb-unsafe'), ('auto', 'brief-detach'),
   ('auto', 'usb-late'), ('auto', 'ncm-cleanup-unsafe'),
+  ('auto', 'ncm-cleanup-recover'), ('auto', 'ncm-cleanup-not-park'),
+  ('auto', 'ncm-hard-cleanup'), ('auto', 'ncm-cleanup-cooldown'),
 ])
 def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch, mode, scenario):
   calls = []
   attached = [True]
+  parked = [False]
+  clock = [100.]
+  cleanup_times = []
   reports = []
   udcs = tmp_path / 'udc'
   (udcs / 'controller').mkdir(parents=True)
@@ -91,23 +96,37 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
   def sleep(delay):
     assert scenario != 'stop', 'must not rebind while waiting for the phone dial'
     if reports[-1][0] == 'blocked':
+      if scenario == 'ncm-cleanup-cooldown' and len(cleanup_times) < 3:
+        clock[0] += delay
+        return
+      if scenario == 'ncm-cleanup-recover':
+        assert calls.count(('setup', mode)) == 1
+        parked[0] = True
+        calls.append('park-confirmed')
+        return
       raise KeyboardInterrupt
     if delay == 1:
       assert reports[-1][0] == 'waiting'
       attached[0] = True
     else:
       assert delay == 2
+      clock[0] += delay
   monkeypatch.setattr(daemon.time, 'sleep', sleep)
+  if scenario == 'ncm-cleanup-cooldown':
+    monkeypatch.setattr(daemon.time, 'monotonic', lambda: clock[0])
   monkeypatch.setattr(daemon, 'gc', SimpleNamespace(disable=lambda: None, freeze=lambda: None, collect=lambda: None))
   monkeypatch.setattr(daemon.os, 'sched_setscheduler', lambda *a: None)
   monkeypatch.setattr(daemon.os, 'sched_setaffinity', lambda *a: None)
+  if scenario in ('ncm-cleanup-recover', 'ncm-cleanup-not-park'):
+    from openpilot.selfdrive.modeld.jetlink import update_permission
+    monkeypatch.setattr(update_permission, 'Permission', lambda *a: SimpleNamespace(allowed=lambda: parked[0]))
   listener = SimpleNamespace(bind=lambda *a: None, listen=lambda *a: None, settimeout=lambda *a: None,
                              close=lambda: calls.append('listener.close'))
   monkeypatch.setattr(daemon.socket, 'socket', lambda *a: listener)
   monkeypatch.setattr(daemon.os, 'chmod', lambda *a: None)
   monkeypatch.setattr(daemon, 'setup_gadget', lambda value: calls.append(('setup', value)))
   owner = SimpleNamespace(close=lambda: calls.append('owner.close'), bound_udc='controller', _configured=lambda: True)
-  if scenario in ('usb-success', 'usb-fail', 'usb-v2', 'usb-exhausted', 'usb-pinned', 'usb-unsafe', 'usb-late'):
+  if scenario in ('usb-success', 'usb-fail', 'usb-v2', 'usb-exhausted', 'usb-pinned', 'usb-unsafe', 'usb-late', 'ncm-hard-cleanup'):
     monkeypatch.setattr(daemon.AutoTransport, 'GRACE', 0.)
   if scenario == 'usb-late':
     monkeypatch.setattr(daemon.AutoTransport, 'RETRY_GRACE', 0.)
@@ -124,7 +143,7 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
       self.listener = object()
     def start(self):
       calls.append('cable.start')
-      if scenario in ('ncm-unavailable', 'ncm-cleanup-unsafe'):
+      if scenario in ('ncm-unavailable', 'ncm-cleanup-unsafe', 'ncm-cleanup-recover', 'ncm-cleanup-not-park', 'ncm-cleanup-cooldown'):
         self.listener = None
         raise daemon.MobileLinkError('NCM kernel support unavailable')
     def accept(self, timeout):
@@ -139,14 +158,16 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
       return phone
     def close(self):
       calls.append('cable.close')
-      if scenario == 'ncm-cleanup-unsafe':
+      cleanup_times.append(clock[0])
+      if scenario in ('ncm-cleanup-unsafe', 'ncm-cleanup-not-park', 'ncm-hard-cleanup', 'ncm-cleanup-cooldown') or (
+          scenario == 'ncm-cleanup-recover' and calls.count('cable.close') == 1):
         raise RuntimeError('owned network cleanup failed')
   monkeypatch.setattr(daemon, 'MobileCable', Cable)
   class Client:
     last_state = None
     spec = link.SPEC
     def __init__(self, transport, **kw):
-      expected = owner if (scenario in ('usb-success', 'usb-late', 'ncm-unavailable') or
+      expected = owner if (scenario in ('usb-success', 'usb-late', 'ncm-unavailable', 'ncm-cleanup-recover', 'ncm-hard-cleanup') or
                           (scenario in ('usb-fail', 'usb-pinned', 'usb-unsafe') and calls.count('hello') == 0) or
                           (scenario in ('usb-v2', 'usb-exhausted') and calls.count('hello') < 2)) else (
         phone if mode in ('auto', 'ios') else owner)
@@ -156,7 +177,9 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
     def hello(self, timeout=None):
       calls.append('hello')
       if self.t is owner and mode == 'auto':
-        assert timeout == (None if scenario == 'ncm-unavailable' else 3.)
+        assert timeout == (None if scenario in ('ncm-unavailable', 'ncm-cleanup-recover') else 3.)
+        if scenario == 'ncm-hard-cleanup':
+          raise daemon.UnsafeCleanupError('native transport ownership unresolved')
         if (scenario in ('usb-fail', 'usb-pinned', 'usb-exhausted', 'usb-unsafe') or
             (scenario == 'usb-v2' and calls.count('hello') == 1) or
             (scenario == 'usb-late' and calls.count('hello') <= 2)):
@@ -177,7 +200,7 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
   monkeypatch.setitem(sys.modules, 'openpilot.common.params', SimpleNamespace(
     Params=lambda: SimpleNamespace(get_bool=lambda key: key == 'IsOffroad')))
   def prepare(client, peer, offroad, connected, progress, **kw):
-    expected = 'usb' if scenario in ('usb-success', 'usb-v2', 'usb-late', 'ncm-unavailable') else ('ios' if mode == 'auto' else mode)
+    expected = 'usb' if scenario in ('usb-success', 'usb-v2', 'usb-late', 'ncm-unavailable', 'ncm-cleanup-recover') else ('ios' if mode == 'auto' else mode)
     assert kw['mode'] == expected and offroad() and connected()
     calls.append('prepare')
   monkeypatch.setattr(daemon, 'prepare', prepare)
@@ -199,16 +222,30 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
     assert 'hello' not in calls and 'owner.close' not in calls
     assert reports[-2][0] == 'blocked'
     return
-  if scenario == 'ncm-unavailable':
+  if scenario in ('ncm-unavailable', 'ncm-cleanup-recover'):
     assert calls.count(('setup', 'auto')) == calls.count(('setup', 'usb')) == 1
     assert calls.count('hello') == calls.count('serve') == 1
     assert calls.index('cable.close') < calls.index(('setup', 'usb'))
     assert any('retrying bulk USB' in report.get('error', '') for _, report in reports)
-    assert not any(state == 'blocked' for state, _ in reports)
+    if scenario == 'ncm-cleanup-recover':
+      assert calls.index('park-confirmed') < calls.index(('setup', 'usb'))
+      assert calls.count('cable.close') == 2
+      assert any(state == 'blocked' for state, _ in reports)
+    else:
+      assert not any(state == 'blocked' for state, _ in reports)
     return
-  if scenario == 'ncm-cleanup-unsafe':
+  if scenario in ('ncm-cleanup-unsafe', 'ncm-cleanup-not-park', 'ncm-cleanup-cooldown'):
     assert calls.count(('setup', 'auto')) == 1 and ('setup', 'usb') not in calls
     assert reports[-2][0] == 'blocked' and 'hello' not in calls
+    if scenario == 'ncm-cleanup-not-park':
+      assert calls.count('cable.close') == 1
+    if scenario == 'ncm-cleanup-cooldown':
+      assert len(cleanup_times) == 3 and cleanup_times[-1] - cleanup_times[-2] >= 5.
+    return
+  if scenario == 'ncm-hard-cleanup':
+    assert calls.count(('setup', 'auto')) == 1 and ('setup', 'usb') not in calls
+    assert calls.count('hello') == calls.count('cable.close') == 1
+    assert 'serve' not in calls and reports[-2][0] == 'blocked'
     return
   if scenario == 'usb-late':
     assert calls.count('hello') == 3 and calls.count('serve') == 1

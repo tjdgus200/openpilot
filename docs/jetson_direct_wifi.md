@@ -434,3 +434,44 @@ Final parked-update PC result:358 passed, one unchanged isolated boot-display
 fixture excluded for missing WSL system-Python PIL, three inherited pytest
 configuration warnings. Localized user-doc validation passed. No vehicle,
 phone, Jetson service or active simulation was accessed or changed.
+
+
+## Optional cable DHCP cleanup and Park recovery (2026-10-19)
+
+The owner's subsequent status showed an optional MobileCable DHCP termination
+timeout, followed by the daemon's permanent cleanup block. This happens before
+USB bootstrap discovery, so changing the Park permission check cannot resolve
+that particular block. The reason SIGTERM failed on the vehicle is not known.
+
+The helper now waits two seconds for TERM, then escalates to KILL only for its
+verified dnsmasq executable, dedicated arguments and saved PID/start identity.
+Pidfds pin the target when available; the AGNOS 4.9 fallback revalidates identity
+before each signal. Exit must be observed after either signal. A still-live task
+retains its ownership records and refuses rebind. A matching already-exited
+zombie can release its records without signaling or requiring a vanished exe.
+No name-based kill, AP DHCP operation, NCM function destruction or foreign
+interface/process cleanup is introduced.
+
+The daemon retains failed cleanup objects. Only failures confined to the
+optional MobileCable network may retry, at most once per five seconds, after
+the same offroad/fresh Park/inactive Permission approves. Confirmed prior USB
+owner cleanup remains mandatory; native AIO/reader/watchdog failures and unsafe
+constructor cleanup keep their hard block. Verified network cleanup lets auto
+mode continue through plain bulk USB without recreating optional DHCP. Retry
+work runs with normal scheduling on CPUs0–3. Update transfer, signature checks,
+continuous parked permission, runtime/model joining and AP policy are unchanged.
+
+Boot discovery and waiting-Park progression already existed. This correction
+unblocks their optional-network failure path, rather than adding hot replacement
+of a running Jetson model. After updating comma, restart it parked to load the
+new daemon, keep USB attached, and normally reboot Jetson for its boot receiver.
+Actual vehicle installation and the original incident remain unverified.
+
+Final PC checks:572 passed, including real private child processes with blocked
+TERM on both pidfd and legacy signal paths, PID/argument-change refusal,
+unreaped-zombie recovery, retained state for simulated unkillable tasks,
+Park-denied/approved daemon recovery, five-second retry spacing and hard native
+cleanup blocking. One unchanged boot-display fixture still requires PIL absent
+from WSL system Python and is excluded; three inherited pytest configuration
+warnings remain. Korean/English user-doc validation passed. No device, AP,
+external simulation or bridge process was accessed or stopped.

@@ -1,14 +1,12 @@
 """Desktop-only lifecycle/framing checks; not a C3/C4 or physical phone trial."""
 import os
 from pathlib import Path
-import shutil
 import signal
 import socket
 import subprocess
 import sys
 from types import SimpleNamespace
 from unittest.mock import Mock  # noqa: TID251 - mock only; pytest runs the tests
-import uuid
 
 import pytest
 
@@ -19,14 +17,9 @@ from jetlink.transport.tcp import TcpTransport
 
 
 @pytest.fixture
-def scratch():
-  # Do not let pytest's default tmp_path write outside this project.
-  root = Path('.analysis/scratch') / f'mobile-tests-{uuid.uuid4().hex}'
-  root.mkdir(parents=True)
-  try:
-    yield root.resolve()
-  finally:
-    shutil.rmtree(root)
+def scratch(tmp_path):
+  # POSIX ownership/mode checks need the Linux filesystem, not WSL drvfs.
+  return tmp_path
 
 
 @pytest.fixture

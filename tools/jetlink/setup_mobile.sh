@@ -56,6 +56,15 @@ try:
     pidfile.unlink(missing_ok=True)
     record.unlink(missing_ok=True)
     sys.exit(1 if action == 'alive' else 0)
+  fields = (proc / 'stat').read_text().rsplit(') ', 1)[1].split()
+  if action == 'stop' and fields[0] == 'Z':
+    # An already exited daemon has no executable/cmdline left to inspect.
+    # Accept only our saved identity; it holds no socket and needs no signal.
+    if json.loads(record.read_text()) != {'pid': pid, 'start': fields[19]}:
+      raise ValueError('exited PID was not helper-owned')
+    pidfile.unlink(missing_ok=True)
+    record.unlink(missing_ok=True)
+    sys.exit(0)
   fd = None
   if hasattr(os, 'pidfd_open'):
     try:
@@ -79,25 +88,43 @@ try:
       if saved != {'pid': pid, 'start': start}:
         raise ValueError('PID was reused or is not helper-owned')
     if action == 'stop':
-      if fd is not None and hasattr(signal, 'pidfd_send_signal'):
-        signal.pidfd_send_signal(fd, signal.SIGTERM)
-        poll = select.poll()
+      pinned = fd is not None and hasattr(signal, 'pidfd_send_signal')
+      poll = select.poll() if pinned else None
+      if pinned:
         poll.register(fd, select.POLLIN)
-        if not poll.poll(2000):
-          raise ValueError('helper dnsmasq did not stop within two seconds')
-      else:
-        latest = (proc / 'stat').read_text().rsplit(') ', 1)[1].split()[19]
-        if latest != start or (proc / 'cmdline').read_bytes().split(b'\0') != args:
-          raise ValueError('PID changed before signaling')
-        os.kill(pid, signal.SIGTERM)
-        deadline = time.monotonic() + 2
-        while proc.exists():
+
+      def exited():
+        if pinned:
+          return bool(poll.poll(0))
+        try:
           fields = (proc / 'stat').read_text().rsplit(') ', 1)[1].split()
-          if fields[19] != start or fields[0] == 'Z':
-            break
+        except FileNotFoundError:
+          return True
+        return fields[19] != start or fields[0] == 'Z'
+
+      def stop_owned(sig):
+        if exited():
+          return True
+        if pinned:
+          signal.pidfd_send_signal(fd, sig)
+        else:
+          # AGNOS 4.9: recheck the original identity before *each* signal.
+          latest = (proc / 'stat').read_text().rsplit(') ', 1)[1].split()[19]
+          if (latest != start or (proc / 'cmdline').read_bytes().split(b'\0') != args
+              or Path(os.readlink(proc / 'exe')).name != 'dnsmasq'):
+            raise ValueError('PID changed before signaling')
+          os.kill(pid, sig)
+        deadline = time.monotonic() + 2
+        while not exited():
           if time.monotonic() >= deadline:
-            raise ValueError('helper dnsmasq did not stop within two seconds')
+            return False
           time.sleep(.02)
+        return True
+
+      # An optional cable-only DHCP worker must not indefinitely block signed
+      # USB updates. Escalate only this fully verified process; never by name.
+      if not stop_owned(signal.SIGTERM) and not stop_owned(signal.SIGKILL):
+        raise ValueError('owned helper dnsmasq remains live after TERM/KILL; refusing rebind')
       pidfile.unlink(missing_ok=True)
       record.unlink(missing_ok=True)
   finally:

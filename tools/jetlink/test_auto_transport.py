@@ -24,9 +24,17 @@ IPAD = {'protocol': 3, 'backend': 'ort', 'device': 'ane-Apple_M4'}
 JETSON = {'protocol': 2, 'backend': 'trt', 'device': 'orin', 'carrot_host': 'jetson'}
 
 
-def test_real_bootstrap_hello_is_accepted_before_wifi_and_signed_update(monkeypatch):
+def test_real_bootstrap_hello_is_accepted_before_wifi_and_signed_update(monkeypatch, tmp_path):
   import boot_update
   from openpilot.selfdrive.modeld.jetlink import startup
+  # Match a prepared receiver/registered source; do not depend on host /opt
+  # enrollment or the install branch's current signed release selection.
+  (tmp_path / 'updater').mkdir()
+  (tmp_path / 'updater/usb-experiment-public.pem').touch()
+  (tmp_path / 'current').mkdir()
+  (tmp_path / 'current/SOURCE_COMMIT').write_text('a' * 40)
+  monkeypatch.setattr(boot_update.update, 'ROOT', tmp_path)
+  monkeypatch.setattr(startup, 'selected_release', lambda *a, **k: {'delivery': 'usb', 'source_commit': 'a' * 40})
   sent = []
   bootstrap = boot_update.BootstrapSession(SimpleNamespace(send_json=lambda *args: sent.append(args)), None)
   bootstrap.handle(SimpleNamespace(msg_type=P.Msg.HELLO_REQ, seq=1))
@@ -240,6 +248,19 @@ def test_cleanup_logs_all_failures_without_throwing_and_requests_blocking(caplog
   assert 'unsafe network ownership' in caplog.text
   good.close.assert_called_once()
   assert daemon.close_resources(None, good) is None
+
+
+def test_failed_cleanup_retains_exact_objects_but_only_mobile_network_can_retry():
+  cable = mobile.MobileCable.__new__(mobile.MobileCable)
+  cable.close = Mock(side_effect=RuntimeError('private DHCP helper still alive'))
+  native = SimpleNamespace(close=Mock(side_effect=RuntimeError('AIO ownership still active')))
+  failed = []
+  assert daemon.close_resources(cable, cable, failed=failed)
+  assert len(failed) == 1 and failed[0] is cable
+  assert daemon.mobile_cleanup_retryable(failed)
+  assert not daemon.mobile_cleanup_retryable([])
+  assert daemon.close_resources(native, failed=failed)
+  assert not daemon.mobile_cleanup_retryable(failed)
 
 
 @pytest.mark.parametrize('bound,reader_alive,remembered_udc,unsafe', [

@@ -434,6 +434,10 @@ def main():
   peer = None
   owner = cable = None
   cleanup_error = None
+  cleanup_hard_block = False
+  failed_cleanup = []
+  cleanup_permission = None
+  next_cleanup = 0.
   usb_probes = 0
   usb_mode = None
   tcp_seen = False
@@ -454,12 +458,31 @@ def main():
       usb_power.step()
       update_affinity()
       if cleanup_error:
+        # Only the optional, isolated cable network is retryable in-process.
+        # An unsafe FFS reader/watchdog/native AIO must retain the hard block.
+        if not cleanup_hard_block and mobile_cleanup_retryable(failed_cleanup) and time.monotonic() >= next_cleanup:
+          from openpilot.common.params import Params
+          from openpilot.selfdrive.modeld.jetlink.update_permission import Permission, bulk_scheduling
+          if cleanup_permission is None:
+            cleanup_permission = Permission(Params())
+          if cleanup_permission.allowed():
+            pending, failed_cleanup = failed_cleanup, []
+            with bulk_scheduling():
+              cleanup_error = close_resources(*pending, failed=failed_cleanup)
+            next_cleanup = time.monotonic() + 5.
+            if not cleanup_error:
+              # The previous USB owner was independently verified closed.
+              # Auto can now try plain bulk USB without recreating DHCP.
+              mobile_unavailable = TRANSPORT_MODE == 'auto'
+              usb_probes, usb_mode, tcp_seen = 0, None, False
+              ACTIVE_UDC, SESSION_DETACHED = None, False
+              continue
         publish('blocked', peer=None, error=cleanup_error)
         time.sleep(1)
         continue
       if SESSION_DETACHED or not host_attached():
         if owner is not None or cable is not None:
-          cleanup_error = close_resources(cable, owner)
+          cleanup_error = close_resources(cable, owner, failed=failed_cleanup)
           owner = cable = None
         peer = None
         SESSION_MODE = TRANSPORT_MODE
@@ -609,6 +632,7 @@ def main():
         publish('loading', peer=peer, preparation={'stage': 'waiting', 'message': str(exc)})
       except UnsafeCleanupError as exc:
         log.exception('Jetlink constructor cleanup was unsafe')
+        cleanup_hard_block = True
         cleanup_error = f'Unsafe Jetlink cleanup; restart/reboot offroad before retrying: {exc}'[:300]
         publish('blocked', peer=None, error=cleanup_error)
       except MobileLinkError as exc:
@@ -629,17 +653,17 @@ def main():
             Params().put_bool_nonblocking('ClusterHudConnected', False)
           except Exception:
             log.exception('Jetlink HUD cleanup failed')
-        cleanup_error = close_resources(wifi, client) or cleanup_error
+        cleanup_error = close_resources(wifi, client, failed=failed_cleanup) or cleanup_error
         if client is None and transport is not owner:
-          cleanup_error = close_resources(transport) or cleanup_error
+          cleanup_error = close_resources(transport, failed=failed_cleanup) or cleanup_error
         if TRANSPORT_MODE not in ('auto', 'ios'):
           if client is None:
-            cleanup_error = close_resources(owner) or cleanup_error
+            cleanup_error = close_resources(owner, failed=failed_cleanup) or cleanup_error
           owner = None
         elif transport is owner or cable is None or getattr(cable, 'listener', None) is None:
           # Failed startup is not a valid persistent listener. Do not retry a
           # gadget whose cleanup could not prove the previous owner is gone.
-          cleanup_error = close_resources(cable, owner) or cleanup_error
+          cleanup_error = close_resources(cable, owner, failed=failed_cleanup) or cleanup_error
           cable = owner = None
         peer = None
         SESSION_MODE = TRANSPORT_MODE
@@ -650,7 +674,11 @@ def main():
     publish('stopped')
 
 
-def close_resources(*resources):
+def mobile_cleanup_retryable(resources):
+  return bool(resources) and all(isinstance(resource, MobileCable) for resource in resources)
+
+
+def close_resources(*resources, failed=None):
   """Log every cleanup failure; caller must block rather than reclaim unsafely."""
   failures = []
   for resource in resources:
@@ -660,6 +688,8 @@ def close_resources(*resources):
       except Exception as exc:
         log.exception('Jetlink %s cleanup failed', type(resource).__name__)
         failures.append(f'{type(resource).__name__}: {exc}')
+        if failed is not None and not any(resource is pending for pending in failed):
+          failed.append(resource)
   return ('Unsafe Jetlink cleanup; restart/reboot offroad before retrying: ' + '; '.join(failures))[:300] if failures else None
 
 
