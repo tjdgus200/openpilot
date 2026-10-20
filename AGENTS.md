@@ -1,5 +1,20 @@
 # Repository memory
 
+- On 2026-10-20, runtime-port N16 TensorRT trial: initial memory-limited builds
+  fail, but user-requested L5-only build succeeds in814.8s after stopping all
+  optional graphics/inference services and reclaiming cache; min available
+  294.86MiB, no guard interruption or GPU OOM. Same patch graph; workspace512MiB.
+  Final installed3/L5/installed3 600-frame phases: GPU means23.396/25.862/23.444ms,
+  P9923.494/25.922/23.489ms, same1020MHz. This candidate is slower; not a universal
+  L5 verdict. Return3 outputs bit-identical, L5 differs (MAE.004679/max.826172);
+  finite is not driving approval. User cancels L5 distribution. Existing3/model/
+  power/clock/swap retained, services/boots unchanged, offroad/noOutput/zeroTX.
+  Final200 finite USB RTT mean40.84/P9949.52ms is health check only. Production
+  Timing Cache already enabled (3478711bytes); it reuses builder profiling,
+  does not accelerate an existing plan. Own temporary jobs/files/tunnels cleaned,
+  raw evidence private. No L5 release or default change. See
+  docs/jetson_level5_build_trial_20261020.md.
+
 - On 2026-10-20, runtime-port N16 latency investigation: completed one real-camera
   A/HUD/HUD+lane/A sequence, full-pipeline P99~53--57ms; BSD never executed in
   that sequence. Do not call it strict20Hz or combined BSD validation. Private
