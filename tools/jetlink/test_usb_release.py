@@ -473,3 +473,36 @@ for payload in (b'abc', bytearray(b'abc'), memoryview(b'abc')):
   result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True,
                           env={**os.environ, 'PYTHONPATH': os.pathsep.join(sys.path)}, timeout=30)
   assert result.returncode == 0, result.stderr
+
+
+def test_begin_space_rejection_is_visible_on_boot_screen_without_raw_errors(env, monkeypatch):
+  monkeypatch.setattr(usb.shutil, 'disk_usage', lambda _: NS(free=123))
+  wire = Wire()
+  wire.send(usb.BEGIN, 1, [json.dumps(env.value).encode()])
+  ack = json.loads(bytes(wire.recv().payload))
+  assert not ack['ok'] and ack['error_code'] == 'insufficient_space' and ack['phase'] == 'begin'
+  diagnostic = wire.session.gate.telemetry()
+  assert diagnostic['state'] == 'failed' and diagnostic['free_bytes'] == 123
+  assert diagnostic['required_bytes'] == 2 * sum(env.value[k]['size'] for k in usb.KINDS) + (4 << 30)
+  wire.session.gate.tick()
+  assert wire.session.gate.telemetry() == diagnostic  # Waiting for a pin must not hide the rejection.
+  assert not (env.root / 'current').resolve() != env.previous
+  wire.session.close()
+
+
+def test_usb_receiver_reports_progress_and_disconnect_without_claiming_ready(env):
+  wire = Wire()
+  wire.send(usb.BEGIN, 1, [json.dumps(env.value).encode()]);wire.recv()
+  gate = wire.session.gate
+  assert gate.state == 'receiving' and gate.fraction == 0.
+  data = env.bundle.read_bytes()
+  wire.send(usb.CHUNK, 2, [usb.HEADER.pack(0, 0), data]);wire.recv()
+  value = gate.telemetry()
+  assert value['phase'] == 'transfer' and value['received_bytes'] == len(data)
+  assert value['total_bytes'] == sum(env.value[k]['size'] for k in usb.KINDS)
+  assert 0 < gate.fraction < 1.
+  gate.tick()
+  assert gate.state == 'receiving' and not gate.done
+  wire.session.close()
+  assert gate.state == 'waiting_usb' and gate.telemetry()['error_code'] == 'usb_disconnected'
+  assert not gate.done

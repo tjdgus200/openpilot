@@ -19,6 +19,7 @@ MESSAGE = 0x4003
 READY = Path('/run/carrot-jetlink-boot-ready.json')
 STATUS = Path('/run/carrot-jetlink-boot-update.json')
 BOOT_ID = Path('/proc/sys/kernel/random/boot_id')
+DIAGNOSTICS_DROPIN = Path('/run/systemd/system/carrot-jetlink-boot-display.service.d/zz-owner-diagnostics.conf')
 
 
 def enabled():
@@ -63,12 +64,13 @@ class Gate:
     self.worker = None
     self.done = False
     self.error = ''
+    self.usb_diagnostic = {}
 
   def report(self, state, fraction=None):
     self.state, self.fraction = state, fraction
 
   def telemetry(self):
-    return {'state': self.state, 'fraction': self.fraction, 'error': self.error}
+    return {'state': self.state, 'fraction': self.fraction, 'error': self.error, **self.usb_diagnostic}
 
   def select(self, manifest):
     # Validate before trusting equality, downloading or granting permission.
@@ -78,6 +80,8 @@ class Gate:
         raise ValueError('Protected DATA storage unavailable')
     if manifest != self.selected:
       self.next_try = 0.
+      self.usb_diagnostic = {}
+      self.error = ''
     self.selected = manifest
     self.source_commit = commit
     self.received = time.monotonic()
@@ -109,7 +113,7 @@ class Gate:
     if self.worker is not None and self.worker.is_alive():
       return
     if self.selected is None or not 0 <= time.monotonic() - self.received < 5:
-      if self.state != 'failed':
+      if self.state not in ('failed', 'receiving', 'received', 'waiting_usb'):
         self.report('checking')
       return
     manifest = self.selected
@@ -133,6 +137,9 @@ class BootstrapSession:
     if self.usb_receiver is not None:
       self.usb_receiver.close()
       self.usb_receiver = None
+      if self.gate.state == 'receiving':
+        self.gate.report('waiting_usb')
+        self.gate.usb_diagnostic = {'phase': 'transfer', 'error_code': 'usb_disconnected'}
 
   def handle(self, msg):
     from jetlink import protocol as p
@@ -169,16 +176,34 @@ class BootstrapSession:
           if not 0 < len(msg.payload) <= 65536:
             raise ValueError('USB manifest size invalid')
           result = self.usb_receiver.begin(json.loads(bytes(msg.payload)))
+          self.gate.error = ''
+          self.gate.usb_diagnostic = {'phase': 'begin'}
+          self.gate.report('received' if result.get('complete') else 'receiving', 1. if result.get('complete') else 0.)
         elif msg.msg_type == usb.CHUNK:
           result = self.usb_receiver.chunk(msg.payload)
+          total = sum(self.usb_receiver.value[k]['size'] for k in usb.KINDS)
+          received = sum(self.usb_receiver.offsets)
+          self.gate.usb_diagnostic = {'phase': 'transfer', 'received_bytes': received, 'total_bytes': total}
+          self.gate.report('receiving', received / total)
         else:
           if bytes(msg.payload) != b'{}':
             raise ValueError('Invalid USB finish')
           result = self.usb_receiver.finish()
+          self.gate.usb_diagnostic = {'phase': 'verify'}
+          self.gate.report('received', 1.)
         self.transport.send_json(usb.ACK, msg.seq, dict(ok=True, **result))
-      except Exception:
+      except Exception as exc:
         self.close()
-        self.transport.send_json(usb.ACK, msg.seq, {'ok': False, 'error': 'USB package rejected; current release retained'})
+        code = ('insufficient_space' if isinstance(exc, usb.InsufficientSpace) else
+                'permission_denied' if isinstance(exc, PermissionError) else 'package_rejected')
+        phase = {usb.BEGIN: 'begin', usb.CHUNK: 'transfer', usb.FINISH: 'verify'}[msg.msg_type]
+        diagnostic = {'phase': phase, 'error_code': code}
+        if isinstance(exc, usb.InsufficientSpace):
+          diagnostic.update(free_bytes=exc.free_bytes, required_bytes=exc.required_bytes)
+        self.gate.report('failed')
+        self.gate.error = 'USB package rejected; current release retained'
+        self.gate.usb_diagnostic = diagnostic
+        self.transport.send_json(usb.ACK, msg.seq, {'ok': False, 'error': self.gate.error, **diagnostic})
     elif msg.msg_type == wifi_message:
       receive_wifi(msg.payload)
     elif msg.msg_type == MESSAGE:
@@ -200,7 +225,38 @@ class BootstrapSession:
       self.transport.send_json(p.Msg.ERROR, msg.seq, {'error': 'update_required', 'detail': 'Boot release check pending'})
 
 
+def configure_diagnostic_display():
+  """A root-installed display override survives boots; immutable rescue stays."""
+  from local_release import owned
+  root = update.ROOT / 'boot-display'
+  try:
+    for directory in (update.ROOT, root, root / 'tools', root / 'tools/jetlink'):
+      owned(directory, directory=True)
+    marker = root / '.owner-installed'
+    owned(marker)
+    owned(root / 'tools/jetlink/boot_display.py')
+    if marker.read_text() != '1\n':
+      return
+  except (OSError, ValueError):
+    return
+  dropin = DIAGNOSTICS_DROPIN
+  content = ('[Service]\nExecStart=\nExecStart=/opt/carrot-jetlink/venv/bin/python ' +
+             str(root / 'tools/jetlink/boot_display.py') + '\n')
+  if dropin.is_file() and dropin.read_text() == content:
+    return
+  dropin.parent.mkdir(parents=True, exist_ok=True)
+  temporary = dropin.with_suffix('.new')
+  temporary.write_text(content)
+  temporary.replace(dropin)
+  subprocess.run(['systemctl', 'daemon-reload'], check=True, timeout=10)
+  subprocess.run(['systemctl', 'try-restart', 'carrot-jetlink-boot-display'], check=True, timeout=15)
+
+
 def boot():
+  try:
+    configure_diagnostic_display()
+  except (OSError, subprocess.SubprocessError):
+    pass  # A display failure must never change update/inference permission.
   if runtime_ready():
     subprocess.run(['systemctl', 'start', 'carrot-jetlink', 'carrot-jetlink-hud'], check=True, timeout=45)
     return

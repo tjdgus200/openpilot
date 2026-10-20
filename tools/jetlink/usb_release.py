@@ -26,6 +26,13 @@ KINDS = ('bundle', 'model')
 RUNTIME = {'arch': 'aarch64', 'l4t': '36.4.7', 'tensorrt': '10.3.0'}
 
 
+class InsufficientSpace(OSError):
+  """Public, numeric diagnostics without filenames, keys, or exception text."""
+  def __init__(self, free, required):
+    super().__init__('Insufficient space for USB experiment and retained official release')
+    self.free_bytes, self.required_bytes = int(free), int(required)
+
+
 def canonical(value):
   return json.dumps({k: v for k, v in value.items() if k != 'signature'}, sort_keys=True, separators=(',', ':')).encode()
 
@@ -162,8 +169,9 @@ class Receiver:
     parent.mkdir(mode=0o700, exist_ok=True)
     owned(parent, directory=True)
     required = 2 * sum(value[k]['size'] for k in KINDS) + (4 << 30)
-    if shutil.disk_usage(parent).free < required:
-      raise OSError('Insufficient space for USB experiment and retained official release')
+    free = shutil.disk_usage(parent).free
+    if free < required:
+      raise InsufficientSpace(free, required)
     # At most one receiver is owned by the boot gate. Remove its abandoned
     # staging directories from a previous power loss, never installed releases.
     for old in parent.glob('receive-*'):

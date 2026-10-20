@@ -28,7 +28,7 @@ def test_offline_diagnosis_without_comma_model_or_xorg(tmp_path):
 def test_active_service_does_not_claim_model_ready():
   title, rows, _, _ = lines({'units': {'carrot-jetlink': {'ActiveState': 'active'}}})
   assert 'WAITING' in title[1]
-  assert rows[-1] == ('콤마 USB 서비스', 'COMMA USB SERVICE', 'active')
+  assert rows[5] == ('콤마 USB 서비스', 'COMMA USB SERVICE', 'active')
 
 
 def test_unreadable_thermal_sensor_does_not_hide_boot_diagnosis(monkeypatch):
@@ -74,12 +74,14 @@ def test_pinned_diagnostic_install_is_independent_of_model_and_xorg(tmp_path):
   assert '/opt/carrot-jetlink/current/tools/jetlink/boot_display.py' not in service
   code = '''import sys
 sys.path.insert(0, sys.argv[1] + '/tools/jetlink')
+sys.path.insert(0, sys.argv[2])
 import boot_display
 import cluster_usb_display
 assert not any(name in sys.modules for name in ('pyray', 'tensorrt', 'capnp'))
 assert boot_display.render({'uptime':1}).size == (1920,462)
 '''
-  subprocess.run([sys.executable, '-I', '-c', code, str(pinned)], check=True)
+  import PIL
+  subprocess.run([sys.executable, '-I', '-c', code, str(pinned), str(Path(PIL.__file__).parents[1])], check=True)
 
 
 def test_boot_record_does_not_persist_arbitrary_input(tmp_path, monkeypatch):
@@ -148,3 +150,64 @@ def test_runtime_display_override_preserves_immutable_recovery(tmp_path, monkeyp
 def test_panel_lock_is_outside_login_managed_shared_memory():
   from display_owner import DIRECTORY
   assert DIRECTORY.parent in (Path('/run'), Path('/tmp'))
+
+
+def test_update_failure_and_available_space_visible_without_comma():
+  value = {'update': {'state': 'failed', 'phase': 'begin', 'error_code': 'insufficient_space',
+                      'required_bytes': 6087449262}, 'power_w': 7.5, 'temp_c': 54.5,
+           'data': {'free_bytes': 5911064576, 'total_bytes': 16795955200}}
+  title, rows, detail, error = lines(value)
+  assert error and title[1] == 'BOOT NEEDS ATTENTION'
+  assert rows[6][2] == '업데이트 실패'
+  assert '5.91 / 16.80 GB free' == rows[7][2]
+  assert rows[8][2] == '전송 시작 전'
+  assert 'DATA 여유 공간 부족' in detail and '6.09 GB' in detail
+  assert render(value).size == (1920, 462)
+
+
+@pytest.mark.parametrize('state', ['receiving', 'downloading'])
+def test_live_update_percentage_and_stale_status(state):
+  _, rows, _, error = lines({'update': {'state': state, 'fraction': .425}})
+  assert not error and '42.5%' in rows[6][2]
+  _, rows, _, _ = lines({'update': {'state': state, 'fraction': .425, 'stale': True}})
+  assert '상태 갱신 중단' in rows[6][2]
+
+
+def test_status_filters_private_errors_and_invalid_update_numbers(monkeypatch):
+  monkeypatch.setattr(boot_status.time, 'monotonic', lambda: 20.)
+  monkeypatch.setattr(boot_status, 'read_json', lambda path: {
+    'state': 'failed', 'updated': 19., 'fraction': float('nan'),
+    'error': 'private credential text must not render', 'url': 'private url',
+    'required_bytes': True, 'free_bytes': -1, 'phase': 'begin'})
+  value = boot_status.update_status()
+  assert value == {'state': 'failed', 'stale': False, 'phase': 'begin', 'error_code': 'activation_failed'}
+  assert 'private' not in str(lines({'update': value}))
+
+
+def test_persistent_diagnostic_override_is_explicit_root_install_only(tmp_path, monkeypatch):
+  if getattr(os, 'geteuid', lambda: -1)() != 0:
+    pytest.skip('Linux root-owned diagnostic installation')
+  import boot_update as boot
+  import install_boot_display as installer
+  runtime, base = tmp_path / 'runtime', tmp_path / 'immutable-display'
+  runtime.mkdir();base.mkdir()
+  (base / 'tools/jetlink').mkdir(parents=True)
+  (base / 'asset.txt').write_text('immutable asset')
+  monkeypatch.setattr(boot.update, 'ROOT', runtime)
+  dropin = tmp_path / 'run/zz-owner-diagnostics.conf'
+  monkeypatch.setattr(boot, 'DIAGNOSTICS_DROPIN', dropin)
+  calls = []
+  monkeypatch.setattr(boot.subprocess, 'run', lambda command, **kw: calls.append(command))
+  boot.configure_diagnostic_display()
+  assert not dropin.exists() and not calls
+  installer.configure_owner(runtime, Path(__file__).parent, base)
+  boot.configure_diagnostic_display()
+  assert str(runtime / 'boot-display/tools/jetlink/boot_display.py') in dropin.read_text()
+  assert calls == [['systemctl', 'daemon-reload'], ['systemctl', 'try-restart', 'carrot-jetlink-boot-display']]
+  calls.clear();boot.configure_diagnostic_display()
+  assert not calls  # No panel flicker at every gate reconnect.
+  installer.configure_owner(runtime, Path(__file__).parent, base)
+  assert (runtime / 'boot-display.previous/.owner-installed').read_text() == '1\n'
+  (runtime / 'boot-display').chmod(0o777)
+  dropin.unlink();boot.configure_diagnostic_display()
+  assert not dropin.exists() and not calls

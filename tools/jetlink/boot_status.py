@@ -1,14 +1,45 @@
 """Small, allowlisted boot diagnostics. Never include profiles, keys or journals."""
 import ipaddress
 import json
+import math
 from pathlib import Path
+import shutil
 import subprocess
 import time
 
 STAGE = Path('/run/carrot-boot-stage.json')
+UPDATE = Path('/run/carrot-jetlink-boot-update.json')
+RUNTIME = Path('/opt/carrot-jetlink')
 UNITS = ('carrot-protected-storage', 'carrot-image-setup', 'carrot-jetlink-usbc-host',
          'nv', 'nvpmodel', 'carrot-jetlink-performance', 'NetworkManager', 'ssh',
          'carrot-jetlink-wifi', 'carrot-jetlink', 'carrot-jetlink-xorg', 'carrot-jetlink-hud')
+
+
+def update_status():
+  """Only public enums/numbers; never display raw errors, URLs, or journals."""
+  value = read_json(UPDATE)
+  state = value.get('state')
+  if state not in ('checking', 'receiving', 'received', 'waiting_usb', 'downloading',
+                   'waiting_internet', 'verifying', 'ready', 'failed'):
+    return {}
+  result = {'state': state}
+  stamp = value.get('updated')
+  result['stale'] = (type(stamp) not in (int, float) or not math.isfinite(stamp)
+                     or not 0 <= time.monotonic() - stamp < 10)
+  for name in ('free_bytes', 'required_bytes', 'received_bytes', 'total_bytes'):
+    number = value.get(name)
+    if type(number) is int and 0 <= number <= 16 << 40:
+      result[name] = number
+  fraction = value.get('fraction')
+  if type(fraction) in (int, float) and math.isfinite(fraction) and 0 <= fraction <= 1:
+    result['fraction'] = fraction
+  if value.get('phase') in ('begin', 'transfer', 'verify'):
+    result['phase'] = value['phase']
+  if value.get('error_code') in ('insufficient_space', 'permission_denied', 'package_rejected', 'usb_disconnected'):
+    result['error_code'] = value['error_code']
+  if state == 'failed' and 'error_code' not in result:
+    result['error_code'] = 'activation_failed'
+  return result
 
 
 def read_json(path):
@@ -30,6 +61,7 @@ def stage(name, error=None):
 
 
 def collect():
+  from host_health import module_power
   units = {}
   try:
     result = subprocess.run(['systemctl', 'show', '--property=Id,ActiveState,SubState,Result',
@@ -64,7 +96,15 @@ def collect():
         temperatures.append(temperature)
     except (OSError, ValueError, TypeError):
       pass
+  data = {}
+  if read_json('/run/carrot-storage.json').get('state') == 'protected':
+    try:
+      usage = shutil.disk_usage(RUNTIME)
+      data = {'free_bytes': usage.free, 'total_bytes': usage.total}
+    except OSError:
+      pass
   return {'stage': read_json(STAGE), 'storage': read_json('/run/carrot-storage.json'),
+          'update': update_status(), 'data': data, 'power_w': module_power(),
           'units': units, 'addresses': addresses[:4], 'wifi': network.get('state', 'waiting'),
           'wifi_reason': network.get('reason', '') if network.get('reason') in
           ('rollback_failed', 'profile_install_failed', 'connect_failed', 'persist_failed', 'network_activation_failed',

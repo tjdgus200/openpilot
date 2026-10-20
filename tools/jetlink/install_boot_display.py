@@ -1,6 +1,52 @@
 """Offline installation of the pinned, CPU-only diagnostic screen."""
 from pathlib import Path
+import os
 import shutil
+import tempfile
+
+
+def configure_owner(runtime, source, base=Path('/usr/local/lib/carrot-jetlink/boot-display')):
+  """Install only diagnosis code/assets on DATA; never remount the base OS."""
+  from local_release import owned
+  if os.geteuid() != 0:
+    raise PermissionError('Install diagnostics from the local root console')
+  runtime, source, base = Path(runtime), Path(source), Path(base)
+  owned(runtime, directory=True)
+  owned(base, directory=True)
+  target, backup = runtime / 'boot-display', runtime / 'boot-display.previous'
+  for tree in (target, backup):
+    if tree.exists() or tree.is_symlink():
+      owned(tree, directory=True)
+      owned(tree / '.owner-installed')
+      if (tree / '.owner-installed').read_text() != '1\n':
+        raise ValueError('Unexpected diagnostic installation')
+  names = ('boot_display.py', 'boot_status.py', 'host_health.py', 'display_owner.py')
+  for name in names:
+    if not (source / name).is_file():
+      raise ValueError('Incomplete diagnostic source')
+  with tempfile.TemporaryDirectory(dir=runtime, prefix='boot-display-install-') as temporary:
+    staged = Path(temporary) / 'display'
+    shutil.copytree(base, staged)
+    for name in names:
+      destination = staged / 'tools/jetlink' / name
+      shutil.copyfile(source / name, destination)
+      destination.chmod(0o644)
+    (staged / '.owner-installed').write_text('1\n')
+    (staged / '.owner-installed').chmod(0o644)
+    staged.chmod(0o755)
+    os.sync()
+    if backup.exists():
+      shutil.rmtree(backup)
+    if target.exists():
+      target.rename(backup)
+    try:
+      staged.rename(target)
+    except Exception:
+      if backup.exists() and not target.exists():
+        backup.rename(target)
+      raise
+    os.sync()
+  return target
 
 
 def configure(root, source):
@@ -9,6 +55,7 @@ def configure(root, source):
   target = root / 'usr/local/lib/carrot-jetlink/boot-display'
   relative = ['openpilot/__init__.py', 'tools/jetlink/boot_display.py', 'tools/jetlink/boot_status.py',
               'tools/jetlink/display_owner.py', 'openpilot/common/usbgpu_bus_lock.py',
+              'tools/jetlink/host_health.py',
               'openpilot/selfdrive/carrot/cluster/cluster_usb_display.py',
               'openpilot/selfdrive/carrot/cluster/cluster_config.py',
               'openpilot/selfdrive/carrot/cluster/cluster_utils.py',
