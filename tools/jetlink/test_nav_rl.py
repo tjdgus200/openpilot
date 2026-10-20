@@ -35,17 +35,21 @@ def frame_inputs():
           'navigation': np.arange(47, dtype=np.float32)}
 
 
-def test_nav_pin_matches_upstream_fixture_and_keeps_parser_shapes():
+def test_n16_pin_keeps_nav_parser_shapes_and_matching_deployment():
   fixture = json.loads((ROOT / 'openpilot/selfdrive/modeld/tests/fixtures/nav_rl_metadata.json').read_text())
   assert SPEC.input_shapes == {k: tuple(v[0]) for k, v in fixture['input_specs'].items()}
   assert SPEC.output_shapes == {k: tuple(v[0]) for k, v in fixture['output_specs'].items()}
   assert fixture['input_specs']['nav_map'][1] == fixture['input_specs']['navigation'][1] == 'float32'
-  assert SPEC.checkpoint == fixture['metadata']['metadata']['model_checkpoint']
+  # The previous RL-Nav fixture establishes the unchanged tensor/parser ABI.
+  # N16 has different weights and an embedded checkpoint without the /12800 suffix.
+  assert SPEC.checkpoint == '2931d3d9-7c90-4988-a6af-654ed71e0af5/56320/96244b1f-6c4e-4adc-848d-eccd0b44b182'
+  assert SPEC.sha256 == '01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a'
+  assert SPEC.nbytes == 814591107
   assert len(SPEC.state_pairs) == 5 and SPEC.output_nelem == 18580
   assert SPEC.packed_nelem == 65595 and SPEC.packed_nbytes == 262380
   selection = selected_release(ROOT / 'openpilot/selfdrive/modeld/jetlink/host_release.json')
   assert selection['model'] == {
-    'url': 'https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx',
+    'url': 'https://huggingface.co/commaai/openpilot_driving_models/resolve/eed9e515dccd5aa9be969a2d6c57eb469174a97d/96244b1f-6c4e-4adc-848d-eccd0b44b182/12800/big_driving_supercombo.onnx',
     'sha256': SPEC.sha256, 'size': SPEC.nbytes}
   assert selection['format'] == 2 and selection['integrity'] == 'sha256' and 'signature' not in selection
   legacy = selected_release(ROOT / 'openpilot/selfdrive/modeld/jetlink/host_release.json', prefer_sha256=False)

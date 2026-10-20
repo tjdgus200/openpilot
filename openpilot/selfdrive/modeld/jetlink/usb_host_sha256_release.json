@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "hud-ready-20261020-bd06baf1",
-  "source_commit": "bd06baf124164499ec52b4a7688e1532f773928b",
+  "profile": "n16-20261020-a1d723a6",
+  "source_commit": "a1d723a6b4db051070c0eab5ffceb59c982998e4",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,13 +11,13 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "8079bfd0c1dee70877e65af9f238effab5eeccc52264885bb005244a92d3080b",
-    "size": 81667668,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-hud-ready-20261020-bd06baf1/host.tar.gz"
+    "sha256": "489aea0c9571962272784dde403d1d578f7cc873de34f58e4d0f7fc540d2ccbd",
+    "size": 81667694,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-n16-20261020-a1d723a6/host.tar.gz"
   },
   "model": {
-    "sha256": "1d18c42ea4cd95c8bffab4635844b78b8e2d4e25b9de44a9c5ac2e0961371a2e",
-    "size": 814591106,
-    "url": "https://upload.shind0.synology.me/models/comma4-big-nav-rl-80eedcdd/big_driving_supercombo.onnx"
+    "sha256": "01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a",
+    "size": 814591107,
+    "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/eed9e515dccd5aa9be969a2d6c57eb469174a97d/96244b1f-6c4e-4adc-848d-eccd0b44b182/12800/big_driving_supercombo.onnx"
   }
 }
