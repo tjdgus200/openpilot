@@ -1,5 +1,8 @@
 # N16 ONNX compatibility with the Jetson runtime (2026-10-20)
 
+Subsequent activation and actual-camera/USB/map/cruise bench measurements are
+recorded in [the deployment follow-up](jetson_n16_bench_20261020.md).
+
 The N16 ONNX builds and executes on the existing Orin Nano Super and TensorRT
 10.3.0. The current Jetlink input/output contract, parser and recurrent-state
 implementation support it. This investigation does not select or deploy N16:
