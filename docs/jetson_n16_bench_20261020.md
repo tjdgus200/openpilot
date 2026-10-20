@@ -134,3 +134,59 @@ tile-rendering/network qualification, no real moving vehicle/controller co-load,
 no long thermal/fault recovery or road validation. CPU-versus-TensorRT numerical
 acceptance remains separate from the graph/state-mode equivalence checks in the
 earlier report. No driving-safety guarantee is made by this deployment.
+
+## Follow-up: reported P99 regression and auxiliary Wi-Fi load
+
+The owner asked whether Wi-Fi lane/BSD ONNX or HUD work explained a worse P99.
+Retained reports contain the following broad processing-call measurements:
+
+| Report / model | Mean ms | P99 ms | Scope |
+| --- | ---: | ---: | --- |
+| Oct 16 experimental runtime / RL Nav | 41.90 | 49.25 | preprocessing + round trip + parsing, 120s cruise |
+| Oct 19 / RL Nav | 43.159 | 54.362 | complete JoiningModel call, 120s cruise |
+| Oct 20 / N16 | 43.096 | 53.488 | complete JoiningModel call, 300s cruise |
+
+The earlier sub-50ms observation is real. These are separate runs with different
+revisions, durations, HUD state and instrumentation, not a matched model A/B.
+The Oct 16 processing sum is not an identical wrapper to the later complete
+JoiningModel call. The newer records do not demonstrate that changing to N16
+caused the regression. See `jetson_runtime_port_20261015.md` and
+`jetson_bench_validation_20261019.md` for the original conditions. No guaranteed
+sub-50ms P99 was established by those historical observations.
+
+In the completed N16 run, Jetson server-total P99 was 28.139ms, client round-trip
+P99 was 47.915ms and complete-call P99 was 53.488ms. These distinct intervals must
+not be compared interchangeably or summed as independently calculated quantiles.
+The ten-second `Inf` HUD uses the host's engine-run timing, not the complete
+comma preprocessing/USB/IPC call. The transport/IPC/wait residual P99 was
+21.570ms; its specific scheduling/transport cause remains unproven.
+
+Live follow-up read `ShareData=0`, no active lane/BSD producer, and unchanged
+CPU ticks in both auxiliary CPU workers over the inspection samples. Their RSS
+was about 16/19MiB rather than a loaded classifier workload. The main-camera bench
+also left the global manager offroad and did not start the gated auxiliary
+producer. Advertising auxiliary support or keeping an idle receiver alive is
+not evidence that ONNX inference ran. N16 selection changed only model identity
+and label; it did not newly enable these workloads. Model inference remains USB;
+negotiated HUD/auxiliary payloads use separate Wi-Fi processes. This separates
+direct request waits, but does not rule out shared CPU/memory/power interference.
+
+A new guarded HUD on/off/off/on comparison was prepared with actual cameras,
+stationary cruise and normal synthetic-map input. It rebooted during warm-up,
+before any HUD-off phase or usable active-N16 measurement was recorded.
+It produced **no usable comparison measurements** and was excluded. The new
+boot's PMIC records report UVLO power-off and SMPL cold power-on; no panic record
+or previous-boot journal was retained. This supports a power-loss event, not an
+attribution to RT throttling, N16 inference or Wi-Fi. A single idle post-reboot
+power-supply snapshot reported a 5V/0.7A current-limit setting; this is neither a
+transient voltage capture nor measured consumption or adapter capability. The
+owner reports a separate power adapter/comma power cable.
+
+Further loaded comparisons were stopped pending power-path investigation. HUD
+settings were restored, normal Jetson inference/HUD services remained active,
+and the comparison's restore timer and diagnostic files were removed after
+retaining private evidence. No production model, Wi-Fi, inference scheduling,
+kernel or control policy was changed by this follow-up. HUD interference remains
+unresolved; its earlier renderer-only on/off/on trial also did not establish a
+repeatable tail improvement. Successful measurement in the preceding sections
+must not be presented as qualification of this failed follow-up or road use.
