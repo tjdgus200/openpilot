@@ -24,6 +24,10 @@ def configure_owner(runtime, source, base=Path('/usr/local/lib/carrot-jetlink/bo
   for name in names:
     if not (source / name).is_file():
       raise ValueError('Incomplete diagnostic source')
+  if target.is_dir() and all((target / 'tools/jetlink' / name).is_file()
+                             and (target / 'tools/jetlink' / name).read_bytes() == (source / name).read_bytes()
+                             for name in names):
+    return target  # Reconnects do not copy assets, sync DATA, or flicker the panel.
   with tempfile.TemporaryDirectory(dir=runtime, prefix='boot-display-install-') as temporary:
     staged = Path(temporary) / 'display'
     shutil.copytree(base, staged)
@@ -102,3 +106,15 @@ WantedBy=multi-user.target
   dropin.parent.mkdir(parents=True, exist_ok=True)
   dropin.write_text('[Service]\nRuntimeDirectory=carrot-jetlink-display\n'
                    'RuntimeDirectoryMode=0700\nRuntimeDirectoryPreserve=yes\n')
+
+
+if __name__ == '__main__':
+  import argparse
+  parser = argparse.ArgumentParser(description='Refresh explicitly root-installed boot diagnostics on DATA')
+  parser.add_argument('--owner-runtime', type=Path, required=True)
+  args = parser.parse_args()
+  if not (args.owner_runtime / 'boot-display/.owner-installed').is_file():
+    raise RuntimeError('Owner diagnostics must first be installed locally')
+  configure_owner(args.owner_runtime, Path(__file__).resolve().parent)
+  from boot_update import configure_diagnostic_display
+  configure_diagnostic_display()

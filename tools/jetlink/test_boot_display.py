@@ -201,6 +201,16 @@ def test_completed_update_remains_valid_only_for_matching_boot_and_release(tmp_p
   assert boot_status.update_status()['stale']
 
 
+def test_ready_update_does_not_hide_hud_handoff_waiting_reason():
+  title, rows, detail, error = lines({'update': {'state': 'ready'},
+                                    'hud': {'stage': 'waiting_hud_data', 'reason': 'wifi_not_ready'}})
+  assert not error and 'WAITING' in title[1]
+  assert rows[-1] == ('계기판 준비', 'HUD READINESS', '정상 데이터 수신 대기')
+  assert '전용 Wi-Fi' in detail
+  title, _, detail, error = lines({'update': {'state': 'ready'}, 'hud': {'stage': 'failed'}})
+  assert error and title[1] == 'BOOT NEEDS ATTENTION' and '진단 화면을 유지' in detail
+
+
 def test_persistent_diagnostic_override_is_explicit_root_install_only(tmp_path, monkeypatch):
   if getattr(os, 'geteuid', lambda: -1)() != 0:
     pytest.skip('Linux root-owned diagnostic installation')
@@ -224,6 +234,12 @@ def test_persistent_diagnostic_override_is_explicit_root_install_only(tmp_path, 
   calls.clear();boot.configure_diagnostic_display()
   assert not calls  # No panel flicker at every gate reconnect.
   installer.configure_owner(runtime, Path(__file__).parent, base)
+  assert not (runtime / 'boot-display.previous').exists()
+  next_source = tmp_path / 'next-source';next_source.mkdir()
+  for name in ('boot_display.py', 'boot_status.py', 'host_health.py', 'display_owner.py'):
+    text = (Path(__file__).parent / name).read_bytes()
+    (next_source / name).write_bytes(text + (b'\n# new diagnosis\n' if name == 'boot_status.py' else b''))
+  installer.configure_owner(runtime, next_source, base)
   assert (runtime / 'boot-display.previous/.owner-installed').read_text() == '1\n'
   (runtime / 'boot-display').chmod(0o777)
   dropin.unlink();boot.configure_diagnostic_display()

@@ -1,6 +1,7 @@
 """Run the Carrot renderer using read-only, session-forwarded cereal data."""
 import base64
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -14,9 +15,15 @@ sys.path.insert(0, str(ROOT / 'openpilot/selfdrive/carrot/cluster'))
 from hud_protocol import read_snapshot, SERVICES
 
 
-def report_stage(stage, error=None):
+DISPLAY_REASONS = ('runtime_not_ready', 'storage_not_ready', 'wifi_not_ready', 'hud_snapshot_missing',
+                   'device_state_invalid', 'host_health_missing', 'host_health_error')
+
+
+def report_stage(stage, error=None, reason=None):
   """Bounded startup diagnostics: no payload, settings, exception text or locals."""
   value = {'stage': stage, 'updated': time.monotonic(), 'pid': os.getpid()}
+  if reason in DISPLAY_REASONS:
+    value['reason'] = reason
   if error is not None:
     value['error_type'] = type(error).__name__
     value['trace'] = [{'file': Path(f.filename).name, 'line': f.lineno, 'function': f.name}
@@ -54,6 +61,67 @@ def prepare_renderer(wait=None):
     wait = wait_for_runtime
   wait()
   report_stage('loading_renderer')
+
+
+def display_readiness():
+  """Display handoff only. Never change ignition, controls, or model permission."""
+  from boot_status import read_json
+  from boot_update import enabled, runtime_ready
+  if enabled() and not runtime_ready():
+    return 'runtime_not_ready'
+  if (Path('/etc/carrot-jetlink-protected.json').exists()
+      and read_json('/run/carrot-storage.json').get('state') != 'protected'):
+    return 'storage_not_ready'
+  now = time.monotonic()
+  wifi = read_json('/dev/shm/carrot-jetlink-hud-wifi.json')
+  health = read_json('/dev/shm/carrot-jetlink-health.json')
+  def fresh(value, seconds):
+    stamp = value.get('updated')
+    return type(stamp) in (float, int) and math.isfinite(stamp) and 0 <= now - stamp < seconds
+  if not fresh(wifi, 3.) or wifi.get('role') != 'receive' or wifi.get('snapshot') != 'connected':
+    return 'wifi_not_ready'
+  if not fresh(health, 3.):
+    return 'host_health_missing'
+  if health.get('severity') != 'ok':
+    return 'host_health_error'
+  snapshot = read_snapshot()
+  if snapshot is None or not 0 <= now - snapshot[0] < .5:
+    return 'hud_snapshot_missing'
+  # This authenticated stream starts only after comma completes model setup
+  # and ten warmup frames. Offroad is valid: do not require vehicle CAN/modelV2.
+  try:
+    value = snapshot[1]
+    if value['valid'].get('deviceState') is not True or value['alive'].get('deviceState') is not True:
+      return 'device_state_invalid'
+    age = value['sent'] - value['received']['deviceState']
+    if not math.isfinite(age) or not 0 <= age < 2.:
+      return 'device_state_invalid'
+    raw = base64.b64decode(value['events']['deviceState'], validate=True)
+    if len(raw) > 32768:
+      return 'device_state_invalid'
+    from openpilot.cereal import log
+    with log.Event.from_bytes(raw) as reader:
+      if reader.which() != 'deviceState' or not reader.valid:
+        return 'device_state_invalid'
+  except Exception:
+    return 'device_state_invalid'
+  return ''
+
+
+def wait_for_display_ready(check=None, sleep=time.sleep, clock=time.monotonic):
+  check = display_readiness if check is None else check
+  stable = None
+  while True:
+    reason = check()
+    now = clock()
+    if reason:
+      stable = None
+      report_stage('waiting_hud_data', reason=reason)
+    elif stable is None:
+      stable = now
+    elif now - stable >= .5:
+      return
+    sleep(.1)
 
 
 class _BrightnessSample:
@@ -303,10 +371,15 @@ def main():
     cluster.main()
   else:
     from display_owner import panel_owner
-    report_stage('waiting_panel_owner')
-    with panel_owner(hud=True):
-      report_stage('renderer_started')
-      cluster.main()
+    while True:
+      wait_for_display_ready()
+      report_stage('waiting_panel_owner')
+      with panel_owner(hud=True, ready=lambda: not display_readiness()) as acquired:
+        if not acquired:
+          continue
+        report_stage('renderer_started')
+        cluster.main()
+        break
 
 
 if __name__ == '__main__':

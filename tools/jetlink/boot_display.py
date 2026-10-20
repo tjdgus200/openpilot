@@ -18,7 +18,9 @@ def lines(status):
   stage = status.get('stage', {})
   storage = status.get('storage', {}).get('state', 'waiting')
   update = status.get('update', {})
-  error = bool(failed or stage.get('error') or storage == 'base-recovery' or update.get('state') == 'failed')
+  hud = status.get('hud', {})
+  error = bool(failed or stage.get('error') or storage == 'base-recovery' or update.get('state') == 'failed'
+               or hud.get('stage') == 'failed')
   title = ('부팅 상태를 확인해 주세요', 'BOOT NEEDS ATTENTION') if error else ('젯슨 연결 준비 중', 'JETSON STARTING / WAITING')
   rows = [
     ('시스템 보호', 'SYSTEM STORAGE', storage),
@@ -58,8 +60,23 @@ def lines(status):
               'waiting_internet': '다운로드에 필요한 인터넷 연결을 기다립니다',
               'ready': '업데이트 확인 완료 · 계기판 시작을 기다립니다'}.get(state, '')
   phase = {'begin': '전송 시작 전', 'transfer': '파일 전송', 'verify': '파일 검증'}.get(update.get('phase'), '--')
-  rows += [('업데이트', 'UPDATE', summary), ('DATA 여유 / 전체', 'STORAGE', space),
-           ('업데이트 검사 단계', 'UPDATE PHASE', phase)]
+  last = ('업데이트 검사 단계', 'UPDATE PHASE', phase)
+  if state == 'ready':
+    hud_labels = {'waiting_runtime': '릴리스 승인 대기', 'loading_renderer': '화면 모듈 준비 중',
+                  'waiting_usb_panel': 'USB 디스플레이 대기', 'waiting_hud_data': '정상 데이터 수신 대기',
+                  'waiting_panel_owner': '화면 전환 대기', 'renderer_started': '계기판 실행 중', 'failed': '계기판 시작 실패'}
+    last = ('계기판 준비', 'HUD READINESS', hud_labels.get(hud.get('stage'), '계기판 시작 대기'))
+    hud_reasons = {'runtime_not_ready': '릴리스 검증이 완료되지 않았습니다',
+                   'storage_not_ready': 'DATA 저장소가 정상 상태가 아닙니다',
+                   'wifi_not_ready': '콤마와 전용 Wi-Fi 연결을 기다립니다',
+                   'hud_snapshot_missing': '최신 HUD 데이터를 기다립니다',
+                   'device_state_invalid': '유효한 콤마 시스템 상태를 기다립니다',
+                   'host_health_missing': '최신 Jetson 상태 확인을 기다립니다',
+                   'host_health_error': 'Jetson 상태가 정상이 아닙니다 · 온도와 서비스를 확인하세요'}
+    detail = hud_reasons.get(hud.get('reason'), detail)
+    if hud.get('stage') == 'failed':
+      detail = '계기판 시작 실패 · 진단 화면을 유지합니다'
+  rows += [('업데이트', 'UPDATE', summary), ('DATA 여유 / 전체', 'STORAGE', space), last]
   return title, rows, detail, error
 
 

@@ -54,6 +54,18 @@ def update_status():
   return result
 
 
+def hud_status():
+  value = read_json('/dev/shm/carrot-jetlink-hud-startup.json')
+  if value.get('stage') not in ('waiting_runtime', 'loading_renderer', 'waiting_usb_panel',
+                                'waiting_hud_data', 'waiting_panel_owner', 'renderer_started', 'failed'):
+    return {}
+  result = {'stage': value['stage']}
+  if value.get('reason') in ('runtime_not_ready', 'storage_not_ready', 'wifi_not_ready', 'hud_snapshot_missing',
+                             'device_state_invalid', 'host_health_missing', 'host_health_error'):
+    result['reason'] = value['reason']
+  return result
+
+
 def read_json(path):
   try:
     with Path(path).open() as stream:
@@ -116,7 +128,7 @@ def collect():
     except OSError:
       pass
   return {'stage': read_json(STAGE), 'storage': read_json('/run/carrot-storage.json'),
-          'update': update_status(), 'data': data, 'power_w': module_power(),
+          'update': update_status(), 'hud': hud_status(), 'data': data, 'power_w': module_power(),
           'units': units, 'addresses': addresses[:4], 'wifi': network.get('state', 'waiting'),
           'wifi_reason': network.get('reason', '') if network.get('reason') in
           ('rollback_failed', 'profile_install_failed', 'connect_failed', 'persist_failed', 'network_activation_failed',

@@ -13,6 +13,15 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
   Enable the updater only next boot. Networking helpers use a volatile,
   independent copy; restarting their importer does not restart NetworkManager.
   """
+  # Only installations that locally opted in get their presentation helpers
+  # refreshed. Same-content reconnects return without copying assets/restarting.
+  diagnostics = runtime / 'current/tools/jetlink/install_boot_display.py'
+  if (runtime / 'boot-display/.owner-installed').is_file() and diagnostics.is_file():
+    try:
+      subprocess.run(['sudo', '-n', sys.executable, str(diagnostics), '--owner-runtime', str(runtime)],
+                     check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+      print('Boot diagnostics refresh deferred; recovery retained', file=sys.stderr)
   if (runtime / 'current/tools/jetlink/wifi_runtime.py').is_file():
     try:
       subprocess.run(['sudo', '-n', sys.executable, str(runtime / 'current/tools/jetlink/install_updates.py'),

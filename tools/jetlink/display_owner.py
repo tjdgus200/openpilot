@@ -1,4 +1,4 @@
-"""One USB panel owner; the regular HUD takes priority over boot diagnostics."""
+"""One USB panel owner; an eligible HUD can request diagnostic-screen handoff."""
 from contextlib import contextmanager
 import os
 import json
@@ -30,19 +30,33 @@ def hud_requested(directory=DIRECTORY):
 
 
 @contextmanager
-def panel_owner(hud=False, directory=DIRECTORY):
+def panel_owner(hud=False, directory=DIRECTORY, ready=None):
   import fcntl
   directory.mkdir(mode=0o700, parents=True, exist_ok=True)
   request = directory / 'hud-request'
   lock = (directory / 'owner.lock').open('a')
   acquired = False
+  requested = False
+  def release_request():
+    try:
+      value = json.loads(request.read_text())
+      if isinstance(value, dict) and value.get('pid') == os.getpid() and value.get('identity') == process_identity(os.getpid()):
+        request.unlink(missing_ok=True)
+    except (OSError, ValueError, TypeError):
+      pass
   try:
     if hud:
+      if ready is not None and not ready():
+        yield False
+        return
       temporary = request.with_suffix('.new')
       temporary.write_text(json.dumps({'pid': os.getpid(), 'identity': process_identity(os.getpid())}))
       temporary.replace(request)
+      requested = True
     while True:
       try:
+        if hud and ready is not None and not ready():
+          break
         if not hud and hud_requested(directory):
           break
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -52,12 +66,12 @@ def panel_owner(hud=False, directory=DIRECTORY):
         if not hud:
           break
         time.sleep(.1)
-    if hud:
-      request.unlink(missing_ok=True)
+    if requested:
+      release_request()
     yield acquired
   finally:
-    if hud:
-      request.unlink(missing_ok=True)
+    if requested:
+      release_request()
     if acquired:
       fcntl.flock(lock, fcntl.LOCK_UN)
     lock.close()
