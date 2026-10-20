@@ -6,7 +6,8 @@ onto `codex/jetson-nav-runtime-port`, based on `c18ae58b`.
 Upstream reports a comma 3X UVLO/brownout when its charger draws from a connected
 laptop. Its fix forces the charger's `USB_ICL` input-current voter to zero while
 Jetlink is enabled. A matching cause on this owner's comma 3 has not been
-established: there is no device connected for voter or PMIC-log verification.
+established. No device was connected during the initial port; the later live
+probe and rollback are recorded below.
 
 Carrot's `jetlinkd` always runs on TICI. The port therefore applies the vote in
 the outer connection loop before checking for a host, independently of usb,
@@ -69,8 +70,8 @@ On the workstation checkout: 180 pass, 5 fail; baseline: 168 pass, the same 5
 fail. The additional 12 power tests pass. Existing failures are an official-
 bootstrap fixture incompatible with this branch's USB-signed release manifest,
 three shell checks affected by Windows CRLF, and a DrvFS chmod assertion. They
-are not relaxed or counted as passes. No physical C3/C3X power, replug, UVLO
-recurrence or vehicle validation has been performed.
+are not relaxed or counted as passes. At this initial PC-validation stage, no
+physical C3/C3X power, replug, UVLO recurrence or vehicle validation was performed.
 
 The focused power/daemon subset passes all 55 tests. Ruff on the new Python
 files, Bash syntax validation, and `git diff --check` pass.
@@ -134,7 +135,8 @@ reached `force_active=1 force_val=0`; 40 actual N16 USB requests returned finite
 outputs with UFP maintained. Main-rail monitor current was about38mA before and
 437mA afterward. This demonstrates a working main supply/data link in the short
 probe, not measured auxiliary VBUS current or full-load power qualification.
-A fresh process also read and accepted the enrollment while attached.
+The root helper accepted the persisted policy while attached. Reapplication by
+a fresh daemon or after reboot was not physically verified.
 
 Real-camera warm-up subsequently restarted the device before any usable HUD/ONNX
 comparison phase. The owner observed the restart and currently has only a tabletop
