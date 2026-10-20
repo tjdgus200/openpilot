@@ -1,5 +1,17 @@
 # Repository memory
 
+- On 2026-10-20, runtime-port HUD disappearance inspection confirms real Jetson
+  Wi-Fi association loss: RTL88x2CE v5.14.0.4/firmware9.13 loaded, 29 recent
+  disconnects; 60 samples: associated45, receiver HUD connected19. Comma AP
+  active/model ready60/60 but sender HUD connected17; retries+281/failures+109.
+  Both links use5745MHz/ch149. nl80211 PS off, LPS enter0; vendor IPS counts
+  advance, causality unknown. No sampled reset/firmware/PCIe fault; do not rule
+  out a non-crashing driver defect. RF149/oper116 snapshot suggests off-channel
+  activity, does not prove scanning caused loss. HUD .4s deadlines/.5s freshness
+  expose stalls; do not extend stale-data validity. Stable short ICMP40/40
+  mean4.480ms is not stability proof. Read-only, no driver/network/runtime fixes;
+  own recorder/tunnels cleaned. See docs/jetson_wifi_hud_disconnect_20261020.md.
+
 - On 2026-10-20, runtime-port N16 TensorRT trial: initial memory-limited builds
   fail, but user-requested L5-only build succeeds in814.8s after stopping all
   optional graphics/inference services and reclaiming cache; min available
