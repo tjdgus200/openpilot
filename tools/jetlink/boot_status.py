@@ -9,6 +9,8 @@ import time
 
 STAGE = Path('/run/carrot-boot-stage.json')
 UPDATE = Path('/run/carrot-jetlink-boot-update.json')
+READY = Path('/run/carrot-jetlink-boot-ready.json')
+BOOT_ID = Path('/proc/sys/kernel/random/boot_id')
 RUNTIME = Path('/opt/carrot-jetlink')
 UNITS = ('carrot-protected-storage', 'carrot-image-setup', 'carrot-jetlink-usbc-host',
          'nv', 'nvpmodel', 'carrot-jetlink-performance', 'NetworkManager', 'ssh',
@@ -26,6 +28,16 @@ def update_status():
   stamp = value.get('updated')
   result['stale'] = (type(stamp) not in (int, float) or not math.isfinite(stamp)
                      or not 0 <= time.monotonic() - stamp < 10)
+  if state == 'ready':
+    # The producer exits normally after success. Its final record remains valid
+    # only for this boot and this installed release, without further heartbeats.
+    try:
+      ready = read_json(READY)
+      if (ready.get('boot_id') == BOOT_ID.read_text().strip()
+          and ready.get('source_commit') == (RUNTIME / 'current/SOURCE_COMMIT').read_text().strip()):
+        result['stale'] = False
+    except OSError:
+      pass
   for name in ('free_bytes', 'required_bytes', 'received_bytes', 'total_bytes'):
     number = value.get(name)
     if type(number) is int and 0 <= number <= 16 << 40:

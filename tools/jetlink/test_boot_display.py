@@ -184,6 +184,23 @@ def test_status_filters_private_errors_and_invalid_update_numbers(monkeypatch):
   assert 'private' not in str(lines({'update': value}))
 
 
+def test_completed_update_remains_valid_only_for_matching_boot_and_release(tmp_path, monkeypatch):
+  update, ready, boot = (tmp_path / name for name in ('update', 'ready', 'boot'))
+  current = tmp_path / 'runtime/current';current.mkdir(parents=True)
+  (current / 'SOURCE_COMMIT').write_text('a' * 40)
+  boot.write_text('boot1')
+  update.write_text(json.dumps({'state': 'ready', 'updated': 1.}))
+  ready.write_text(json.dumps({'boot_id': 'boot1', 'source_commit': 'a' * 40}))
+  for name, value in (('UPDATE', update), ('READY', ready), ('BOOT_ID', boot), ('RUNTIME', tmp_path / 'runtime')):
+    monkeypatch.setattr(boot_status, name, value)
+  monkeypatch.setattr(boot_status.time, 'monotonic', lambda: 100.)
+  assert not boot_status.update_status()['stale']
+  boot.write_text('boot2')
+  assert boot_status.update_status()['stale']
+  boot.write_text('boot1');(current / 'SOURCE_COMMIT').write_text('b' * 40)
+  assert boot_status.update_status()['stale']
+
+
 def test_persistent_diagnostic_override_is_explicit_root_install_only(tmp_path, monkeypatch):
   if getattr(os, 'geteuid', lambda: -1)() != 0:
     pytest.skip('Linux root-owned diagnostic installation')
