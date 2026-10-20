@@ -119,3 +119,33 @@ confirmation/reapply, explicit restore, foreign-limit preservation and rejected
 symlink/writable/malformed policy. Three existing pytest configuration warnings
 remain. These tests change no physical power input; device verification must be
 reported separately from the PC checks.
+
+### Device follow-up and rollback
+
+The inspected device identifies as `comma tizi` (3X). Its vehicle CAN/main-power
+connector and auxiliary Jetson USB-C connector are distinct. Upstream's linked
+`draw` policy targets the latter's charger input; this change does not write CAN
+controls or turn off the main connector. It controls input current, not physical
+VBUS disconnection, and does not qualify board isolation.
+
+The initial live state was `force_active=0 force_val=0`, USB power role sink and
+data role UFP. A temporary probe, armed with automatic rollback before the write,
+reached `force_active=1 force_val=0`; 40 actual N16 USB requests returned finite
+outputs with UFP maintained. Main-rail monitor current was about38mA before and
+437mA afterward. This demonstrates a working main supply/data link in the short
+probe, not measured auxiliary VBUS current or full-load power qualification.
+A fresh process also read and accepted the enrollment while attached.
+
+Real-camera warm-up subsequently restarted the device before any usable HUD/ONNX
+comparison phase. The owner observed the restart and currently has only a tabletop
+5V adapter available. Restarts also occurred before enrollment; neither the block
+nor a particular supply/cable fault is established as their sole cause. Five volts
+alone does not establish insufficient power: adapter current, cabling and the
+actual board input path remain relevant.
+
+The live enrollment was **removed**, and only this task's owned vote was restored
+to `force_active=0 force_val=0`. Original HUD settings, normal Jetson inference/HUD
+services and offroad state were restored. The public opt-in code remains, but this
+device is **not currently enrolled**. No full-load/vehicle qualification or
+successful HUD/ONNX latency comparison is claimed. The earlier40-request probe
+does not qualify the failed warm-up.
