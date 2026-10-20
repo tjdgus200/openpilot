@@ -1,17 +1,32 @@
 """Keep USB input current at zero without cutting a USB-only supply.
 
 Adapted from zoompilot/jetlink 491cf1ef's draw policy. Carrot's daemon is always
-enabled, so retain the vote across every transport and daemon exit. Only a
-verified empty port may change it. Never run sudo on an inference frame.
+enabled, so retain the vote across every transport and daemon exit. An attached
+port may be changed only after the owner confirms independent power. Never run
+sudo on an inference frame.
 """
 import logging
 import os
 from pathlib import Path
 import subprocess
+import stat
 
 log = logging.getLogger('carrot.jetlink')
 SCRIPT = Path(__file__).resolve().parents[4] / 'tools/jetlink/usb_power.sh'
 POWER_ROLE = Path('/sys/class/usbpd/usbpd0/current_pr')
+INDEPENDENT_POWER = Path('/data/carrot-jetlink-power/independent-power')
+
+
+def independent_power_confirmed():
+  """Read an explicit root-owned installation policy, never infer it from USB."""
+  try:
+    for path in (INDEPENDENT_POWER.parent, INDEPENDENT_POWER):
+      info = path.lstat()
+      if info.st_uid != 0 or info.st_mode & 0o022 or stat.S_ISLNK(info.st_mode):
+        return False
+    return INDEPENDENT_POWER.is_file() and INDEPENDENT_POWER.read_bytes() == b'confirmed\n'
+  except OSError:
+    return False
 
 
 class UsbPowerGuard:
@@ -29,7 +44,7 @@ class UsbPowerGuard:
       role = POWER_ROLE.read_text().strip()
     except OSError:
       role = None
-    if role != 'none':
+    if role != 'none' and not independent_power_confirmed():
       if not self.deferred:
         log.warning('Jetlink USB power guard deferred: port attached or unknown; keep independent power and reconnect USB offroad to apply')
         self.deferred = True
