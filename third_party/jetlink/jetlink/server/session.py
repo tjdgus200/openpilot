@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -474,7 +475,10 @@ class EngineHost:
     if spec.stateful and hasattr(engine, 'configure_state_feedback'):
       engine.configure_state_feedback(spec.state_pairs)
     host_inputs = {n: engine.host_input(n) for n in engine.inputs}
-    queues = make_queues(spec, host_inputs, getattr(engine, 'device_state', None))
+    # Explicit candidate switch; never infer enablement from a model update.
+    queues = make_queues(spec, host_inputs, getattr(engine, 'device_state', None),
+                         input_fastpath=os.getenv('CARROT_TRT_INPUT_FASTPATH', '0') == '1'
+                         and spec.stateful and hasattr(engine, 'configure_state_feedback'))
     warped = np.zeros(spec.warped_shape, np.uint8)
     packed = np.zeros(spec.packed_nelem, np.float32)
     queues.step_into(warped, packed, host_inputs)
@@ -778,8 +782,10 @@ class Session:
       if len(frame) < off:
         raise ValueError('Incomplete image')
       if flags & FLAG:
-        context = decode(frame[off:], spec)
+        direct = getattr(loaded.queues, '_fast_inputs', None)
+        context = direct.validate_compact(frame[off:]) if direct is not None else decode(frame[off:], spec)
       else:
+        direct = None
         if len(frame) != spec.warped_nbytes + spec.packed_nbytes:
           raise ValueError('Invalid frame size')
         context = frame[off:]
@@ -790,11 +796,13 @@ class Session:
     if flags & P.Flag.RESET_QUEUES:
       loaded.queues.reset()
     warped = np.frombuffer(frame, np.uint8, spec.warped_nbytes).reshape(spec.warped_shape)
-    packed = np.frombuffer(context, np.float32, spec.packed_nelem)
-
     # Gathers land straight in TensorRT's pinned input buffers: between the
     # wire and the GPU there is exactly one copy.
-    loaded.queues.step_into(warped, packed, loaded.host_inputs)
+    if direct is not None:
+      loaded.queues.step_compact_into(warped, context, loaded.host_inputs)
+    else:
+      packed = np.frombuffer(context, np.float32, spec.packed_nelem)
+      loaded.queues.step_into(warped, packed, loaded.host_inputs)
     queue_us = int((time.perf_counter() - t0) * 1e6)
 
     outputs = loaded.engine.run()

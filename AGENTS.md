@@ -1,5 +1,20 @@
 # Repository memory
 
+- On 2026-10-20, runtime-port N16 latency investigation: completed one real-camera
+  A/HUD/HUD+lane/A sequence, full-pipeline P99~53--57ms; BSD never executed in
+  that sequence. Do not call it strict20Hz or combined BSD validation. Private
+  Orin CUDA timing graph1200 frames locates~24ms TRT,~0.09ms input/output
+  transfers (trailing state D2D excluded). Port exact native image conversion
+  and direct compact-map staging as default-OFF CARROT_TRT_INPUT_FASTPATH.
+  Real USB/IPC A/B/A1200 frames each: prepare~1.14->0.66ms; all1200 output
+  sequence hashes identical. RTT P99 benefit unproven; no blanket enablement.
+  86 Linux checks pass, one missing-reference skip. Runtime-only candidate
+  service restored; original a1d723a6 release/model and power policy retained.
+  Wi-Fi credentials match/power-save off but association retries remain, so
+  failed lane/BSD RPCs cannot prove classifier load. See
+  docs/jetson_input_latency_20261020.md; numeric evidence stays private. Scope
+  this experiment to codex/jetson-nav-runtime-port, not maintained carrot branches.
+
 - On 2026-10-18, user reported worse signals and requested evening/morning review.
   Read-only/hash-verified213 files; actual drives10ea/10eb run087f862d81 with
   unchanged918654b8 tracker. Upper/central selectors remain OFFLINE, not the cause.
