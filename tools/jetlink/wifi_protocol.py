@@ -19,6 +19,7 @@ LIMIT = 16384
 PACKET = Path('/dev/shm/carrot-jetlink-wifi.packet')
 CONTROL = Path('/dev/shm/carrot-jetlink-bootstrap.json')
 HEADER = struct.Struct('<d')
+DIRECT_SUBNETS = ('172.29.77.0/24', '172.29.78.0/24', '10.203.77.0/24')
 
 
 def validate(value):
@@ -55,6 +56,15 @@ def validate(value):
       raise ValueError('Unsupported Wi-Fi security or invalid secret')
   if value.get('onroad') is not None and type(value['onroad']) is not bool:
     raise ValueError('Invalid road state')
+  if 'wifi_policy' in value:
+    if value['wifi_policy'] != 'direct_only' or len(profiles) > 1:
+      raise ValueError('Invalid direct Wi-Fi policy')
+    if profiles:
+      if (value.get('direct_subnet') not in DIRECT_SUBNETS or not profiles[0]['active']
+          or profiles[0]['security'] != 'wpa-psk'):
+        raise ValueError('Invalid direct AP profile')
+    elif value.get('direct_subnet') is not None:
+      raise ValueError('Direct subnet without AP')
   return value
 
 

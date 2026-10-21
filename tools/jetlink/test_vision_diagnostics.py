@@ -151,12 +151,12 @@ def test_connect_failure_and_bad_authentication_are_not_inference_failures(monke
   assert result.value.code == code and 'SECRET' not in str(result.value) and sock.closed
 
 
-def test_direct_ap_is_preferred_but_shared_wifi_remains_a_valid_route():
+def test_only_direct_ap_is_permitted_even_when_shared_wifi_is_available():
   network = [('wlan0', '10.1.1.41'), ('wljetson0', '172.29.77.1')]
   def route(target, source):
     return [{'dev': 'wljetson0' if target.startswith('172.') else 'wlan0'}]
   assert select_link(network, ['10.1.1.121', '172.29.77.2'], route)[0] == 'wljetson0'
-  assert select_link(network, ['10.1.1.121'], route)[0] == 'wlan0'
+  assert select_link(network, ['10.1.1.121'], route) is None
   assert select_link(network, ['172.29.77.2'], lambda *_: [{'dev': 'usb0'}]) is None
 
 

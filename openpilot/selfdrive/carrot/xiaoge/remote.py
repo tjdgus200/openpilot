@@ -47,7 +47,7 @@ ERRORS = {
   'disconnected': ('session', 'Jetson CPU/Wi-Fi session is disconnected'),
   'wifi_local_unavailable': ('wifi', 'Comma has no usable Wi-Fi address'),
   'wifi_peer_unavailable': ('wifi', 'Jetson has no fresh advertised Wi-Fi address'),
-  'wifi_route_unavailable': ('wifi', 'No Wi-Fi route to Jetson; USB/Ethernet fallback is disabled'),
+  'wifi_route_unavailable': ('wifi', 'No direct AP route to Jetson; hotspot/USB/Ethernet fallback is disabled'),
   'wifi_connect_timeout': ('wifi', 'Wi-Fi connection to the Jetson CPU service timed out'),
   'wifi_connect_failed': ('wifi', 'Could not connect to the Jetson CPU Wi-Fi service'),
   'authentication_failed': ('authentication', 'CPU/Wi-Fi authentication or record integrity check failed'),

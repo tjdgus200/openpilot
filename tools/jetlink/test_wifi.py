@@ -71,21 +71,17 @@ def test_open_and_sae_and_psk_hex():
     assert ('[wifi-security]' in data) == (security != 'open')
 
 
-def test_sender_uses_saved_secrets_and_excludes_hotspot(monkeypatch):
+def test_sender_never_reads_phone_credentials_without_direct_ap(monkeypatch):
   uid = config()['profiles'][0]['id']
-  hotspot = '22345678-1234-1234-1234-123456789abc'
+  calls = []
   def nm(*args):
-    if args[-1] == '--active':
-      return uid
-    if args[-1] == 'show':
-      return f'{hotspot}:802-11-wireless\n{uid}:802-11-wireless'
-    if args[-1] == hotspot:
-      return 'hotspot\nap\nno\nwpa-psk\nsynthetic'
-    assert '--show-secrets' in args
-    return 'phone\ninfrastructure\nno\nwpa-psk\nsynthetic'
+    calls.append(args)
+    assert '--show-secrets' not in args
+    return uid
   monkeypatch.setattr(sender, 'nm', nm)
-  profiles = sender.collect()
-  assert len(profiles) == 1 and profiles[0]['id'] == uid
+  monkeypatch.setattr(sender, 'direct_profile_id', lambda: '22345678-1234-1234-1234-123456789abc')
+  assert sender.collect() == []
+  assert len(calls) == 1
 
 
 def test_connected_wifi_is_not_interrupted():

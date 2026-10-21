@@ -1,5 +1,17 @@
 # Repository memory
 
+- On 2026-10-21, owner now explicitly requires direct comma/Jetson Wi-Fi only,
+  superseding earlier shared-hotspot fallback preservation for carrot-nav-pv5.
+  Export only the owned AP, never phone secrets; direct_only/subnet metadata
+  travels privately on USB. Senders require wljetson0, AP gateway source,
+  same /24 peer and an ungatewayed matching route. Receivers bind only the
+  USB-identified active imported AP profile and accept its gateway peer.
+  Phone STA association changes do not change AP/profile/session identity;
+  receiver listeners ignore unrelated uplink addresses. Keep low priority,
+  offroad-only AP creation/recovery, official USB HUD/model/update paths and
+  protected immutable network recovery. Do not delete manual profiles or
+  claim RF independence of a single shared PHY. See jetson_aux_vision_cpu.md.
+
 - On 2026-10-21, owner requests classified lane/BSD CPU errors and checks dual
   WLAN. Add fixed runtime/dependency/model/session/WLAN/auth/inference codes,
   authenticated error envelopes with request/hash identity, attempt/success/

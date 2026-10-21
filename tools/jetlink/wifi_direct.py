@@ -21,11 +21,12 @@ import time
 from persistent_state import durable_write
 from wifi_direct_netlink import INTERFACE, Wireless, profile_id
 from wifi_direct_forward import Sharing
+from wifi_protocol import DIRECT_SUBNETS
 
 STATUS = Path('/dev/shm/carrot-jetlink-direct-wifi.json')
 PRIVATE = Path('/data/carrot-jetlink-direct-wifi')
 PROFILE = Path('/run/NetworkManager/system-connections/carrot-jetson-direct.nmconnection')
-SUBNETS = ('172.29.77.0/24', '172.29.78.0/24', '10.203.77.0/24')
+SUBNETS = DIRECT_SUBNETS
 
 
 def offroad():
@@ -86,10 +87,10 @@ def configuration():
 
 def render(value, band, number):
   gateway = str(ipaddress.ip_network(value['subnet']).network_address + 1)
-  return ('[connection]\nid=Carrot Jetson direct\nuuid=' + value['uuid'] + '\ntype=wifi\ninterface-name=' + INTERFACE + '\nautoconnect=false\n'
-          '[wifi]\nmode=ap\nssid=' + value['ssid'] + '\nband=' + band + '\nchannel=' + str(number) + '\n'
-          '[wifi-security]\nkey-mgmt=wpa-psk\nproto=rsn\npairwise=ccmp\ngroup=ccmp\npsk=' + value['password'] + '\n'
-          '[ipv4]\nmethod=shared\naddress1=' + gateway + '/24\nnever-default=true\n'
+  return ('[connection]\nid=Carrot Jetson direct\nuuid=' + value['uuid'] + '\ntype=wifi\ninterface-name=' + INTERFACE + '\nautoconnect=false\n' +
+          '[wifi]\nmode=ap\nssid=' + value['ssid'] + '\nband=' + band + '\nchannel=' + str(number) + '\n' +
+          '[wifi-security]\nkey-mgmt=wpa-psk\nproto=rsn\npairwise=ccmp\ngroup=ccmp\npsk=' + value['password'] + '\n' +
+          '[ipv4]\nmethod=shared\naddress1=' + gateway + '/24\nnever-default=true\n' +
           '[ipv6]\nmethod=disabled\n')
 
 

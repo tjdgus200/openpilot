@@ -31,8 +31,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from openpilot.selfdrive.carrot.xiaoge import remote as R
 from hud_wifi_worker import authenticate, seal, unseal, wlan_addresses, target_addresses
-from hud_wifi_route import select_link, wlan_address
-from wifi_direct_netlink import INTERFACE
+from hud_wifi_route import select_link, receiver_network, direct_peer
 
 IDLE_SECONDS = 5.
 
@@ -182,7 +181,7 @@ class Runtime:
     value = json.loads(plain)
     if not isinstance(value, dict):
       raise R.RemoteFailure('protocol_invalid')
-    value['wifiPath'] = 'direct_ap' if link[0] == INTERFACE else 'shared_wifi'
+    value['wifiPath'] = 'direct_ap'
     return json.dumps(value, separators=(',', ':'), allow_nan=False).encode()
 
   def handle(self, sock):
@@ -263,7 +262,7 @@ class Runtime:
       while not self.stop.is_set():
         listeners = []
         try:
-          network = tuple(wlan_addresses()) if self.role == 'receive' else None
+          network = receiver_network(wlan_addresses()) if self.role == 'receive' else None
           if self.engine is not None:
             self.engine.expire()
           if self.role == 'receive' and not network:
@@ -289,7 +288,7 @@ class Runtime:
           next_network = time.monotonic() + 1.
           while not self.stop.is_set():
             if self.role == 'receive' and time.monotonic() >= next_network:
-              if tuple(wlan_addresses()) != network:
+              if receiver_network(wlan_addresses()) != network:
                 break
               self.engine.expire()
               next_network = time.monotonic() + 1.
@@ -299,7 +298,7 @@ class Runtime:
               break
             for listener in ready:
               sock, peer = listener.accept()
-              if self.role == 'receive' and not wlan_address(peer[0]):
+              if self.role == 'receive' and not direct_peer(peer[0], sock.getsockname()[0]):
                 sock.close()
                 continue
               # One worker; bounded backlog, no inference thread pool.
