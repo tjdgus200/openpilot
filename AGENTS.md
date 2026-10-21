@@ -1,5 +1,15 @@
 # Repository memory
 
+- On 2026-10-21, owner explicitly approves the new81.7MB public no-CPU-probe
+  package and USB selection. Publish sourcebfe0cab1 as tag
+  jetson-pv5-no-cpu-probe-20261021-bfe0cab1; select profile
+  pv5-no-cpu-20261021-bfe0cab1. All four assets were anonymously downloaded and
+  size/SHA verified. Exported activation probe matches0320f54d; lane/BSD runtime,
+  priority fix, model/trust/rollback remain unchanged. Exported HUD help and
+  source CI39609059542 pass. Manual CPU check remains; automatic activation
+  CPU-model execution is removed. No physical install, reset cause or reset
+  resolution verified. This supersedes the previously selected4e3acd5e package.
+
 - On 2026-10-21, owner explicitly requests removing the lane/BSD CPU-model
   execution prerequisite from installation and pushing a paired package.
   This supersedes the earlier mandatory CPU probe policy below. Remove only

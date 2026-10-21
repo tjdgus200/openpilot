@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-install-20261021-4e3acd5e",
-  "source_commit": "4e3acd5e05f5be51c109265d8973f8c96de6e599",
+  "profile": "pv5-no-cpu-20261021-bfe0cab1",
+  "source_commit": "bfe0cab1c322eb8636117cc90c5e25b1153c84da",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-install-priority-20261021-4e3acd5e/host.tar.gz",
-    "sha256": "cec20f4f924c4dab2f789936860d448322933c853bb330a18e326155f4144440",
-    "size": 81665759
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-no-cpu-probe-20261021-bfe0cab1/host.tar.gz",
+    "sha256": "7f37058718cb75533c39daa6651da1f997c41779bf716ed0693a8477852204f0",
+    "size": 81666735
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

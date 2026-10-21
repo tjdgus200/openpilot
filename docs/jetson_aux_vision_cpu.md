@@ -248,3 +248,14 @@ PC 검사는 실제 후보 검사 진입점에 GPU 대역을 연결해 HUD 실�
 모델 계약 불일치·비유한/빈 출력이 계속 설치를 거부하는지 확인한다. 이는 실제
 Jetson의 GPU 실행이나 재부팅 해결을 입증하는 검사가 아니다. 새 대응 패키지가
 필요하며 콤마 Git Pull/재부팅과 USB 연결을 유지한 Jetson 정상 재부팅으로 전달한다.
+
+사용자가 새 공개 업로드를 승인한 대응 패키지는
+[CPU 설치 검사 제거 Release](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-no-cpu-probe-20261021-bfe0cab1)다.
+소스 `bfe0cab1c322eb8636117cc90c5e25b1153c84da`, 크기 81,666,735바이트,
+SHA-256 `7f37058718cb75533c39daa6651da1f997c41779bf716ed0693a8477852204f0`을
+USB 배포 명세에 고정한다. 패키지·체크섬·메타데이터·USB 명세를 모두 공개 HTTPS에서
+인증 없이 다시 내려받아 로컬 크기와 SHA를 대조했다. 내보낸 후보 검사 파일이
+기존 `0320f54d`와 같고 차선/BSD 작업자·모델 핀·인증/복구 파일이 이전 선택과
+같은지도 확인했다. 실제 내보낸 HUD 진입점 검사와
+[소스 CI](https://github.com/tjdgus200/openpilot/actions/runs/39609059542)는 통과했다.
+실장치 설치나 재부팅 해결을 확인한 결과는 아니다.
