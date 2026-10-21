@@ -1,3 +1,14 @@
+# carrot-nav-pv5 execution override
+
+On this branch, lane and optional visual-BSD ONNX execute on the paired Jetson
+CPU. Comma retains the existing preprocessing/ROI and result merge; lossless
+inputs and authenticated results use Wi-Fi only, with no local/USB fallback.
+ShareData/OnnxBsdEnabled remain default-off and retain onroad readiness and
+independent BSD unloading. Both intervals have a 500ms floor (BSD combines sides).
+The paired host update, CPU OpenCV and a reachable WLAN path are required.
+See [CPU/Wi-Fi design and validation limits](../../../../docs/jetson_aux_vision_cpu.md).
+The following upstream sections describe the original local service/UI.
+
 # Xiaoge Vision: V-ASM and Lane Detection
 
 ## 中文
@@ -275,14 +286,3 @@ PYTHONPATH="$PWD/pydeps:$PWD${PYTHONPATH:+:$PYTHONPATH}" python -m openpilot.sel
 
 `camerad`가 실행 중이어야 합니다. 로컬 V-ASM 다각형 설정은 이 디렉터리의 `v_asm_config.json`에
 저장되며 Git에서 무시됩니다.
-# carrot-nav-pv5 execution override
-
-On this branch, lane and optional visual-BSD ONNX execute on the paired Jetson
-CPU. Comma retains the existing preprocessing/ROI and result merge; lossless
-inputs and authenticated results use Wi-Fi only, with no local/USB fallback.
-ShareData/OnnxBsdEnabled remain default-off and retain onroad readiness and
-independent BSD unloading. Both intervals have a 500ms floor (BSD combines sides).
-The paired host update, CPU OpenCV and a reachable WLAN path are required.
-See [CPU/Wi-Fi design and validation limits](../../../../docs/jetson_aux_vision_cpu.md).
-The following upstream sections describe the original local service/UI.
-

@@ -13,6 +13,20 @@ import sys
 import threading
 import time
 
+
+def process_limits(role):
+  # Popen can inherit jetlinkd's FIFO policy. Drop it before importing any
+  # helper/crypto/numerical library or creating threads in the new process.
+  os.environ['OPENBLAS_NUM_THREADS'] = os.environ['OMP_NUM_THREADS'] = '1'
+  os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+  os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
+  os.setpriority(os.PRIO_PROCESS, 0, 19 if role == 'send' else 10)
+  os.sched_setaffinity(0, sorted(os.sched_getaffinity(0))[:2])
+
+
+if __name__ == '__main__':
+  process_limits(sys.argv[1] if len(sys.argv) > 1 else 'receive')
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from openpilot.selfdrive.carrot.xiaoge import remote as R
@@ -244,12 +258,6 @@ def main():
   ctypes.CDLL(None).prctl(1, signal.SIGTERM, 0, 0, 0)
   if os.getppid() == 1:
     return
-  os.environ['OPENBLAS_NUM_THREADS'] = os.environ['OMP_NUM_THREADS'] = '1'
-  os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-  os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
-  os.setpriority(os.PRIO_PROCESS, 0, 19 if role == 'send' else 10)
-  cpus = sorted(os.sched_getaffinity(0))[:2]
-  os.sched_setaffinity(0, cpus)
   if role == '--check-models':
     check_models()
     return
