@@ -5,8 +5,9 @@
 공식 N16 모델 SHA-256 `01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a`,
 카메라 짝맞춤, locationd 유효성, 제어와 이탈 조건은 유지한다.
 공식의 USB HUD 협상, NAV 지도 미리보기, BSD 독립 설정, USB 완료 작업 우선순위
-적용 대상 제한도 유지한다. Jetson CPU로 ONNX를 옮기는 기능이나 이전 실험의
-전용 Wi-Fi 정책·USB 전원 정책은 이식하지 않는다.
+적용 대상 제한도 유지한다. 이후 사용자 요청으로 차선·BSD의
+[Jetson CPU/Wi-Fi 실행](jetson_aux_vision_cpu.md)을 추가했다.
+이전 실험의 전용 Wi-Fi 정책·USB 전원 정책은 이식하지 않는다.
 
 ## HUD
 
@@ -33,7 +34,8 @@
 ## 방향별 BSD 표시
 
 `carState`의 기존 차량 BSD와 신선한 시각 BSD의 OR 결과를 표시에만 사용한다.
-시각 BSD는 공식의 `ShareData`/`OnnxBsdEnabled` 조건에 따라 콤마에서 실행한다.
+시각 BSD는 공식의 `ShareData`/`OnnxBsdEnabled` 조건을 유지하며 Jetson CPU에서
+계산하고 Wi-Fi로 결과를 돌려준다. 콤마는 기존 전처리와 결과 병합을 수행한다.
 새 검출기, 추가 카메라 전송, 차선변경 제어 조건은 만들지 않는다.
 
 같은 방향의 깜빡이와 BSD가 모두 참이고 `carState` 수신/전송 당시 나이를 합쳐

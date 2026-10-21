@@ -1,11 +1,26 @@
 # Repository memory
 
+- On 2026-10-21, owner extends carrot-nav-pv5 with Jetson CPU lane/BSD ONNX
+  execution and WLAN-only lossless images/results. See docs/jetson_aux_vision_cpu.md.
+  Preserve latest independent default-off OnnxBsdEnabled, lifecycle generation
+  and refresh serialization, OEM BSD OR, ROI/classes/smoothing, onroad readiness,
+  native control/automatic-lane-change policy, official USB HUD and driving model.
+  Use separate normal/nice10 Orin and nice19 comma workers, one OpenCV thread,
+  500ms minimum lane / combined-side BSD intervals, 750ms local RPC deadline,
+  source-camera timestamps and 1s remote-lane / existing1.5s BSD freshness.
+  No local ONNX/USB payload fallback, no direct-only AP policy or ONNX auto-enable.
+  Negotiate an independent purpose-derived authenticated session on USB once;
+  WLAN TCP7717 carries all images/results. Host lazily loads CPU-only models,
+  unloads disabled/idle models and installation probes CPU before driving GPU.
+  A new paired USB host package is required; retain official signed NAS recovery.
+  Actual C3/C4/Orin loaded coexistence, accuracy and road safety remain unverified.
+
 - On 2026-10-21, the user creates `carrot-nav-pv5` from official carrot-nav
   682ceeb4, selecting battery page8, personal HUD metrics/brightness/BSD cues,
   parked USB updates and the earlier bounded GPU-state/comma AIO ports. Keep the
   official N16 SHA, USB-HUD capability/media limits, NAV preview, independent
   OnnxBsdEnabled, camera/pose/control validity and hardware-specific FIFO2 gate.
-  Do not import the old direct-Wi-Fi policy, Jetson CPU ONNX offload or attached
+  Do not import the old direct-Wi-Fi policy or attached
   USB power override. Battery has no validated PV5 profile and must show --.
   Park update checks fresh valid carState, canValid/no timeout, gear park and
   raw wheel speed exactly zero; onroad/cruise flags are not extra conditions.
@@ -16,7 +31,8 @@
   alerts render last. Owner subsequently requests AIO default for C4 as well:
   tici/tizi/mici on aarch64/Linux4.9.103 are enabled; retain serial writes on
   other devices. Preserve the existing mici-only FIFO2 helper gate. This
-  eligibility change is comma-side only; paired Jetson package stays 0320f54d.
+  eligibility change alone is comma-side only; later auxiliary CPU support
+  requires the new paired package selected by usb_host_sha256_release.json.
   New-branch/C4 AIO device timing and road safety remain unvalidated.
   Scope this request to this new branch, not official or prior experiments.
   See docs/carrot_nav_pv5.md and its paired USB package selection.

@@ -14,15 +14,15 @@ PORT = 7716
 
 
 class Worker:
-  def __init__(self, role, key):
+  def __init__(self, role, key, script='hud_wifi_worker.py', port=PORT):
     self.socket, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     self.process = None
     try:
       self.process = subprocess.Popen(
-        [sys.executable, str(Path(__file__).with_name('hud_wifi_worker.py')), role, str(child.fileno())],
+        [sys.executable, str(Path(__file__).with_name(script)), role, str(child.fileno())],
         pass_fds=(child.fileno(),), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
       self.socket.settimeout(2.)
-      self.socket.send(json.dumps({'key': key, 'port': PORT}).encode())
+      self.socket.send(json.dumps({'key': key, 'port': port}).encode())
       if self.socket.recv(64) != b'ready':
         raise RuntimeError('HUD Wi-Fi worker did not initialize')
     except BaseException:

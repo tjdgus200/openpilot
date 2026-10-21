@@ -120,6 +120,9 @@ class VASMInference:
     top = (MODEL_INPUT_SIZE - resized_height) // 2
     left = (MODEL_INPUT_SIZE - resized_width) // 2
     square[top:top + resized_height, left:left + resized_width] = resized
+    return self.predict_square(square)
+
+  def predict_square(self, square: np.ndarray) -> float:
     blob = np.transpose(square.astype(np.float32) / 255.0, (2, 0, 1))[None, :]
     self.net.setInput(blob)
     predictions = np.squeeze(self.net.forward())
