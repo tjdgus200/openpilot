@@ -33,9 +33,14 @@ NAV input and cannot stand in for normal NAV operation.
 ## Implementation
 
 `jetlinkd` starts a root helper only for an identified Jetson using bulk USB,
-after model preparation and before warmup. The helper currently accepts only
-the physically tested comma mici/aarch64 Linux 4.9.103 family. Other hardware
-or missing trace capabilities retain existing scheduling.
+after model preparation and before warmup. The official measured implementation
+accepts comma mici/aarch64 Linux 4.9.103. At the owner's subsequent request,
+**carrot-nav-pv5 additionally accepts comma tici/tizi (C3/C3X)** with that exact
+architecture/kernel, keeping mici (C4) support. Other hardware, unreadable board
+identity or missing trace capabilities retain existing scheduling. This new C3
+eligibility is PC-tested only; the measurements in this document are not C3
+measurements or proof of C3 kernel/road stability. It requires comma Git Pull
+and a normal reboot, with no Jetson package change. AIO TX remains removed.
 
 An isolated 64 KiB-per-CPU trace instance filters only `dwc3_bh_work` execution
 events. It discovers actual worker PIDs instead of hard-coding the tested

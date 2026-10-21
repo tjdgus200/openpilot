@@ -10,6 +10,39 @@ import usb_priority as priority
 from openpilot.selfdrive.modeld.jetlink import scheduling
 
 
+@pytest.mark.parametrize('model', [b'comma tici', b'comma tizi', b'comma mici'])
+def test_c3_c3x_c4_are_eligible_only_with_the_known_arm_kernel(monkeypatch, model):
+  monkeypatch.setattr(priority.os, 'uname', lambda: SimpleNamespace(release='4.9.103', machine='aarch64'), raising=False)
+  monkeypatch.setattr(priority, 'Path', lambda *_: SimpleNamespace(read_bytes=lambda: model + b'\0\n'))
+  assert priority.supported()
+
+
+@pytest.mark.parametrize('kernel,machine,model', [
+  ('5.15.0', 'aarch64', b'comma tici'), ('4.9.103-custom', 'aarch64', b'comma tizi'),
+  ('4.9.103', 'x86_64', b'comma tici'), ('4.9.103', 'aarch64', b'unknown'),
+  ('4.9.103', 'aarch64', b'comma tici future'),
+])
+def test_unknown_kernel_architecture_or_board_keeps_existing_policy(monkeypatch, kernel, machine, model):
+  monkeypatch.setattr(priority.os, 'uname', lambda: SimpleNamespace(release=kernel, machine=machine), raising=False)
+  monkeypatch.setattr(priority, 'Path', lambda *_: SimpleNamespace(read_bytes=lambda: model))
+  assert not priority.supported()
+
+
+def test_unreadable_board_identity_cannot_enable_priority(monkeypatch):
+  monkeypatch.setattr(priority.os, 'uname', lambda: SimpleNamespace(release='4.9.103', machine='aarch64'), raising=False)
+  def denied():
+    raise PermissionError('board unavailable')
+  monkeypatch.setattr(priority, 'Path', lambda *_: SimpleNamespace(read_bytes=denied))
+  assert not priority.supported()
+
+
+def test_unsupported_host_never_opens_trace_or_changes_scheduler(monkeypatch):
+  monkeypatch.setattr(priority, 'supported', lambda: False)
+  monkeypatch.setattr(priority, 'Trace', lambda: pytest.fail('unsupported trace activation'))
+  monkeypatch.setattr(priority.os, 'sched_setscheduler', lambda *a: pytest.fail('unsupported scheduling change'), raising=False)
+  priority.run()
+
+
 @pytest.fixture
 def workers(tmp_path, monkeypatch):
   monkeypatch.setattr(os, 'SCHED_OTHER', 0, raising=False)

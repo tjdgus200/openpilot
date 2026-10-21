@@ -1,5 +1,15 @@
 # Repository memory
 
+- On 2026-10-21, owner extends official session-scoped DWC3 FIFO2 completion
+  scheduling to C3/C3X as well as C4. Permit only tici/tizi/mici on aarch64
+  Linux4.9.103; keep actual symbol/trace discovery, kernel-worker identity and
+  starttime, original-policy ownership, lease/journal/EOF restoration, unknown
+  hardware fallback and all frame deadlines. No AIO TX, core7 placement or
+  stronger priority. This is a comma-only eligibility extension, not measured
+  C3 latency or kernel/road-safety validation. Earlier official gains were on
+  mici. GPU-only speedup remains unisolated; earlier RL Nav jointly enabled
+  GPU state plus AIO, not an N16 or GPU-state-only ablation.
+
 - On 2026-10-21, owner explicitly requires automatic direct Wi-Fi after an
   onroad vehicle boot with no phone hotspot. This supersedes earlier offroad-
   only AP creation/recovery. Allow the owned virtual AP to start/retry in its

@@ -28,6 +28,8 @@ asynchronous TX port: its transport, native writer and release option are now
 removed for all comma models. The daemon directly uses the official serial
 `transport/ffs.py`, verified identical to carrot-nav `3a03a39f` on 2026-10-21.
 Official userspace placement, write watchdog/cleanup and USB completion-priority
-applicability gates remain. Existing optional AIO RX diagnostics are unrelated
+ownership/restoration gates remain; the PV5 adapter subsequently permits C3/C3X
+as well as C4 on the same aarch64 Linux4.9.103 kernel, without new C3 timing or
+kernel-safety evidence. Existing optional AIO RX diagnostics are unrelated
 and unchanged. This is not a complete Jetlink upgrade or proof of 20Hz.
 See `docs/carrot_nav_pv5.md`.
