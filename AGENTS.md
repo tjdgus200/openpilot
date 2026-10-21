@@ -1,5 +1,15 @@
 # Repository memory
 
+- On 2026-10-21, owner requests shareable GPU-state and C3 USB review links.
+  codex/jetson-gpu-usb-review starts from official carrot-nav3a03a39f and contains
+  only the opt-in GPU-state patch, then a separate C3 USB eligibility patch.
+  No AIO TX, HUD/private Wi-Fi, model changes or deployment artifacts. GPU mode
+  defaults OFF; preserve finite checks/reset/close and official host path.
+  Honor prior review preference: do not add automated test files to the review
+  diff; run existing and privately copied verification sources on PC instead.
+  GPU-only PC112pass/1optional CUDA skip, not Orin latency/road validation.
+  See docs/jetson_gpu_usb_review.md. Device branch remains carrot-nav-pv5.
+
 - On 2026-10-21, owner requests restoring comma-to-Jetson USB display traffic.
   Nav-only new receiver capability selects bounded snapshot plus at most two
   32KiB media fragments during GPU execution; old receivers retain Wi-Fi until
