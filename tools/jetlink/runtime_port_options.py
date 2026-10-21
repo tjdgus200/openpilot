@@ -1,4 +1,4 @@
-"""PV5 release choices; keep untested hardware on the official serial writer."""
+"""PV5 release choices for known comma FunctionFS devices and paired Orin."""
 import json
 import os
 from pathlib import Path
@@ -6,13 +6,14 @@ import platform
 
 OPTIONS = Path(__file__).with_name('runtime_port_options.json')
 KEYS = {'CARROT_TRT_DEVICE_STATE', 'CARROT_JETLINK_AIO_WRITE'}
+AIO_MODELS = frozenset((b'comma tici', b'comma tizi', b'comma mici'))
 
 
-def c3_aio_supported():
+def comma_aio_supported():
   try:
     return (platform.system() == 'Linux' and platform.machine() == 'aarch64'
             and platform.release() == '4.9.103'
-            and Path('/proc/device-tree/model').read_bytes().rstrip(b'\0\n') == b'comma tici')
+            and Path('/proc/device-tree/model').read_bytes().rstrip(b'\0\n') in AIO_MODELS)
   except OSError:
     return False
 
@@ -26,7 +27,7 @@ def apply(path=OPTIONS, environ=None):
     raise ValueError('Invalid release runtime options')
   for key, enabled in value.items():
     if key == 'CARROT_JETLINK_AIO_WRITE':
-      enabled = enabled and c3_aio_supported()
+      enabled = enabled and comma_aio_supported()
     # An explicit process option is for a separate controlled experiment.
     env.setdefault(key, str(int(enabled)))
   return {key: env[key] for key in KEYS}

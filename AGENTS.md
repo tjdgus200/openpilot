@@ -2,7 +2,7 @@
 
 - On 2026-10-21, the user creates `carrot-nav-pv5` from official carrot-nav
   682ceeb4, selecting battery page8, personal HUD metrics/brightness/BSD cues,
-  parked USB updates and the earlier bounded GPU-state/C3 AIO ports. Keep the
+  parked USB updates and the earlier bounded GPU-state/comma AIO ports. Keep the
   official N16 SHA, USB-HUD capability/media limits, NAV preview, independent
   OnnxBsdEnabled, camera/pose/control validity and hardware-specific FIFO2 gate.
   Do not import the old direct-Wi-Fi policy, Jetson CPU ONNX offload or attached
@@ -13,8 +13,11 @@
   before transfer/activation; do not claim immediate cancellation of an atomic
   install. BSD uses fused native/visual flags, fresh carState, 2Hz bright/dim
   physical-edge strips plus steady translucent outer-third gradients; vehicle
-  alerts render last. AIO default only tici/aarch64/Linux4.9.103; retain serial
-  writes on other devices. New-branch device timing/road safety is unvalidated.
+  alerts render last. Owner subsequently requests AIO default for C4 as well:
+  tici/tizi/mici on aarch64/Linux4.9.103 are enabled; retain serial writes on
+  other devices. Preserve the existing mici-only FIFO2 helper gate. This
+  eligibility change is comma-side only; paired Jetson package stays 0320f54d.
+  New-branch/C4 AIO device timing and road safety remain unvalidated.
   Scope this request to this new branch, not official or prior experiments.
   See docs/carrot_nav_pv5.md and its paired USB package selection.
 
