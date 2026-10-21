@@ -10,7 +10,11 @@
   receiver listeners ignore unrelated uplink addresses. Keep low priority,
   offroad-only AP creation/recovery, official USB HUD/model/update paths and
   protected immutable network recovery. Do not delete manual profiles or
-  claim RF independence of a single shared PHY. See jetson_aux_vision_cpu.md.
+  claim RF independence of a single shared PHY. Paired source61878ca0 package
+  published and anonymously HTTPS size/hash verified; selected USB manifest
+  retains the official N16 model and signed NAS return. CI39569595863 passed
+  103 root /1231 broad(61skip)/119 nav/11 storage/11 packet + Windows.
+  No physical device install/RF/road claim. See jetson_aux_vision_cpu.md.
 
 - On 2026-10-21, owner requests classified lane/BSD CPU errors and checks dual
   WLAN. Add fixed runtime/dependency/model/session/WLAN/auth/inference codes,

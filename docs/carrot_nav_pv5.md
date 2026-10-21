@@ -118,10 +118,10 @@ PC에서는 각 기기 ID·커널·아키텍처의 선택과 비동기 송신의
 
 ## 배포와 확인 결과
 
-- [대응 Jetson 패키지](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-aux-wifi-20261021-c56183fd)는
-  소스 `c56183fdd876d0775523611162b602d992d55654`에서 만들었다.
-  묶음은 81,667,195바이트, SHA-256은
-  `40688dad244c63683b232de766a13e4812b06b19ff6ecae8a19597759161a849`다.
+- [대응 Jetson 패키지](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-aux-wifi-20261021-61878ca0)는
+  소스 `61878ca09a3d34356814806cae694e67aa499f50`에서 만들었다.
+  묶음은 81,669,609바이트, SHA-256은
+  `882ba41388b75231e175c6d18737bd83b6e34f10d32f80780a8cb24bb59157f3`다.
   기존 공개 차선/BSD ONNX 두 개를 포함하며, 주행 모델 가중치·개인키·차량 로그는
   포함하지 않는다. 공개 HTTPS 재다운로드로 크기와 해시를 확인했다.
   브랜치는 콤마 P단 대기/파일 준비를 유지하며, 새 패키지는 차선·BSD의 오류 분류를 지원한다. 새 호스트는
