@@ -11,7 +11,8 @@
   shared_wifi. Official dual STA/AP exists but is not direct-only, can fall back
   through a common hotspot, and only creates/recovers its AP offroad. Do not
   silently change that policy or claim a physical connection guarantee.
-  Requires a new paired host package; actual RF/on-device/road checks pending.
+  Paired host c56183fd is publicly uploaded, full HTTPS size/hash verified and
+  selected by the USB manifest. Actual RF/on-device/road checks remain pending.
   See docs/jetson_aux_vision_cpu.md. Scope remains carrot-nav-pv5.
 
 - On 2026-10-21, owner reports USB update stuck at7.4%/ERROR in vehicle but
