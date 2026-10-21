@@ -17,9 +17,6 @@ def main():
   subprocess.run([sys.executable, str(ROOT / 'tools/jetlink/hud.py'), '--help'],
                  cwd=ROOT, check=True, timeout=30, stdout=subprocess.DEVNULL)
   import update_host  # noqa: F401
-  # A separate child returns all auxiliary memory before the main GPU probe.
-  subprocess.run([sys.executable, str(ROOT / 'tools/jetlink/vision_cpu.py'), '--check-models'],
-                 cwd=ROOT, check=True, timeout=90)
   from jetlink.server.backends.trt import TrtBackend
   from jetlink.server.cache import EngineCache
   from jetlink.server.session import EngineHost, Request

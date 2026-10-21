@@ -1,5 +1,17 @@
 # Repository memory
 
+- On 2026-10-21, owner explicitly requests removing the lane/BSD CPU-model
+  execution prerequisite from installation and pushing a paired package.
+  This supersedes the earlier mandatory CPU probe policy below. Remove only
+  vision_cpu.py --check-models from probe_release.py, restoring that entrypoint
+  byte-for-byte to0320f54d. Keep manual CPU checking, runtime lane/BSD workers,
+  model files, direct-only Wi-Fi, lower-priority scheduling, official serial
+  USB, GPU state, N16 pin, SHA/trust/ABI/model/HUD/GPU checks, Park/zero approval
+  and rollback. User reports real BOOT counter resets; screenshot shows old
+  0320f54d HELLO then verifying and loss of USB. No reset/kernel logs or cause
+  proof, no reboot fix or road guarantee. PC tests cover actual probe flow with
+  GPU doubles; do not call this physical GPU validation. Scope carrot-nav-pv5.
+
 - On 2026-10-21, owner explicitly approves public Release upload and USB
   selection of the 81.7 MB installation-priority fix. Published source4e3acd5e,
   tag jetson-pv5-install-priority-20261021-4e3acd5e; select profile
