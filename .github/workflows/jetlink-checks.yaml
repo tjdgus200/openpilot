@@ -1,7 +1,7 @@
 name: Jetson integration checks
 on:
   push:
-    branches: [carrot-wip, carrot-nav]
+    branches: [carrot-wip, carrot-nav, carrot-nav-pv5]
     paths:
       - 'tools/jetlink/**'
       - 'third_party/jetlink/**'

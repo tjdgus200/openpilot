@@ -19,6 +19,7 @@ from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
 from openpilot.selfdrive.carrot.signal_display import SignalDisplayReader, project_box
 from openpilot.selfdrive.carrot.lead_brake_lights import BrakeDisplayReader
+from cluster_battery import BatteryPanelData, panel_labels
 
 from cluster_gles_dmabuf import DirectNv12DmabufError, create_tici_nv12_dmabuf_pool
 from cluster_gles_readback import DirectNv12ReadbackError, create_tici_direct_readback
@@ -50,6 +51,8 @@ from cluster_config import (
     CLUSTER_SCREEN_MODE_FULLSCREEN_3D,
     CLUSTER_SCREEN_MODE_NAVI,
     CLUSTER_SCREEN_MODE_NAV_MODEL,
+    CLUSTER_SCREEN_MODE_BATTERY,
+    CLUSTER_SCREEN_MODE_INITIAL,
     CLUSTER_SCREEN_MODE_TRIP_REPORT,
     CLUSTER_SCREEN_MODE_DEFAULT,
     CLUSTER_SCREEN_MODE_DEBUG_SYSTEM,
@@ -908,7 +911,7 @@ class ClusterUiRenderer:
         title: str = "carrotpilot cluster",
         target_fps: int = 0,
         theme_mode: str = "auto",
-        screen_mode: int = 0,
+        screen_mode: int = CLUSTER_SCREEN_MODE_INITIAL,
         panel_layout: int = CLUSTER_PANEL_LAYOUT_DRIVING_LEFT,
         language: str = CLUSTER_LANGUAGE_KO,
         is_metric: bool = True,
@@ -3213,6 +3216,7 @@ class ClusterUiRenderer:
             CLUSTER_SCREEN_MODE_DEBUG_GRAPH_RIGHT,
             CLUSTER_SCREEN_MODE_TRIP_REPORT,
             CLUSTER_SCREEN_MODE_NAV_MODEL,
+            CLUSTER_SCREEN_MODE_BATTERY,
         ):
             return NAVI_WORLD_VIEW_SHIFT_X * self.width / DESIGN_WIDTH
         if screen_mode != CLUSTER_SCREEN_MODE_DEFAULT:
@@ -3987,6 +3991,10 @@ class ClusterUiRenderer:
             if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D:
                 self._draw_status_footer(state)
                 return
+            if screen_mode == CLUSTER_SCREEN_MODE_BATTERY:
+                self._draw_battery_panel(state)
+                self._draw_status_footer(state)
+                return
             if screen_mode == CLUSTER_SCREEN_MODE_DEBUG_SYSTEM:
                 profile_stage = self._profile_start()
                 self._draw_system_dashboard_panel(state)
@@ -4036,6 +4044,53 @@ class ClusterUiRenderer:
             profile_stage = self._profile_start()
             rl.rl_pop_matrix()
             self._profile_add("hud.pop_matrix", profile_stage)
+
+    def _draw_battery_panel(self, state: ClusterUiState) -> None:
+        data = state.battery or BatteryPanelData()
+        labels = panel_labels(data, self.language)
+        theme = self._current_theme()
+        x = self._information_panel_x(NAVI_LIVE_PANEL_X)
+        width = NAVI_LIVE_PANEL_W
+        left, right = x + 24.0, x + width - 24.0
+        middle = x + width * 0.5
+        self._rounded_rect(x, 1.0, width, DESIGN_HEIGHT - 2.0, 10.0, theme.panel_bg, theme.faint, 1.0)
+        self._draw_text(labels['title'], left, 32, 27, theme.text)
+
+        def number(name, decimals=0, suffix='', signed=False):
+            value = data.value(name)
+            if value is None:
+                return '--' + suffix
+            spec = f'+.{decimals}f' if signed else f'.{decimals}f'
+            return format(value, spec) + suffix
+
+        self._draw_text(labels['soc'], left, 76, 22, theme.muted)
+        self._draw_text(number('soc_percent', suffix='%'), left, 121, 66, theme.text)
+        self._draw_text(labels['maximum'], middle + 18, 76, 22, theme.muted)
+        self._draw_text(number('max_temp_c', suffix='°C'), middle + 18, 121, 66, theme.text)
+        maximum, minimum = data.value('max_temp_c'), data.value('min_temp_c')
+        spread = f'{maximum - minimum:.0f}°C' if maximum is not None and minimum is not None else '--°C'
+        detail = f"{labels['minimum']} {number('min_temp_c', suffix='°C')}   {labels['spread']} {spread}"
+        self._draw_text(detail, middle + 18, 169, 20, theme.muted)
+        power = data.value('pack_power_kw')
+        power_text = '-- kW' if power is None else f'{abs(power):.1f} kW'
+        mode = data.value('thermal_mode')
+        mode_text = labels.get(mode, '--')
+        rows = (
+            (219, labels['regeneration'] if power is not None and power < 0 else labels['consumption'], power_text),
+            (273, labels['coolant'], number('coolant_inlet_c', suffix='°C')),
+            (327, labels['thermal'], f"{mode_text} · {number('thermal_power_kw', 1, ' kW')}"),
+            (381, labels['trend'], number('temp_change_5min_c', 1, '°C', signed=True)),
+            (429, labels['cells'], number('cell_delta_mv', suffix=' mV')),
+        )
+        for y, label, value in rows:
+            rl.draw_line_ex(rl.Vector2(left, y - 27), rl.Vector2(right, y - 27), 1.0, rl_color(theme.faint))
+            # Reserve a fixed right column so English/Korean labels cannot overlap values.
+            self._draw_text(self._ellipsize_text(label, 20, width * 0.56), left, y, 20, theme.muted)
+            self._draw_text(self._ellipsize_text(value, 26, width * 0.4), right, y, 26, theme.text, anchor='right')
+        self._draw_battery_status(labels[data.status], left, width - 48, theme.muted)
+
+    def _draw_battery_status(self, text, left, width, color) -> None:
+        self._draw_text(self._ellipsize_text(text, 16, width), left, 462, 16, color)
 
     def _draw_alert_overlay(self, alert: ClusterAlert | None) -> None:
         if alert is None or alert.size <= 0 or not (alert.text1 or alert.text2):

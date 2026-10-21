@@ -62,10 +62,11 @@ def test_missing_or_invalid_temperature_does_not_look_current(value):
 
 def test_freshness_and_vehicle_alert_precedence(monkeypatch, tmp_path):
   import json
+
   path = tmp_path / 'health'
-  path.write_text(json.dumps({'updated': 10., 'temp_c': 99., 'thermal_severity': 'error', 'thermal_reason': 'cpu 99C'}))
+  path.write_text(json.dumps({'updated': 10.0, 'temp_c': 99.0, 'thermal_severity': 'error', 'thermal_reason': 'cpu 99C'}))
   monkeypatch.setattr(hud, 'STATUS', path)
-  monkeypatch.setattr(hud.time, 'monotonic', lambda: 13.)
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: 13.0)
   monkeypatch.setattr(hud.ClusterUiRenderer, 'render', lambda *a: None)
   renderer = object.__new__(hud.HealthRenderer)
   renderer.render(NS())
@@ -85,3 +86,83 @@ def test_freshness_and_vehicle_alert_precedence(monkeypatch, tmp_path):
   calls.clear()
   renderer._draw_alert_overlay(None)
   assert calls == ['strip', 'text', 'vehicle']
+
+
+@pytest.mark.parametrize(
+  'value,expected',
+  [
+    (0, '0.0 W'),
+    (7.67296, '7.7 W'),
+    (25, '25.0 W'),
+    (None, '-- W'),
+    (True, '-- W'),
+    (-1, '-- W'),
+    (float('nan'), '-- W'),
+    (float('inf'), '-- W'),
+    (201, '-- W'),
+  ],
+)
+def test_power_label_has_units_and_rejects_unavailable_or_invalid_values(value, expected):
+  assert hud.power_label({'power_w': value}) == expected
+
+
+def test_expired_health_does_not_keep_old_power(tmp_path):
+  import json
+
+  path = tmp_path / 'health.json'
+  path.write_text(json.dumps({'updated': 10.0, 'power_w': 12.4}))
+  assert hud.power_label(hud._fresh(path, 10.5)) == '12.4 W'
+  assert hud.power_label(hud._fresh(path, 14.0)) == '-- W'
+
+
+def test_normal_badge_is_next_to_wifi_with_ten_pixel_gap():
+  renderer = object.__new__(hud.HealthRenderer)
+  calls = []
+  renderer._temperature_badge = lambda x, y: calls.append((x, y))
+  renderer._draw_egpu_status(NS())
+  x, y = calls[0]
+  assert x - 52 == hud.WIFI_STATUS_CENTER_X + hud.WIFI_STATUS_ICON_SIZE * 0.5 + 10
+  assert y - 17 + 30 == hud.TOP_STATUS_CENTER_Y
+
+
+@pytest.mark.parametrize('width', [120, 230, 340])
+def test_status_clock_keeps_clear_of_badge_and_custom_clock_position_is_preserved(monkeypatch, width):
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer._measure_text = lambda *_: (width, 48)
+  calls = []
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_center_clock', lambda self, state, *, center_x: calls.append(center_x))
+  renderer._draw_center_clock(NS(center_clock_text='12:34:56'))
+  badge_right = hud.WIFI_STATUS_CENTER_X + hud.WIFI_STATUS_ICON_SIZE * 0.5 + 10 + 104
+  assert calls[0] - width * 0.5 >= badge_right + 16
+  renderer._draw_center_clock(NS(center_clock_text='12:34:56'), center_x=960)
+  assert calls[-1] == 960
+
+
+@pytest.mark.parametrize(
+  'snapshot',
+  [
+    None,
+    (1.0, {}),
+    (1.0, {'alive': {'carState': True}, 'valid': {'carState': False}, 'events': {'carState': 'encoded'}}),
+    (1.0, {'alive': {'carState': False}, 'valid': {'carState': True}, 'events': {'carState': 'encoded'}}),
+    (1.0, {'alive': {'carState': True}, 'valid': {'carState': True}, 'events': {}}),
+  ],
+)
+def test_waiting_dashboard_does_not_present_default_or_stale_speed(snapshot):
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer._vehicle_data_current = hud.vehicle_data_ready(snapshot)
+  calls = []
+  renderer._draw_speed_panel_bg = lambda: calls.append('background')
+  renderer._draw_text_with_stroke = lambda text, *a, **kw: calls.append(text)
+  renderer._draw_speed_block(NS(speed_kph=0.0))
+  assert calls == ['background', '--']
+
+
+def test_valid_vehicle_data_restores_normal_speed_renderer(monkeypatch):
+  snapshot = (1.0, {'alive': {'carState': True}, 'valid': {'carState': True}, 'events': {'carState': 'encoded'}})
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer._vehicle_data_current = hud.vehicle_data_ready(snapshot)
+  calls = []
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_speed_block', lambda *a, **kw: calls.append(kw))
+  renderer._draw_speed_block(NS(), tpms_offset_x=7.0)
+  assert calls == [{'tpms_offset_x': 7.0}]

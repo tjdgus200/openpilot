@@ -26,7 +26,7 @@ from openpilot.selfdrive.modeld.jetlink.startup import (CAPABILITY as BOOT_UPDAT
                                                        RuntimeHandoff, initial_connection_wait)
 from jetlink.client import JetlinkClient
 from jetlink.transport.base import LinkError, LinkTimeout
-from jetlink.transport.ffs import FfsTransport
+from jetlink.transport.ffs_aio import AioFfsTransport as FfsTransport, AioCleanupError
 
 GADGET = '/sys/kernel/config/usb_gadget/jetlink'
 ROLE = Path('/sys/class/power_supply/usb/typec_mode')
@@ -208,7 +208,10 @@ class CarrotTransport(FfsTransport):
     reader = getattr(self, '_reader', None)
     watchdog = getattr(getattr(self, '_write_guard', None), 'thread', None)
     gadget = getattr(self, 'gadget', None)
-    super().close()
+    try:
+      super().close()
+    except AioCleanupError as exc:
+      raise UnsafeCleanupError(str(exc)) from exc
     if getattr(getattr(self, '_aio_reader', None), 'context', None) is not None:
       raise UnsafeCleanupError('FunctionFS AIO cleanup incomplete; refusing to rebind')
     if any(thread is not None and thread.is_alive() for thread in (reader, watchdog)):
@@ -405,6 +408,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
 
 
 def main():
+  from runtime_port_options import apply
+  apply()
   global TRANSPORT_MODE, SESSION_MODE, ACTIVE_UDC, SESSION_DETACHED
   logging.basicConfig(level=logging.INFO)
   TRANSPORT_MODE = transport_mode()
@@ -563,6 +568,15 @@ def main():
         publish('loading', peer=peer)
         from openpilot.common.params import Params
         params = Params()
+        from openpilot.common.jetson_model import is_jetson
+        from openpilot.selfdrive.modeld.jetlink.contracts import JETSON_SPEC
+        from openpilot.selfdrive.modeld.jetlink.update_permission import Permission, wait_for_permission
+        setup_permission = Permission(params, allow_parked=(peer.get('engine_state') == 'none'
+                                                           and 'loaded' in peer and peer['loaded'] is None)) if is_jetson(peer) else None
+        needs_setup = setup_permission is not None and peer.get('loaded') != JETSON_SPEC.sha256
+        def setup_allowed(permission=setup_permission, current=params):
+          return permission.allowed() if permission is not None else (
+            current.get_bool('IsOffroad') and not current.get_bool('IsOnroad'))
         last_progress = 0.
 
         def progress(stage, fraction, message, current_peer=peer):
@@ -572,7 +586,14 @@ def main():
             last_progress = time.monotonic()
 
         peer = wait_for_selection(client, peer, progress)
-        prepare(client, peer, lambda current=params: current.get_bool('IsOffroad') and not current.get_bool('IsOnroad'),
+        if needs_setup:
+          def waiting_for_park(report=progress, current_wifi=wifi, current_client=client):
+            report('waiting-park', None, 'Jetson setup waits for fresh Park and zero speed')
+            if current_wifi is not None:
+              current_wifi.send(current_client)
+            current_client.state()
+          wait_for_permission(setup_permission, host_attached, waiting_for_park)
+        prepare(client, peer, setup_allowed,
                 host_attached, progress, mode=session_mode())
         spec = client.spec
         if spec is None:
@@ -585,7 +606,11 @@ def main():
         # Warm independently of camera/modeld; every real session resets state.
         usb_priority.start(peer, bulk_usb=transport is owner)
         for frame in range(10):
+          if needs_setup and not setup_allowed():
+            raise PreparationDeferred('Jetson setup requires fresh Park/zero-speed state or offroad')
           client.infer(np.zeros(spec.warped_shape, np.uint8), np.zeros(spec.packed_nelem, np.float32), frame, reset=True)
+        if needs_setup and not setup_allowed():
+          raise PreparationDeferred('Jetson setup permission expired')
         log.info('Jetlink ready: %s', peer)
         ready_once = True
         serve_local(listener, client, peer, wifi)

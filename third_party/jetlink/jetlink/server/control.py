@@ -130,6 +130,7 @@ class ControlServer:
     self._downloads = None
     self._commands = {
       'status': self._cmd_status,
+      'display_stats': self._cmd_display_stats,
       'catalog': self._cmd_catalog,
       'download': self._cmd_download,
       'cancel_download': self._cmd_cancel_download,
@@ -437,6 +438,19 @@ class ControlServer:
     self.publish('inventory', self._inventory())
     self.publish('catalog', self._catalog_payload())
     return {}
+
+  def _cmd_display_stats(self, client: _Client, msg: dict) -> dict:
+    # Fixed, bounded and read-only: never load an engine or change its state.
+    loaded = self.host.loaded
+    if loaded is None:
+      self._display_engine = None
+      return {'display_stats': None}
+    if getattr(self, '_display_engine', None) is not loaded:
+      self._display_engine = loaded
+      self._display_since = time.perf_counter()
+    summary = self.host.frame_stats.display_summary(self._display_since)
+    return {'display_stats': {**summary, 'model_sha256': loaded.sha256} if summary else None}
+
 
   def _cmd_catalog(self, client: _Client, msg: dict) -> dict:
     self._net.submit(self._refresh_catalog, bool(msg.get('refresh', False)))

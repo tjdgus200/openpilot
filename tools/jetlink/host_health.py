@@ -10,6 +10,9 @@ import time
 
 STATUS = Path('/dev/shm/carrot-jetlink-health.json')
 THERMAL = Path('/sys/class/thermal')
+HWMON = Path('/sys/class/hwmon')
+POWER_POLL_SECONDS = .5
+SLOW_POLL_SECONDS = 1.
 
 
 def storage_health(value, status=Path('/run/carrot-storage.json'), marker=Path('/etc/carrot-jetlink-protected.json')):
@@ -80,6 +83,36 @@ def thermal_health(root=THERMAL):
           'temp_c': max((s['temp_c'] for s in sensors), default=None), 'sensors': sensors}
 
 
+def module_power(root=HWMON):
+  """INA3221 VDD_IN module power in watts; never sum overlapping rails.
+
+  NVIDIA hwmon voltage/current inputs use mV/mA. Only the existing health
+  worker calls this, once per sample; no subprocess or sysfs write is used.
+  """
+  rails = []
+  try:
+    for monitor in root.glob('hwmon*'):
+      try:
+        if (monitor / 'name').read_text().strip() != 'ina3221':
+          continue
+        for channel in (1, 2, 3):
+          label = monitor / f'in{channel}_label'
+          if label.read_text().strip() == 'VDD_IN':
+            rails.append((monitor / f'in{channel}_input', monitor / f'curr{channel}_input'))
+      except OSError:
+        continue
+    if len(rails) != 1:
+      return None  # Missing or ambiguous total-module sensor is not zero watts.
+    voltage = int(rails[0][0].read_text())
+    current = int(rails[0][1].read_text())
+    power = voltage * current / 1_000_000
+    if not 1000 <= voltage <= 60000 or current < 0 or not 0 <= power <= 200:
+      return None
+    return power
+  except (OSError, ValueError, TypeError):
+    return None
+
+
 def network_addresses():
   result = subprocess.run(['ip', '-j', '-4', 'addr', 'show', 'scope', 'global'],
                           capture_output=True, text=True, timeout=1, check=True)
@@ -111,15 +144,19 @@ class HostHealth:
     return {**value, 'age_s': age} if 0 <= age < 3 else {}
 
   def _run(self):
+    next_slow, slow = 0., {}
     while True:
       started = time.monotonic()
       try:
-        value = thermal_health()
-        storage_health(value)
-        try:
-          value['addresses'] = network_addresses()
-        except (OSError, ValueError, subprocess.SubprocessError):
-          value['addresses'] = []
+        if started >= next_slow:
+          slow = thermal_health()
+          storage_health(slow)
+          try:
+            slow['addresses'] = network_addresses()
+          except (OSError, ValueError, subprocess.SubprocessError):
+            slow['addresses'] = []
+          next_slow = started + SLOW_POLL_SECONDS
+        value = {**slow, 'power_w': module_power()}
         error = self.error
         if error and 0 <= started - error[0] < 30:
           value.update(severity='error', reason=error[1], runtime_error=True)
@@ -130,7 +167,8 @@ class HostHealth:
         os.replace(temporary, STATUS)
       except Exception:
         pass  # Expiry exposes failure; diagnostics cannot terminate inference.
-      time.sleep(1)
+      # Account for I/O time without catch-up bursts after a slow sensor.
+      time.sleep(max(.05, POWER_POLL_SECONDS - (time.monotonic() - started)))
 
 
 _health = None

@@ -268,7 +268,7 @@ def test_startup_checks_capability_and_offroad_before_usb_transfer(installed, mo
   with pytest.raises(ConnectionError, match='reconnecting'):
     startup.wait_for_boot_update(wire.client, peer, None, lambda: True,
                                 lambda *a, **k: reports.append(k['host_update']['state']), sleep=offroad)
-  assert reports[0] == 'waiting_offroad' and 'transferring' in reports
+  assert reports[0] == 'waiting_park' and 'transferring' in reports
   assert usb.registered(installed.root, installed.value)
   wire.session.close()
 
@@ -314,9 +314,9 @@ def test_matching_current_source_requires_read_only_registration_check(installed
     startup.wait_for_boot_update(wire.client, peer, None, lambda: True,
                                 lambda *a, **k: reports.append(k['host_update']['state']), sleep=offroad)
   if registered:
-    assert wire.kinds == [usb.CHECK] and 'waiting_offroad' not in reports
+    assert wire.kinds == [usb.CHECK] and 'waiting_park' not in reports
   else:
-    assert wire.kinds[0] == usb.CHECK and 'waiting_offroad' in reports and usb.FINISH in wire.kinds
+    assert wire.kinds[0] == usb.CHECK and 'waiting_park' in reports and usb.FINISH in wire.kinds
   wire.session.close()
 
 

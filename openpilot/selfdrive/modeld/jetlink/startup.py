@@ -2,6 +2,7 @@
 from pathlib import Path
 import time
 from openpilot.common.jetson_model import selected_release
+from openpilot.selfdrive.modeld.jetlink.update_permission import Permission, bulk_scheduling, wait_for_permission
 
 CAPABILITY = 'carrot_boot_update_v1'
 MESSAGE = 0x4003
@@ -42,21 +43,23 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
       usb_change = peer.get(CHECK_CAPABILITY) is not True or not available(client, manifest, connected)
     if usb_change:
       from openpilot.common.params import Params
-      params = Params()
+      permission = Permission(Params(), allow_parked=(peer.get('engine_state') == 'none'
+                                                     and 'loaded' in peer and peer['loaded'] is None))
       def allowed():
-        return connected() and params.get_bool('IsOffroad') and not params.get_bool('IsOnroad')
-      while connected() and not allowed():
-        publish('updating', peer=peer, host_update={'state': 'waiting_offroad', 'fraction': None, 'integrity': 'sha256'})
+        return connected() and permission.allowed()
+      def waiting():
+        publish('updating', peer=peer, host_update={'state': 'waiting_park', 'fraction': None, 'integrity': 'sha256'})
         if wifi is not None:
           wifi.send(client)
         client.state()
-        sleep(.5)
-      upload(client, manifest, Path('/data/jetson-usb-cache'), allowed,
-             lambda state, fraction: publish('updating', peer=peer,
-                                            host_update={'state': state, 'fraction': fraction, 'integrity': 'sha256'}))
+      with bulk_scheduling():
+        wait_for_permission(permission, connected, waiting, sleep)
+        upload(client, manifest, Path('/data/jetson-usb-cache'), allowed,
+               lambda state, fraction: publish('updating', peer=peer,
+                                              host_update={'state': state, 'fraction': fraction, 'integrity': 'sha256'}))
   while connected():
     if usb_change and not allowed():
-      raise ConnectionError('USB activation requires offroad and USB connection')
+      raise ConnectionError('USB activation requires offroad or fresh Park/zero-speed state and USB connection')
     # The release selection is independent of NetworkManager profile reads.
     # Network provisioning stays on its private channel and out of status/logs.
     client.t.send_json(MESSAGE, client._next_seq(), manifest)

@@ -1,5 +1,23 @@
 # Repository memory
 
+- On 2026-10-21, the user creates `carrot-nav-pv5` from official carrot-nav
+  682ceeb4, selecting battery page8, personal HUD metrics/brightness/BSD cues,
+  parked USB updates and the earlier bounded GPU-state/C3 AIO ports. Keep the
+  official N16 SHA, USB-HUD capability/media limits, NAV preview, independent
+  OnnxBsdEnabled, camera/pose/control validity and hardware-specific FIFO2 gate.
+  Do not import the old direct-Wi-Fi policy, Jetson CPU ONNX offload or attached
+  USB power override. Battery has no validated PV5 profile and must show --.
+  Park update checks fresh valid carState, canValid/no timeout, gear park and
+  raw wheel speed exactly zero; onroad/cruise flags are not extra conditions.
+  Only an empty-engine boot receiver may use this Park exception. Recheck
+  before transfer/activation; do not claim immediate cancellation of an atomic
+  install. BSD uses fused native/visual flags, fresh carState, 2Hz bright/dim
+  physical-edge strips plus steady translucent outer-third gradients; vehicle
+  alerts render last. AIO default only tici/aarch64/Linux4.9.103; retain serial
+  writes on other devices. New-branch device timing/road safety is unvalidated.
+  Scope this request to this new branch, not official or prior experiments.
+  See docs/carrot_nav_pv5.md and its paired USB package selection.
+
 - On 2026-10-21, owner requests restoring comma-to-Jetson USB display traffic.
   Nav-only new receiver capability selects bounded snapshot plus at most two
   32KiB media fragments during GPU execution; old receivers retain Wi-Fi until

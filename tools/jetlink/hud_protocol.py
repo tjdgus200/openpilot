@@ -107,8 +107,12 @@ class SnapshotBuilder:
     self.nav_map = NavPreviewPublisher() if nav_map else None
     from openpilot.selfdrive.carrot.cluster.cluster_system_monitor import NetworkAddressProvider
     self.network = NetworkAddressProvider()
+    self.battery = None
+    self.battery_retry_at = 0.0
 
   def close(self):
+    if self.battery is not None:
+      self.battery.close()
     if self.camera is not None:
       self.camera.close()
     self.network.close()
@@ -125,7 +129,8 @@ class SnapshotBuilder:
       host_display = False
     # A host panel can start rendering without a camera preview. Only its
     # fresh output heartbeat starts this worker; no panel means no allocation.
-    enabled = ((host_display or self.params.get_int('ClusterHud') == 1) and
+    camera_view = self.params.get_int('ClusterHudCameraViewMode') in (2, 3, 4)
+    enabled = (camera_view and (host_display or self.params.get_int('ClusterHud') == 1) and
                (self.params.get_bool('IsOnroad') or self.params.get_int('ClusterHudDebug') >= 1))
     if enabled and self.camera is None:
       from hud_camera import CameraPublisher
@@ -134,6 +139,35 @@ class SnapshotBuilder:
       self.camera.close()
       self.camera = None
     return self.camera.latest if self.camera is not None else {}
+
+  def battery_snapshot(self, now):
+    try:
+      from openpilot.selfdrive.carrot.cluster.cluster_config import (
+        CLUSTER_SCREEN_MODE_BATTERY, CLUSTER_SCREEN_MODE_PARAM, normalize_cluster_screen_mode,
+      )
+      enabled = normalize_cluster_screen_mode(self.params.get(CLUSTER_SCREEN_MODE_PARAM)) == CLUSTER_SCREEN_MODE_BATTERY
+      if not enabled and self.battery is None:
+        return None
+      if not enabled:
+        self.battery.close()
+        self.battery = None
+        return None
+      if now < self.battery_retry_at:
+        return {'version': 1, 'sampled_at': now, 'status': 'waiting', 'fields': {}}
+      if self.battery is None:
+        from hud_battery import BatteryPublisher
+        self.battery = BatteryPublisher()
+      vehicle = self.sm['carParams'].carFingerprint
+      return self.battery.update(vehicle, True, now)
+    except Exception:
+      # Optional battery telemetry must not expire the other HUD services.
+      # Retry slowly without forwarding exception text or CAN payloads.
+      if self.battery is not None:
+        self.battery.close()
+      self.battery = None
+      self.battery_retry_at = now + 5.0
+      return {'version': 1, 'sampled_at': now, 'status': 'waiting', 'fields': {}}
+
 
   def packet(self):
     from openpilot.cereal import log
@@ -171,6 +205,9 @@ class SnapshotBuilder:
       preview = self.nav_map.packet(self.settings.get('ClusterHudScreenMode') == 'Nw==')
       if preview is not None:
         record['nav_map_preview'] = preview
+    battery = self.battery_snapshot(now)
+    if battery is not None:
+      record['battery_hud'] = battery
     return encode_snapshot(record)
 
 

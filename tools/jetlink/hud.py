@@ -29,6 +29,54 @@ def wait_for_usb_display(scan, expected, sleep=time.sleep):
     sleep(1.)
 
 
+class _BrightnessSample:
+  def __init__(self, source):
+    self.source = source
+    self.unavailable = False
+
+  def screen_brightness_percent(self):
+    value = self.source.screen_brightness_percent() if self.source is not None else None
+    self.unavailable = value is None
+    return value
+
+
+class StableBrightness:
+  """Hold display brightness on missing input; never retain vehicle validity.
+
+  Automatic output stays at least 10 percent, including fresh offroad input.
+  Manual/explicit-off output still follows the common resolver.
+  One instance belongs to one Jetson renderer, with no timers or extra I/O.
+  """
+  MIN_AUTO_BRIGHTNESS = 10
+
+  def __init__(self, resolver):
+    self.resolver = resolver
+    self.last = None
+
+  def __call__(self, setting, live_source, *, auto_enabled):
+    sample = _BrightnessSample(live_source)
+    value = self.resolver(setting, sample, auto_enabled=auto_enabled)
+    if sample.unavailable:
+      value = self.last if self.last is not None else self.MIN_AUTO_BRIGHTNESS
+    if auto_enabled and setting == 0:
+      value = max(self.MIN_AUTO_BRIGHTNESS, value)
+    self.last = value
+    return value
+
+
+class AlwaysVisibleGate:
+  """Keep this Jetson panel available without changing vehicle Params/state."""
+  def __init__(self, reader):
+    self.reader = reader
+
+  def read_mode(self):
+    return max(1, self.reader.read_mode())
+
+  def allowed(self):
+    return True
+
+
+
 class DisplayParams:
   """Only this renderer sees this adapter; no vehicle Params can be written."""
   def __init__(self, *args, **kwargs):
@@ -131,11 +179,6 @@ def main():
   if '--help' not in sys.argv:
     from boot_update import wait_for_runtime
     wait_for_runtime()
-  if '--help' not in sys.argv:
-    settings = DisplayParams()
-    while not (settings.get_int('ClusterHud') == 1 and
-               (settings.get_bool('IsOnroad') or settings.get_int('ClusterHudDebug') >= 1)):
-      time.sleep(.2)
   from openpilot.cereal import log
   params_module = types.ModuleType('openpilot.common.params')
   params_module.Params = DisplayParams
@@ -158,6 +201,7 @@ def main():
   from hud_camera import RemoteRoadCamera
   cluster_live_camera.LiveRoadCamera = RemoteRoadCamera
   import cluster_system_monitor
+  import hud_runtime_stats  # noqa: F401 -- Capture the actual host sampler before adapters.
   from hud_stats import VehicleSystemStats, VehicleCpuOverlay, VehicleNetworkAddress
   cluster_system_monitor.SystemStatsSampler = VehicleSystemStats
   cluster_system_monitor.ClusterProcessCoreUsageSampler = VehicleCpuOverlay
@@ -191,6 +235,9 @@ def main():
   cluster_navi_source.NaviIpcMediaSource = RemoteNaviSource
   vehicle_stats = VehicleSystemStats()
   import main as cluster
+  cluster.resolved_usb_brightness = StableBrightness(cluster.resolved_usb_brightness)
+  gate_reader = cluster.ClusterHudOutputGateParamReader
+  cluster.ClusterHudOutputGateParamReader = lambda: AlwaysVisibleGate(gate_reader())
   from hud_health import HealthRenderer
   cluster.ClusterUiRenderer = HealthRenderer
   if '--help' not in sys.argv:

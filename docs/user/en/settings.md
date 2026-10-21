@@ -435,3 +435,17 @@ This is display/logging only, with no braking, stop or departure command.
 The new Params key requires the normal build after updating. The current road
 camera supplies 20fps. Reduced processing overhead does not establish sustained
 20Hz detection; this change does not promise 20Hz or 50Hz detection.
+
+## Jetson HUD on carrot-nav-pv5
+
+External HUD Screen Mode (`ClusterHudScreenMode`) 8 selects the PV5 battery overview. New/reset settings in this branch select 8; existing saved screen numbers remain unchanged. Mode 0 retains automatic navigation/driving reports.
+
+Battery values require a validated PV5 CAN profile. Missing or stale readings show `--`. No real-vehicle profile is bundled, so installing the screen does not create battery readings. Slow battery values update at up to 1Hz; instantaneous draw/regeneration updates at up to 10Hz in the existing low-priority HUD worker.
+
+The Jetson HUD footer separates comma/Orin CPU and memory and Orin GPU utilization. The latest ten-second inference AVG/P99/MAX appears above the battery maximum temperature. The power/temperature badge is beside the Wi-Fi icon; power is sampled every 0.5 seconds. Orange/red utilization thresholds are display cues, not vehicle fault diagnoses, and 100% GPU use alone is not a danger indication.
+
+Automatic brightness holds its last value during missing data and uses a 10% minimum. The dashboard stays visible offroad while invalid vehicle speed shows `--`; vehicle onroad/control state is unchanged. Explicit manual display-off remains available.
+
+A turn signal with same-side vehicle/visual BSD adds a red strip at that physical screen edge. The strip brightens/dims at 2Hz without fully disappearing. A steady faint red gradient covers that side's outer third; the center third and opposite side remain unchanged and vehicle alerts render last. Stale BSD information is not reused. No warning does not establish that the adjacent lane is clear. Visual BSD retains the official comma-side execution and `OnnxBsdEnabled` setting.
+
+USB updates are allowed offroad or with fresh valid CAN information confirming Park and zero speed. An onroad camera screen is allowed when those two conditions hold; missing gear/speed data or loss of permission stops the next transfer/activation request. Running Jetson inference is not replaced live, so a normal-mode Jetson reboot and existing USB receiver enrollment are required.

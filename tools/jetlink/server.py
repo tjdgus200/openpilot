@@ -6,6 +6,8 @@ import sys
 import time
 
 if __name__ == '__main__':
+  from runtime_port_options import apply
+  apply()
   if Path('/etc/nv_tegra_release').is_file():
     from install_updates import migrate_running_release
     migrate_running_release()

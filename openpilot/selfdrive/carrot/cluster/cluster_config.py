@@ -83,6 +83,9 @@ CLUSTER_SCREEN_MODE_DEBUG_GRAPH_RIGHT = 4
 CLUSTER_SCREEN_MODE_TRIP_REPORT = 5
 CLUSTER_SCREEN_MODE_NAVI = 6
 CLUSTER_SCREEN_MODE_NAV_MODEL = 7
+CLUSTER_SCREEN_MODE_BATTERY = 8
+# Initial choice; numeric mode 0 remains the selectable navigation/report mode.
+CLUSTER_SCREEN_MODE_INITIAL = CLUSTER_SCREEN_MODE_BATTERY
 CLUSTER_SCREEN_MODE_PARAM = "ClusterHudScreenMode"
 CLUSTER_RADAR_INFO_NONE = 0
 CLUSTER_RADAR_INFO_VEHICLE_SPEED = 1
@@ -365,6 +368,8 @@ def normalize_cluster_brightness_percent(value: object) -> int:
 
 
 def normalize_cluster_screen_mode(value: object) -> int:
+    if value is None or value == b"":
+        return CLUSTER_SCREEN_MODE_INITIAL
     if isinstance(value, str):
         normalized = value.strip().lower()
         aliases = {
@@ -372,7 +377,7 @@ def normalize_cluster_screen_mode(value: object) -> int:
             "3d_fullscreen": CLUSTER_SCREEN_MODE_FULLSCREEN_3D,
             "fullscreen-3d": CLUSTER_SCREEN_MODE_FULLSCREEN_3D,
             "fullscreen_3d": CLUSTER_SCREEN_MODE_FULLSCREEN_3D,
-            "default": CLUSTER_SCREEN_MODE_DEFAULT,
+            "default": CLUSTER_SCREEN_MODE_INITIAL,
             "debug": CLUSTER_SCREEN_MODE_DEBUG,
             "system": CLUSTER_SCREEN_MODE_DEBUG_SYSTEM,
             "debug-system": CLUSTER_SCREEN_MODE_DEBUG_SYSTEM,
@@ -394,17 +399,18 @@ def normalize_cluster_screen_mode(value: object) -> int:
             "navi": CLUSTER_SCREEN_MODE_NAVI,
             "navigation": CLUSTER_SCREEN_MODE_NAVI,
             "nav-model": CLUSTER_SCREEN_MODE_NAV_MODEL,
+            "battery": CLUSTER_SCREEN_MODE_BATTERY,
         }
         if normalized in aliases:
             return aliases[normalized]
         try:
             value = int(normalized)
         except ValueError:
-            return CLUSTER_SCREEN_MODE_DEFAULT
+            return CLUSTER_SCREEN_MODE_INITIAL
     try:
         mode = int(value)
     except (TypeError, ValueError):
-        return CLUSTER_SCREEN_MODE_DEFAULT
+        return CLUSTER_SCREEN_MODE_INITIAL
     if mode in (
         CLUSTER_SCREEN_MODE_FULLSCREEN_3D,
         CLUSTER_SCREEN_MODE_DEFAULT,
@@ -415,9 +421,10 @@ def normalize_cluster_screen_mode(value: object) -> int:
         CLUSTER_SCREEN_MODE_TRIP_REPORT,
         CLUSTER_SCREEN_MODE_NAVI,
         CLUSTER_SCREEN_MODE_NAV_MODEL,
+        CLUSTER_SCREEN_MODE_BATTERY,
     ):
         return mode
-    return CLUSTER_SCREEN_MODE_DEFAULT
+    return CLUSTER_SCREEN_MODE_INITIAL
 
 
 def normalize_cluster_radar_info_mode(value: object) -> int:
