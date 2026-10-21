@@ -26,7 +26,13 @@ JETSON = {'protocol': 2, 'backend': 'trt', 'device': 'orin', 'carrot_host': 'jet
 
 def test_real_bootstrap_hello_is_accepted_before_wifi_and_signed_update(monkeypatch):
   import boot_update
+  from openpilot.common.jetson_model import matching_release
   from openpilot.selfdrive.modeld.jetlink import startup
+  # This case exercises the official signed NAS path, independently of a
+  # branch's locally selected SHA-256 USB package. Missing USB enrollment is
+  # rejected separately by test_usb_sha256; do not weaken that runtime gate.
+  official = matching_release(startup.RELEASE, required=True)
+  monkeypatch.setattr(startup, 'selected_release', lambda *a, **kw: official)
   sent = []
   bootstrap = boot_update.BootstrapSession(SimpleNamespace(send_json=lambda *args: sent.append(args)), None)
   bootstrap.handle(SimpleNamespace(msg_type=P.Msg.HELLO_REQ, seq=1))
