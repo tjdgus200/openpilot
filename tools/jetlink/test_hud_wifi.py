@@ -103,13 +103,17 @@ def test_private_ap_is_preferred_and_usb_route_is_rejected():
   assert select_link(networks[:1], ['172.29.77.2'], route) is None
 
 
-def test_ap_creation_is_offroad_only(monkeypatch):
+def test_onroad_internet_sharing_remains_deferred(monkeypatch):
   if sys.platform == 'win32':
     monkeypatch.setitem(sys.modules, 'fcntl', NS())
   import wifi_direct
   wireless = Mock()
   monkeypatch.setattr(wifi_direct, 'offroad', lambda: False)
-  assert wifi_direct.AccessPoint(wireless).start() is False
+  ap = wifi_direct.AccessPoint(wireless)
+  ap.value = {'subnet': '172.29.77.0/24'}
+  ap.sharing = Mock()
+  ap.share_internet()
+  ap.sharing.ensure.assert_not_called()
   wireless.create.assert_not_called()
 
 

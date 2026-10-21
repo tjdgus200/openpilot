@@ -1,6 +1,7 @@
 """Branch-owned comma AP, independent of the optional phone Internet uplink.
 
-This low-priority control worker never touches wlan0 or starts an AP onroad.
+This low-priority control worker starts/reconnects its AP even onroad, without
+changing wlan0's profile, requesting a scan or waiting in the driving loop.
 Its secret stays in a root-only file and the existing private USB provisioning.
 Returning to a branch without this helper tears down only its own AP.
 """
@@ -24,6 +25,7 @@ from wifi_direct_forward import Sharing
 from wifi_protocol import DIRECT_SUBNETS
 
 STATUS = Path('/dev/shm/carrot-jetlink-direct-wifi.json')
+LOCK = Path('/run/carrot-jetlink-direct-wifi.lock')
 PRIVATE = Path('/data/carrot-jetlink-direct-wifi')
 PROFILE = Path('/run/NetworkManager/system-connections/carrot-jetson-direct.nmconnection')
 SUBNETS = DIRECT_SUBNETS
@@ -104,8 +106,6 @@ class AccessPoint:
     self.sharing_state = 'idle'
 
   def start(self):
-    if not offroad():
-      return False
     self.stage = 'identity'
     value = configuration()
     routes = json.loads(subprocess.check_output(['ip', '-j', '-4', 'route', 'show'], text=True, timeout=3))
@@ -216,7 +216,7 @@ def low_priority():
 def serve(trial=0):
   if os.geteuid() != 0:
     raise PermissionError('Direct Wi-Fi requires its root control worker')
-  lock = open('/run/carrot-jetlink-direct-wifi.lock', 'a')
+  lock = LOCK.open('a')
   try:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
   except BlockingIOError:
@@ -241,11 +241,11 @@ def serve(trial=0):
         retry = now + 5.
         try:
           if not ap.active():
-            if offroad():
-              ap.close()
-              state = 'active' if ap.start() else 'waiting_offroad'
-            else:
-              state = 'waiting_offroad'
+            # AP activation is independent of ignition/offroad and phone
+            # availability. Only this background worker may wait for NM/DHCP;
+            # failed activation keeps the existing bounded retry below.
+            ap.close()
+            state = 'active' if ap.start() else 'unavailable'
           else:
             ap.awake()
             ap.share_internet()

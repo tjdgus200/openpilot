@@ -1,5 +1,18 @@
 # Repository memory
 
+- On 2026-10-21, owner explicitly requires automatic direct Wi-Fi after an
+  onroad vehicle boot with no phone hotspot. This supersedes earlier offroad-
+  only AP creation/recovery. Allow the owned virtual AP to start/retry in its
+  detached root worker onroad; never toggle radio, rescan, reconnect wlan0,
+  reset USB or wait for AP/DHCP in modeld/jetlinkd. Keep AP and provisioning
+  workers SCHED_OTHER/nice19 on cores0-3, healthy checks5s/failure backoff30s,
+  empty profile refresh5s (30s once ready). Retain offroad-only separate NAT
+  correction, direct-only peer routing, concurrent-PHY checks, official serial
+  USB and model/control/validity policies. Paired61878ca0 remains compatible;
+  this change needs comma Git Pull/reboot only. PC NM/boot/fault/USB tests
+  cannot establish actual RF/driver coexistence or 20Hz/road-safety guarantees.
+  See docs/jetson_aux_vision_cpu.md. Scope remains carrot-nav-pv5.
+
 - On 2026-10-21, owner cancels experimental asynchronous USB TX after a
   supplied comparison shows worse tail latency despite a lower mean. Restore
   the latest official carrot-nav serial FfsTransport and close path; remove

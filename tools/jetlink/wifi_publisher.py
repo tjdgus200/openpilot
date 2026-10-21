@@ -84,6 +84,8 @@ def road_state(raw):
 
 
 def main(fd):
+  from wifi_direct import low_priority
+  low_priority()
   from openpilot.common.params import Params
   params = Params()
   owner = hashlib.sha256(Path('/etc/machine-id').read_bytes()).hexdigest()
@@ -106,7 +108,10 @@ def main(fd):
     if now >= refresh:
       try:
         config = provisioning(owner, None)
-        refresh = now + 30
+        # The private worker can finish AP creation after our first packet.
+        # Recheck briefly while absent, retaining the normal low query rate
+        # after activation. Never wait for AP readiness or delay boot control.
+        refresh = now + (30 if config['profiles'] else 5)
       except Exception:
         # Keep boot-update control alive even without a usable AP/NM query.
         # Legacy recovery treats an empty profile set as non-destructive.
