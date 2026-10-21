@@ -1,5 +1,13 @@
 # Repository memory
 
+- Second review commit extends only the official DWC3 completion helper's
+  supported board set to tici/tizi/mici on the same aarch64 Linux4.9.103.
+  Keep dynamic kernel-worker identity/trace, ownership, lease/journal/EOF
+  restoration and original priority2. Do not add AIO or core7 affinity.
+  Local review97 scheduling/daemon regressions pass with private updated gate
+  tests; no new automated tests in the published review diff. C3 hardware
+  performance/kernel safety remain unmeasured. No Jetson update for this part.
+
 - On 2026-10-21, owner requests shareable GPU-state and C3 USB review links.
   codex/jetson-gpu-usb-review starts from official carrot-nav3a03a39f and contains
   only the opt-in GPU-state patch, then a separate C3 USB eligibility patch.
