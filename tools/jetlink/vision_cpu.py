@@ -20,7 +20,11 @@ def process_limits(role):
   os.environ['OPENBLAS_NUM_THREADS'] = os.environ['OMP_NUM_THREADS'] = '1'
   os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
   os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
-  os.setpriority(os.PRIO_PROCESS, 0, 19 if role == 'send' else 10)
+  # The boot updater's unprivileged probe inherits nice19. Raising it to
+  # nice10 needs extra privileges and aborts before either ONNX is checked.
+  # Keep any inherited lower priority; ordinary workers still use 19/10.
+  target_nice = 19 if role == 'send' else 10
+  os.setpriority(os.PRIO_PROCESS, 0, max(os.getpriority(os.PRIO_PROCESS, 0), target_nice))
   os.sched_setaffinity(0, sorted(os.sched_getaffinity(0))[:2])
 
 

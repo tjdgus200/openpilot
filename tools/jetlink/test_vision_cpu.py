@@ -277,3 +277,55 @@ def test_official_service_toggle_roi_and_preprocessing_regressions():
   result = subprocess.run([sys.executable, str(ROOT / 'tools/jetlink/check_aux_service.py')],
                           cwd=ROOT, env=env, capture_output=True, text=True, timeout=90)
   assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='Linux worker scheduling')
+@pytest.mark.parametrize(('role', 'inherited', 'expected'), [
+  ('send', 0, 19), ('send', 19, 19), ('receive', 0, 10),
+  ('receive', 15, 15), ('--check-models', 0, 10), ('--check-models', 19, 19),
+])
+def test_cpu_workers_never_raise_inherited_priority(monkeypatch, role, inherited, expected):
+  calls = []
+  for name in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'CUDA_VISIBLE_DEVICES'):
+    monkeypatch.setenv(name, 'before')
+  monkeypatch.setattr(os, 'sched_setscheduler', lambda *args: calls.append(('policy', args)))
+  monkeypatch.setattr(os, 'getpriority', lambda *args: inherited)
+  def setpriority(which, who, priority):
+    if priority < inherited:
+      raise PermissionError('Unprivileged priority increase')
+    calls.append(('nice', priority))
+  monkeypatch.setattr(os, 'setpriority', setpriority)
+  monkeypatch.setattr(os, 'sched_getaffinity', lambda pid: {0, 1, 2, 3})
+  monkeypatch.setattr(os, 'sched_setaffinity', lambda *args: calls.append(('affinity', args)))
+  worker.process_limits(role)
+  assert calls == [('policy', (0, os.SCHED_OTHER, os.sched_param(0))),
+                   ('nice', expected), ('affinity', (0, [0, 1]))]
+  assert os.environ['CUDA_VISIBLE_DEVICES'] == '-1'
+  assert os.environ['OPENBLAS_NUM_THREADS'] == os.environ['OMP_NUM_THREADS'] == '1'
+
+
+@pytest.mark.skipif(sys.platform != 'linux', reason='Real Linux nice/UID isolation')
+def test_install_probe_retains_nice19_without_root_privileges():
+  # Run the actual production function in a disposable child, not in pytest or
+  # the device services. Reading/compiling it first also works in root-only CI
+  # checkout directories, before the child irreversibly drops its own UID.
+  script = '''
+import ast, json, os, sys
+from pathlib import Path
+tree = ast.parse(Path(sys.argv[1]).read_text())
+function = next(v for v in tree.body if isinstance(v, ast.FunctionDef) and v.name == 'process_limits')
+namespace = {'os': os}
+exec(compile(ast.Module(body=[function], type_ignores=[]), '<worker-limits>', 'exec'), namespace)
+if os.geteuid() == 0:
+  os.setgroups([])
+  os.setgid(65534)
+  os.setuid(65534)
+os.setpriority(os.PRIO_PROCESS, 0, 19)
+namespace['process_limits']('--check-models')
+print(json.dumps({'nice': os.getpriority(os.PRIO_PROCESS, 0),
+                  'policy': os.sched_getscheduler(0), 'unprivileged': os.geteuid() != 0}))
+'''
+  result = subprocess.run([sys.executable, '-c', script, str(ROOT / 'tools/jetlink/vision_cpu.py')],
+                          capture_output=True, text=True, timeout=15)
+  assert result.returncode == 0, result.stderr
+  assert json.loads(result.stdout) == {'nice': 19, 'policy': os.SCHED_OTHER, 'unprivileged': True}

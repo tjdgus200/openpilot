@@ -1,5 +1,16 @@
 # Repository memory
 
+- On 2026-10-21, owner requests fixing and publishing the reproduced auxiliary
+  installation-probe priority failure on carrot-nav-pv5. The boot gate runs
+  nice19; its unprivileged CPU check must not raise itself to nice10. Choose
+  max(inherited nice, requested nice), retaining normal sender19/receiver10,
+  SCHED_OTHER, two-core placement, one CPU thread and CUDA exclusion. Keep all
+  CPU/HUD/GPU candidate checks, USB SHA policy, official key/model/recovery and
+  Park/zero approval. New paired host package is necessary, not just a comma
+  Python edit. Linux child reproduces old nice19 PermissionError and fixed
+  nice19 success without elevated UID; no actual Jetson incident-log or road
+  confirmation. See docs/jetson_aux_vision_cpu.md.
+
 - On 2026-10-21, owner extends official session-scoped DWC3 FIFO2 completion
   scheduling to C3/C3X as well as C4. Permit only tici/tizi/mici on aarch64
   Linux4.9.103; keep actual symbol/trace discovery, kernel-worker identity and
