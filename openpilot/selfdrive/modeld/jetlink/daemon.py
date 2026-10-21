@@ -26,7 +26,7 @@ from openpilot.selfdrive.modeld.jetlink.startup import (CAPABILITY as BOOT_UPDAT
                                                        RuntimeHandoff, initial_connection_wait)
 from jetlink.client import JetlinkClient
 from jetlink.transport.base import LinkError, LinkTimeout
-from jetlink.transport.ffs_aio import AioFfsTransport as FfsTransport, AioCleanupError
+from jetlink.transport.ffs import FfsTransport
 
 GADGET = '/sys/kernel/config/usb_gadget/jetlink'
 ROLE = Path('/sys/class/power_supply/usb/typec_mode')
@@ -209,10 +209,7 @@ class CarrotTransport(FfsTransport):
     reader = getattr(self, '_reader', None)
     watchdog = getattr(getattr(self, '_write_guard', None), 'thread', None)
     gadget = getattr(self, 'gadget', None)
-    try:
-      super().close()
-    except AioCleanupError as exc:
-      raise UnsafeCleanupError(str(exc)) from exc
+    super().close()
     if getattr(getattr(self, '_aio_reader', None), 'context', None) is not None:
       raise UnsafeCleanupError('FunctionFS AIO cleanup incomplete; refusing to rebind')
     if any(thread is not None and thread.is_alive() for thread in (reader, watchdog)):

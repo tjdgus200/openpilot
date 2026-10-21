@@ -452,7 +452,7 @@ USB updates are allowed offroad or with fresh valid CAN information confirming P
 
 If parked-state confirmation is lost, the same USB session waits for renewed permission, then retries file transfer from the beginning. Both files are prepared before USB transfer; the badge distinguishes file checks, downloads, USB transfer and Park waits. Waiting does not permit file writes/activation or relax driving validity checks.
 
-Asynchronous USB TX defaults on for C3/C3X/C4 (`tici`/`tizi`/`mici`) running aarch64 Linux 4.9.103. This C4 support extension applies after updating and normally rebooting the comma; it retains the existing paired Jetson package. GPU recurrence already runs on Orin for all comma models. Physical C4 latency improvement has not been measured; existing completion scheduling, deadlines and failure checks remain.
+The experimental asynchronous USB TX extension has been removed at the owner's request. C3/C3X/C4 now directly use official carrot-nav serial writes; a stale `CARROT_JETLINK_AIO_WRITE=1` cannot reactivate the removed transport. Update and normally reboot the comma; this rollback does not require reinstalling the paired Jetson package. GPU recurrence, existing completion scheduling, deadlines and failure checks remain. This is not a new on-device latency measurement.
 
 Lane/visual BSD inference requires the paired Jetson CPU runtime. Images and results use Wi-Fi only; comma retains preprocessing and result merging. Both minimum intervals are 500ms, combined across sides for BSD. Missing/late Wi-Fi results are unknown, with no comma ONNX or USB-image fallback. Existing default-off and onroad-readiness conditions remain. See [installation, load and validation limits](../../jetson_aux_vision_cpu.md).
 

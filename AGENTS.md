@@ -1,5 +1,19 @@
 # Repository memory
 
+- On 2026-10-21, owner cancels experimental asynchronous USB TX after a
+  supplied comparison shows worse tail latency despite a lower mean. Restore
+  the latest official carrot-nav serial FfsTransport and close path; remove
+  ffs_aio/native writer and the AIO release option, including its hardware gate.
+  Keep GPU state, direct-only Wi-Fi, USB completion-priority policy, userspace
+  placement and optional official AIO RX diagnostic unchanged. Old AIO TX env
+  cannot re-enable a removed transport. This rollback is comma-side only;
+  retain the verified paired61878ca0 package and official N16/SHA recovery.
+  Current Wi-Fi AP creation/recovery remains OFFROAD ONLY: a phone hotspot is
+  not required, but booting directly onroad can wait for offroad, so do not
+  promise immediate private Wi-Fi after an in-vehicle onroad boot. Active AP
+  survives phone loss by policy; actual RF/channel performance is unverified.
+  See docs/carrot_nav_pv5.md. Scope remains carrot-nav-pv5, not other branches.
+
 - On 2026-10-21, owner now explicitly requires direct comma/Jetson Wi-Fi only,
   superseding earlier shared-hotspot fallback preservation for carrot-nav-pv5.
   Export only the owned AP, never phone secrets; direct_only/subnet metadata

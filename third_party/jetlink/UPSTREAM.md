@@ -16,16 +16,18 @@ the production daemon now uses the extended `JetlinkClient`.
 Carrot's adapter, device-role policy, process placement and deployment tools are
 outside this directory. Updating the protocol requires testing both peers.
 
-`carrot-nav-pv5` selectively ports GPU recurrence/finite scanning and bounded
-FunctionFS asynchronous writes from the owner's `codex/jetson-nav-runtime-port`.
+`carrot-nav-pv5` selectively ports GPU recurrence/finite scanning from the
+owner's `codex/jetson-nav-runtime-port`.
 The designs derive from zoompilot/jetlink `d26001b4161f33bab28d806de6a99b96325a429b`
-(`JetlinkKit/Sources/JetlinkTRT/TrtEngine.swift` and `jetlink/transport/aio.py`),
+(`JetlinkKit/Sources/JetlinkTRT/TrtEngine.swift`),
 under its existing MIT license. Carrot's finite checks, deadlines, framing,
 sequence checks, resets and failure containment remain. No held-output policy,
 frame skipping or different ONNX is imported. Release choices enable GPU state
-on the paired Jetson package. Per the owner's subsequent C4 request, AIO TX
-defaults on for `comma tici`/`comma tizi`/`comma mici` with aarch64 Linux4.9.103.
-This comma-side eligibility extension retains the paired Jetson package and
-does not establish physical C4 AIO performance. Other hardware keeps serial
-writes and the official USB completion-priority applicability gates. This is not a complete
-Jetlink version upgrade or proof of 20Hz. See `docs/carrot_nav_pv5.md`.
+on the paired Jetson package. The owner subsequently cancelled the experimental
+asynchronous TX port: its transport, native writer and release option are now
+removed for all comma models. The daemon directly uses the official serial
+`transport/ffs.py`, verified identical to carrot-nav `3a03a39f` on 2026-10-21.
+Official userspace placement, write watchdog/cleanup and USB completion-priority
+applicability gates remain. Existing optional AIO RX diagnostics are unrelated
+and unchanged. This is not a complete Jetlink upgrade or proof of 20Hz.
+See `docs/carrot_nav_pv5.md`.
