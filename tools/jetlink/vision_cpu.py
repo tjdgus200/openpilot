@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 from openpilot.selfdrive.carrot.xiaoge import remote as R
 from hud_wifi_worker import authenticate, seal, unseal, wlan_addresses, target_addresses
 from hud_wifi_route import select_link, wlan_address
+from wifi_direct_netlink import INTERFACE
 
 IDLE_SECONDS = 5.
 
@@ -50,11 +51,14 @@ class Engine:
 
   def infer(self, data):
     # Imports and model allocation occur only in this separate low priority CPU process.
-    import cv2
-    import numpy as np
-    from openpilot.selfdrive.carrot.xiaoge.lane_inference import LaneInference
-    from openpilot.selfdrive.carrot.xiaoge.v_asm_inference import VASMInference
     value, image = R.decode_request(data)
+    try:
+      import cv2
+      import numpy as np
+      from openpilot.selfdrive.carrot.xiaoge.lane_inference import LaneInference
+      from openpilot.selfdrive.carrot.xiaoge.v_asm_inference import VASMInference
+    except ImportError:
+      raise R.RemoteFailure('dependency_missing') from None
     kind = value['kind']
     self.expire()
     if value['op'] == 'unload':
@@ -66,9 +70,11 @@ class Engine:
       cv2.setNumThreads(1)
       cv2.ocl.setUseOpenCL(False)
       path = ROOT / 'openpilot/selfdrive/carrot/xiaoge/assets' / R.FILES[kind]
+      if not path.is_file():
+        raise R.RemoteFailure('model_missing')
       model = (LaneInference if kind == 'lane' else VASMInference)(path)
       if not model.load():
-        raise ValueError('auxiliary CPU model unavailable')
+        raise R.RemoteFailure('model_load_failed')
       # Explicit CPU targets for both models, never TensorRT/CUDA/OpenCL.
       model.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
       model.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
@@ -76,20 +82,25 @@ class Engine:
     self.used[kind] = time.monotonic()
     model, digest = self.models[kind]
     if value['sha256'] != digest:
-      raise ValueError('auxiliary model identity differs')
+      raise R.RemoteFailure('model_hash_mismatch')
     image = np.frombuffer(image, np.uint8).reshape(R.SHAPES[kind])
     started = time.monotonic()
     try:
       if kind == 'lane':
         result = model.infer(image, 416, 416, conf_thresh=value['threshold'])
+        if result.get('valid') is not True:
+          raise R.RemoteFailure('inference_failed')
       else:
         confidence = model.predict_square(image)
         result = {'valid': True, 'confidence': confidence}
     except cv2.error:
-      raise ValueError('auxiliary CPU inference failed') from None
-    return json.dumps({**result, 'id': value['id'], 'sha256': digest,
-                       'processor': 'jetson_cpu_wifi', 'hostMs': (time.monotonic() - started) * 1000},
-                      separators=(',', ':'), allow_nan=False).encode()
+      raise R.RemoteFailure('inference_failed') from None
+    try:
+      return json.dumps({**result, 'id': value['id'], 'sha256': digest,
+                         'processor': 'jetson_cpu_wifi', 'hostMs': (time.monotonic() - started) * 1000},
+                        separators=(',', ':'), allow_nan=False).encode()
+    except (TypeError, ValueError):
+      raise R.RemoteFailure('inference_invalid_result') from None
 
 
 class Runtime:
@@ -110,20 +121,44 @@ class Runtime:
 
   def relay(self, data):
     # Recheck before every image: no USB/NCM/Ethernet or cached-route fallback.
-    link = select_link(tuple(wlan_addresses()), target_addresses())
+    try:
+      network = tuple(wlan_addresses())
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+      raise R.RemoteFailure('wifi_local_unavailable') from None
+    if not network:
+      raise R.RemoteFailure('wifi_local_unavailable')
+    try:
+      targets = target_addresses()
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+      raise R.RemoteFailure('wifi_peer_unavailable') from None
+    if not targets:
+      raise R.RemoteFailure('wifi_peer_unavailable')
+    link = select_link(network, targets)
     if not link:
-      raise ConnectionError('auxiliary WLAN unavailable')
+      raise R.RemoteFailure('wifi_route_unavailable')
     if self.link != link:
       self.close_link()
     if self.connection is None:
       _, source, target = link
       sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       try:
-        sock.settimeout(R.DEADLINE)
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        sock.bind((source, 0))
-        sock.connect((target, R.PORT))
-        _, key = authenticate(sock, self.key, 1)
+        try:
+          sock.settimeout(R.DEADLINE)
+          sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+          sock.bind((source, 0))
+          sock.connect((target, R.PORT))
+        except TimeoutError:
+          raise R.RemoteFailure('wifi_connect_timeout') from None
+        except OSError:
+          raise R.RemoteFailure('wifi_connect_failed') from None
+        try:
+          _, key = authenticate(sock, self.key, 1)
+        except ValueError:
+          raise R.RemoteFailure('authentication_failed') from None
+        except TimeoutError:
+          raise R.RemoteFailure('authentication_timeout') from None
+        except OSError:
+          raise R.RemoteFailure('authentication_unavailable') from None
       except BaseException:
         sock.close()
         raise
@@ -133,9 +168,22 @@ class Runtime:
       raise ValueError('auxiliary session sequence exhausted')
     header = R.PREFIX.pack(self.sequence)
     deadline = time.monotonic() + R.DEADLINE
-    R.send_record(self.connection, header + seal(self.record_key, self.sequence, 0, header, data), deadline)
-    answer = R.read_record(self.connection, R.MAX_RESPONSE + 16, deadline)
-    return unseal(self.record_key, self.sequence, 1, header, answer)
+    try:
+      R.send_record(self.connection, header + seal(self.record_key, self.sequence, 0, header, data), deadline)
+      answer = R.read_record(self.connection, R.MAX_RESPONSE + 16, deadline)
+    except TimeoutError:
+      raise R.RemoteFailure('response_timeout') from None
+    except OSError:
+      raise R.RemoteFailure('remote_closed') from None
+    try:
+      plain = unseal(self.record_key, self.sequence, 1, header, answer)
+    except ValueError:
+      raise R.RemoteFailure('authentication_failed') from None
+    value = json.loads(plain)
+    if not isinstance(value, dict):
+      raise R.RemoteFailure('protocol_invalid')
+    value['wifiPath'] = 'direct_ap' if link[0] == INTERFACE else 'shared_wifi'
+    return json.dumps(value, separators=(',', ':'), allow_nan=False).encode()
 
   def handle(self, sock):
     try:
@@ -146,8 +194,16 @@ class Runtime:
           if self.role == 'send':
             deadline = time.monotonic() + R.DEADLINE
             data = R.read_record(sock, R.MAX_REQUEST, deadline)
-            R.decode_request(data)
-            R.send_record(sock, self.relay(data), deadline)
+            meta, _ = R.decode_request(data)
+            try:
+              answer = self.relay(data)
+            except R.RemoteFailure as error:
+              self.close_link()
+              answer = R.failure_response(meta, error.code, 'comma')
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+              self.close_link()
+              answer = R.failure_response(meta, 'protocol_invalid', 'comma')
+            R.send_record(sock, answer, deadline)
           else:
             self.receive(sock)
         finally:
@@ -180,12 +236,20 @@ class Runtime:
       if sequence != number + 1:
         raise ValueError('auxiliary sequence')
       plain = unseal(key, sequence, 0, data[:4], data[4:])
+      meta, _ = R.decode_request(plain)
       started = time.monotonic()
       # Bound sustained compute duty to 80% of one CPU thread. Delay rather
       # than create catch-up jobs; the comma capture deadline still applies.
       self.stop.wait(max(0., self.next_cpu - started))
       compute_started = time.monotonic()
-      result = self.engine.infer(plain)
+      try:
+        result = self.engine.infer(plain)
+      except R.RemoteFailure as error:
+        result = R.failure_response(meta, error.code, 'jetson')
+      except Exception:
+        # Only send a fixed classification after authenticated decryption and
+        # validated request identity. Never expose OpenCV exceptions/paths.
+        result = R.failure_response(meta, 'inference_failed', 'jetson')
       self.next_cpu = time.monotonic() + (time.monotonic() - compute_started) * .25
       if time.monotonic() - started > R.DEADLINE:
         raise TimeoutError('auxiliary CPU deadline')

@@ -74,3 +74,58 @@ PC 검사는 실제 두 ONNX의 로컬/원격 입력 결과, 인증·재전송/�
 ROI·스냅샷·NV12 전처리를 포함한다. 네이티브 IPC는 명시적인 import용 대체 구현과
 테스트 소켓을 사용하며 실제 CAN/카메라/차량 제어나 GPU 성능 검증으로 세지 않는다.
 이번 브랜치의 온로드·크루즈·유효 맵과 동시 실행한 실기기 20Hz 측정은 별도다.
+
+## 실패 진단과 표시
+
+차선 `lane.diagnostic`, BSD `model.diagnostic`와 웹 상단의 두 진단 행은 고정된
+`code`/`stage`/설명을 제공한다. 실제 요청·성공·실패·진행 중 횟수도 구분한다.
+기존 차선 `inference.count`는 실패 결과까지 포함하는 시도 횟수이므로
+`countKind=attempts`로 명시한다. 시간 값과 요청 FPS만으로 추론 성공을 판단하지 않는다.
+
+| 분류 | 대표 코드 | 확인한 범위 |
+| --- | --- | --- |
+| 구버전/설치 | `runtime_outdated`, `runtime_incomplete` | 기능 미광고와 기능 사용 불가를 구분. 미광고가 아닌 false만으로 구버전이라고 단정하지 않음 |
+| 의존성/모델 | `dependency_missing`, `model_missing`, `model_load_failed`, `model_hash_mismatch` | 지원되는 새 호스트가 확인한 OpenCV·모델 로드·해시 문제 |
+| 세션/릴레이 | `session_setup_timeout`, `session_setup_rejected`, `relay_start_failed`, `relay_unavailable` | USB의 초기 세션 협상과 콤마의 별도 릴레이 시작 상태 |
+| Wi-Fi | `wifi_local_unavailable`, `wifi_peer_unavailable`, `wifi_route_unavailable`, `wifi_connect_failed` | 로컬 주소, 신선한 상대 주소, 실제 WLAN 경로, 접속 실패를 구분 |
+| 인증 | `authentication_failed`, `authentication_timeout` | HMAC/AEAD 거부와 인증 대기 시간 초과를 구분. 시간 초과만으로 키 불일치라고 단정하지 않음 |
+| 추론 | `inference_failed`, `inference_invalid_result` | 인증된 요청의 호스트 계산 실패와 결과 형식/유한값 오류 |
+| 미확정 | `response_timeout`, `remote_closed` | 응답 시간 초과/연결 종료만으로 무선·CPU 계산 중 어느 원인인지 단정할 수 없음 |
+
+BSD 원격 실패는 카메라 단절로 기록하지 않으며 VisionIPC 연결을 유지한다.
+영상 나이와 카메라 오류는 별도로 표시하고, 실패한 BSD 결과는 무효화한다.
+차량 고유 BSD와 기존 unknown/유효시간 정책은 유지한다. 실패 재시도도 기존
+좌우 합산 500ms 제한을 따르며 빠른 반복/추가 추론을 만들지 않는다.
+
+호스트의 상세 오류는 USB HELLO의 `carrot_aux_cpu_diagnostics_v1`으로 구분한다.
+인증 및 AEAD 복호화, 요청 ID/해시 검사를 통과한 오류 응답만 받는다. 오류 응답은
+`valid=false`이며 차선 없음/차 없음 결과로 바꾸지 않는다. 모든 상태는 허용한
+고정 코드만 전달한다. OpenCV 원문·입력 영상·네트워크 비밀·키·환경변수는 상태에
+포함하지 않는다. 구형 CPU 호스트에는 상세 진단 미지원이 표시되며, 그 호스트가
+단순히 연결을 닫은 경우 추론 오류라고 추측하지 않는다.
+
+새 상세 진단의 완전한 사용에는 대응 Jetson 패키지도 업데이트해야 한다.
+콤마 Git Pull/정상 재부팅과 Jetson 정상 재부팅을 사용하는 기존 경로다.
+단순 표시 개선으로 Wi-Fi 안정성·주행 인식·20Hz가 검증됐다는 뜻은 아니다.
+
+## 듀얼 Wi-Fi 코드 확인
+
+`wifi_direct_netlink.py`는 `wlan0`와 같은 PHY에 별도 `wljetson0` AP를 만들기 전에
+드라이버의 동시 station/AP 조합 지원을 확인한다. `wifi_direct.py`는 기존 `wlan0`
+프로필을 바꾸지 않으며 오프로드에서만 AP를 처음 생성/복구한다. 이미 활성화된
+AP는 온로드에도 유지한다. 따라서 휴대폰을 콤마의 AP로 쓰는 구조가 아니라
+`wlan0 → 휴대폰`과 `wljetson0 AP → Jetson`을 함께 사용하는 구조를 지원한다.
+한 PHY의 가상 인터페이스이므로 독립된 두 무선 장치가 있다는 뜻은 아니다.
+
+AP가 활성화되면 `wifi_publisher.py`가 전용 AP를 Jetson의 우선 프로필로 보낸다.
+`hud_wifi_route.select_link()`는 실제 라우팅 결과의 WLAN 장치가 일치하는 경로만
+선택하며 `wljetson0`를 먼저 검사한다. **직접 AP 강제 정책은 아니다.** 전용 경로가
+없으면 같은 휴대폰 핫스팟/공유기의 WLAN 경로를 사용할 수 있다. USB/NCM/이더넷
+우회는 계속 금지한다. 이번 진단 변경은 이 공식 네트워크 정책을 바꾸지 않는다.
+
+`diagnostic.wifiPath`와 웹 진단 행은 최근 검증된 응답 경로를 `direct_ap` 또는
+`shared_wifi`로 구분한다. 3초 이상 관측이 없으면 `unknown`이며, 무응답 동안 예전
+경로를 현재 연결 보장처럼 표시하지 않는다. 부팅 때부터 온로드이면 AP 생성 대기,
+드라이버/채널 제약 또는 RF 문제로 직접 연결이 준비되지 않을 수 있다. 코드 검사와
+모의 라우팅에서 직접 AP 우선·공유 WLAN 사용·비 WLAN 거부를 확인했으며, 이번에는
+물리적 장치의 동시 연결·채널 변경·주행 중 회복을 측정하지 않았다.

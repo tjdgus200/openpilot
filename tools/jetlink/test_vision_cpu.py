@@ -24,6 +24,11 @@ from openpilot.selfdrive.carrot.xiaoge.xiaoge_vision import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_session_status(tmp_path, monkeypatch):
+  monkeypatch.setattr(r, 'SESSION_STATUS', tmp_path / 'session.json')
+
+
 def request(kind='lane', image=None, **extra):
   meta = {'version': 1, 'id': 'a' * 32, 'kind': kind, 'threshold': .25, 'sha256': 'b' * 64, 'op': 'infer'}
   meta.update(extra)
@@ -62,7 +67,7 @@ def test_lengths_are_checked_before_allocating_large_frames():
       r.read_record(b, r.MAX_REQUEST, time.monotonic() + .1)
 
 
-@pytest.mark.parametrize('corruption', ['id', 'sha256', 'processor', 'valid', 'list', None])
+@pytest.mark.parametrize('corruption', ['id', 'sha256', 'processor', 'valid', 'error_state', 'list', None])
 def test_client_matches_request_model_processor_and_local_deadline(tmp_path, monkeypatch, corruption):
   monkeypatch.setattr(r, 'SOCKET', str(tmp_path / 'rpc'))
   path = tmp_path / 'synthetic-model'
@@ -78,11 +83,14 @@ def test_client_matches_request_model_processor_and_local_deadline(tmp_path, mon
       with sock:
         meta, pixels = r.decode_request(r.read_record(sock, r.MAX_REQUEST, time.monotonic() + 1))
         assert pixels == bytes(416 * 416)
-        result = {'id': meta['id'], 'sha256': client.sha256, 'processor': 'jetson_cpu_wifi', 'valid': True}
+        result = {'id': meta['id'], 'sha256': client.sha256, 'processor': 'jetson_cpu_wifi', 'valid': True,
+                  'leftLine': 0, 'rightLine': 1, 'leftConf': .9, 'rightConf': .8}
         if corruption in ('id', 'sha256', 'processor'):
           result[corruption] = 'wrong'
         if corruption == 'valid':
           result['valid'] = False
+        if corruption == 'error_state':
+          result.update(valid=False, errorCode='ok')
         if corruption == 'list':
           result = []
         r.send_record(sock, json.dumps(result).encode(), time.monotonic() + 1)
@@ -117,8 +125,9 @@ def test_actual_cpu_models_match_the_lossless_remote_input(kind, pattern):
   assert actual['valid'] and actual['processor'] == 'jetson_cpu_wifi'
   for key in (('leftLine', 'rightLine', 'leftConf', 'rightConf', 'candidatesCount') if kind == 'lane' else ('confidence',)):
     assert actual[key] == pytest.approx(expected[key], abs=1e-6)
-  with pytest.raises(ValueError, match='identity differs'):
+  with pytest.raises(r.RemoteFailure) as error:
     engine.infer(request(kind, image))
+  assert error.value.code == 'model_hash_mismatch'
 
 
 def test_host_unloads_disabled_and_idle_models(monkeypatch):
@@ -173,8 +182,9 @@ def test_missing_wifi_never_opens_a_usb_or_ethernet_connection(monkeypatch):
   monkeypatch.setattr(worker, 'wlan_addresses', lambda: [('usb0', '192.168.60.1')])
   monkeypatch.setattr(worker, 'target_addresses', lambda: ['192.168.60.2'])
   monkeypatch.setattr(worker.socket, 'socket', Mock(side_effect=AssertionError('non-WLAN connection')))
-  with pytest.raises(ConnectionError, match='WLAN'):
+  with pytest.raises(r.RemoteFailure) as error:
     runtime.relay(request())
+  assert error.value.code == 'wifi_route_unavailable'
 
 
 def test_silent_lost_peer_does_not_hold_receiver_forever(monkeypatch):

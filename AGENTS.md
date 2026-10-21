@@ -1,5 +1,19 @@
 # Repository memory
 
+- On 2026-10-21, owner requests classified lane/BSD CPU errors and checks dual
+  WLAN. Add fixed runtime/dependency/model/session/WLAN/auth/inference codes,
+  authenticated error envelopes with request/hash identity, attempt/success/
+  failure counters and KO/EN/ZH web rows. Do not leak exceptions, keys or input.
+  Old CPU runtimes remain compatible but lack detailed host error reports.
+  Keep BSD remote failures separate from camera disconnects, retaining IPC and
+  500ms retry limits, invalidating failed visual results and preserving OEM BSD.
+  Actual route is reported only for a recent validated reply: direct_ap versus
+  shared_wifi. Official dual STA/AP exists but is not direct-only, can fall back
+  through a common hotspot, and only creates/recovers its AP offroad. Do not
+  silently change that policy or claim a physical connection guarantee.
+  Requires a new paired host package; actual RF/on-device/road checks pending.
+  See docs/jetson_aux_vision_cpu.md. Scope remains carrot-nav-pv5.
+
 - On 2026-10-21, owner reports USB update stuck at7.4%/ERROR in vehicle but
   succeeding on charger. No live incident trace: power/CAN root cause is not
   proven. Fix PC-reproduced inter-file model preparation gap and stale UI;

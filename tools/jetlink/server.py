@@ -73,6 +73,7 @@ class CarrotSession(Session):
     self.hud_wifi = None
     self.aux_cpu = None
     self.aux_cpu_supported = aux_vision.supported()
+    self.aux_cpu_error = '' if self.aux_cpu_supported else aux_vision.support_problem()
 
   def _send_json(self, msg_type, seq, obj, flags=0):
     if msg_type == P.Msg.ENGINE_RESP and obj.get('state') == 'failed' and self.telemetry.health is not None:
@@ -85,7 +86,9 @@ class CarrotSession(Session):
              PUMP_CAPABILITY: legacy_display, WIFI_CAPABILITY: host == 'jetson', 'carrot_host': host,
              HUD_WIFI_CAPABILITY: self.hud_wifi_supported,
              HUD_USB_CAPABILITY: host == 'jetson' and legacy_display,
-             aux_vision.CAPABILITY: host == 'jetson' and getattr(self, 'aux_cpu_supported', False)}
+             aux_vision.CAPABILITY: host == 'jetson' and getattr(self, 'aux_cpu_supported', False),
+             aux_vision.DIAGNOSTICS_CAPABILITY: host == 'jetson',
+             'carrot_aux_cpu_error': getattr(self, 'aux_cpu_error', 'runtime_incomplete')}
       if host == 'jetson':
         obj['carrot_source_commit'] = (ROOT / 'SOURCE_COMMIT').read_text().strip()
         obj['carrot_boot_update_installed'] = Path('/opt/carrot-jetlink/boot-update-required').is_file()

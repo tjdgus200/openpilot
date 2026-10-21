@@ -638,6 +638,45 @@ def test_idle_camera_yields_and_resumes_without_reconnecting(monkeypatch, vision
   assert connections == [False]
 
 
+def test_remote_auth_failure_keeps_camera_connected_and_separate_diagnostics(monkeypatch, vision_service, padded_camera_frame):
+  from openpilot.selfdrive.carrot.xiaoge.remote import RemoteFailure
+  service, clients = vision_service, []
+  class FakeClient:
+    def __init__(self, *_args):
+      self.delivered = False
+      clients.append(self)
+    @property
+    def timestamp_sof(self):
+      return time.monotonic_ns()
+    def is_connected(self):
+      return True
+    def connect(self, _blocking):
+      return True
+    def recv(self, timeout_ms):
+      if self.delivered:
+        service.running = False
+        return None
+      self.delivered = True
+      return padded_camera_frame
+  visionipc = ModuleType("msgq.visionipc")
+  visionipc.VisionIpcClient = FakeClient
+  visionipc.VisionStreamType = SimpleNamespace(VISION_STREAM_WIDE_ROAD=1)
+  monkeypatch.setitem(sys.modules, "msgq.visionipc", visionipc)
+  def fail(*_args, **_kwargs):
+    raise RemoteFailure('authentication_failed')
+  monkeypatch.setattr(service.inference.client, 'request', fail)
+  monkeypatch.setattr(v_asm_server.time, 'sleep', lambda seconds: None)
+  service.run_camera()
+  state = service.status()
+  assert len(clients) == 1 and state['camera']['available']
+  assert state['camera']['error'] == ''
+  assert state['model']['diagnostic']['code'] == 'authentication_failed'
+  assert state['model']['diagnostic']['attempts'] == 1
+  assert state['model']['diagnostic']['successes'] == 0
+  assert state['inference']['count'] == 0
+  assert not state['model']['loaded'] and not state['vehicleSide']['left']['valid']
+
+
 def test_wide_camera_skips_bsd_inference_when_disabled(monkeypatch, vision_service, padded_camera_frame):
   service = vision_service
   service.params.values["OnnxBsdEnabled"] = 0

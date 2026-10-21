@@ -22,7 +22,7 @@ import openpilot.cereal.messaging as messaging
 from openpilot.selfdrive.carrot.xiaoge.lane_inference import DEFAULT_LANE_MODEL_PATH, prepare_lane_image
 from openpilot.selfdrive.carrot.xiaoge.nv12 import nv12_y_plane, pack_nv12
 from openpilot.selfdrive.carrot.xiaoge.v_asm_inference import DEFAULT_MODEL_PATH
-from openpilot.selfdrive.carrot.xiaoge.remote import RemoteLaneInference as LaneInference, remote_vasm_type
+from openpilot.selfdrive.carrot.xiaoge.remote import RemoteLaneInference as LaneInference, RemoteFailure, remote_vasm_type
 from openpilot.selfdrive.carrot.xiaoge.xiaoge_vision import XIAOGE_BLINDSPOT_TIMEOUT_NS, REMOTE_LANE_TIMEOUT_NS
 
 try:
@@ -351,6 +351,9 @@ class VASMService:
       road_camera_age = now - self.last_road_frame_at if self.last_road_frame_at else None
       camera_available = camera_age is not None and camera_age <= CAMERA_TIMEOUT_SECONDS and not self.camera_error
       road_camera_available = road_camera_age is not None and road_camera_age <= CAMERA_TIMEOUT_SECONDS and not self.lane_camera_error
+      bsd_diagnostic = getattr(self.inference, 'diagnostic', dict)()
+      lane_diagnostic = getattr(self.lane_inference, 'diagnostic', dict)()
+      bsd_ready = getattr(self.inference, 'remote_ready', lambda: True)()
       vasm_timestamp = self.vasm_result["updatedMonoTimeNanos"]
       vehicle_sides = {}
       for side in ("left", "right"):
@@ -383,8 +386,9 @@ class VASMService:
         "integrated": True,
         "model": {
           "path": str(self.inference.model_path),
-          "loaded": self.inference.valid and getattr(self.inference, 'remote_ready', lambda: True)(),
+          "loaded": self.inference.valid and bsd_ready,
           "error": self.inference.error,
+          "diagnostic": bsd_diagnostic,
         },
         "configured": bool(self.config),
         "configuredSides": list(self.inference.configured_sides),
@@ -406,12 +410,14 @@ class VASMService:
           "fps": self.inference_fps,
           "count": self.inference_count,
           "lastAgeSeconds": round(time.monotonic() - self.last_inference_at, 2) if self.last_inference_at else None,
+          "remoteRequests": bsd_diagnostic,
         },
         "lastInferenceAgeSeconds": time.monotonic() - self.last_inference_at if self.last_inference_at else None,
         "lane": {
           "enabled": True,
           "loaded": self.lane_inference.valid and getattr(self.lane_inference, 'remote_ready', lambda: True)(),
           "error": self.lane_inference.error,
+          "diagnostic": lane_diagnostic,
           "threshold": self.lane_threshold,
           "intervalSeconds": self.lane_interval_seconds,
           "cameraAvailable": road_camera_available,
@@ -425,6 +431,8 @@ class VASMService:
             "fps": self.lane_inference_fps,
             "count": self.lane_inference_count,
             "lastAgeSeconds": round(time.monotonic() - self.last_lane_inference_at, 2) if self.last_lane_inference_at else None,
+            "countKind": "attempts",
+            "remoteRequests": lane_diagnostic,
           },
         },
       }
@@ -635,6 +643,16 @@ class VASMService:
           self.vasm_result["updatedMonoTimeNanosBySide"][side] = updated_nanos
           other_side = "right" if side == "left" else "left"
           self.next_side = other_side if other_side in eligible_sides else side
+        self.publish_vision_result()
+      except RemoteFailure:
+        # A remote model/network failure is not a camera disconnect. Retain
+        # VisionIPC, invalidate results, and keep the normal request interval.
+        with self.lock:
+          self.last_inference_at = time.monotonic()
+          self.vasm_result["left"] = self.vasm_result["right"] = False
+          self.vasm_result["updatedMonoTimeNanos"] = 0
+          self.vasm_result["updatedMonoTimeNanosBySide"] = {"left": 0, "right": 0}
+          self.next_side = "right" if self.next_side == "left" else "left"
         self.publish_vision_result()
       except (OSError, ValueError, cv2.error) as error:
         with self.lock:
