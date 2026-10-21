@@ -1,4 +1,8 @@
 import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -25,3 +29,20 @@ def test_missing_or_malformed_release_choices_never_silently_enable(tmp_path):
   path.write_text(json.dumps({'CARROT_TRT_DEVICE_STATE': True}))
   with pytest.raises(ValueError):
     options.apply(path, {})
+
+
+def test_hud_import_keeps_top_level_usb_updater_visible():
+  root = Path(__file__).resolve().parents[2]
+  script = '''
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+sys.path[:0] = [str(root), str(root / "openpilot/selfdrive/carrot/cluster")]
+import cluster_live
+assert str(root / "openpilot") not in sys.path
+import tools.jetlink.usb_release as updater
+assert Path(updater.__file__).resolve() == root / "tools/jetlink/usb_release.py"
+'''
+  result = subprocess.run([sys.executable, '-c', script, str(root)], cwd=root,
+                          env={**os.environ, 'PYTHONPATH': str(root)}, capture_output=True, text=True, timeout=20)
+  assert result.returncode == 0, result.stderr

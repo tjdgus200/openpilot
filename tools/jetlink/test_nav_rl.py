@@ -12,7 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / 'third_party/jetlink'), str(Path(__file__).parent)]
 from jetlink.spec import ModelSpec
-from openpilot.common.jetson_model import selected_release
+from openpilot.common.jetson_model import matching_release, selected_release
 from openpilot.selfdrive.modeld.jetlink.contracts import JETSON_SPEC as SPEC, validate_model_spec, parse_outputs
 from openpilot.selfdrive.modeld.jetlink.inputs import fill_inputs
 from openpilot.selfdrive.modeld.jetlink import model
@@ -46,11 +46,21 @@ def test_n16_pin_keeps_nav_parser_shapes_and_matching_signed_release():
   assert SPEC.nbytes == 814591107
   assert len(SPEC.state_pairs) == 5 and SPEC.output_nelem == 18580
   assert SPEC.packed_nelem == 65595 and SPEC.packed_nbytes == 262380
-  selection = selected_release(ROOT / 'openpilot/selfdrive/modeld/jetlink/host_release.json')
-  assert selection['model'] == {
+  path = ROOT / 'openpilot/selfdrive/modeld/jetlink/host_release.json'
+  official = matching_release(path, required=True)
+  assert official['model'] == {
     'url': 'https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx',
     'sha256': SPEC.sha256, 'size': SPEC.nbytes}
-  assert 'signature' in selection and selection.get('delivery') != 'local'
+  assert 'signature' in official and official.get('delivery') != 'local'
+  selection = selected_release(path, required=True)
+  assert selection['model'] == official['model']
+  if path.with_name('usb_host_sha256_release.json').is_file():
+    from usb_release import validate
+    assert validate(selection)['delivery'] == 'usb'
+    assert selection['profile'].startswith('pv5-') and 'signature' not in selection
+    assert selection['bundle']['url'].startswith('https://github.com/tjdgus200/openpilot/releases/download/')
+  else:
+    assert selection == official
   parsed = parse_outputs(Parser(), SPEC, np.zeros(SPEC.output_nelem, np.float32))
   assert parsed['plan'].shape == (1, 33, 15) and parsed['action'].shape == (1, 4)
   assert all(np.isfinite(value).all() for value in parsed.values())

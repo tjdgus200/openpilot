@@ -38,7 +38,11 @@ def find_openpilot_root(start: Path) -> Path | None:
 
 OPENPILOT_ROOT = find_openpilot_root(Path(__file__).resolve().parent)
 if OPENPILOT_ROOT is not None:
-    sys.path.insert(0, str(OPENPILOT_ROOT))
+    # The packaged layout needs the parent of openpilot on sys.path. Adding
+    # openpilot itself aliases its tools/ as top-level tools and hides the
+    # repository's standalone Jetson updater package in a full checkout.
+    package_root = OPENPILOT_ROOT.parent if (OPENPILOT_ROOT / "__init__.py").is_file() else OPENPILOT_ROOT
+    sys.path.insert(0, str(package_root))
 
 from openpilot.selfdrive.carrot.deceleration_source import deceleration_source_presentation, external_navigation_connected
 
