@@ -172,6 +172,36 @@ def test_device_badge_describes_update_and_expires(tmp_path, monkeypatch):
   assert '인터넷' not in status.badge()[0]
 
 
+@pytest.mark.parametrize('phase,label', [('checking_files', '파일 검사'), ('downloading', '다운로드')])
+def test_blocking_asset_preparation_has_bounded_status_grace(tmp_path, monkeypatch, phase, label):
+  from openpilot.common import jetlink_status as status
+  path = tmp_path / 'link'
+  monkeypatch.setattr(status, 'LINK_STATUS', path)
+  monkeypatch.setattr(status, 'MODEL_STATUS', tmp_path / 'absent')
+  path.write_text(json.dumps({'updated': 10., 'state': 'updating', 'peer': {'carrot_host': 'jetson'},
+                             'host_update': {'state': phase, 'fraction': .074}}))
+  for now in (14., 44.9):
+    monkeypatch.setattr(status.time, 'monotonic', lambda current=now: current)
+    assert label in status.badge()[0]
+    assert status.diagnostics()['active'] is False
+    assert status.diagnostics()['severity'] == 'warning'
+  monkeypatch.setattr(status.time, 'monotonic', lambda: 45.)
+  assert status.badge()[1] == 'error'  # A stopped preparer cannot remain alive indefinitely.
+
+
+@pytest.mark.parametrize('state,phase', [('ready', 'downloading'), ('updating', 'transferring'),
+                                        ('updating', 'waiting_park')])
+def test_preparation_grace_does_not_hide_stale_runtime_or_transfer(tmp_path, monkeypatch, state, phase):
+  from openpilot.common import jetlink_status as status
+  path = tmp_path / 'link'
+  monkeypatch.setattr(status, 'LINK_STATUS', path)
+  monkeypatch.setattr(status, 'MODEL_STATUS', tmp_path / 'absent')
+  monkeypatch.setattr(status.time, 'monotonic', lambda: 14.)
+  path.write_text(json.dumps({'updated': 10., 'state': state, 'peer': {'carrot_host': 'jetson'},
+                             'host_update': {'state': phase}}))
+  assert status.badge()[1] == 'error'
+
+
 def test_bootstrap_migration_never_writes_immutable_os_and_defers_current_boot(tmp_path, monkeypatch):
   import install_updates
   source = Path(__file__).parent

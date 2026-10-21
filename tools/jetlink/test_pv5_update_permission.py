@@ -83,7 +83,7 @@ def test_boot_gate_rechecks_park_before_activation(monkeypatch, move_after_trans
   from tools.jetlink import usb_release_client as sender  # noqa: TID251 -- standalone updater
   from tools.jetlink.usb_release import SHA256_CAPABILITY  # noqa: TID251 -- standalone updater
 
-  sample, sent, calls = Sample(), [], []
+  sample, sent, calls, connected = Sample(), [], [], [True]
   params = NS(get_bool=lambda key: key == 'IsOnroad')
   monkeypatch.setitem(sys.modules, 'openpilot.common.params', NS(Params=lambda: params))
   monkeypatch.setattr(startup, 'Permission', lambda p, **kw: policy.Permission(p, factory=lambda: sample, clock=lambda: 100.1, **kw))
@@ -100,8 +100,9 @@ def test_boot_gate_rechecks_park_before_activation(monkeypatch, move_after_trans
   monkeypatch.setattr(sender, 'upload', upload)
   peer = {'carrot_host': 'jetson', startup.CAPABILITY: True, SHA256_CAPABILITY: True, 'engine_state': 'none', 'loaded': None}
   client = NS(t=NS(send_json=lambda *a: sent.append(a)), _next_seq=lambda: 1, state=lambda: {'carrot_update': {'state': 'ready'}})
-  with pytest.raises(ConnectionError, match='Park' if move_after_transfer else 'reconnecting'):
-    startup.wait_for_boot_update(client, peer, None, lambda: True, lambda *a, **kw: None)
+  with pytest.raises(ConnectionError, match='USB setup' if move_after_transfer else 'reconnecting'):
+    startup.wait_for_boot_update(client, peer, None, lambda: connected[0], lambda *a, **kw: None,
+                                sleep=lambda _: connected.__setitem__(0, False))
   assert calls == [True]
   assert bool(sent) is not move_after_transfer
 
@@ -112,3 +113,14 @@ def test_running_engine_cannot_use_park_to_update(monkeypatch):
   assert not guard.allowed()
   with pytest.raises(ConnectionError):
     policy.wait_for_permission(guard, lambda: live[0], lambda: live.__setitem__(0, False), sleep=lambda _: None)
+
+
+@pytest.mark.parametrize('field,value,reason', [('canTimeout', True, 'can_unavailable'),
+                                             ('gearShifter', 'drive', 'gear_not_park'),
+                                             ('vEgoRaw', .01, 'speed_not_zero')])
+def test_waiting_reason_distinguishes_why_park_is_not_approved(field, value, reason):
+  sample = Sample()
+  setattr(sample.car, field, value)
+  guard = policy.Permission(NS(get_bool=lambda key: key == 'IsOnroad'), factory=lambda: sample, clock=lambda: 100.1)
+  assert not guard.allowed()
+  assert guard.reason == reason

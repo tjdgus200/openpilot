@@ -33,7 +33,7 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
   usb_change = False
   if manifest.get('delivery') == 'usb':
     from tools.jetlink.usb_release import SHA256_CAPABILITY, CHECK_CAPABILITY  # noqa: TID251 -- shared standalone updater
-    from tools.jetlink.usb_release_client import available, upload  # noqa: TID251
+    from tools.jetlink.usb_release_client import PermissionLost, available, upload  # noqa: TID251
     if peer.get(SHA256_CAPABILITY) is not True:
       raise ValueError('Install and locally enable the SHA-256 USB receiver on Jetson once')
     usb_change = peer.get('usb_source_commit') != manifest['source_commit']
@@ -48,18 +48,28 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
       def allowed():
         return connected() and permission.allowed()
       def waiting():
-        publish('updating', peer=peer, host_update={'state': 'waiting_park', 'fraction': None, 'integrity': 'sha256'})
+        publish('updating', peer=peer, host_update={'state': 'waiting_park', 'fraction': None, 'integrity': 'sha256',
+                                                  'reason': getattr(permission, 'reason', 'vehicle_data_unavailable')})
         if wifi is not None:
           wifi.send(client)
         client.state()
       with bulk_scheduling():
-        wait_for_permission(permission, connected, waiting, sleep)
-        upload(client, manifest, Path('/data/jetson-usb-cache'), allowed,
-               lambda state, fraction: publish('updating', peer=peer,
-                                              host_update={'state': state, 'fraction': fraction, 'integrity': 'sha256'}))
+        while True:
+          wait_for_permission(permission, connected, waiting, sleep)
+          try:
+            upload(client, manifest, Path('/data/jetson-usb-cache'), allowed,
+                   lambda state, fraction: publish('updating', peer=peer,
+                                                  host_update={'state': state, 'fraction': fraction, 'integrity': 'sha256'}))
+            break
+          except PermissionLost:
+            # Permission loss is not a reason to tear down/re-enumerate USB.
+            # BEGIN restarts staging only after a new fresh approval; no install
+            # or file-byte requests are sent while waiting. Real I/O errors propagate.
+            if not connected():
+              raise ConnectionError('Jetson disconnected during USB transfer') from None
   while connected():
-    if usb_change and not allowed():
-      raise ConnectionError('USB activation requires offroad or fresh Park/zero-speed state and USB connection')
+    if usb_change:
+      wait_for_permission(permission, connected, waiting, sleep)
     # The release selection is independent of NetworkManager profile reads.
     # Network provisioning stays on its private channel and out of status/logs.
     client.t.send_json(MESSAGE, client._next_seq(), manifest)

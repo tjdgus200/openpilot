@@ -101,6 +101,71 @@ def test_keyless_upload_registration_activation_and_cached_reuse(installed, monk
   assert (installed.root / 'updater/release-signing-public.pem').read_bytes() == installed.official_key
 
 
+def test_prepare_both_assets_before_sending_any_file_bytes(installed, monkeypatch):
+  wire, prepared = Wire(), []
+  original = sender.asset
+  def prepare(item, cache, allowed, **kwargs):
+    assert usb.CHUNK not in wire.kinds, 'A network/hash wait must not split the USB files'
+    prepared.append(item['sha256'])
+    return original(item, cache, allowed, **kwargs)
+  monkeypatch.setattr(sender, 'asset', prepare)
+  try:
+    sender.upload(wire.client, installed.value, cache_assets(installed), lambda: True, lambda *a: None)
+    assert prepared == [installed.value[k]['sha256'] for k in usb.KINDS]
+    assert usb.registered(installed.root, installed.value)
+  finally:
+    wire.session.close()
+
+
+def test_cached_asset_hash_check_reports_progress_without_network(installed, monkeypatch):
+  cache = cache_assets(installed)
+  monkeypatch.setattr(sender.urllib.request, 'urlopen', lambda *a, **k: pytest.fail('cached asset used network'))
+  reports = []
+  item = installed.value['model']
+  assert sender.asset(item, cache, lambda: True, progress=lambda *args: reports.append(args)).is_file()
+  assert reports[0] == ('checking_files', 0)
+  assert reports[-1] == ('checking_files', item['size'])
+
+
+@pytest.mark.parametrize('recover', [True, False])
+def test_transfer_permission_gap_waits_without_rebuilding_usb(installed, monkeypatch, recover):
+  from contextlib import nullcontext
+  wire, permitted, connected, states = Wire(), [True], [True], []
+  interrupted = []
+  original_upload, original_exchange = sender.upload, sender.exchange
+  monkeypatch.setitem(sys.modules, 'openpilot.common.params', NS(Params=lambda: object()))
+  monkeypatch.setattr(startup, 'Permission', lambda *a, **kw: NS(allowed=lambda: permitted[0]))
+  monkeypatch.setattr(startup, 'bulk_scheduling', nullcontext)
+  monkeypatch.setattr(startup, 'selected_release', lambda *a, **kw: installed.value)
+  monkeypatch.setattr(sender, 'upload', lambda client, value, cache, allowed, progress:
+                      original_upload(client, value, cache_assets(installed), allowed, progress))
+  def exchange(client, kind, *args, **kwargs):
+    reply = original_exchange(client, kind, *args, **kwargs)
+    if kind == usb.CHUNK and not interrupted:
+      permitted[0] = False
+      interrupted.append(list(wire.kinds))
+    return reply
+  monkeypatch.setattr(sender, 'exchange', exchange)
+  def resume(_):
+    assert wire.kinds == interrupted[0]  # No additional file write without permission.
+    assert not usb.registered(installed.root, installed.value)
+    assert wire.session.gate.selected is None
+    permitted[0], connected[0] = recover, recover
+  peer = {'carrot_host': 'jetson', startup.CAPABILITY: True, usb.SHA256_CAPABILITY: True,
+          'engine_state': 'none', 'loaded': None}
+  try:
+    with pytest.raises(ConnectionError, match='reconnecting' if recover else 'USB setup'):
+      startup.wait_for_boot_update(wire.client, peer, None, lambda: connected[0],
+                                  lambda *a, **kw: states.append(kw['host_update']['state']), sleep=resume)
+    assert 'waiting_park' in states
+    assert wire.kinds.count(usb.BEGIN) == (2 if recover else 1)
+    assert (usb.FINISH in wire.kinds) is recover
+    assert usb.registered(installed.root, installed.value) is recover
+    assert (installed.root / 'current').resolve() == installed.previous
+  finally:
+    wire.session.close()
+
+
 def test_unsigned_usb_does_not_bypass_official_nas_signature(installed, monkeypatch):
   from test_update_host import manifest
   calls = []
@@ -421,11 +486,14 @@ def test_onroad_transition_after_upload_does_not_request_activation(installed, m
     original(client, value, cache_assets(installed), allowed, progress)
     values.update(IsOffroad=False, IsOnroad=True)
   monkeypatch.setattr(sender, 'upload', transition)
-  wire = Wire()
+  wire, connected, reports = Wire(), [True], []
   peer = {'carrot_host': 'jetson', startup.CAPABILITY: True, usb.SHA256_CAPABILITY: True,
           'usb_source_commit': 'a' * 40}
-  with pytest.raises(ConnectionError, match='activation requires offroad'):
-    startup.wait_for_boot_update(wire.client, peer, None, lambda: True, lambda *a, **k: None)
+  with pytest.raises(ConnectionError, match='USB setup'):
+    startup.wait_for_boot_update(wire.client, peer, None, lambda: connected[0],
+                                lambda *a, **k: reports.append(k['host_update']['state']),
+                                sleep=lambda _: connected.__setitem__(0, False))
+  assert 'waiting_park' in reports
   assert usb.registered(installed.root, installed.value)
   assert wire.session.gate.selected is None
   assert not (installed.root / 'updates/pending.json').exists()

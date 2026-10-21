@@ -1,5 +1,17 @@
 # Repository memory
 
+- On 2026-10-21, owner reports USB update stuck at7.4%/ERROR in vehicle but
+  succeeding on charger. No live incident trace: power/CAN root cause is not
+  proven. Fix PC-reproduced inter-file model preparation gap and stale UI;
+  prepare both assets before CHUNK, refresh preparation progress and allow
+  only download/hash badge35s grace for30s I/O, never live-control freshness.
+  Permission loss pauses in the same boot USB session; BEGIN restarts staging
+  only after fresh offroad or Park/zero/CAN approval. Activation waits too.
+  Preserve real USB error teardown, no movement/unknown-CAN file writes.
+  Report allowlisted waiting reason. Paired CPU package2ea966ab is publicly
+  HTTPS/hash verified and selected; comma-only wait fix does not need rebuild.
+  See docs/carrot_nav_pv5.md. Vehicle revalidation remains outstanding.
+
 - On 2026-10-21, owner extends carrot-nav-pv5 with Jetson CPU lane/BSD ONNX
   execution and WLAN-only lossless images/results. See docs/jetson_aux_vision_cpu.md.
   Preserve latest independent default-off OnnxBsdEnabled, lifecycle generation

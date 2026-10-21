@@ -450,6 +450,8 @@ A turn signal with same-side vehicle/visual BSD adds a red strip at that physica
 
 USB updates are allowed offroad or with fresh valid CAN information confirming Park and zero speed. An onroad camera screen is allowed when those two conditions hold; missing gear/speed data or loss of permission stops the next transfer/activation request. Running Jetson inference is not replaced live, so a normal-mode Jetson reboot and existing USB receiver enrollment are required.
 
+If parked-state confirmation is lost, the same USB session waits for renewed permission, then retries file transfer from the beginning. Both files are prepared before USB transfer; the badge distinguishes file checks, downloads, USB transfer and Park waits. Waiting does not permit file writes/activation or relax driving validity checks.
+
 Asynchronous USB TX defaults on for C3/C3X/C4 (`tici`/`tizi`/`mici`) running aarch64 Linux 4.9.103. This C4 support extension applies after updating and normally rebooting the comma; it retains the existing paired Jetson package. GPU recurrence already runs on Orin for all comma models. Physical C4 latency improvement has not been measured; existing completion scheduling, deadlines and failure checks remain.
 
 Lane/visual BSD inference requires the paired Jetson CPU runtime. Images and results use Wi-Fi only; comma retains preprocessing and result merging. Both minimum intervals are 500ms, combined across sides for BSD. Missing/late Wi-Fi results are unknown, with no comma ONNX or USB-image fallback. Existing default-off and onroad-readiness conditions remain. See [installation, load and validation limits](../../jetson_aux_vision_cpu.md).

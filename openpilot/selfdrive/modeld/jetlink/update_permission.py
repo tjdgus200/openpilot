@@ -12,18 +12,29 @@ import time
 SERVICES = ('carState',)
 
 
-def parked_stationary(sm, now):
+def parked_problem(sm, now):
   try:
-    if not all(sm.valid[k] and sm.alive[k] and 0 <= now - sm.recv_time[k] < .25 for k in SERVICES):
-      return False
+    if not all(sm.valid[k] and sm.alive[k] for k in SERVICES):
+      return 'vehicle_data_unavailable'
+    if not all(0 <= now - sm.recv_time[k] < .25 for k in SERVICES):
+      return 'vehicle_data_stale'
     cs = sm['carState']
     # Use the CAN wheel-speed value, not a Kalman tail after the vehicle stops.
     # Missing raw speed is unavailable; it must not become a default zero.
     speed = cs.vEgoRaw
-    return (cs.canValid and not cs.canTimeout and type(speed) in (int, float)
-            and math.isfinite(speed) and speed == 0.0 and str(cs.gearShifter) == 'park')
+    if not cs.canValid or cs.canTimeout:
+      return 'can_unavailable'
+    if str(cs.gearShifter) != 'park':
+      return 'gear_not_park'
+    if type(speed) not in (int, float) or not math.isfinite(speed) or speed != 0.0:
+      return 'speed_not_zero'
+    return ''
   except (AttributeError, KeyError, TypeError, ValueError):
-    return False
+    return 'vehicle_data_unavailable'
+
+
+def parked_stationary(sm, now):
+  return not parked_problem(sm, now)
 
 
 class Permission:
@@ -33,13 +44,16 @@ class Permission:
     self.next_sample = 0.
     self.cached = False
     self.allow_parked = allow_parked
+    self.reason = 'vehicle_data_unavailable'
 
   def allowed(self):
     try:
       offroad, onroad = self.params.get_bool('IsOffroad'), self.params.get_bool('IsOnroad')
       if offroad and not onroad:
+        self.reason = 'offroad'
         return True
       if offroad or not onroad or not self.allow_parked:
+        self.reason = 'state_transition' if offroad == onroad else 'boot_receiver_required'
         return False
       now = self.clock()
       if now >= self.next_sample:
@@ -54,9 +68,11 @@ class Permission:
         self.cached = parked_stationary(self.sm, now)
         self.next_sample = now + .05
       # Age checks are repeated even between 20Hz subscriber polls.
-      return self.cached and parked_stationary(self.sm, self.clock())
+      self.reason = parked_problem(self.sm, self.clock())
+      return self.cached and not self.reason
     except Exception:
       self.cached = False
+      self.reason = 'vehicle_data_unavailable'
       return False
 
 

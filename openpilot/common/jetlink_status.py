@@ -22,6 +22,13 @@ def update_badge(value):
     fraction = value.get('fraction')
     percent = f' {int(fraction * 100)}%' if isinstance(fraction, (int, float)) and 0 <= fraction <= 1 else ''
     return f'Jetson 업데이트 다운로드 중{percent}', 'loading'
+  if state in ('checking_files', 'transferring'):
+    fraction = value.get('fraction')
+    percent = f' {int(fraction * 100)}%' if isinstance(fraction, (int, float)) and 0 <= fraction <= 1 else ''
+    action = '파일 검사' if state == 'checking_files' else 'USB 전송'
+    return f'Jetson 업데이트 {action} 중{percent}', 'loading'
+  if state == 'waiting_park':
+    return 'Jetson 업데이트 대기 · P단·정지/CAN 확인', 'loading'
   if state == 'verifying':
     return 'Jetson 업데이트 검증·적용 중', 'loading'
   if state == 'failed':
@@ -56,10 +63,16 @@ def host_label(peer, mode='usb'):
   return 'Jetlink'
 
 
-def _fresh(path, now):
+def _fresh(path, now, preparing=False):
   try:
     value = _read(path)
-    if isinstance(value, dict) and 0 <= now - value['updated'] < 3:
+    # HTTPS open/read has a 30s timeout. File preparation reports progress on
+    # blocks, but a bounded blocking read is not a lost USB/model connection.
+    # Do not grant this allowance to live inference, telemetry or other waits.
+    update = value.get('host_update') or {}
+    limit = 35 if (preparing and value.get('state') == 'updating' and isinstance(update, dict)
+                   and update.get('state') in ('downloading', 'checking_files')) else 3
+    if isinstance(value, dict) and 0 <= now - value['updated'] < limit:
       return value
   except (OSError, ValueError, KeyError, TypeError):
     pass
@@ -70,7 +83,7 @@ def diagnostics():
   """Only current telemetry can report health or an address; HELLO is identity."""
   now = time.monotonic()
   saved = _read(LINK_STATUS)
-  link = _fresh(LINK_STATUS, now)
+  link = _fresh(LINK_STATUS, now, preparing=True)
   model = _fresh(MODEL_STATUS, now)
   if not saved.get('peer') and saved.get('state') not in ('connecting', 'loading', 'retrying', 'blocked') and not model.get('active'):
     return None
@@ -123,7 +136,7 @@ def diagnostics():
 
 def badge():
   now = time.monotonic()
-  link = _fresh(LINK_STATUS, now)
+  link = _fresh(LINK_STATUS, now, preparing=True)
   model = _fresh(MODEL_STATUS, now)
   label = host_label(link.get('peer'), link.get('transport', 'usb'))
   if link.get('state') == 'updating' and label == 'jetSON':

@@ -3,42 +3,60 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import time
 import urllib.request
 
 from tools.jetlink.usb_release import ACK, BEGIN, BLOCK, CHECK, CHUNK, FINISH, HEADER, KINDS, NAMES, validate  # noqa: TID251
 
 
-def asset(item, cache, allowed):
+class PermissionLost(ConnectionError):
+  """Stop file writes and wait in the same boot session for renewed permission."""
+
+
+def require_permission(allowed):
+  if not allowed():
+    raise PermissionLost('USB update requires offroad or fresh Park/zero-speed state and USB connection')
+
+
+def asset(item, cache, allowed, progress=None):
   cache.mkdir(parents=True, exist_ok=True)
   path = cache / item['sha256']
+  last = [None, 0.]
+  def report(stage, count):
+    now = time.monotonic()
+    if progress is not None and (stage != last[0] or count in (0, item['size']) or now - last[1] >= .5):
+      progress(stage, count)
+      last[:] = [stage, now]
   def matches():
     if not path.is_file() or path.stat().st_size != item['size']:
       return False
-    digest = hashlib.sha256()
+    digest, count = hashlib.sha256(), 0
+    report('checking_files', count)
     with path.open('rb') as stream:
       while data := stream.read(1 << 20):
-        if not allowed():
-          raise ConnectionError('USB update requires offroad and USB connection')
+        require_permission(allowed)
         digest.update(data)
+        count += len(data)
+        report('checking_files', count)
     return digest.hexdigest() == item['sha256']
   if matches():
     return path
   partial = path.with_suffix('.part')
   try:
-    if not allowed():
-      raise ConnectionError('USB update requires offroad and USB connection')
+    require_permission(allowed)
+    report('downloading', 0)
     with urllib.request.urlopen(item['url'], timeout=30) as source, partial.open('wb') as output:
       if not source.url.startswith('https://'):
         raise ValueError('Insecure asset redirect')
       count, digest = 0, hashlib.sha256()
       while data := source.read(BLOCK):
-        if not allowed():
-          raise ConnectionError('USB update interrupted by loss of offroad permission or USB')
+        require_permission(allowed)
         count += len(data)
         if count > item['size']:
           raise ValueError('Oversized USB update asset')
         digest.update(data)
         output.write(data)
+        report('downloading', count)
       output.flush()
       os.fsync(output.fileno())
     if count != item['size'] or digest.hexdigest() != item['sha256']:
@@ -50,8 +68,7 @@ def asset(item, cache, allowed):
 
 
 def exchange(client, kind, payload, allowed, raw=False, timeout=30):
-  if not allowed():
-    raise ConnectionError('USB update permission or connection unavailable')
+  require_permission(allowed)
   seq = client._next_seq()
   client.t.send(kind, seq, [payload if raw else json.dumps(payload).encode()], timeout=timeout)
   response = client.t.recv(timeout=timeout)
@@ -75,18 +92,24 @@ def available(client, manifest, connected):
 def upload(client, manifest, cache, allowed, progress):
   validate(manifest)
   def request(kind, payload, **kwargs):
-    if not allowed():
-      raise ConnectionError('USB update requires offroad and USB connection')
+    require_permission(allowed)
     return exchange(client, kind, payload, allowed, **kwargs)
   # An already registered package needs no network. BEGIN cannot activate it.
   progress('checking_usb', None)
   result = request(BEGIN, manifest, timeout=120)
   if result.get('complete') is True:
     return
-  total, sent = sum(manifest[k]['size'] for k in KINDS), 0
+  total, sent, prepared = sum(manifest[k]['size'] for k in KINDS), 0, 0
+  paths = []
+  # Never leave the receiver between bundle/model while fetching a large model.
+  # Verified cached files still get hash checks; registered packages use BEGIN only.
+  for kind in KINDS:
+    paths.append(asset(manifest[kind], Path(cache), allowed,
+                       progress=lambda stage, count, base=prepared: progress(stage, (base + count) / total)))
+    prepared += manifest[kind]['size']
+  progress('transferring', 0.)
   for index, kind in enumerate(KINDS):
-    progress('downloading', sent / total)
-    path = asset(manifest[kind], Path(cache), allowed)
+    path = paths[index]
     offset = 0
     with path.open('rb') as source:
       while data := source.read(BLOCK):
