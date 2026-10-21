@@ -212,3 +212,18 @@ Jetson에서 실행되는 파일이므로 수정된 호스트 패키지가 필�
 브랜치를 Git Pull/재부팅하고 USB를 유지한 채 Jetson도 정상 재부팅하는 기존
 설치 경로를 사용한다. 기존 수신 허용 정책·키·SHA 검사·P단/정차 승인과 이전
 릴리스 보존은 유지하며, 실행 중인 주행 엔진을 교체하지 않는다.
+
+수정된 대응 호스트의 소스는 `4e3acd5e05f5be51c109265d8973f8c96de6e599`이며,
+공개 패키지는 [설치 검사 우선순위 수정 Release](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-install-priority-20261021-4e3acd5e)에 있다.
+`usb_host_sha256_release.json`은 이 패키지의 81,665,759바이트와 SHA-256
+`cec20f4f924c4dab2f789936860d448322933c853bb330a18e326155f4144440`을 고정한다.
+주행 모델의 SHA/크기와 ARM64·L4T·TensorRT 조건은 기존 선택과 같다.
+이전 runtime-port 수신기의 명세 검사도 통과한다. 패키지·체크섬·메타데이터·USB
+명세를 인증 없는 공개 HTTPS 주소에서 모두 다시 내려받아 로컬 파일과 비교했다.
+
+공개 아카이브에서 추출한 실제 차선·BSD 두 ONNX를 비관리자 nice19 자식으로
+검사했고, 종료 때 nice19/SCHED_OTHER 유지와 HUD의 실제 `--help` 진입점도 확인했다.
+관련 PC 회귀 164개가 통과했고 선택 검사 1개는 생략했다. 소스 커밋의
+[GitHub Actions](https://github.com/tjdgus200/openpilot/actions/runs/39594324792)도 통과했다.
+이 배포 준비 검사는 실제 Jetson의 설치 완료·GPU 실행·무선 지연·주행 검증을
+의미하지 않는다. 장치는 기존 후보 실행 검사를 통과해야 새 버전으로 전환한다.

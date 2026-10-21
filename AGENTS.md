@@ -1,5 +1,16 @@
 # Repository memory
 
+- On 2026-10-21, owner explicitly approves public Release upload and USB
+  selection of the 81.7 MB installation-priority fix. Published source4e3acd5e,
+  tag jetson-pv5-install-priority-20261021-4e3acd5e; select profile
+  pv5-install-20261021-4e3acd5e. All four public HTTPS assets were downloaded
+  anonymously and size/SHA verified. Actual exported lane/BSD CPU models pass
+  in an unprivileged nice19 PC child, exported HUD help passes; old runtime-port
+  receiver accepts the manifest and N16/runtime/storage identity is unchanged.
+  Source CI39594324792 passed. No physical Jetson installation, GPU inference,
+  RF latency or road validation claimed. Keep candidate probes and recovery;
+  use comma Git Pull/reboot plus normal Jetson reboot with USB attached.
+
 - On 2026-10-21, owner requests fixing and publishing the reproduced auxiliary
   installation-probe priority failure on carrot-nav-pv5. The boot gate runs
   nice19; its unprivileged CPU check must not raise itself to nice10. Choose

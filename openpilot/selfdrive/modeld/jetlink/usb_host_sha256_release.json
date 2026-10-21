@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-aux-20261021-61878ca0",
-  "source_commit": "61878ca09a3d34356814806cae694e67aa499f50",
+  "profile": "pv5-install-20261021-4e3acd5e",
+  "source_commit": "4e3acd5e05f5be51c109265d8973f8c96de6e599",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-aux-wifi-20261021-61878ca0/host.tar.gz",
-    "sha256": "882ba41388b75231e175c6d18737bd83b6e34f10d32f80780a8cb24bb59157f3",
-    "size": 81669609
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-install-priority-20261021-4e3acd5e/host.tar.gz",
+    "sha256": "cec20f4f924c4dab2f789936860d448322933c853bb330a18e326155f4144440",
+    "size": 81665759
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",
