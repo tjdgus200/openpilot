@@ -1,5 +1,14 @@
 # Repository memory
 
+- Delivery2026-10-22: runtime489c7c9f is installed on the detached comma by
+  fast-forward and normal reboot. Restarting only jetlinkd inherited the old
+  module from its preloading manager; normal reboot removed vision_cpu send.
+  After reboot USBready5 consecutive2s samples/error0 and HUD publisher active.
+  Host remainsb21f1f4c, selected manifest byte-identical; no candidate install.
+  HUD connected telemetryfalse, so no visual-output claim. Local164+79 tests,
+  USB update/rollback103, docs/wiki44 pass; CI39748572797 succeeds. No fresh
+  onroad/GPU throughput or historical whole-device reboot-cause verification.
+
 - On 2026-10-22 the owner retires Wi-Fi HUD/auxiliary image/result transport
   and requests official comma-local lane/BSD ONNX with USB-timed HUD. This
   supersedes earlier remote-CPU/direct-only data requirements below. Restore
