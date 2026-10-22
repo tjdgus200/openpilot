@@ -2,10 +2,7 @@
 import json
 import os
 from pathlib import Path
-import re
-import shutil
 import socket
-import subprocess
 import sys
 import threading
 import time
@@ -165,37 +162,3 @@ def test_stopped_session_owner_does_not_keep_an_old_runtime_reason(monkeypatch):
   def gone(*_): raise ProcessLookupError()
   monkeypatch.setattr(os, 'kill', gone)
   assert r.session_diagnostic()['code'] == 'disconnected'
-
-
-def test_web_diagnostics_render_distinct_failures_and_never_call_attempts_successes():
-  node = shutil.which('node')
-  if node is None:
-    pytest.skip('Node unavailable for web diagnostics contract')
-  path = Path(__file__).resolve().parents[2] / 'openpilot/selfdrive/carrot/xiaoge/v_asm_web.html'
-  html = path.read_text()
-  script = re.search(r'<script>([\s\S]+)</script>', html).group(1)
-  declarations = script[script.index('const remoteReasons='):script.index('function errorMessage(')]
-  checks = r'''
-const assert=require('node:assert/strict');
-let language='ko';
-const element={textContent:'',className:''};
-for(const code of ['runtime_outdated','wifi_route_unavailable','authentication_failed','inference_failed']){
-  renderRemoteDiagnostic(element,{code,message:'safe',attempts:197,successes:0,wifiPath:'shared_wifi'},'차선');
-  assert.ok(element.textContent.includes(code));
-  assert.ok(element.textContent.includes('성공 0 / 요청 197'));
-  assert.ok(element.textContent.includes('공유기/핫스팟'));
-  assert.equal(element.className,'bad');
-}
-renderRemoteDiagnostic(element,{code:'ok',message:'ready',attempts:1,successes:1,wifiPath:'direct_ap'},'차선');
-assert.ok(element.textContent.includes('직접 AP'));
-assert.equal(element.className,'ok');
-for(const locale of ['en','zh']){
-  language=locale;
-  renderRemoteDiagnostic(element,{code:'authentication_failed',message:'Authentication failed',wifiPath:'unknown'},'BSD');
-  assert.ok(element.textContent.includes('authentication_failed'));
-}
-'''
-  # Parse the entire shipped script, then exercise the actual diagnostic renderer.
-  code = 'new (require("node:vm").Script)(' + json.dumps(script) + ');\n' + declarations + checks
-  result = subprocess.run([node, '-'], input=code, text=True, encoding='utf-8', capture_output=True, timeout=15)
-  assert result.returncode == 0, result.stderr

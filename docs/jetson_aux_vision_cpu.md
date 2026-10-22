@@ -1,5 +1,10 @@
 # carrot-nav-pv5: CPU 차선·BSD와 Wi-Fi
 
+> **2026-10-22: 이 원격 추론 경로는 사용 중단되었습니다.** 사용자 요청에 따라
+> 공식 콤마 로컬 ONNX와 USB HUD 경로로 복원했습니다. 아래 내용은 이전 구현과
+> 실험 이력이며 현재 동작은 [로컬 ONNX·USB HUD](jetson_local_vision_usb_hud.md)를
+> 따릅니다. 호환용 수신 코드는 남아 있지만 현재 콤마는 원격 세션을 시작하지 않습니다.
+
 `ShareData`의 기존 차선 종류 분류와 `OnnxBsdEnabled`의 시각 BSD ONNX 계산을
 Jetson CPU로 옮긴다. 두 설정은 기본 OFF와 기존 온로드 준비 조건을 유지한다.
 차량 BSD, 분류 클래스·임계값·ROI·평활화, 차선변경 제어 조건과 N16 주행 모델은

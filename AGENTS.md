@@ -1,5 +1,18 @@
 # Repository memory
 
+- On 2026-10-22 the owner retires Wi-Fi HUD/auxiliary image/result transport
+  and requests official comma-local lane/BSD ONNX with USB-timed HUD. This
+  supersedes earlier remote-CPU/direct-only data requirements below. Restore
+  v_asm_server/web/xiaoge_vision and settings from official carrot-nav ec36d5e5;
+  preserve saved toggles/intervals. Never start auxiliary_publisher in jetlinkd
+  or fall back to WifiPublisher. Keep old host RPC helpers dormant for package
+  compatibility; selected b21f1f4c package is unchanged. OEM BSD OR fresh local
+  visual BSD is merged per side by official card.py, included in carState in
+  the existing USB HUD snapshot, with no separate BSD channel. Preserve immediate
+  red edge, 2Hz pulse/outer-third gradient, stale-data rejection and all other
+  personalized HUD, N16/GPU state, official USB timing and Park/zero gates.
+  No new device performance/road-safety claim. See jetson_local_vision_usb_hud.md.
+
 - Follow-up2026-10-22: hotspot remained ON. At commaa1992a43/Jetsonb21,
   paired600s idle: direct598/600, reverse600/600, phone599/600, USBready600/600.
   Separate512KiB synthetic TCP at target2Hz reproduced direct-link stalls and

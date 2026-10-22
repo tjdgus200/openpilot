@@ -69,6 +69,45 @@ def test_official_visual_bsd_augments_vehicle_bsd_before_hud_warning():
   assert car.leftBlindspot is True  # An ONNX clear never erases a native warning.
 
 
+@pytest.mark.parametrize('oem_left,oem_right', [(False, False), (True, False), (False, True), (True, True)])
+@pytest.mark.parametrize('vision_left,vision_right', [(False, False), (True, False), (False, True), (True, True)])
+@pytest.mark.parametrize('fresh', [False, True])
+def test_vehicle_or_fresh_local_bsd_survives_usb_hud_snapshot(tmp_path, monkeypatch,
+                                                           oem_left, oem_right, vision_left, vision_right, fresh):
+  import base64
+  import json
+  from openpilot.cereal import log
+  from openpilot.selfdrive.carrot.xiaoge.xiaoge_vision import XiaogeVisionResult, apply_xiaoge_vision_result
+  import hud_protocol as protocol
+  from openpilot.selfdrive.modeld.jetlink.daemon import publish_hud
+
+  event = log.Event.new_message(carState={
+    'leftBlindspot': oem_left, 'rightBlindspot': oem_right, 'leftBlinker': True, 'rightBlinker': True,
+  })
+  vision = XiaogeVisionResult(-1, -1, False, 0, vision_left, vision_right, True, 100_000_000_000)
+  apply_xiaoge_vision_result(event.carState, vision, 100_100_000_000 if fresh else 102_000_000_000)
+  _, record = snapshot()
+  record.update(version=1, events={'carState': base64.b64encode(event.to_bytes()).decode()})
+  publisher = object.__new__(protocol.Publisher)
+  publisher.path, publisher.last_sent = tmp_path / 'hud', 0.
+  publisher.media_socket = None
+  publisher.path.write_bytes(protocol.HEADER.pack(10.) + protocol.encode_snapshot(record))
+  monkeypatch.setattr(protocol.time, 'monotonic', lambda: 10.1)
+  packets = []
+  client = NS(_next_seq=lambda: 1, t=NS(send=lambda kind, seq, parts: packets.append((kind, b''.join(parts)))))
+  publish_hud(client, publisher)
+  assert len(packets) == 1 and packets[0][0] == protocol.HUD_MESSAGE
+  received = json.loads(packets[0][1])
+  with log.Event.from_bytes(base64.b64decode(received['events']['carState'])) as decoded:
+    state = NS(left_signal=decoded.carState.leftBlinker, right_signal=decoded.carState.rightBlinker,
+               left_blindspot=decoded.carState.leftBlindspot, right_blindspot=decoded.carState.rightBlindspot)
+    assert warning_sides(state, (10., received), 10.1) == (
+      oem_left or (fresh and vision_left), oem_right or (fresh and vision_right))
+  # No second BSD channel or repeat of the same HUD snapshot.
+  publish_hud(client, publisher)
+  assert len(packets) == 1
+
+
 @pytest.mark.parametrize('layout', [0, 1])
 def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeypatch, layout):
   import hud_health as hud

@@ -6,7 +6,6 @@ from typing import Protocol
 
 
 XIAOGE_LANE_TIMEOUT_NS = 4_000_000_000
-REMOTE_LANE_TIMEOUT_NS = 1_000_000_000
 XIAOGE_BLINDSPOT_TIMEOUT_NS = 1_500_000_000
 XIAOGE_LANE_TYPES = (-1, 0, 1)
 
@@ -23,7 +22,6 @@ class XiaogeVisionResult:
   blindspot_received_nanos: int
   left_blindspot_received_nanos: int = 0
   right_blindspot_received_nanos: int = 0
-  remote_cpu: bool = False
 
 
 class VisionState(Protocol):
@@ -74,7 +72,6 @@ def parse_xiaoge_vision_payload(payload: bytes) -> XiaogeVisionResult:
     blindspot_received_nanos,
     _received_nanos(by_side.get("left", blindspot_received_nanos), "blindspot.receivedMonoTimeNanosBySide.left"),
     _received_nanos(by_side.get("right", blindspot_received_nanos), "blindspot.receivedMonoTimeNanosBySide.right"),
-    lane.get("processor") == "jetson_cpu_wifi",
   )
 
 
@@ -108,8 +105,7 @@ def apply_xiaoge_vision_result(CS: VisionState, result: XiaogeVisionResult | Non
     return False
 
   applied = False
-  lane_timeout = REMOTE_LANE_TIMEOUT_NS if result.remote_cpu else XIAOGE_LANE_TIMEOUT_NS
-  if result.lane_valid and _is_fresh(result.lane_received_nanos, now_nanos, lane_timeout):
+  if result.lane_valid and _is_fresh(result.lane_received_nanos, now_nanos, XIAOGE_LANE_TIMEOUT_NS):
     if result.left_lane >= 0:
       CS.leftLaneLine = merge_xiaoge_lane_type(CS.leftLaneLine, result.left_lane)
       applied = True

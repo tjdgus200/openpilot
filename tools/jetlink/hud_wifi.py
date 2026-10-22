@@ -77,15 +77,11 @@ def publisher(client, peer, legacy):
     if not all(peer.get(key) is True for key in ('carrot_hud_v1', 'carrot_navi_v1', 'carrot_navi_pump_v1')):
       return None
     return legacy(navi=True, nav_map=True)
-  if peer.get(CAPABILITY) is not True:
-    return None  # Old Jetson runtimes must be updated; never send display over USB.
-  try:
-    return WifiPublisher(client)
-  except Exception:
-    # Do not log the control payload/key or silently put HUD back onto USB.
-    import logging
-    logging.getLogger(__name__).warning('HUD Wi-Fi setup failed; model link unchanged, reconnect to retry')
-    return None
+  # HUD uses the existing USB publication window only. A legacy Wi-Fi-only
+  # receiver needs an update; do not negotiate a WLAN worker or add USB traffic
+  # without the explicit USB receiver contract above.
+  return None
+
 
 
 def supported():

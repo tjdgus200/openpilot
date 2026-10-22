@@ -299,17 +299,7 @@ def test_vision_payload_never_reports_unevaluated_blindspot_as_valid(vision_serv
 
 
 @pytest.fixture
-def vision_service(message_transport, monkeypatch):
-  # Exercise the unchanged preprocess/ROI/service lifecycle against the actual
-  # CPU worker engine, with only the WLAN/local socket replaced by a PC adapter.
-  from openpilot.selfdrive.carrot.xiaoge import remote
-  from tools.jetlink.vision_cpu import Engine  # noqa: TID251 -- reuse standalone CPU worker in PC test
-  engine = Engine()
-  def request(client, pixels, threshold, op='infer', timeout=remote.DEADLINE):
-    meta = json.dumps({'version': 1, 'id': '0' * 32, 'kind': client.kind, 'sha256': client.sha256,
-                       'threshold': threshold, 'op': op}).encode()
-    return json.loads(engine.infer(remote.PREFIX.pack(len(meta)) + meta + pixels))
-  monkeypatch.setattr(remote.CpuClient, 'request', request)
+def vision_service(message_transport):
   class FakeParams:
     def __init__(self):
       self.values = {
@@ -358,8 +348,7 @@ def test_runtime_settings_load_from_and_persist_to_params(vision_service):
   vision_service._refresh_settings_from_params(force=True)
   assert vision_service.threshold == 0.96
   assert vision_service.smoothing_seconds == 0.30
-  assert vision_service.base_interval_seconds == 0.50
-  assert params.values['OnnxBsdIntervalMs'] == 350  # Cap execution without rewriting the saved value.
+  assert vision_service.base_interval_seconds == 0.35
   assert vision_service.lane_threshold == 0.40
   assert vision_service.lane_interval_seconds == 0.55
 
@@ -368,17 +357,17 @@ def test_runtime_settings_load_from_and_persist_to_params(vision_service):
   vision_service.set_settings({
     "threshold": 0.9,
     "smoothingSeconds": 0.2,
-    "baseIntervalSeconds": 0.65,
+    "baseIntervalSeconds": 0.15,
     "laneThreshold": 0.3,
-    "laneIntervalSeconds": 0.55,
+    "laneIntervalSeconds": 0.45,
   })
   assert params.values == {
     "OnnxBsdEnabled": 1,
     "OnnxBsdThreshold": 90,
     "OnnxBsdSmoothingMs": 200,
-    "OnnxBsdIntervalMs": 650,
+    "OnnxBsdIntervalMs": 150,
     "OnnxLaneThreshold": 30,
-    "OnnxLaneIntervalMs": 550,
+    "OnnxLaneIntervalMs": 450,
   }
 
 
@@ -497,10 +486,6 @@ def test_camera_loop_infers_and_snapshots_padded_allocation(monkeypatch, vision_
   idle_waits = 0
 
   class FakeClient:
-    @property
-    def timestamp_sof(self):
-      return time.monotonic_ns()
-
     delivered = False
     polls = 0
 
@@ -638,45 +623,6 @@ def test_idle_camera_yields_and_resumes_without_reconnecting(monkeypatch, vision
   assert connections == [False]
 
 
-def test_remote_auth_failure_keeps_camera_connected_and_separate_diagnostics(monkeypatch, vision_service, padded_camera_frame):
-  from openpilot.selfdrive.carrot.xiaoge.remote import RemoteFailure
-  service, clients = vision_service, []
-  class FakeClient:
-    def __init__(self, *_args):
-      self.delivered = False
-      clients.append(self)
-    @property
-    def timestamp_sof(self):
-      return time.monotonic_ns()
-    def is_connected(self):
-      return True
-    def connect(self, _blocking):
-      return True
-    def recv(self, timeout_ms):
-      if self.delivered:
-        service.running = False
-        return None
-      self.delivered = True
-      return padded_camera_frame
-  visionipc = ModuleType("msgq.visionipc")
-  visionipc.VisionIpcClient = FakeClient
-  visionipc.VisionStreamType = SimpleNamespace(VISION_STREAM_WIDE_ROAD=1)
-  monkeypatch.setitem(sys.modules, "msgq.visionipc", visionipc)
-  def fail(*_args, **_kwargs):
-    raise RemoteFailure('authentication_failed')
-  monkeypatch.setattr(service.inference.client, 'request', fail)
-  monkeypatch.setattr(v_asm_server.time, 'sleep', lambda seconds: None)
-  service.run_camera()
-  state = service.status()
-  assert len(clients) == 1 and state['camera']['available']
-  assert state['camera']['error'] == ''
-  assert state['model']['diagnostic']['code'] == 'authentication_failed'
-  assert state['model']['diagnostic']['attempts'] == 1
-  assert state['model']['diagnostic']['successes'] == 0
-  assert state['inference']['count'] == 0
-  assert not state['model']['loaded'] and not state['vehicleSide']['left']['valid']
-
-
 def test_wide_camera_skips_bsd_inference_when_disabled(monkeypatch, vision_service, padded_camera_frame):
   service = vision_service
   service.params.values["OnnxBsdEnabled"] = 0
@@ -688,10 +634,6 @@ def test_wide_camera_skips_bsd_inference_when_disabled(monkeypatch, vision_servi
   monkeypatch.setattr(service.inference, "update", lambda *_args: pytest.fail("BSD ONNX must not run while disabled"))
 
   class FakeClient:
-    @property
-    def timestamp_sof(self):
-      return time.monotonic_ns()
-
     def __init__(self, *_args):
       pass
 
@@ -728,10 +670,6 @@ def test_road_camera_lane_inference_continues_when_bsd_disabled(monkeypatch, vis
   service.running = True
 
   class FakeClient:
-    @property
-    def timestamp_sof(self):
-      return time.monotonic_ns()
-
     delivered = False
 
     def __init__(self, *_args):
@@ -886,7 +824,6 @@ def test_bsd_drops_camera_work_from_before_a_toggle(monkeypatch, vision_service,
 
   monkeypatch.setattr(service, "_update_vasm_gate", toggle_during_gate)
   client = SimpleNamespace(is_connected=lambda: True, connect=lambda _blocking: True,
-                           timestamp_sof=time.monotonic_ns(),
                            recv=lambda timeout_ms: padded_camera_frame)
   visionipc = ModuleType("msgq.visionipc")
   visionipc.VisionIpcClient = lambda *_args: client

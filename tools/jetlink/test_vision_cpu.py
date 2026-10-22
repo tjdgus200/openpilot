@@ -19,9 +19,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 import aux_vision as policy
 import vision_cpu as worker
 from openpilot.selfdrive.carrot.xiaoge import remote as r
-from openpilot.selfdrive.carrot.xiaoge.xiaoge_vision import (
-  apply_xiaoge_vision_result, parse_xiaoge_vision_payload,
-)
 
 
 @pytest.fixture(autouse=True)
@@ -246,30 +243,23 @@ def test_auxiliary_setup_failure_does_not_invalidate_driving_setup(monkeypatch):
   assert policy.publisher(client, {'carrot_host': 'jetson', policy.CAPABILITY: True}) is None
 
 
-def test_session_reaps_auxiliary_worker_and_display_resources(monkeypatch):
+def test_session_never_negotiates_auxiliary_wifi_and_reaps_display_resources(monkeypatch):
   from openpilot.selfdrive.modeld.jetlink import daemon
   calls = []
   monkeypatch.setattr(daemon, 'display_publisher', lambda *a: NS(close=lambda: calls.append('hud')))
   monkeypatch.setattr(daemon, 'PhasePublisher', lambda: NS(close=lambda: calls.append('phase')))
-  monkeypatch.setattr(daemon, 'auxiliary_publisher', lambda *a: NS(close=lambda: calls.append('aux')))
+  auxiliary = Mock(side_effect=AssertionError('Auxiliary Wi-Fi started'))
+  monkeypatch.setattr(policy, 'publisher', auxiliary)
+  client = NS(t=NS(send_json=Mock(side_effect=AssertionError('Wi-Fi handshake sent'))))
   def drive(*args):
     calls.append('drive')
     raise ConnectionError('session ended')
   monkeypatch.setattr(daemon, '_serve_local', drive)
   with pytest.raises(ConnectionError, match='session ended'):
-    daemon.serve_local(None, None, {'carrot_host': 'jetson'})
-  assert calls == ['drive', 'aux', 'phase', 'hud']
-
-
-def test_remote_camera_age_never_becomes_fresh_at_response_time():
-  payload = {'type': 'xiaogeVision', 'version': 1,
-    'lane': {'leftLine': 0, 'rightLine': 0, 'valid': True, 'processor': 'jetson_cpu_wifi', 'receivedMonoTimeNanos': 1_000_000_000},
-    'blindspot': {'left': False, 'right': False, 'valid': False, 'receivedMonoTimeNanos': 1_000_000_000}}
-  result = parse_xiaoge_vision_payload(json.dumps(payload).encode())
-  assert result.remote_cpu
-  car = NS(leftLaneLine=24, rightLaneLine=14, leftBlindspot=True, rightBlindspot=False)
-  assert not apply_xiaoge_vision_result(car, result, 2_000_000_001)
-  assert car.leftLaneLine == 24 and car.rightLaneLine == 14 and car.leftBlindspot
+    daemon.serve_local(None, client, {'carrot_host': 'jetson', policy.CAPABILITY: True})
+  assert calls == ['drive', 'phase', 'hud']
+  auxiliary.assert_not_called()
+  client.t.send_json.assert_not_called()
 
 
 def test_official_service_toggle_roi_and_preprocessing_regressions():

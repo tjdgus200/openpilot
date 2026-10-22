@@ -15,12 +15,14 @@ from hud_wifi_route import select_link
 
 
 @pytest.mark.parametrize('capability', [None, False, True])
-def test_jetson_never_uses_usb_display_even_on_setup_failure(monkeypatch, capability):
+def test_legacy_wifi_only_jetson_starts_neither_wifi_nor_unnegotiated_usb(monkeypatch, capability):
   legacy = Mock(side_effect=AssertionError('USB HUD selected'))
-  monkeypatch.setattr(policy, 'WifiPublisher', Mock(side_effect=OSError('offline')))
+  wifi = Mock(side_effect=AssertionError('Wi-Fi HUD started'))
+  monkeypatch.setattr(policy, 'WifiPublisher', wifi)
   peer = {'carrot_host': 'jetson', 'carrot_hud_v1': True, 'carrot_navi_v1': True, policy.CAPABILITY: capability}
   assert policy.publisher(None, peer, legacy) is None
   legacy.assert_not_called()
+  wifi.assert_not_called()
 
 
 def test_other_hosts_keep_their_existing_display(monkeypatch):
