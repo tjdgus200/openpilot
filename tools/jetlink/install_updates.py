@@ -14,6 +14,8 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
   """
   from wifi_power import schedule
   schedule(runtime)
+  from wifi_boot import migrate
+  migrate(runtime)
   if Path('/etc/systemd/system/carrot-jetlink-boot-display.service').is_file():
     migrate_boot_display(runtime)
   if not (runtime / 'current/tools/jetlink/boot_update.py').is_file():
@@ -52,7 +54,7 @@ def configure_runtime_boot_display():
   subprocess.run(['systemctl', 'try-restart', 'carrot-jetlink-boot-display'], check=True, timeout=15)
 
 
-def bootstrap(root, source, defer_this_boot=False):
+def bootstrap(root, source, defer_this_boot=False, preserve_policy=False, sync=True):
   root, source = Path(root), Path(source)
   target = root / 'opt/carrot-jetlink/updater'
   target.mkdir(parents=True, exist_ok=True)
@@ -63,6 +65,10 @@ def bootstrap(root, source, defer_this_boot=False):
   # Copying its code never enables the locally selected USB policy.
   if (source / 'usb_release.py').is_file():
     names.insert(-2, 'usb_release.py')
+  for name in ('wifi_boot.py', 'wifi_power.py', 'wifi_direct_netlink.py', 'wifi_apply.py',
+               'persistent_state.py', 'image_first_boot.py'):
+    if (source / name).is_file():
+      names.insert(0, name)
   for name in names:
     temporary = target / (name + '.new')
     with temporary.open('wb') as stream:
@@ -72,10 +78,17 @@ def bootstrap(root, source, defer_this_boot=False):
     temporary.chmod(0o644)
     temporary.replace(target / name)
   marker = target.parent / 'boot-update-required'
-  temporary = marker.with_suffix('.new')
-  temporary.write_text(Path('/proc/sys/kernel/random/boot_id').read_text() if defer_this_boot else 'next-boot\n')
-  temporary.replace(marker)
-  if hasattr(os, 'sync'):
+  if not preserve_policy or not marker.is_file():
+    temporary = marker.with_suffix('.new')
+    temporary.write_text(Path('/proc/sys/kernel/random/boot_id').read_text() if defer_this_boot else 'next-boot\n')
+    temporary.replace(marker)
+  if os.name == 'posix':
+    fd = os.open(target, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+      os.fsync(fd)
+    finally:
+      os.close(fd)
+  if sync and hasattr(os, 'sync'):
     os.sync()
 
 

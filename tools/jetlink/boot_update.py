@@ -210,6 +210,12 @@ class BootstrapSession:
 
 
 def boot():
+  # Independent, bounded root worker; no NM/association waits in the USB gate.
+  try:
+    from wifi_boot import schedule
+    schedule(update.ROOT)
+  except ImportError:
+    pass  # Published older bootstrap payloads remain usable.
   if runtime_ready():
     subprocess.run(['systemctl', 'start', 'carrot-jetlink', 'carrot-jetlink-hud'], check=True, timeout=45)
     return

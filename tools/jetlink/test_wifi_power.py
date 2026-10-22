@@ -141,3 +141,76 @@ def test_installed_boot_policy_does_not_skip_power_worker(tmp_path, monkeypatch)
   monkeypatch.setattr(power, 'schedule', schedule)
   install_updates.migrate_running_release(tmp_path)
   assert calls == [tmp_path]
+
+
+def test_early_profile_migration_preserves_secrets_and_unowned_files(tmp_path):
+  import wifi_boot
+  original = b'[connection]\nid=private\ntype=wifi\n[wifi]\nmode=infrastructure\nssid=private\\sSSID\npowersave=3\n[wifi-security]\npsk=private\\svalue\n'
+  owned = tmp_path / 'carrot-usb-example.nmconnection'
+  owned.write_bytes(original)
+  other = tmp_path / 'administrator.nmconnection'
+  other.write_bytes(original)
+  changes = wifi_boot.profiles_off(tmp_path)
+  assert list(changes) == [owned]
+  before, after = changes[owned]
+  assert before == original and after == original.replace(b'powersave=3', b'powersave=2')
+  assert owned.read_bytes() == other.read_bytes() == original  # Prepare before mutation.
+  owned.write_bytes(after)
+  assert wifi_boot.profiles_off(tmp_path) == {}
+
+
+def test_early_profile_migration_rejects_symlinks(tmp_path):
+  import os
+  import wifi_boot
+  if os.name == 'nt':
+    pytest.skip('Linux symlink ownership')
+  target = tmp_path / 'administrator.nmconnection'
+  target.write_text('[wifi]\nmode=infrastructure\n')
+  (tmp_path / 'carrot-usb-not-owned.nmconnection').symlink_to(target)
+  with pytest.raises(ValueError):
+    wifi_boot.profiles_off(tmp_path)
+
+
+def test_boot_gate_schedules_policy_before_usb_or_model_start(monkeypatch):
+  import boot_update
+  import wifi_boot
+  import update_host
+  events = []
+  monkeypatch.setattr(wifi_boot, 'schedule', lambda runtime: events.append(('policy', runtime)))
+  monkeypatch.setattr(boot_update, 'runtime_ready', lambda: True)
+  monkeypatch.setattr(boot_update.subprocess, 'run', lambda *a, **k: events.append(('services', a)))
+  boot_update.boot()
+  assert events[0] == ('policy', update_host.ROOT)
+  assert events[1][0] == 'services'
+
+
+def test_new_bootstrap_can_refresh_without_resetting_usb_boot_approval(tmp_path):
+  import install_updates
+  source = __import__('pathlib').Path(__file__).parent
+  runtime = tmp_path / 'opt/carrot-jetlink'
+  runtime.mkdir(parents=True)
+  marker = runtime / 'boot-update-required'
+  marker.write_bytes(b'previous-boot-policy\n')
+  install_updates.bootstrap(tmp_path, source, preserve_policy=True, sync=False)
+  assert marker.read_bytes() == b'previous-boot-policy\n'
+  assert (runtime / 'updater/wifi_boot.py').read_bytes() == (source / 'wifi_boot.py').read_bytes()
+  assert (runtime / 'updater/wifi_apply.py').read_bytes() == (source / 'wifi_apply.py').read_bytes()
+
+
+def test_early_prepare_reloads_defaults_and_only_restarts_importer_once(tmp_path, monkeypatch):
+  import wifi_boot
+  monkeypatch.setattr(wifi_boot, 'CONFIG', tmp_path / 'nm.conf')
+  monkeypatch.setattr(wifi_boot, 'DROPIN', tmp_path / 'network.conf')
+  monkeypatch.setattr(wifi_boot, 'STATUS', tmp_path / 'status.json')
+  calls = []
+  monkeypatch.setattr(power, 'schedule', lambda runtime: calls.append(('power', runtime)))
+  monkeypatch.setattr(wifi_boot.subprocess, 'run', lambda command, **kw: calls.append((command, kw)))
+  wifi_boot.prepare(tmp_path)
+  assert calls[0] == ('power', tmp_path)
+  commands = [c for c, _ in calls[1:]]
+  assert commands == [['nmcli', 'general', 'reload', 'conf'], ['systemctl', 'daemon-reload'],
+                      ['systemctl', 'try-restart', 'carrot-jetlink-wifi.service']]
+  assert wifi_boot.CONFIG.read_bytes() == wifi_boot.DEFAULTS
+  before = list(calls)
+  wifi_boot.prepare(tmp_path)
+  assert calls == before  # No repeated network restart on a USB gate retry.

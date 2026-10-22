@@ -1,5 +1,26 @@
 # Repository memory
 
+- On 2026-10-22, owner requests power saving off from early boot and analysis
+  of remaining direct-WLAN loss, with no driving-path changes. Selected595c509b
+  is physically installed: separate Jetson/comma reboots, power0 at25/25 queries
+  and USBready120/120 in120s; legacy early boot still had power1 before server.
+  Move optional policy scheduling to the independent USB boot gate. Copy its
+  stable helpers into the DATA updater asynchronously once, preserving the
+  exact boot-approval marker and original BOOT_SHA. On next boot use RAM-only
+  NM defaults and a RAM importer override; never remount/write immutable APP,
+  restart NetworkManager/radio/USB/model or wait for networking in the gate.
+  Root policy jobs stay SCHED_OTHER/nice19/CPU0-1/idle I/O with35s startup bound;
+  retain the separate CAP_NET_ADMIN-only enforcement worker and recovery base.
+  Persist powersave2 only for owned station profiles; keep just prior changed
+  files privately, not in artifacts. Do not cancel in-progress NM association
+  or DHCP, or force reconnect solely because power settings changed. Preserve
+  N16, official serial USB, GPU state, all trust/ABI/rollback and Park/zero gates.
+  A six-minute Jetson BSSID-pin trial still lost43/360 one-second pings while
+  USBready360/360. Remove that unproven default and experimental pin; do not
+  claim all RF/driver loss fixed, causal attribution or road/20Hz verification.
+  Current source is not yet the selected public package; paired publication
+  and physical early-boot validation must be reported separately.
+
 - On 2026-10-22, owner explicitly approves publicly distributing the new
   Wi-Fi power package and installing over comma USB, then verifying across
   normal reboots. Published source595c509b as
