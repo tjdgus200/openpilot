@@ -1,5 +1,21 @@
 # Repository memory
 
+- On 2026-10-23 the owner explicitly requires no auxiliary USB input under
+  any attachment/gear/voltage condition; independent vehicle/OBD-C power is
+  mandatory. This supersedes all empty-port-only/opt-in policies below.
+  Apply USB_ICL force_val=0/force_active=1 before AGNOS init/build/manager on
+  each normal launch, then verify once before Jetlink opens a USB session.
+  Never restore draw on disconnect, mode change or daemon exit. A failed
+  helper blocks only Jetlink; keep manager/native fallback running. No USB
+  data/power-role swap, regulator/VBUS shutdown, CAN or model change. Software
+  cannot exclude input during boot ROM/kernel before launcher execution;
+  do not claim physical isolation or verified vehicle power stability.
+  No new Jetson package is selected. See docs/jetlink_usb_power_20261019.md.
+  PC328 regression checks and launcher Bash syntax pass. Always reassert
+  force_active=1 after force_val=0, even if readback already says1/0: the
+  PMIC callback is invoked by the active write and can previously have failed.
+  No live vehicle/power/USB/reboot verification was performed for this change.
+
 - Delivery2026-10-22: runtime489c7c9f is installed on the detached comma by
   fast-forward and normal reboot. Restarting only jetlinkd inherited the old
   module from its preloading manager; normal reboot removed vision_cpu send.
