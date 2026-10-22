@@ -211,6 +211,19 @@ def test_early_prepare_reloads_defaults_and_only_restarts_importer_once(tmp_path
   assert commands == [['nmcli', 'general', 'reload', 'conf'], ['systemctl', 'daemon-reload'],
                       ['systemctl', 'try-restart', 'carrot-jetlink-wifi.service']]
   assert wifi_boot.CONFIG.read_bytes() == wifi_boot.DEFAULTS
+  assert wifi_boot.STATUS.parent.stat().st_mode & 0o777 == 0o755
   before = list(calls)
   wifi_boot.prepare(tmp_path)
   assert calls == before  # No repeated network restart on a USB gate retry.
+
+
+def test_completion_digest_is_readable_by_unprivileged_server(tmp_path, monkeypatch):
+  import wifi_boot
+  import install_updates
+  monkeypatch.setattr(install_updates, 'bootstrap', lambda *a, **k: None)
+  monkeypatch.setattr(wifi_boot, 'stamp', lambda source: 'a' * 64)
+  monkeypatch.setattr(wifi_boot, 'profiles_off', lambda path: {})
+  writes = []
+  monkeypatch.setattr(wifi_boot, 'durable_write', lambda path, data, mode: writes.append((path, data, mode)))
+  wifi_boot.install(tmp_path)
+  assert writes == [(tmp_path / 'cache/wifi-early-source.sha256', ('a' * 64 + '\n').encode(), 0o644)]

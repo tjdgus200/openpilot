@@ -131,7 +131,9 @@ def install(runtime=RUNTIME):
     if changed and helper.is_file():
       subprocess.run(['/usr/bin/python3', str(helper), 'save'], check=True, timeout=20,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    durable_write(runtime / 'cache/wifi-early-source.sha256', (version + '\n').encode(), 0o600)
+    # Public code digest only: the unprivileged server must be able to detect
+    # completion instead of reinstalling the same policy on every startup.
+    durable_write(runtime / 'cache/wifi-early-source.sha256', (version + '\n').encode(), 0o644)
   except Exception:
     for path, (old, _) in changed.items():
       durable_write(path, old, 0o600)
@@ -166,6 +168,7 @@ def prepare(runtime=RUNTIME):
   durable_write(STATUS, json.dumps({'state': 'configured', 'updated': time.monotonic(),
                                    'boot_id': boot_id, 'power_default': 2,
                                    'network_worker': 'runtime'}).encode(), 0o644)
+  STATUS.parent.chmod(0o755)  # Public status only; no profiles or credentials.
 
 
 if __name__ == '__main__':
