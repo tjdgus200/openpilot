@@ -15,6 +15,7 @@ if __name__ == '__main__':
   wait_for_runtime()
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'third_party/jetlink'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hud_protocol import HUD_CAPABILITY, HUD_MESSAGE, MAX_HUD_BYTES, HUD_PACKET, HEADER

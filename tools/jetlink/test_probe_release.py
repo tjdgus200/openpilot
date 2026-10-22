@@ -10,7 +10,7 @@ import probe_release as probe
 
 @pytest.mark.parametrize(('fault', 'expected_error'), [
   ('none', None), ('contract', ValueError), ('nonfinite', ValueError),
-  ('empty', ValueError), ('load', RuntimeError), ('hud', RuntimeError),
+  ('empty', ValueError), ('load', RuntimeError), ('hud', RuntimeError), ('server', RuntimeError),
 ])
 def test_activation_keeps_hud_gpu_contract_and_finite_checks_without_cpu_probe(monkeypatch, tmp_path, fault, expected_error):
   calls = []
@@ -42,21 +42,30 @@ def test_activation_keeps_hud_gpu_contract_and_finite_checks_without_cpu_probe(m
   def run(command, **kwargs):
     # Auxiliary CPU models are not an activation prerequisite. A missing or
     # unusable auxiliary process must not be launched by this entry point.
-    assert command == [sys.executable, str(probe.ROOT / 'tools/jetlink/hud.py'), '--help']
     assert kwargs['check'] is True and kwargs['timeout'] == 30
+    if command == [sys.executable, '-c', 'import server']:
+      assert kwargs['cwd'] == probe.ROOT / 'tools/jetlink'
+      assert 'PYTHONPATH' not in kwargs['env']
+      calls.append('server')
+      if fault == 'server':
+        raise RuntimeError('Server entrypoint failed')
+      return
+    assert command == [sys.executable, str(probe.ROOT / 'tools/jetlink/hud.py'), '--help']
     calls.append('hud')
     if fault == 'hud':
       raise RuntimeError('HUD entrypoint failed')
   monkeypatch.setattr(probe, 'subprocess', NS(run=run, DEVNULL=-3))
   if expected_error is None:
     probe.main()
-    assert calls == ['hud', 'request', 'reset', 'inputs', 'infer', 'feedback',
+    assert calls == ['server', 'hud', 'request', 'reset', 'inputs', 'infer', 'feedback',
                      'inputs', 'infer', 'feedback', 'inputs', 'infer', 'feedback', 'closed']
   else:
     with pytest.raises(expected_error):
       probe.main()
     if fault == 'hud':
-      assert calls == ['hud']
+      assert calls == ['server', 'hud']
+    elif fault == 'server':
+      assert calls == ['server']
     else:
       assert calls[-1] == 'closed'
       assert calls.count('infer') == (1 if fault in ('nonfinite', 'empty') else 0)

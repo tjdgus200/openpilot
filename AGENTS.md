@@ -1,5 +1,18 @@
 # Repository memory
 
+- On 2026-10-22, live detached-device installation of selectedbfe0cab1 passes
+  SHA activation, actual TensorRT engine load and three finite GPU requests,
+  but the subsequent real systemd server restarts with ModuleNotFoundError:
+  openpilot. server.py omitted the release root from sys.path; probe_release
+  imported it in a parent that already added ROOT and hid the defect. Add ROOT
+  in the server entrypoint and probe a fresh interpreter from tools/jetlink
+  with PYTHONPATH removed before all existing HUD/GPU checks. Do not restore
+  automatic auxiliary CPU model execution. Temporary /run service PYTHONPATH
+  recovers USB ready and auxiliary capability; remove it after corrected
+  package deployment. Direct AP association works before/after comma reboot.
+  Historical whole-device reset cause is still unproven. No road/20Hz claim.
+  Scope this fix to carrot-nav-pv5 and preserve model, trust, USB and control.
+
 - On 2026-10-21, owner explicitly approves the new81.7MB public no-CPU-probe
   package and USB selection. Publish sourcebfe0cab1 as tag
   jetson-pv5-no-cpu-probe-20261021-bfe0cab1; select profile
