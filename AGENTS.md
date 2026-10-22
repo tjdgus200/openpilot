@@ -1,5 +1,15 @@
 # Repository memory
 
+- BSD release2026-10-23: owner approved new public package in Discord(choice1).
+  Publish/select sourceaf987fb0,81,673,236bytes/SHA6f8ca4adedc9919222473269b82a02d61fdac8e3ef3155db19cb4dca4298b06c.
+  All4 public asset downloads match. Export-only fresh server/HUD imports and
+  no-indicator BSD pass.13 critical files and54 vendored Jetlink files match
+  installedb21; retain SHA-only USB, N16, GPU state, legacy pin alias, runtime,
+  activation probe and rollback. PC183 display/source+103 update+65 probe/gate
+  pass; sourceCI39817838810 passes. No actual device install/reboot/GPU trial
+  in this turn. Update comma, install selected package on normal Jetson boot
+  while Park/zero. Do not claim old installedb21 already has this HUD change.
+
 - On 2026-10-23 the owner wants HUD BSD edges without a turn-signal gate.
   Fresh/valid carState left/rightBlindspot drives each physical side directly;
   retain OEM OR fresh local ONNX and do not require ONNX service availability.
