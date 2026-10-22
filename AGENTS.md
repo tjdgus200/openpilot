@@ -1,5 +1,27 @@
 # Repository memory
 
+- Follow-up2026-10-22: hotspot remained ON. At commaa1992a43/Jetsonb21,
+  paired600s idle: direct598/600, reverse600/600, phone599/600, USBready600/600.
+  Separate512KiB synthetic TCP at target2Hz reproduced direct-link stalls and
+  comma firmware peer-kickout; it is larger than the actual380k auxiliary RPC
+  limit and is not an ONNX/model/20Hz benchmark. Socket64KiB, chunk pacing,
+  RX A-MPDU-off and active-roam-off all still failed. Different durations and
+  overlapping recovery prevent causal rankings. All trials restored: RX accept
+  1(auto)/fix255,255; roam0x07. Model/HUD active/restart0; main USB unchanged.
+  Actual PCIe ASPM off, NL power0/LPS0, reset counters0, both links5745MHz.
+  Root distinction RF versus chip/driver interoperability remains unresolved;
+  never ship these trial defaults or call Wi-Fi fixed. Keep selectedb21 bytes.
+  See docs/jetson_aux_vision_cpu.md and private pv5-rf-driver-20261022 evidence.
+- Same follow-up: owner BMS JSON60.009s has6001 valid events, received counts
+  bus0=143978,1=62038,2=30817, candidates7E4/7EC0, no payload samples. Owner
+  confirms Car Scanner was OFF; device has no validated PV5 battery profile.
+  This does not establish a wrong bus or gateway blocking; no guessed PID map.
+  Manual capture v2 adds1024 bus/ID keys with3 snapshots/key at20s intervals,
+  keeps candidate2048/bus32 bounds and echo exclusion, nice19/private0600 file.
+  No automatic worker or CAN/flow-control TX. Raw all-ID samples stay private.
+  Local6 bounded-capture tests/Ruff pass; broader HUD run hit incomplete local
+  Cap'n Proto schema, not a passing regression. Clean CI remains authoritative.
+
 - Final follow-up2026-10-22: hotspot stayed ON throughout; owner cancelled
   OFF testing. Paired1200s baseline atcommabf5d4b15/Jetsonb21f1f4c: comma
   replies1173/1200(mean3.60/P9927.1/max513ms), reverse1175/1200(mean3.66/
