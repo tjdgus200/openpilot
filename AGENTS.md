@@ -1,5 +1,20 @@
 # Repository memory
 
+- Final 2026-10-22 delivery: comma92853231 and public Jetson sourceb21f1f4c
+  are physically installed. A separate Jetson reboot measured power worker
+  15.943s, early policy16.486s, first association25.034s, model server33.317s.
+  Actual station power was already0 at21.54s. Both comma interfaces remained0
+  after its separate normal reboot. Public digest0644 and status0644/parent0755
+  are readable and match installed helpers; private profiles stay private.
+  Final120s: USBready120/120, no USB errors, direct AP ping120/120,
+  replies mean2.66/max33.1ms. Power worker13/13 queries off, nice19/OTHER/CPU0-1,
+  zero restarts, about0.0163% one core and6.17MiB over60s idle observation.
+  Server/HUD active with zero restarts; actual HUD display not detected.
+  Latest runtime CI39720583133 passed103root/1246broad(61skip)/119nav/
+  11storage/11packet and Windows. Keep these short detached-device results
+  separate from earlier RF loss; neither full RF root cause, zero-loss nor
+  driving safety/20Hz is established. No trial BSSID/roaming defaults remain.
+
 - On 2026-10-22, early source16ad17db is USB-installed and reboot-tested:
   power worker15.42s, policy completion15.92s, first association24.61s,
   model server33.28s. Publish/select pairedb21f1f4c for readable public digest
