@@ -1,5 +1,18 @@
 # Repository memory
 
+- On 2026-10-22, owner explicitly approves publicly distributing the new
+  Wi-Fi power package and installing over comma USB, then verifying across
+  normal reboots. Published source595c509b as
+  jetson-pv5-wifi-power-20261022-595c509b,81669749bytes,SHA256
+  d284bcdb7c24da3f38a9c102a809aebe93a38ab5415eb70c1f70118bab5c39b0.
+  All four anonymous HTTPS assets match local bytes. This supersedes the
+  source-push-only/f865 selection instruction below. Keep original BOOT_SHA,
+  N16/ABI/trust/rollback, official serial USB and existing CPU probe policy.
+  Before installation, actualf865 station power saving is enabled again;
+  manual disable did not persist across the observed reassociation period.
+  Do not call the new worker reboot-validated until actual service, status,
+  kernel power value and boot identity have been checked after installation.
+
 - On 2026-10-22, owner requests pushing the remaining improvements. Add an
   opt-in-by-delivered-Jetson-runtime, fixed-name root Wi-Fi power service:
   server startup schedules it in a separate daemon thread, never waits for it.
