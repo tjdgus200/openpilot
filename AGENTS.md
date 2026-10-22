@@ -1,5 +1,23 @@
 # Repository memory
 
+- Final follow-up2026-10-22: hotspot stayed ON throughout; owner cancelled
+  OFF testing. Paired1200s baseline atcommabf5d4b15/Jetsonb21f1f4c: comma
+  replies1173/1200(mean3.60/P9927.1/max513ms), reverse1175/1200(mean3.66/
+  P9932.4/max246ms), longest19 consecutive misses, USBready1200/1200/error0,
+  AP control errors0, all41 power snapshots off on both devices. One actual
+  Jetson L2 disconnect reason0 followed by association9.52s later; other
+  short losses had no reported association event. Driver/radio/RF cause is
+  unresolved. Six-minute read-only probe had LPS0/IPS3 counters unchanged;
+  it did not overlap the first long disconnection and proves no causal order.
+  Commaf1943693 is installed/rebooted; exact AP ifindex hint, replaced-index
+  rejection and actual nice19/OTHER/CPU0-3 worker verified. Jetson source,
+  boot, model and HUD running/restart0 retained. Post-install120s still had
+  Wi-Fi116/120 replies while USBready120/120/error0. Never claim RF fixed or
+  a measured RF improvement from this independent scan-gap correction.
+  CI39722899806 passes103root/1257broad(61skip)/119nav/11storage/11packet/
+  Windows; local107pass/1skip+Ruff. No driver, kernel, model/control/USB
+  inference changes; selectedb21f1f4c artifact stays byte-identical.
+
 - On 2026-10-22 the owner cancelled the phone-hotspot OFF test before any
   hotspot/settings mutation. Keep it ON; run paired20min passive observation
   offroad, nice19/OTHER/CPU0-1. Do not call this a phone-OFF validation.
