@@ -274,10 +274,11 @@ def serve(trial=0):
           control_error = 'control_query_failed'
       # No SSID, password, peer identity or vehicle payload in diagnostics.
       durable_write(STATUS, json.dumps({'state': state, 'stage': ap.stage, 'interface': INTERFACE,
+                                      'ifindex': ap.index,
                                       'internet_sharing': ap.sharing_state,
                                       'power_save': 0 if ap.previous_power_save is not None else None,
                                       'control_error': control_error,
-                                      'updated': now}).encode(), 0o644)
+                                      'updated': time.monotonic()}).encode(), 0o644)
       stop.wait(2.)
   finally:
     if ap is not None:

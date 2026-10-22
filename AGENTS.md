@@ -1,5 +1,18 @@
 # Repository memory
 
+- On 2026-10-22 the owner cancelled the phone-hotspot OFF test before any
+  hotspot/settings mutation. Keep it ON; run paired20min passive observation
+  offroad, nice19/OTHER/CPU0-1. Do not call this a phone-OFF validation.
+  PC fault injection reproduces another optional-scan gap: a15s NM query
+  outlives the8s AP hint. Publish the owned ifindex and a post-query timestamp;
+  an old active hint may suppress optional discovery only while that exact
+  kernel interface still exists. Missing/replaced index or unavailable state
+  clears it. No NM calls in this hint and no packet/auth/control freshness
+  relaxation; explicit UI scans stay unchanged.47focused pass/1skip, Ruff pass.
+  This is a proven code path, not a confirmed explanation of earlier RF loss.
+  Keep the selectedb21f1f4c Jetson package; this fix is comma-only. Physical
+  long-observation and post-install results must be recorded separately.
+
 - Final 2026-10-22 delivery: comma92853231 and public Jetson sourceb21f1f4c
   are physically installed. A separate Jetson reboot measured power worker
   15.943s, early policy16.486s, first association25.034s, model server33.317s.

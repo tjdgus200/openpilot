@@ -173,6 +173,78 @@ def test_network_worker_drops_inherited_realtime_and_stays_off_model_core(monkey
   assert ('affinity', 0, {0, 1, 2, 3}) in calls
 
 
+def test_slow_ap_query_does_not_enable_background_discovery(ap_setup, tmp_path, monkeypatch):
+  from openpilot.common import wifi_coexistence as coexistence
+  s = ap_setup
+  clock = [0.]
+  class Stop:
+    def is_set(self):
+      return False
+    def set(self):
+      pass
+    def wait(self, seconds):
+      clock[0] += seconds
+  index = tmp_path / 'ifindex'
+  index.write_text('4\n')
+  status = tmp_path / 'status'
+  monkeypatch.setattr(coexistence, 'STATUS', status)
+  monkeypatch.setattr(coexistence, 'INTERFACE_INDEX', index)
+  original_active = s.ap.active
+  delayed = []
+  def active():
+    if clock[0] == 6:
+      clock[0] += 15  # A status query can outlive the eight-second hint window.
+      delayed.append(clock[0])
+      assert coexistence.direct_ap_active()
+    return original_active()
+  monkeypatch.setattr(s.ap, 'active', active)
+  monkeypatch.setattr(direct.os, 'geteuid', lambda: 0)
+  monkeypatch.setattr(direct, 'LOCK', tmp_path / 'lock')
+  monkeypatch.setattr(direct, 'STATUS', status)
+  monkeypatch.setattr(direct, 'low_priority', Mock())
+  monkeypatch.setattr(direct, 'Wireless', lambda: s.wireless)
+  monkeypatch.setattr(direct, 'AccessPoint', lambda *_: s.ap)
+  monkeypatch.setattr(direct.time, 'monotonic', lambda: clock[0])
+  monkeypatch.setattr(direct.threading, 'Event', Stop)
+  monkeypatch.setattr(direct.signal, 'signal', lambda *a: None)
+  written = []
+  original_write = direct.durable_write
+  def write(path, data, mode):
+    if path == status:
+      written.append(json.loads(data))
+    original_write(path, data, mode)
+  monkeypatch.setattr(direct, 'durable_write', write)
+  direct.serve(trial=25)
+  assert delayed == [21.]
+  assert any(v['updated'] == 21. and v['ifindex'] == 4 for v in written)
+  assert s.wireless.create.call_count == 1
+
+
+@pytest.mark.parametrize('state,interface,age,index,current,expected', [
+  ('active', 'wljetson0', 20, 4, '4', True),
+  ('active', 'wljetson0', 20, 4, '5', False),
+  ('active', 'wljetson0', 20, 4, None, False),
+  ('active', 'wljetson0', 20, None, '4', False),
+  ('active', 'wljetson0', 20, True, '1', False),
+  ('active', 'wljetson0', 20, 4, 'invalid', False),
+  ('active', 'wljetson0', 2, None, None, True),  # Existing fresh producers.
+  ('active', 'wljetson0', -1, 4, '4', False),
+  ('unavailable', 'wljetson0', 20, 4, '4', False),
+  ('active', 'wlan0', 20, 4, '4', False),
+])
+def test_scan_hint_checks_exact_interface_presence_when_status_is_old(
+    tmp_path, monkeypatch, state, interface, age, index, current, expected):
+  from openpilot.common import wifi_coexistence as coexistence
+  status, path = tmp_path / 'status', tmp_path / 'ifindex'
+  status.write_text(json.dumps({'state': state, 'interface': interface, 'updated': 100-age, 'ifindex': index}))
+  if current is not None:
+    path.write_text(current)
+  monkeypatch.setattr(coexistence, 'STATUS', status)
+  monkeypatch.setattr(coexistence, 'INTERFACE_INDEX', path)
+  monkeypatch.setattr(coexistence.time, 'monotonic', lambda: 100)
+  assert coexistence.direct_ap_active() is expected
+
+
 def test_boot_provisioning_keeps_usb_control_flowing_while_ap_activates(monkeypatch):
   clock = [0.]
   class Done(Exception):
