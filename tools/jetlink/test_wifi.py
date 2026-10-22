@@ -69,6 +69,10 @@ def test_open_and_sae_and_psk_hex():
     protocol.validate(value)
     _, data = host.render(value['owner'], value['profiles'][0], 100)
     assert ('[wifi-security]' in data) == (security != 'open')
+    import configparser
+    parsed = configparser.ConfigParser(interpolation=None)
+    parsed.read_string(data)
+    assert parsed['wifi'].getint('powersave') == 2
 
 
 def test_sender_never_reads_phone_credentials_without_direct_ap(monkeypatch):

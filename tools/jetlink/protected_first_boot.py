@@ -111,7 +111,7 @@ def main():
     if config.get('wifi'):
       wifi = config['wifi']
       connection = ('[connection]\nid=carrot-setup\nuuid=' + str(uuid.uuid4()) + '\ntype=wifi\nautoconnect=true\n'
-                    '[wifi]\nmode=infrastructure\nssid=' + nm_escape(wifi['ssid']) + '\n'
+                    '[wifi]\nmode=infrastructure\npowersave=2\nssid=' + nm_escape(wifi['ssid']) + '\n'
                     '[wifi-security]\nkey-mgmt=wpa-psk\npsk=' + nm_escape(wifi['password']) + '\n'
                     '[ipv4]\nmethod=auto\n[ipv6]\nmethod=auto\n')
       atomic(Path('/etc/NetworkManager/system-connections/carrot-setup.nmconnection'), connection, 0o600)

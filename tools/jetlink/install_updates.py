@@ -12,6 +12,8 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
   Published images already grant the jetlink service account passwordless sudo.
   Enable only next boot so installing never interrupts the current session.
   """
+  from wifi_power import schedule
+  schedule(runtime)
   if Path('/etc/systemd/system/carrot-jetlink-boot-display.service').is_file():
     migrate_boot_display(runtime)
   if not (runtime / 'current/tools/jetlink/boot_update.py').is_file():
