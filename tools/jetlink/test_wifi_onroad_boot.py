@@ -120,6 +120,46 @@ def test_slow_ap_launcher_is_detached_and_does_not_wait_in_usb_owner(tmp_path, m
   child.communicate.assert_not_called()
 
 
+@pytest.mark.parametrize('ownership_lost', [False, True])
+def test_established_ap_survives_query_failure_but_not_confirmed_ownership_loss(ap_setup, tmp_path, monkeypatch, ownership_lost):
+  s = ap_setup
+  clock = [0.]
+  class Stop:
+    def is_set(self):
+      return False
+    def set(self):
+      pass
+    def wait(self, seconds):
+      clock[0] += seconds
+  original_active = s.ap.active
+  def active():
+    if clock[0] == 6:
+      if ownership_lost:
+        raise direct.OwnershipLost('synthetic confirmed loss')
+      raise RuntimeError('synthetic NM timeout')
+    return original_active()
+  monkeypatch.setattr(s.ap, 'active', active)
+  original_command = s.ap.command
+  down = []
+  def command(*args):
+    if args[:4] == ('--wait', '3', 'connection', 'down'):
+      down.append(clock[0])
+    return original_command(*args)
+  s.ap.command = command
+  monkeypatch.setattr(direct.os, 'geteuid', lambda: 0)
+  monkeypatch.setattr(direct, 'LOCK', tmp_path / 'lock')
+  monkeypatch.setattr(direct, 'STATUS', tmp_path / 'status')
+  monkeypatch.setattr(direct, 'low_priority', Mock())
+  monkeypatch.setattr(direct, 'Wireless', lambda: s.wireless)
+  monkeypatch.setattr(direct, 'AccessPoint', lambda *_: s.ap)
+  monkeypatch.setattr(direct.time, 'monotonic', lambda: clock[0])
+  monkeypatch.setattr(direct.threading, 'Event', Stop)
+  monkeypatch.setattr(direct.signal, 'signal', lambda *a: None)
+  direct.serve(trial=40)
+  assert down == ([6., 40.] if ownership_lost else [40.])
+  assert s.wireless.create.call_count == (2 if ownership_lost else 1)
+
+
 def test_network_worker_drops_inherited_realtime_and_stays_off_model_core(monkeypatch):
   calls = []
   monkeypatch.setattr(os, 'setpriority', lambda *a: calls.append(('nice', *a)))

@@ -1,5 +1,19 @@
 # Repository memory
 
+- On 2026-10-22, early source16ad17db is USB-installed and reboot-tested:
+  power worker15.42s, policy completion15.92s, first association24.61s,
+  model server33.28s. Publish/select pairedb21f1f4c for readable public digest
+  and status (0644 file/0755 directory); keep credentials/backups private.
+  Source CI39719896024 passes103root/1244broad(61skip)/119nav/11storage/11packet
+  plus Windows. The later comma-only AP fix preserves an established AP on
+  failed NM/netlink reads with30s backoff and secret-free control_error; only
+  confirmed ownership loss or an inactive AP permits cleanup/recreation.
+  Do not interpret a query exception as proof that the AP is gone. Source
+  changes/shutdown still release owned AP resources. Packet/control freshness
+  remains independent. No claim this code defect caused the measured RF loss.
+  Jetson BSSID pin and driver active-roaming trials were inconclusive; restore
+  the pin and roam flags to the pre-test policy, never ship those trial defaults.
+
 - On 2026-10-22, owner requests power saving off from early boot and analysis
   of remaining direct-WLAN loss, with no driving-path changes. Selected595c509b
   is physically installed: separate Jetson/comma reboots, power0 at25/25 queries

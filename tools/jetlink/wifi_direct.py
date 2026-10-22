@@ -31,6 +31,10 @@ PROFILE = Path('/run/NetworkManager/system-connections/carrot-jetson-direct.nmco
 SUBNETS = DIRECT_SUBNETS
 
 
+class OwnershipLost(ValueError):
+  """Confirmed interface ownership loss, distinct from a failed status query."""
+
+
 def offroad():
   try:
     p = Path('/data/params/d')
@@ -104,6 +108,7 @@ class AccessPoint:
     self.stage = 'idle'
     self.sharing = Sharing()
     self.sharing_state = 'idle'
+    self.established = False
 
   def start(self):
     self.stage = 'identity'
@@ -140,6 +145,7 @@ class AccessPoint:
     self.awake()
     self.share_internet()
     self.stage = 'active'
+    self.established = True
     return True
 
   def share_internet(self):
@@ -157,7 +163,7 @@ class AccessPoint:
     # Only the AP we created. Never change wlan0's Internet profile or power
     # policy. This driver otherwise stalls AP data after its station disconnects.
     if not any(r['name'] == INTERFACE and r['index'] == self.index for r in self.wireless.interfaces()):
-      raise ValueError('Direct AP ownership lost')
+      raise OwnershipLost('Direct AP ownership lost')
     if self.index is not None and self.wireless.power_save(self.index) != 0:
       self.wireless.set_power_save(self.index, 0)
 
@@ -165,6 +171,7 @@ class AccessPoint:
     return self.value is not None and self.value['uuid'] in self.command('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines()
 
   def close(self):
+    self.established = False
     try:
       self.sharing.close()
       self.sharing_state = 'idle'
@@ -230,6 +237,7 @@ def serve(trial=0):
   digest = hashlib.sha256(Path(__file__).read_bytes()).digest()
   wireless, ap = None, None
   expires, retry, state = time.monotonic() + trial if trial else float('inf'), 0., 'starting'
+  control_error = None
   try:
     wireless = Wireless()
     ap = AccessPoint(wireless)
@@ -239,6 +247,7 @@ def serve(trial=0):
       now = time.monotonic()
       if now >= retry:
         retry = now + 5.
+        control_error = None
         try:
           if not ap.active():
             # AP activation is independent of ignition/offroad and phone
@@ -250,13 +259,24 @@ def serve(trial=0):
             ap.awake()
             ap.share_internet()
             state = 'active'
-        except (OSError, ValueError, RuntimeError, StopIteration, KeyError, subprocess.SubprocessError):
+        except OwnershipLost:
           ap.close()
           state, retry = 'unavailable', now + 30.
+          control_error = 'interface_ownership_lost'
+        except (OSError, ValueError, RuntimeError, StopIteration, KeyError, subprocess.SubprocessError):
+          if ap.established:
+            # A failed NM/netlink read is not proof that an established AP is
+            # down. Preserve its interface/profile instead of disconnecting it.
+            state, retry = 'active', now + 30.
+          else:
+            ap.close()
+            state, retry = 'unavailable', now + 30.
+          control_error = 'control_query_failed'
       # No SSID, password, peer identity or vehicle payload in diagnostics.
       durable_write(STATUS, json.dumps({'state': state, 'stage': ap.stage, 'interface': INTERFACE,
                                       'internet_sharing': ap.sharing_state,
                                       'power_save': 0 if ap.previous_power_save is not None else None,
+                                      'control_error': control_error,
                                       'updated': now}).encode(), 0o644)
       stop.wait(2.)
   finally:
