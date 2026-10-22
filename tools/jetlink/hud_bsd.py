@@ -1,4 +1,4 @@
-"""Display-only turn-side warning from existing fresh vehicle BSD flags."""
+"""Display-only warning from fresh BSD flags, independent of turn signals."""
 import math
 
 PULSE_HZ = 2.0
@@ -28,7 +28,8 @@ def warning_sides(state, snapshot, now):
         or record['valid'].get('carState') is not True
         or record['alive'].get('carState') is not True):
       return False, False
-    return (state.left_signal is True and state.left_blindspot is True,
-            state.right_signal is True and state.right_blindspot is True)
+    # carState already retains OEM BSD and ORs fresh optional ONNX results.
+    # Neither a turn signal nor an available ONNX service gates this display.
+    return state.left_blindspot is True, state.right_blindspot is True
   except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
     return False, False

@@ -1,5 +1,15 @@
 # Repository memory
 
+- On 2026-10-23 the owner wants HUD BSD edges without a turn-signal gate.
+  Fresh/valid carState left/rightBlindspot drives each physical side directly;
+  retain OEM OR fresh local ONNX and do not require ONNX service availability.
+  Keep300ms freshness,2Hz edge/outer-third gradient, alerts last, USB timing,
+  and vehicle control/lane-change logic unchanged. PC183 pass; no live vehicle
+  signal/display confirmation. This host renderer change needs a new package;
+  comma-only source updates cannot change installedb21 HUD behavior. Preserve
+  package/model/runtime validation, no automatic auxiliary CPU model probe,
+  Park/zero permission and previous-release rollback.
+
 - On 2026-10-23 the owner explicitly requires no auxiliary USB input under
   any attachment/gear/voltage condition; independent vehicle/OBD-C power is
   mandatory. This supersedes all empty-port-only/opt-in policies below.

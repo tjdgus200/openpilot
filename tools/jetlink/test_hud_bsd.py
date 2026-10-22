@@ -9,19 +9,15 @@ def snapshot():
   return 10.0, {'sent': 100.0, 'received': {'carState': 99.95}, 'valid': {'carState': True}, 'alive': {'carState': True}}
 
 
-@pytest.mark.parametrize(
-  'turn_left,turn_right,bsd_left,bsd_right,expected',
-  [
-    (True, False, True, False, (True, False)),
-    (False, True, False, True, (False, True)),
-    (True, False, False, True, (False, False)),
-    (False, False, True, True, (False, False)),
-    (True, True, True, True, (True, True)),
-  ],
-)
-def test_warning_requires_turn_and_bsd_on_the_same_side(turn_left, turn_right, bsd_left, bsd_right, expected):
+@pytest.mark.parametrize('turn_left,turn_right', [(False, False), (True, False), (False, True), (True, True)])
+@pytest.mark.parametrize('bsd_left,bsd_right', [(False, False), (True, False), (False, True), (True, True)])
+def test_warning_follows_bsd_without_turn_signal_gate(turn_left, turn_right, bsd_left, bsd_right):
   state = NS(left_signal=turn_left, right_signal=turn_right, left_blindspot=bsd_left, right_blindspot=bsd_right)
-  assert warning_sides(state, snapshot(), 10.1) == expected
+  assert warning_sides(state, snapshot(), 10.1) == (bsd_left, bsd_right)
+
+
+def test_warning_does_not_require_signal_or_onnx_fields():
+  assert warning_sides(NS(left_blindspot=True, right_blindspot=False), snapshot(), 10.1) == (True, False)
 
 
 @pytest.mark.parametrize('change', ['missing', 'stale_snapshot', 'stale_car', 'sum_stale', 'invalid', 'not_alive', 'nan', 'bad_type'])
@@ -63,7 +59,7 @@ def test_official_visual_bsd_augments_vehicle_bsd_before_hud_warning():
   car = NS(leftLaneLine=0, rightLaneLine=0, leftBlindspot=True, rightBlindspot=False)
   vision = XiaogeVisionResult(-1, -1, False, 0, False, True, True, 100_000_000_000)
   apply_xiaoge_vision_result(car, vision, 100_100_000_000)
-  state = NS(left_signal=True, right_signal=True,
+  state = NS(left_signal=False, right_signal=False,
              left_blindspot=car.leftBlindspot, right_blindspot=car.rightBlindspot)
   assert warning_sides(state, snapshot(), 10.1) == (True, True)
   assert car.leftBlindspot is True  # An ONNX clear never erases a native warning.
@@ -71,9 +67,9 @@ def test_official_visual_bsd_augments_vehicle_bsd_before_hud_warning():
 
 @pytest.mark.parametrize('oem_left,oem_right', [(False, False), (True, False), (False, True), (True, True)])
 @pytest.mark.parametrize('vision_left,vision_right', [(False, False), (True, False), (False, True), (True, True)])
-@pytest.mark.parametrize('fresh', [False, True])
+@pytest.mark.parametrize('vision_state', ['missing', 'invalid', 'stale', 'fresh'])
 def test_vehicle_or_fresh_local_bsd_survives_usb_hud_snapshot(tmp_path, monkeypatch,
-                                                           oem_left, oem_right, vision_left, vision_right, fresh):
+                                                           oem_left, oem_right, vision_left, vision_right, vision_state):
   import base64
   import json
   from openpilot.cereal import log
@@ -82,10 +78,12 @@ def test_vehicle_or_fresh_local_bsd_survives_usb_hud_snapshot(tmp_path, monkeypa
   from openpilot.selfdrive.modeld.jetlink.daemon import publish_hud
 
   event = log.Event.new_message(carState={
-    'leftBlindspot': oem_left, 'rightBlindspot': oem_right, 'leftBlinker': True, 'rightBlinker': True,
+    'leftBlindspot': oem_left, 'rightBlindspot': oem_right, 'leftBlinker': False, 'rightBlinker': False,
   })
-  vision = XiaogeVisionResult(-1, -1, False, 0, vision_left, vision_right, True, 100_000_000_000)
-  apply_xiaoge_vision_result(event.carState, vision, 100_100_000_000 if fresh else 102_000_000_000)
+  vision = (None if vision_state == 'missing' else
+            XiaogeVisionResult(-1, -1, False, 0, vision_left, vision_right,
+                               vision_state != 'invalid', 100_000_000_000))
+  apply_xiaoge_vision_result(event.carState, vision, 102_000_000_000 if vision_state == 'stale' else 100_100_000_000)
   _, record = snapshot()
   record.update(version=1, events={'carState': base64.b64encode(event.to_bytes()).decode()})
   publisher = object.__new__(protocol.Publisher)
@@ -102,7 +100,7 @@ def test_vehicle_or_fresh_local_bsd_survives_usb_hud_snapshot(tmp_path, monkeypa
     state = NS(left_signal=decoded.carState.leftBlinker, right_signal=decoded.carState.rightBlinker,
                left_blindspot=decoded.carState.leftBlindspot, right_blindspot=decoded.carState.rightBlindspot)
     assert warning_sides(state, (10., received), 10.1) == (
-      oem_left or (fresh and vision_left), oem_right or (fresh and vision_right))
+      oem_left or (vision_state == 'fresh' and vision_left), oem_right or (vision_state == 'fresh' and vision_right))
   # No second BSD channel or repeat of the same HUD snapshot.
   publish_hud(client, publisher)
   assert len(packets) == 1
