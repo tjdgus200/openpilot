@@ -275,8 +275,10 @@ def test_joining_model_uses_selected_buffers_parser_and_recurrence(tmp_path, mon
   class Warp:
     timings = (0., 0., 0.)
     def __init__(self, *a, **kw): pass
-    def __call__(self, *a, prepare=None):
-      if prepare is not None: prepare()
+    def __call__(self, *a, prepare=None, output_buffer=None):
+      assert output_buffer is None  # This fixture exercises legacy socket input.
+      if prepare is not None:
+        prepare()
       return np.zeros(spec.warped_shape, np.uint8)
   monkeypatch.setattr(model, 'Warp', Warp)
   # The current destination prepares tiny NPY inputs before the model joins.
@@ -288,6 +290,7 @@ def test_joining_model_uses_selected_buffers_parser_and_recurrence(tmp_path, mon
   closed = []
   class Remote:
     timings = (0, 0, 0)
+    def image_buffer(self): return None
     def infer(self, image, packed, frame, reset, **kw):
       assert packed.size == spec.packed_nelem
       assert bool(np.any(packed[12:])) == (not reset and not spec.stateful)

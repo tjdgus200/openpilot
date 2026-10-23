@@ -1,12 +1,15 @@
 """Real Linux memfd/Unix sockets; no device, GPU or driving processes required."""
 import array
+import errno
 import gc
 import json
 import os
 import socket
+import struct
 import threading
 import time
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -254,6 +257,69 @@ def test_invalid_context_closes_reserved_slot_without_a_request():
     try:
       with pytest.raises(ValueError, match='invalid recurrent'):
         client.infer(image, np.full(SPEC.packed_nelem, np.nan, np.float32), 1, True)
+      assert writer.closed and a.recv(1) == b''
+    finally:
+      a.close()
+      client.close()
+
+
+@pytest.mark.parametrize('stage', ['memfd_create', 'ftruncate', 'mmap'])
+def test_allocation_failure_leaves_no_fd_or_mapping(monkeypatch, stage):
+  a, b = socket.socketpair()
+  try:
+    before = len(os.listdir('/proc/self/fd'))
+    def exhausted(*args, **kwargs):
+      raise OSError(errno.ENOMEM, 'injected allocation failure')
+    target = shm.mmap if stage == 'mmap' else os
+    monkeypatch.setattr(target, stage, exhausted)
+    with pytest.raises(OSError) as exc:
+      shm.Reader.offer(a, SPEC)
+    assert exc.value.errno == errno.ENOMEM
+    assert len(os.listdir('/proc/self/fd')) == before
+  finally:
+    a.close()
+    b.close()
+
+
+def test_writer_mapping_failure_closes_received_descriptor(monkeypatch):
+  a, b = socket.socketpair()
+  reader = shm.Reader.offer(a, SPEC)
+  try:
+    link.send(a, reader.nonce)
+    before = len(os.listdir('/proc/self/fd'))
+    def exhausted(*args, **kwargs):
+      raise OSError(errno.ENOMEM, 'injected writer mapping failure')
+    monkeypatch.setattr(shm.mmap, 'mmap', exhausted)
+    with pytest.raises(OSError):
+      shm.Writer.receive(b, SPEC, link.receive, time.monotonic() + .5)
+    assert len(os.listdir('/proc/self/fd')) == before
+  finally:
+    reader.close()
+    a.close()
+    b.close()
+
+
+@pytest.mark.parametrize('size', [0, -4, shm.MAX_BYTES + 4, 1 << 100])
+def test_size_bound_rejects_before_allocation(size):
+  with pytest.raises(ValueError):
+    shm.size_for(SimpleNamespace(warped_nbytes=size, packed_nbytes=0))
+
+
+@pytest.mark.parametrize('field', ['generation', 'frame', 'source_sof'])
+def test_integer_overflow_retires_connection_without_sending(field):
+  with pair() as (_, writer):
+    a, b = socket.socketpair()
+    client = object.__new__(link.Client)
+    client.sock, client.shared, client.spec = b, writer, SPEC
+    client.timeout, client.project_output = .5, False
+    if field == 'generation':
+      writer.generation = (1 << 64) - 1
+    image = client.image_buffer()
+    try:
+      with pytest.raises(struct.error):
+        client.infer(image, np.zeros(SPEC.packed_nelem, np.float32),
+                     1 << 32 if field == 'frame' else 1,
+                     source_sof=1 << 64 if field == 'source_sof' else 0)
       assert writer.closed and a.recv(1) == b''
     finally:
       a.close()
