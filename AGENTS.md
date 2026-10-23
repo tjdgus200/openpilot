@@ -1,5 +1,14 @@
 # Repository memory
 
+- BSD display follow-up2026-10-23: owner confirms the timestamp fix made both
+  bars/gradient visible. Requested full-height flush screen edges and a stronger
+  gradient:24px solid/48px halo, no top/bottom inset; outer-third alpha64/255.
+  Keep2Hz edge pulse, steady gradient, central third clear,300ms freshness,
+  OEM OR local ONNX, vehicle alerts last and all driving/transport settings.
+  PC actual renderer also reproduced preceding text clipping with the old
+  right gradient; flush the prior HUD draw batch only when BSD is active.
+  This submits drawing commands, not a GPU completion wait. Host package needed.
+
 - BSD timestamp fix2026-10-23: SnapshotBuilder previously stamped `sent`
   before SubMaster.update(), so newly received carState had a later recv_time
   and the 300ms overlay guard rejected it as future-dated. Stamp the completed

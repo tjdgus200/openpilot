@@ -4,7 +4,7 @@ import math
 PULSE_HZ = 2.0
 PULSE_DUTY = .6
 DIM_ALPHA = 96
-GRADIENT_ALPHA = 36
+GRADIENT_ALPHA = 64
 
 
 def edge_alpha(now, started):

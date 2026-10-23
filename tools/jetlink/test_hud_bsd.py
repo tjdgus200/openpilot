@@ -172,12 +172,15 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   monkeypatch.setattr(hud.time, 'monotonic', lambda: 10.0)
   for name in ('rl_push_matrix', 'rl_pop_matrix', 'rl_scalef'):
     monkeypatch.setattr(hud.rl, name, lambda *a: None)
+  monkeypatch.setattr(hud.rl, 'rl_draw_render_batch_active', lambda: calls.append(('batch', ())))
   monkeypatch.setattr(hud.rl, 'draw_rectangle_gradient_h', lambda *a: calls.append(('gradient', a)))
   monkeypatch.setattr(hud.rl, 'draw_rectangle', lambda *a: calls.append(('edge', a)))
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_alert_overlay', lambda *a: calls.append(('vehicle', ())))
   renderer._draw_alert_overlay(NS(size=3, text1='TAKE OVER', text2=''))
+  assert calls[0][0] == 'batch'
   gradients = [a for kind, a in calls if kind == 'gradient']
-  assert [a[:4] for a in gradients] == [(0, 32, 640, 448), (1280, 32, 640, 448)]
-  edges = [a[0] for kind, a in calls if kind == 'edge' and a[2] == 14]
-  assert edges == [7, 1899]
+  assert [a[:4] for a in gradients] == [(0, 0, 640, 480), (1280, 0, 640, 480)]
+  assert [(a[4].a, a[5].a) for a in gradients] == [(64, 0), (0, 64)]
+  edges = [a[:4] for kind, a in calls if kind == 'edge' and a[2] == 24]
+  assert edges == [(0, 0, 24, 480), (1896, 0, 24, 480)]
   assert calls[-1][0] == 'vehicle'
