@@ -479,7 +479,8 @@ class EngineHost:
     host_inputs = {n: engine.host_input(n) for n in engine.inputs}
     queues = make_queues(spec, host_inputs, getattr(engine, 'device_state', None),
                          direct_map=os.getenv('CARROT_TRT_DIRECT_MAP', '0') == '1'
-                         and spec.stateful and 'nav_map' in spec.packed_shapes)
+                         and spec.stateful and 'nav_map' in spec.packed_shapes,
+                         native_image=os.getenv('CARROT_TRT_NATIVE_IMAGE', '0') == '1' and spec.stateful)
     warped = np.zeros(spec.warped_shape, np.uint8)
     packed = np.zeros(spec.packed_nelem, np.float32)
     queues.step_into(warped, packed, host_inputs)

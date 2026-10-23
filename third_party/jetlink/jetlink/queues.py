@@ -203,6 +203,7 @@ class StatefulQueues:
     self._native_finite = native_checker()
     self.spec = spec
     self.direct_map = None
+    self.input_cast = None
     self.state = {name: inputs[name] for name in spec.state_pairs}
     # NumPy's aarch64 float16 isfinite path is scalar. IEEE binary16 is
     # non-finite exactly when all five exponent bits are set, for BOTH signs
@@ -238,7 +239,10 @@ class StatefulQueues:
   def _copy_image(self, warped, dest):
     image = dest['new_img']
     if image.dtype == np.float16:
-      np.take(_U8_TO_F16_BITS, warped.reshape(-1), out=image.reshape(-1).view(np.uint16), mode='clip')
+      if self.input_cast is not None:
+        self.input_cast(warped, image)
+      else:
+        np.take(_U8_TO_F16_BITS, warped.reshape(-1), out=image.reshape(-1).view(np.uint16), mode='clip')
     else:
       image[...] = warped
 
@@ -314,7 +318,7 @@ class DeviceStateQueues(StatefulQueues):
 
 
 
-def make_queues(spec, host_inputs, device_state=None, *, direct_map=False):
+def make_queues(spec, host_inputs, device_state=None, *, direct_map=False, native_image=False):
   if device_state is not None:
     if not spec.stateful:
       raise ValueError('Device recurrence requires a stateful model')
@@ -324,4 +328,7 @@ def make_queues(spec, host_inputs, device_state=None, *, direct_map=False):
   if direct_map:
     from jetlink.direct_map import DirectMap
     queues.direct_map = DirectMap(spec, host_inputs)
+  if native_image and spec.stateful:
+    from jetlink.input_cast import native_u8_to_f16
+    queues.input_cast = native_u8_to_f16()
   return queues
