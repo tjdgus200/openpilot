@@ -1,4 +1,4 @@
-"""Opt-in exact image conversion, compiled and self-tested at load only."""
+"""Exact image conversion, compiled and self-tested at load only."""
 import ctypes
 from functools import lru_cache
 import logging

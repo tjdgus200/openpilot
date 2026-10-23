@@ -27,7 +27,9 @@ result. Combined candidates require a separate test.
 
 ## Implementation and correctness
 
-`CARROT_TRT_NATIVE_IMAGE=1` enables the experiment; the default remains off.
+Following the owner's deployment request, native image conversion is enabled
+by default for stateful models. `CARROT_TRT_NATIVE_IMAGE=0` explicitly selects
+the original NumPy path; `=1` explicitly enables the native candidate.
 The native helper is compiled into a private temporary directory and self-tested
 once during model loading. A missing compiler, compile/load failure or failed
 self-test retains the original NumPy implementation. There is no compiler or
@@ -136,6 +138,10 @@ native conversion implementation and the measured TensorRT loop did not change.
 
 No numerical or reset-policy regression was observed in these tests. This is
 not a complete road-driving safety assessment or long-duration loaded transport
-test. The change is published **default-off** for further controlled evaluation;
-enable only with `CARROT_TRT_NATIVE_IMAGE=1` in a runtime containing this source.
-No release package selection or production installation is included.
+test. The initial implementation was published default-off. The owner then
+requested default enablement and a new SHA-256 USB installation package. The
+default-on follow-up preserves compiler/load/self-test fallback, explicit `=0`
+disablement, map-direct default-off, model pins, update gates and rollback.
+The startup policy test covers absent, disabled and enabled environment values.
+The measurements above describe the isolated acceptance trial, not a fresh
+benchmark of the subsequently packaged runtime or an installation result.
