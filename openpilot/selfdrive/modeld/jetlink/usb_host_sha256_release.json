@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-native-image-20261023-13542cc7",
-  "source_commit": "13542cc7c16d5f9758814e2ce4e493a418d8b967",
+  "profile": "pv5-signal-watchdog-20261023-7557e74a",
+  "source_commit": "7557e74a420baf8d8fe68dc2ee6087cdcbc80284",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-native-image-20261023-13542cc7/host.tar.gz",
-    "sha256": "b1944a6eb2ad6feb5a9cbe72aad5d35265700c0e23cf102eaba3c4baa32a39dd",
-    "size": 81683916
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-signal-watchdog-20261023-7557e74a/host.tar.gz",
+    "sha256": "022d7874441a78d28470446e7834c610164e7f7c69d2872bb1d4eed98ee4aa20",
+    "size": 81696685
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",
