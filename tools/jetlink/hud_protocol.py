@@ -208,6 +208,10 @@ class SnapshotBuilder:
     battery = self.battery_snapshot(now)
     if battery is not None:
       record['battery_hud'] = battery
+    # SubMaster stamps arrivals inside update(), after the cadence timestamp
+    # above. Seal the snapshot after sampling/building so fresh services never
+    # look future-dated, and slow optional work still counts toward their age.
+    record['sent'] = time.monotonic()
     return encode_snapshot(record)
 
 

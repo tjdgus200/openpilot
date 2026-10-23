@@ -20,6 +20,60 @@ def test_warning_does_not_require_signal_or_onnx_fields():
   assert warning_sides(NS(left_blindspot=True, right_blindspot=False), snapshot(), 10.1) == (True, False)
 
 
+@pytest.mark.parametrize('left,right', [(False, False), (True, False), (False, True), (True, True)])
+@pytest.mark.parametrize('cached_age,build_delay', [(0., .02), (.35, .02), (0., .35)])
+def test_live_snapshot_timestamp_keeps_fresh_bsd_and_rejects_stale_data(monkeypatch, left, right,
+                                                                     cached_age, build_delay):
+  """SubMaster stamps received data inside update(), after packet() starts."""
+  import base64
+  import json
+  from openpilot.cereal import log
+  import openpilot.common.jetlink_status as status
+  import hud_protocol as protocol
+
+  clock = NS(now=100.)
+  event = log.Event.new_message(carState={'leftBlindspot': left, 'rightBlindspot': right})
+
+  class SubMaster:
+    updated = dict.fromkeys(protocol.SERVICES, False)
+    updated['carState'] = True
+    valid = alive = {'carState': True}
+    logMonoTime = {'carState': 100_000_000_000}
+    recv_time = {}
+
+    def update(self, timeout):
+      clock.now += .003
+      self.recv_time['carState'] = clock.now - cached_age
+
+    def __getitem__(self, key):
+      assert key == 'carState'
+      return event.carState
+
+  builder = object.__new__(protocol.SnapshotBuilder)
+  builder.sm = SubMaster()
+  builder.next_send, builder.next_params = 0., 200.
+  builder.cached, builder.settings = {}, {}
+  builder.host_release = builder.nav_map = None
+  builder.network = NS(address=lambda: '')
+
+  def camera_previews():
+    clock.now += build_delay
+    return {}
+
+  builder.camera_previews = camera_previews
+  builder.battery_snapshot = lambda now: None
+  monkeypatch.setattr(protocol.time, 'monotonic', lambda: clock.now)
+  monkeypatch.setattr(status, 'badge', lambda: None)
+  record = json.loads(builder.packet())
+  assert record['sent'] >= record['received']['carState']
+  assert record['sent'] == clock.now
+  assert builder.next_send == pytest.approx(100.1)  # Existing 10 Hz cadence.
+  with log.Event.from_bytes(base64.b64decode(record['events']['carState'])) as decoded:
+    state = NS(left_blindspot=decoded.carState.leftBlindspot, right_blindspot=decoded.carState.rightBlindspot)
+    expected = (left, right) if cached_age + build_delay + .05 <= .3 else (False, False)
+    assert warning_sides(state, (10., record), 10.05) == expected
+
+
 @pytest.mark.parametrize('change', ['missing', 'stale_snapshot', 'stale_car', 'sum_stale', 'invalid', 'not_alive', 'nan', 'bad_type'])
 def test_stale_invalid_or_missing_data_never_keeps_a_red_warning(change):
   state = NS(left_signal=True, right_signal=True, left_blindspot=True, right_blindspot=True)

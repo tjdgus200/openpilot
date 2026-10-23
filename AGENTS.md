@@ -1,5 +1,15 @@
 # Repository memory
 
+- BSD timestamp fix2026-10-23: SnapshotBuilder previously stamped `sent`
+  before SubMaster.update(), so newly received carState had a later recv_time
+  and the 300ms overlay guard rejected it as future-dated. Stamp the completed
+  snapshot after sampling/optional work. Do not clamp negative ages or weaken
+  stale/valid/alive checks. Existing scene BSD red lanes use a different gate.
+  Reproduced with the real builder/serialized carState;12 new cases and237
+  relevant PC tests pass. Comma sender fix only; selectedaf987 host manifest,
+  update/auth/rollback, USB timing and driving behavior unchanged. No live
+  device/display confirmation. Indicator-free host edges still requireaf987.
+
 - BSD release2026-10-23: owner approved new public package in Discord(choice1).
   Publish/select sourceaf987fb0,81,673,236bytes/SHA6f8ca4adedc9919222473269b82a02d61fdac8e3ef3155db19cb4dca4298b06c.
   All4 public asset downloads match. Export-only fresh server/HUD imports and
