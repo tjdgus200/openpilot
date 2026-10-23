@@ -27,7 +27,9 @@ def fake_warp(monkeypatch, calls, read_error=False):
       if read_error:
         raise RuntimeError('GPU read failed')
       return output
-    return NS(numpy=read)
+    def copyout(dest):
+      dest[:] = memoryview(read()).cast('B')
+    return NS(numpy=read, shape=output.shape, _buffer=lambda: NS(copyout=copyout))
   warp.run_warp = submit
   return warp, {k: NS(data=output) for k in ('img', 'big_img')}, {k: np.eye(3) for k in ('img', 'big_img')}
 
@@ -134,3 +136,34 @@ def test_joining_adapter_drains_before_fault_and_local_fallback(monkeypatch, tmp
   assert m.run(bufs, transforms, inputs, False) == 'local'
   assert calls == ['submit', 'read', *(['usb'] if failure == 'usb' else []), 'close', 'reset', 'local']
   assert (tmp_path / 'fault').exists() and not m.active and m.client is None
+
+
+@pytest.mark.parametrize('fault', ['shape', 'dtype', 'strided', 'readonly'])
+def test_invalid_shared_destination_still_drains_submitted_gpu(fault):
+  calls = []
+  result = NS(shape=(16,), numpy=lambda: calls.append('drain'))
+  target = np.zeros(16, np.uint8)
+  if fault == 'shape': target = target.reshape(2, 8)
+  if fault == 'dtype': target = target.astype(np.float32)
+  if fault == 'strided': target = np.zeros(32, np.uint8)[::2]
+  if fault == 'readonly': target.flags.writeable = False
+  with pytest.raises(ValueError, match='invalid warp destination'):
+    model.Warp.read_result(result, target)
+  assert calls == ['drain']
+
+
+@pytest.mark.parametrize('bad_context', [False, True])
+def test_same_submission_copyout_uses_reserved_buffer_and_keeps_fence(monkeypatch, bad_context):
+  calls = []
+  warp, bufs, transforms = fake_warp(monkeypatch, calls)
+  target = np.zeros(16, np.uint8)
+  def prepare():
+    calls.append('prepare')
+    if bad_context: raise ValueError('bad context')
+  if bad_context:
+    with pytest.raises(ValueError, match='bad context'):
+      warp(bufs, transforms, prepare=prepare, output_buffer=target)
+  else:
+    assert warp(bufs, transforms, prepare=prepare, output_buffer=target) is target
+  assert calls == ['submit', 'prepare', 'read']
+  assert target.tobytes() == np.arange(16, dtype=np.uint8).tobytes()

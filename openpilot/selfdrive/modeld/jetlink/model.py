@@ -77,7 +77,11 @@ class Warp:
   def read_result(result, output_buffer=None):
     if output_buffer is None:
       return result.numpy()
-    if output_buffer.dtype != np.uint8 or output_buffer.shape != tuple(result.shape) or not output_buffer.flags.c_contiguous:
+    if (output_buffer.dtype != np.uint8 or output_buffer.shape != tuple(result.shape)
+        or not output_buffer.flags.c_contiguous or not output_buffer.flags.writeable):
+      # The GPU submission already exists. Preserve its completion fence even
+      # when a bad destination prevents copying into the connection-owned slot.
+      result.numpy()
       raise ValueError('invalid warp destination')
     # _buffer preserves tinygrad realization/JIT guards; copyout retains the
     # QCOM completion fence. The only removed step is the subsequent IPC copy.
