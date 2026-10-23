@@ -1,4 +1,6 @@
 """Exact native image conversion; map/protocol/state behavior is preserved."""
+from types import SimpleNamespace as NS
+
 import numpy as np
 import pytest
 
@@ -7,6 +9,7 @@ from test_output_projection import pair, infer
 from jetlink import input_cast
 from jetlink.queues import make_queues
 from jetlink.packed_codec import encode, decode, _layout
+from jetlink.server.session import EngineHost
 
 
 @pytest.fixture
@@ -105,3 +108,20 @@ def test_load_failure_uses_original_converter(monkeypatch):
     assert dest['new_img'].tobytes() == image.astype(np.float16).tobytes()
   finally:
     input_cast.native_u8_to_f16.cache_clear()
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_engine_warm_loads_conversion_policy(monkeypatch, converter, enabled):
+  # Exercise actual model initialization, not only a manually constructed queue.
+  monkeypatch.delenv('CARROT_TRT_DIRECT_MAP', raising=False)
+  monkeypatch.delenv('CARROT_TRT_NATIVE_IMAGE', raising=False)
+  if enabled:
+    monkeypatch.setenv('CARROT_TRT_NATIVE_IMAGE', '1')
+  dest = {n: np.zeros(s, np.float16 if n == 'new_img' else np.float32)
+          for n, s in SPEC.input_shapes.items()}
+  engine = NS(inputs={n: NS(shape=s) for n, s in SPEC.input_shapes.items()},
+              outputs={n: NS(shape=s) for n, s in SPEC.output_shapes.items()},
+              host_input=dest.__getitem__, warm=lambda: 'warm')
+  loaded = EngineHost._warm(None, engine, SPEC)
+  assert loaded.queues.input_cast is (converter if enabled else None)
+  assert loaded.queues.direct_map is None

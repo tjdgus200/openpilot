@@ -127,8 +127,12 @@ The restored service was active with the original release and model ready;
 comma returned to Jetlink ready/offroad. No runtime source or selected package
 was replaced. Evidence is retained privately under workspace
 `jetson-nvme/native-image-acceptance-20261023/` (script, per-frame results,
-supervisor and restoration checks). The final focused PC suite passed **124
-tests**, including the strengthened FP16 session checks.
+supervisor and restoration checks). The final focused PC suite passed **126
+tests**, including the strengthened FP16 session and actual model-initialization
+checks. Expanded CI caught a missing `os` import in the shared environment-option
+initialization path. This startup error was fixed; new tests cover initialization
+both with the native converter enabled and with the default environment. The
+native conversion implementation and the measured TensorRT loop did not change.
 
 No numerical or reset-policy regression was observed in these tests. This is
 not a complete road-driving safety assessment or long-duration loaded transport
