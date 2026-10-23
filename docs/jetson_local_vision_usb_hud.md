@@ -83,6 +83,16 @@ PC 실제 렌더러에서 기존 오른쪽 그라데이션이 앞서 그린 패�
 이번 스타일의 실제 장치 성능·실물 화면 확인은 아직 하지 않았다. Jetson 렌더러 변경이므로
 새 호스트 패키지를 USB로 설치해야 한다. 기존 SHA/모델/실행 검사와 롤백을 유지한다.
 
+[새 Jetson 패키지 cb0441aa](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-bsd-wall-20261023-cb0441aa)를
+공개하고 브랜치의 USB 설치 대상으로 선택했다. 크기81,674,455바이트,
+SHA-256 `7f88de145dc2c76068cd7bb26eef313f3728c9af16bc8a474d52fa8af9ace8c9`.
+공개 다운로드4개가 원본과 일치하고, 압축을 푼 배포본의 독립 서버 import와
+HUD 진입점 검사가 통과했다. 이전af987 패키지와 핵심 업데이트/런타임13개 및
+Jetlink 원본54개 파일이 같으며 N16·런타임·SHA 설치 정책을 유지한다.
+[소스 CI39877669189](https://github.com/tjdgus200/openpilot/actions/runs/39877669189)도 통과했다.
+최신 콤마 브랜치 적용 후 P단·정지에서 USB를 연결한 채 Jetson을 정상 재부팅하여
+설치한다. 이번 작업에서 실물 장치 설치나 재부팅은 수행하지 않았다.
+
 ### 2026-10-23: 측면 BSD 경고가 새 데이터를 거부하던 시각 수정
 
 기존 `SnapshotBuilder.packet()`은 `SubMaster.update()` 전에 `sent`를 잡았다.

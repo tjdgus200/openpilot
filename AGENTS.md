@@ -1,5 +1,14 @@
 # Repository memory
 
+- BSD wall package2026-10-23: public/sourcecb0441aa,81,674,455bytes,
+  SHA7f88de145dc2c76068cd7bb26eef313f3728c9af16bc8a474d52fa8af9ace8c9.
+  Four public downloads verified. Export-only fresh server/HUD imports pass;
+  13 critical update/runtime files and54 vendor files equalaf987. PC237 tests,
+  actual-renderer synthetic previews and sourceCI39877669189 pass. Preserve
+  N16, USB validation/Park-zero/rollback; no actual device install performed.
+  The owner's confirmation below refers to the previous BSD visibility fix,
+  not this new full-height style or package installation.
+
 - BSD display follow-up2026-10-23: owner confirms the timestamp fix made both
   bars/gradient visible. Requested full-height flush screen edges and a stronger
   gradient:24px solid/48px halo, no top/bottom inset; outer-third alpha64/255.
