@@ -1,5 +1,19 @@
 # Repository memory
 
+- N16 response projection package2026-10-23: published source2e971adb,
+  81,679,272bytes/SHA46f15bbb3aa7c41cea27e31f8e00577291e2170b8943574e9807d10a9f6d0d6a;
+  tag jetson-pv5-n16-projection-20261023-2e971adb. All four public assets
+  downloaded and verified. New v2 HELLO/IPC capability pins the exact model
+  and layout; only opted-in replies use2066 instead of18580 floats. Full host
+  output/state validation precedes projection; old/raw clients keep full replies.
+  Candidate4 is comma-only same-frame context/warp overlap, never async USB TX.
+  Archive-only imports/HUD and136 package/protocol/update PC checks passed;
+  selected-manifest N16 check also passed. SourceCI39886688667 succeeded.
+  Preserve N16, GPU state, Park/zero, activation probe and rollback.13 critical
+  update/runtime files and52 unchanged vendor files matchcb0441aa. No actual
+  device install/reboot/TensorRT test during publication. Earlier prototype
+  timings are not fresh final-package measurements;100+ms USB tail unresolved.
+
 - BSD wall package2026-10-23: public/sourcecb0441aa,81,674,455bytes,
   SHA7f88de145dc2c76068cd7bb26eef313f3728c9af16bc8a474d52fa8af9ace8c9.
   Four public downloads verified. Export-only fresh server/HUD imports pass;
