@@ -117,3 +117,13 @@ other reader/driver/power failure causes are not declared resolved.
 Private evidence: `jetson-nvme/dhcp-cleanup-20261023` (isolated reproduction),
 `dhcp-baseline-20261023` (instrumented original helper), and
 `dhcp-fixed-reconnect-20261023` (candidate reconnect/performance trial).
+
+## Later publication and deployment
+
+The owner subsequently authorized default deployment. DHCP fbe9a887 and shared
+RAM 6914f6ce were pushed and installed on comma; normal reboot and a five-minute
+20 Hz camera/map/cruise test completed. See the final section of
+[the shared-input report](jetlink_shared_input_20261023.md). The earlier opt-in
+and unchanged-device statements above describe the investigation before this
+explicit rollout, not the current default. The shared-RAM memory/safety limits
+are documented separately; no AUTOSAR or road-safety claim is made.
