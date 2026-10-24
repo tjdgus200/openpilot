@@ -1,4 +1,4 @@
-﻿"""Remote signal freshness, frame alignment, actual renderer and packet budgets."""
+"""Remote signal freshness, frame alignment, actual renderer and packet budgets."""
 import copy
 import json
 from types import SimpleNamespace as NS
@@ -214,9 +214,10 @@ def test_pv5_signal_render_keeps_power_badge_bsd_walls_and_alert_last(monkeypatc
                'draw_rectangle_rounded', 'draw_rectangle_rounded_lines_ex'):
     monkeypatch.setattr(health.rl, name, lambda *args: None)
   monkeypatch.setattr(health.rl, 'draw_rectangle_lines_ex', lambda *args: draws.append('signal-box'))
-  gradients, walls = [], []
+  gradients, walls, corners = [], [], []
   monkeypatch.setattr(health.rl, 'draw_rectangle_gradient_h', lambda *args: gradients.append(args[:4]))
   monkeypatch.setattr(health.rl, 'draw_rectangle', lambda *args: walls.append(args[:4]))
+  monkeypatch.setattr(health.rl, 'draw_ring', lambda center, *args: corners.append((center.x, center.y, *args)))
   monkeypatch.setattr(health.time, 'monotonic', lambda: 100.1)
   monkeypatch.setattr(renderer_module.ClusterUiRenderer, '_draw_alert_overlay', lambda *args: draws.append('vehicle-alert'))
   projection = NS(dest=NS(x=0, y=0, width=1344, height=760), video_dest=NS(x=0, y=0, width=1344, height=760))
@@ -228,11 +229,14 @@ def test_pv5_signal_render_keeps_power_badge_bsd_walls_and_alert_last(monkeypatc
   assert 'R' in labels and '14.7 W' in labels and '59.0°C' in labels
   assert draws.index('signal-box') < draws.index('badge-text')
   assert draws[-1] == 'vehicle-alert'
-  assert len(gradients) == int(left) + int(right)
+  assert len(gradients) == 5 * (int(left) + int(right))
+  assert len(corners) == 4 * (int(left) + int(right))
   for side, active in enumerate((left, right)):
     if active:
       assert (0 if side == 0 else 1280, 0, 640, 480) in gradients
-      assert (0 if side == 0 else 1896, 0, 24, 480) in walls
+      assert (0 if side == 0 else 1896, 72, 24, 336) in walls
+      assert (72 if side == 0 else 1280, 0, 568, 24) in gradients
+      assert (72 if side == 0 else 1280, 456, 568, 24) in gradients
 
 
 def test_install_connects_already_imported_renderer_without_vehicle_writes(monkeypatch):
