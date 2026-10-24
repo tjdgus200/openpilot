@@ -1,5 +1,9 @@
 # Repository memory
 
+- 2026-10-24 late sync: align with carrot-nav24c1ba5e, including bounded HUD
+  libx264 conversion/encoding pools (one each). Preserve all six PV5 features
+  and brighter three-sided BSD brackets. No device performance claim.
+
 - 2026-10-24 evening: owner requests latest carrot-nav5bbbe160 while retaining
   the same six PV5 behaviors. BSD edges now form inward-open brackets around
   each physical outer third (top/bottom included), with steady gradient alpha96
