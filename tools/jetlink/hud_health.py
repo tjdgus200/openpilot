@@ -18,6 +18,28 @@ ERROR = (255, 90, 90)
 UNKNOWN = (190, 190, 190)
 
 
+def _bsd_corner_mesh(cx, cy, start, edge_width):
+  # Square outside, rounded inside. Fan triangles share edges, so a single
+  # translucent layer never darkens itself through overlapping primitives.
+  radius = 72
+  end = start + 90
+  outer = lambda angle: (cx + radius * round(math.cos(math.radians(angle))),
+                         cy + radius * round(math.sin(math.radians(angle))))
+  first, last = outer(start), outer(end)
+  corner = (first[0] + last[0] - cx, first[1] + last[1] - cy)
+  inner = [(cx + (radius - edge_width) * math.cos(math.radians(start + i * 90 / 16)),
+            cy + (radius - edge_width) * math.sin(math.radians(start + i * 90 / 16))) for i in range(17)]
+  points = [corner, first, *inner, last]
+  return rl.ffi.new('struct Vector2[]', points), len(points)
+
+
+# Eight fixed 20-point meshes (~1.3 KiB), allocated once; no per-frame buffers.
+_BSD_CORNER_MESHES = {(x, y, width): _bsd_corner_mesh(x, y, start, width)
+                      for x, y, start in ((72, 72, 180), (72, 408, 90),
+                                          (1848, 72, 270), (1848, 408, 0))
+                      for width in (24, 48)}
+
+
 def vehicle_data_ready(snapshot):
   if snapshot is None:
     return False
@@ -188,17 +210,16 @@ class HealthRenderer(ClusterUiRenderer):
                                        shade if side == 0 else clear, clear if side == 0 else shade)
           alpha = edge_alpha(now, starts[side])
           # Three-sided brackets surround only the physical outer third.
-          # Quarter rings join the wall and rails without doubled corner alpha.
+          # Filled square outer corners keep the rounded inner wall/rail join.
           radius = 72
           corner_x = radius if side == 0 else int(DESIGN_WIDTH) - radius
           for edge_width, opacity in ((48, int(alpha * .3)), (24, alpha)):
             x = 0 if side == 0 else int(DESIGN_WIDTH) - edge_width
             color = rl_color((255, 30, 30), opacity)
             rl.draw_rectangle(x, radius, edge_width, int(DESIGN_HEIGHT) - 2 * radius, color)
-            for corner_y, angles in ((radius, (180, 270) if side == 0 else (270, 360)),
-                                     (int(DESIGN_HEIGHT) - radius, (90, 180) if side == 0 else (0, 90))):
-              rl.draw_ring(rl.Vector2(corner_x, corner_y), radius - edge_width, radius,
-                           *angles, 16, color)
+            for corner_y in (radius, int(DESIGN_HEIGHT) - radius):
+              points, count = _BSD_CORNER_MESHES[corner_x, corner_y, edge_width]
+              rl.draw_triangle_fan(rl.ffi.addressof(points, 0), count, color)
             horizontal_x = radius if side == 0 else int(DESIGN_WIDTH) - width
             for y in (0, int(DESIGN_HEIGHT) - edge_width):
               # Fade both rails to transparent at the inner third boundary,

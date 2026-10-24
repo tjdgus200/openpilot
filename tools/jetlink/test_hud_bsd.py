@@ -177,7 +177,8 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   monkeypatch.setattr(hud.rl, 'rl_draw_render_batch_active', lambda: calls.append(('batch', ())))
   monkeypatch.setattr(hud.rl, 'draw_rectangle_gradient_h', lambda *a: calls.append(('gradient', a)))
   monkeypatch.setattr(hud.rl, 'draw_rectangle', lambda *a: calls.append(('edge', a)))
-  monkeypatch.setattr(hud.rl, 'draw_ring', lambda center, *a: calls.append(('corner', (center.x, center.y, *a))))
+  monkeypatch.setattr(hud.rl, 'draw_triangle_fan', lambda points, count, color:
+                      calls.append(('corner', ([(points[i].x, points[i].y) for i in range(count)], color))))
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_alert_overlay', lambda *a: calls.append(('vehicle', ())))
   renderer._draw_alert_overlay(NS(size=3, text1='TAKE OVER', text2=''))
   assert (calls[0][0] == 'batch') == any(sides)
@@ -193,13 +194,20 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   assert not any(kind == 'edge' and a[3] in (24, 48) for kind, a in calls)
   corners = [a for kind, a in calls if kind == 'corner']
   assert len(corners) == 4 * sum(sides)
-  for x, y, inner, outer, start, end, segments, color in corners:
-    assert inner in (24, 48) and outer == 72 and segments == 16
-    assert (start, end) == {(72, 72): (180, 270), (72, 408): (90, 180),
-                            (1848, 72): (270, 360), (1848, 408): (0, 90)}[(x, y)]
-    assert color.a == (alpha if inner == 48 else int(alpha * .3))
-    assert 0 <= y - outer < y + outer <= 480
-    assert 0 <= x - outer < x + outer <= 640 or 1280 <= x - outer < x + outer <= 1920
+  for points, color in corners:
+    assert len(points) == 20
+    ox, oy = points[0]
+    assert (ox, oy) in ((0, 0), (0, 480), (1920, 0), (1920, 480))
+    assert color.a in (alpha, int(alpha * .3))
+    assert all(0 <= y <= 480 and (0 <= x <= 72 or 1848 <= x <= 1920) for x, y in points)
+    # Every triangle has consistent winding and nonzero area; the square
+    # physical corner is filled, with no self-overlap within either layer.
+    for (ax, ay), (bx, by) in zip(points[1:-1], points[2:]):
+      assert (ax - ox) * (by - oy) - (ay - oy) * (bx - ox) < 0
+    cx, cy = (72 if ox == 0 else 1848), (72 if oy == 0 else 408)
+    radius = 48 if color.a == alpha else 24
+    for x, y in points[2:-1]:
+      assert (x - cx) ** 2 + (y - cy) ** 2 == pytest.approx(radius ** 2, abs=.02)
   for kind, a in calls:
     if kind == 'gradient' and a[3] in (24, 48):
       opacity = alpha if a[3] == 24 else int(alpha * .3)

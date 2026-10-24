@@ -217,7 +217,7 @@ def test_pv5_signal_render_keeps_power_badge_bsd_walls_and_alert_last(monkeypatc
   gradients, walls, corners = [], [], []
   monkeypatch.setattr(health.rl, 'draw_rectangle_gradient_h', lambda *args: gradients.append(args[:4]))
   monkeypatch.setattr(health.rl, 'draw_rectangle', lambda *args: walls.append(args[:4]))
-  monkeypatch.setattr(health.rl, 'draw_ring', lambda center, *args: corners.append((center.x, center.y, *args)))
+  monkeypatch.setattr(health.rl, 'draw_triangle_fan', lambda *args: corners.append(args))
   monkeypatch.setattr(health.time, 'monotonic', lambda: 100.1)
   monkeypatch.setattr(renderer_module.ClusterUiRenderer, '_draw_alert_overlay', lambda *args: draws.append('vehicle-alert'))
   projection = NS(dest=NS(x=0, y=0, width=1344, height=760), video_dest=NS(x=0, y=0, width=1344, height=760))

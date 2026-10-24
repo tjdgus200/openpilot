@@ -4,7 +4,8 @@
   halos fade toward the central third to transparent. Preserve mirrored
   directions,2Hz pulse, fresh OEM OR local ONNX and vehicle-alert layering.
   Owner follow-up rounds the wall/rail joins with72px quarter rings;
-  retain the mirrored fade and alerts-on-top order.
+  retain the mirrored fade and alerts-on-top order. Later owner request fills
+  the physical square corners, retaining rounded inner joins (fixed fan meshes).
   The six PV5 exceptions and official encoder settings remain unchanged.
 
 - 2026-10-24 late sync: align with carrot-nav24c1ba5e, including bounded HUD
