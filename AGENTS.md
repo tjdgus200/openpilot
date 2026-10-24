@@ -3,8 +3,8 @@
 - 2026-10-25 BSD styling: keep bright vertical walls; top/bottom rails and
   halos fade toward the central third to transparent. Preserve mirrored
   directions, fresh OEM OR local ONNX and vehicle-alert layering. Latest owner
-  request: steady full cue without a same-side turn request; whole cue alternates
-  on/off per 10Hz HUD frame with that turn request (nominal5Hz; output drops can
+  request: steady full cue without a same-side turn request; whole cue flashes
+  two frames on/two off at10Hz with that turn request (nominal2.5Hz; output drops can
   slow visible cadence). Use request state, not arrow lamp phase.
   Owner follow-up rounds the wall/rail joins with72px quarter rings;
   retain the mirrored fade and alerts-on-top order. Later owner request fills

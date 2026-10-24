@@ -5,7 +5,7 @@ GRADIENT_ALPHA = 96
 
 
 class WarningPulse:
-  """One phase step per rendered frame: nominal 5 Hz at the existing 10 fps.
+  """Two frames on, two off: nominal 2.5 Hz at the existing 10 fps.
 
   Frame locking avoids time-phase aliasing at this output-rate limit. Dropped
   output frames can slow the visible cadence; no extra USB frames are produced.
@@ -13,13 +13,16 @@ class WarningPulse:
   def __init__(self):
     self.flashing = (False, False)
     self.alpha = (0, 0)
+    self.phase = (0, 0)
 
   def update(self, warnings, signals):
     flashing = tuple(active and signal is True for active, signal in zip(warnings, signals, strict=True))
-    self.alpha = tuple(0 if not active else
-                       255 if not flash or not previous else 255 - alpha
-                       for active, flash, previous, alpha in
-                       zip(warnings, flashing, self.flashing, self.alpha, strict=True))
+    # Bounded integer phase avoids drift/overflow. Each phase lasts one frame;
+    # at 10fps the on/off dwell times are both 200ms, without extra USB traffic.
+    self.phase = tuple((phase + 1) % 4 if flash and previous else 0
+                       for flash, previous, phase in zip(flashing, self.flashing, self.phase, strict=True))
+    self.alpha = tuple(0 if not active else 255 if not flash or phase < 2 else 0
+                       for active, flash, phase in zip(warnings, flashing, self.phase, strict=True))
     self.flashing = flashing
     return self.alpha
 

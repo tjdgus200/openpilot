@@ -100,12 +100,18 @@ def test_stale_invalid_or_missing_data_never_keeps_a_red_warning(change):
 
 
 @pytest.mark.parametrize('signals', [(False, False), (True, False), (False, True), (True, True)])
-def test_five_hz_at_ten_fps_and_steady_without_same_side_signal(signals):
+def test_two_point_five_hz_at_ten_fps_and_steady_without_same_side_signal(signals):
   from hud_bsd import WarningPulse
   pulse = WarningPulse()
   frames = [pulse.update((True, True), signals) for _ in range(100)]
   for side, signal in enumerate(signals):
-    assert [frame[side] for frame in frames] == ([255, 0] * 50 if signal else [255] * 100)
+    pattern = [255, 255, 0, 0]
+    values = [frame[side] for frame in frames]
+    assert values == (pattern * 25 if signal else [255] * 100)
+    if signal:
+      assert sum(value == 255 and (i == 0 or values[i - 1] == 0)
+                 for i, value in enumerate(values)) == 25
+  assert all(0 <= phase < 4 for phase in pulse.phase)
   # Turn cancellation immediately restores the steady warning, even in off phase.
   assert pulse.update((True, True), (False, False)) == (255, 255)
   assert pulse.update((True, True), signals) == (255, 255)
@@ -128,7 +134,7 @@ def test_render_uses_turn_request_not_lamp_phase_and_resets_on_stale(monkeypatch
   # Arrow lamp brightness is deliberately opposite; request state owns flashing.
   for _ in range(4):
     renderer.render(state, (False, True))
-  assert outputs == [(255, 255), (0, 255), (255, 255), (0, 255)]
+  assert outputs == [(255, 255), (255, 255), (0, 255), (0, 255)]
   current[0] = None
   renderer.render(state)
   assert outputs[-1] == (0, 0)
