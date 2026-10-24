@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-bsd-rounded-20261025-0417b395",
-  "source_commit": "0417b3951fad949fe7ec13175715a6fe0b00db01",
+  "profile": "pv5-bsd-filled-corners-20261025-73976a71",
+  "source_commit": "73976a71ea9ff6ba78cb82f8177f4aca4fe90dad",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-bsd-rounded-20261025-0417b395/host.tar.gz",
-    "sha256": "f2c66190ccca4ad34b4bff006f64f457b1c318dee8625dfce0f431943272da00",
-    "size": 64781317
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-bsd-filled-corners-20261025-73976a71/host.tar.gz",
+    "sha256": "39728121972187a90dcd7681814a4348905b237c79be52758b12048df8f5fee9",
+    "size": 64781738
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",
