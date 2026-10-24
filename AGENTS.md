@@ -1,5 +1,14 @@
 # Repository memory
 
+- 2026-10-24 delivery: source0d075e0e passes PC1631/3skip,
+  navigation/display127 and actual-renderer synthetic previews. SourceCI40068987742
+  Linux/Windows succeeds, including real storage/network and rollback checks.
+  Public runtime 64765355B, SHA69f39acf2c02bb3b910aa41f9fc05b839af9c5c4e145cac2b92292a0f2d299ae; four assets verified through
+  anonymous downloads. Archive-only server/HUD imports, native image/direct-map
+  defaults and legacy-bootstrap N16 alias pass. No device install/reboot or new
+  live 20Hz/P99/PMIC/road-safety claim. Keep fresh Park/zero permission as owner
+  reaffirmed after upstream sync began. See docs/pv5_nav_sync_20261024.md.
+
 - 2026-10-24 owner supersedes earlier selective-sync policies: align PV5 runtime
   with official carrot-nav3032c4c6, retaining only BSD physical walls/gradient,
   W/temperature and battery8 HUD (including its display diagnostics), unconditional
