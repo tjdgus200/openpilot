@@ -188,16 +188,22 @@ class HealthRenderer(ClusterUiRenderer):
                                        shade if side == 0 else clear, clear if side == 0 else shade)
           alpha = edge_alpha(now, starts[side])
           # Three-sided brackets surround only the physical outer third.
-          # Avoid overlapping corner rectangles (which would compound alpha).
+          # Quarter rings join the wall and rails without doubled corner alpha.
+          radius = 72
+          corner_x = radius if side == 0 else int(DESIGN_WIDTH) - radius
           for edge_width, opacity in ((48, int(alpha * .3)), (24, alpha)):
             x = 0 if side == 0 else int(DESIGN_WIDTH) - edge_width
             color = rl_color((255, 30, 30), opacity)
-            rl.draw_rectangle(x, 0, edge_width, int(DESIGN_HEIGHT), color)
-            horizontal_x = edge_width if side == 0 else int(DESIGN_WIDTH) - width
+            rl.draw_rectangle(x, radius, edge_width, int(DESIGN_HEIGHT) - 2 * radius, color)
+            for corner_y, angles in ((radius, (180, 270) if side == 0 else (270, 360)),
+                                     (int(DESIGN_HEIGHT) - radius, (90, 180) if side == 0 else (0, 90))):
+              rl.draw_ring(rl.Vector2(corner_x, corner_y), radius - edge_width, radius,
+                           *angles, 16, color)
+            horizontal_x = radius if side == 0 else int(DESIGN_WIDTH) - width
             for y in (0, int(DESIGN_HEIGHT) - edge_width):
               # Fade both rails to transparent at the inner third boundary,
               # keeping the side wall bright without a hard-cut inner end.
-              rl.draw_rectangle_gradient_h(horizontal_x, y, width - edge_width, edge_width,
+              rl.draw_rectangle_gradient_h(horizontal_x, y, width - radius, edge_width,
                                            color if side == 0 else clear,
                                            clear if side == 0 else color)
       if not self.host_badge_drawn:

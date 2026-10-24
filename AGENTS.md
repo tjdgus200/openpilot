@@ -3,6 +3,8 @@
 - 2026-10-25 BSD styling: keep bright vertical walls; top/bottom rails and
   halos fade toward the central third to transparent. Preserve mirrored
   directions,2Hz pulse, fresh OEM OR local ONNX and vehicle-alert layering.
+  Owner follow-up rounds the wall/rail joins with72px quarter rings;
+  retain the mirrored fade and alerts-on-top order.
   The six PV5 exceptions and official encoder settings remain unchanged.
 
 - 2026-10-24 late sync: align with carrot-nav24c1ba5e, including bounded HUD

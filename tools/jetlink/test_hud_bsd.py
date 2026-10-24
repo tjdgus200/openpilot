@@ -177,6 +177,7 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   monkeypatch.setattr(hud.rl, 'rl_draw_render_batch_active', lambda: calls.append(('batch', ())))
   monkeypatch.setattr(hud.rl, 'draw_rectangle_gradient_h', lambda *a: calls.append(('gradient', a)))
   monkeypatch.setattr(hud.rl, 'draw_rectangle', lambda *a: calls.append(('edge', a)))
+  monkeypatch.setattr(hud.rl, 'draw_ring', lambda center, *a: calls.append(('corner', (center.x, center.y, *a))))
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_alert_overlay', lambda *a: calls.append(('vehicle', ())))
   renderer._draw_alert_overlay(NS(size=3, text1='TAKE OVER', text2=''))
   assert (calls[0][0] == 'batch') == any(sides)
@@ -184,12 +185,21 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   assert [a[:4] for a in gradients] == [rect for rect, active in zip([(0, 0, 640, 480), (1280, 0, 640, 480)], sides) if active]
   assert [(a[4].a, a[5].a) for a in gradients] == [alpha for alpha, active in zip([(96, 0), (0, 96)], sides) if active]
   edges = [a[:4] for kind, a in calls if kind == 'edge' and a[2] == 24]
-  assert edges == [rect for rect, active in zip([(0, 0, 24, 480), (1896, 0, 24, 480)], sides) if active]
+  assert edges == [rect for rect, active in zip([(0, 72, 24, 336), (1896, 72, 24, 336)], sides) if active]
   rails = [a[:4] for kind, a in calls if kind == 'gradient' and a[3] == 24]
-  expected = ([(24, 0, 616, 24), (24, 456, 616, 24)] if sides[0] else [])
-  expected += ([(1280, 0, 616, 24), (1280, 456, 616, 24)] if sides[1] else [])
+  expected = ([(72, 0, 568, 24), (72, 456, 568, 24)] if sides[0] else [])
+  expected += ([(1280, 0, 568, 24), (1280, 456, 568, 24)] if sides[1] else [])
   assert rails == expected
   assert not any(kind == 'edge' and a[3] in (24, 48) for kind, a in calls)
+  corners = [a for kind, a in calls if kind == 'corner']
+  assert len(corners) == 4 * sum(sides)
+  for x, y, inner, outer, start, end, segments, color in corners:
+    assert inner in (24, 48) and outer == 72 and segments == 16
+    assert (start, end) == {(72, 72): (180, 270), (72, 408): (90, 180),
+                            (1848, 72): (270, 360), (1848, 408): (0, 90)}[(x, y)]
+    assert color.a == (alpha if inner == 48 else int(alpha * .3))
+    assert 0 <= y - outer < y + outer <= 480
+    assert 0 <= x - outer < x + outer <= 640 or 1280 <= x - outer < x + outer <= 1920
   for kind, a in calls:
     if kind == 'gradient' and a[3] in (24, 48):
       opacity = alpha if a[3] == 24 else int(alpha * .3)
