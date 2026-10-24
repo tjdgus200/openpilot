@@ -161,13 +161,14 @@ def test_vehicle_or_fresh_local_bsd_survives_usb_hud_snapshot(tmp_path, monkeypa
 
 
 @pytest.mark.parametrize('layout', [0, 1])
-def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeypatch, layout):
+@pytest.mark.parametrize('sides', [(True, False), (False, True), (True, True), (False, False)])
+def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeypatch, layout, sides):
   import hud_health as hud
 
   renderer = object.__new__(hud.HealthRenderer)
   renderer.width, renderer.height, renderer.language, renderer.panel_layout = 1920, 480, 'ko', layout
   renderer.host_health, renderer.host_badge_drawn = {'severity': 'ok'}, True
-  renderer._bsd_warning, renderer._bsd_started = (True, True), (10.0, 10.0)
+  renderer._bsd_warning, renderer._bsd_started = sides, (10.0, 10.0)
   calls = []
   monkeypatch.setattr(hud.time, 'monotonic', lambda: 10.0)
   for name in ('rl_push_matrix', 'rl_pop_matrix', 'rl_scalef'):
@@ -177,10 +178,19 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   monkeypatch.setattr(hud.rl, 'draw_rectangle', lambda *a: calls.append(('edge', a)))
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_alert_overlay', lambda *a: calls.append(('vehicle', ())))
   renderer._draw_alert_overlay(NS(size=3, text1='TAKE OVER', text2=''))
-  assert calls[0][0] == 'batch'
+  assert (calls[0][0] == 'batch') == any(sides)
   gradients = [a for kind, a in calls if kind == 'gradient']
-  assert [a[:4] for a in gradients] == [(0, 0, 640, 480), (1280, 0, 640, 480)]
-  assert [(a[4].a, a[5].a) for a in gradients] == [(64, 0), (0, 64)]
+  assert [a[:4] for a in gradients] == [rect for rect, active in zip([(0, 0, 640, 480), (1280, 0, 640, 480)], sides) if active]
+  assert [(a[4].a, a[5].a) for a in gradients] == [alpha for alpha, active in zip([(96, 0), (0, 96)], sides) if active]
   edges = [a[:4] for kind, a in calls if kind == 'edge' and a[2] == 24]
-  assert edges == [(0, 0, 24, 480), (1896, 0, 24, 480)]
+  assert edges == [rect for rect, active in zip([(0, 0, 24, 480), (1896, 0, 24, 480)], sides) if active]
+  rails = [a[:4] for kind, a in calls if kind == 'edge' and a[3] == 24]
+  expected = ([(24, 0, 616, 24), (24, 456, 616, 24)] if sides[0] else [])
+  expected += ([(1280, 0, 616, 24), (1280, 456, 616, 24)] if sides[1] else [])
+  assert rails == expected
+  for kind, rect in calls:
+    if kind == 'edge':
+      x, y, w, h = rect[:4]
+      assert 0 <= y < y + h <= 480
+      assert 0 <= x < x + w <= 640 or 1280 <= x < x + w <= 1920
   assert calls[-1][0] == 'vehicle'

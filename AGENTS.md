@@ -1,5 +1,11 @@
 # Repository memory
 
+- 2026-10-24 evening: owner requests latest carrot-nav5bbbe160 while retaining
+  the same six PV5 behaviors. BSD edges now form inward-open brackets around
+  each physical outer third (top/bottom included), with steady gradient alpha96
+  and dim pulse alpha128. Center third remains clear, alerts draw last.
+  No device installation or road/performance claim from PC validation.
+
 - 2026-10-24 delivery: source0d075e0e passes PC1631/3skip,
   navigation/display127 and actual-renderer synthetic previews. SourceCI40068987742
   Linux/Windows succeeds, including real storage/network and rollback checks.

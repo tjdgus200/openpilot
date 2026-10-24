@@ -172,11 +172,17 @@ class JoiningModel:
       self.ready = state().get('state') == 'ready'
       record = {'active': self.active, 'ready': self.ready, 'model': model_name(self.spec), 'sha256': self.spec.sha256,
                 'nav_model': 'nav_map' in self.spec.input_shapes,
-                'error': self.error, 'updated': now}
+                'error': self.error, 'updated': now,
+                'execution': {'cpu_overlap': os.getenv('JETLINK_CPU_OVERLAP', '1') != '0',
+                              'shared_input': getattr(self.client, 'shared', None) is not None,
+                              'compact_reply': bool(getattr(self.client, 'project_output', False))}}
       tmp = MODEL_STATUS.with_suffix('.tmp')
       tmp.write_text(json.dumps(record))
       os.replace(tmp, MODEL_STATUS)
       self.next_status = now + 1
+
+  def set_nav_metadata(self, value):
+    self.nav_metadata = value
 
   def _reset_small(self):
     if hasattr(self.small, 'reset'):
@@ -248,7 +254,8 @@ class JoiningModel:
         images = self.warp(bufs, transforms, prepare=prepare,
                            output_buffer=self.client.image_buffer())
         warped = time.monotonic()
-        result = self.client.infer(images, self.packed, self.frame, self.reset, source_sof=self.source_sof)
+        map_options = {'nav_metadata': getattr(self, 'nav_metadata', None)} if getattr(self.client, 'deferred_nav', False) else {}
+        result = self.client.infer(images, self.packed, self.frame, self.reset, source_sof=self.source_sof, **map_options)
         replied = time.monotonic()
         self.reset = False
         if 'prev_feat' in self.views:

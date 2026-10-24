@@ -187,10 +187,15 @@ class HealthRenderer(ClusterUiRenderer):
                                        0, width, int(DESIGN_HEIGHT),
                                        shade if side == 0 else clear, clear if side == 0 else shade)
           alpha = edge_alpha(now, starts[side])
-          # Flush, full-height edges; the halo extends only into the display.
+          # Three-sided brackets surround only the physical outer third.
+          # Avoid overlapping corner rectangles (which would compound alpha).
           for edge_width, opacity in ((48, int(alpha * .3)), (24, alpha)):
             x = 0 if side == 0 else int(DESIGN_WIDTH) - edge_width
-            rl.draw_rectangle(x, 0, edge_width, int(DESIGN_HEIGHT), rl_color((255, 30, 30), opacity))
+            color = rl_color((255, 30, 30), opacity)
+            rl.draw_rectangle(x, 0, edge_width, int(DESIGN_HEIGHT), color)
+            horizontal_x = edge_width if side == 0 else int(DESIGN_WIDTH) - width
+            for y in (0, int(DESIGN_HEIGHT) - edge_width):
+              rl.draw_rectangle(horizontal_x, y, width - edge_width, edge_width, color)
       if not self.host_badge_drawn:
         # Full navigation/graph modes omit the driving status row.
         self._temperature_badge(DESIGN_WIDTH - 66, TOP_STATUS_CENTER_Y)
