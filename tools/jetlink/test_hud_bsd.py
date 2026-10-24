@@ -162,7 +162,8 @@ def test_vehicle_or_fresh_local_bsd_survives_usb_hud_snapshot(tmp_path, monkeypa
 
 @pytest.mark.parametrize('layout', [0, 1])
 @pytest.mark.parametrize('sides', [(True, False), (False, True), (True, True), (False, False)])
-def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeypatch, layout, sides):
+@pytest.mark.parametrize('now,alpha', [(10.0, 255), (10.35, 128)])
+def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeypatch, layout, sides, now, alpha):
   import hud_health as hud
 
   renderer = object.__new__(hud.HealthRenderer)
@@ -170,7 +171,7 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   renderer.host_health, renderer.host_badge_drawn = {'severity': 'ok'}, True
   renderer._bsd_warning, renderer._bsd_started = sides, (10.0, 10.0)
   calls = []
-  monkeypatch.setattr(hud.time, 'monotonic', lambda: 10.0)
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: now)
   for name in ('rl_push_matrix', 'rl_pop_matrix', 'rl_scalef'):
     monkeypatch.setattr(hud.rl, name, lambda *a: None)
   monkeypatch.setattr(hud.rl, 'rl_draw_render_batch_active', lambda: calls.append(('batch', ())))
@@ -179,17 +180,24 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_alert_overlay', lambda *a: calls.append(('vehicle', ())))
   renderer._draw_alert_overlay(NS(size=3, text1='TAKE OVER', text2=''))
   assert (calls[0][0] == 'batch') == any(sides)
-  gradients = [a for kind, a in calls if kind == 'gradient']
+  gradients = [a for kind, a in calls if kind == 'gradient' and a[3] == 480]
   assert [a[:4] for a in gradients] == [rect for rect, active in zip([(0, 0, 640, 480), (1280, 0, 640, 480)], sides) if active]
   assert [(a[4].a, a[5].a) for a in gradients] == [alpha for alpha, active in zip([(96, 0), (0, 96)], sides) if active]
   edges = [a[:4] for kind, a in calls if kind == 'edge' and a[2] == 24]
   assert edges == [rect for rect, active in zip([(0, 0, 24, 480), (1896, 0, 24, 480)], sides) if active]
-  rails = [a[:4] for kind, a in calls if kind == 'edge' and a[3] == 24]
+  rails = [a[:4] for kind, a in calls if kind == 'gradient' and a[3] == 24]
   expected = ([(24, 0, 616, 24), (24, 456, 616, 24)] if sides[0] else [])
   expected += ([(1280, 0, 616, 24), (1280, 456, 616, 24)] if sides[1] else [])
   assert rails == expected
+  assert not any(kind == 'edge' and a[3] in (24, 48) for kind, a in calls)
+  for kind, a in calls:
+    if kind == 'gradient' and a[3] in (24, 48):
+      opacity = alpha if a[3] == 24 else int(alpha * .3)
+      # Both top and bottom must fade in the correct physical direction,
+      # including the halo and the dim phase of the pulse.
+      assert (a[4].a, a[5].a) == ((opacity, 0) if a[0] < 640 else (0, opacity))
   for kind, rect in calls:
-    if kind == 'edge':
+    if kind in ('edge', 'gradient'):
       x, y, w, h = rect[:4]
       assert 0 <= y < y + h <= 480
       assert 0 <= x < x + w <= 640 or 1280 <= x < x + w <= 1920

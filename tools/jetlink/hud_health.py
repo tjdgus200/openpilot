@@ -195,7 +195,11 @@ class HealthRenderer(ClusterUiRenderer):
             rl.draw_rectangle(x, 0, edge_width, int(DESIGN_HEIGHT), color)
             horizontal_x = edge_width if side == 0 else int(DESIGN_WIDTH) - width
             for y in (0, int(DESIGN_HEIGHT) - edge_width):
-              rl.draw_rectangle(horizontal_x, y, width - edge_width, edge_width, color)
+              # Fade both rails to transparent at the inner third boundary,
+              # keeping the side wall bright without a hard-cut inner end.
+              rl.draw_rectangle_gradient_h(horizontal_x, y, width - edge_width, edge_width,
+                                           color if side == 0 else clear,
+                                           clear if side == 0 else color)
       if not self.host_badge_drawn:
         # Full navigation/graph modes omit the driving status row.
         self._temperature_badge(DESIGN_WIDTH - 66, TOP_STATUS_CENTER_Y)

@@ -1,5 +1,10 @@
 # Repository memory
 
+- 2026-10-25 BSD styling: keep bright vertical walls; top/bottom rails and
+  halos fade toward the central third to transparent. Preserve mirrored
+  directions,2Hz pulse, fresh OEM OR local ONNX and vehicle-alert layering.
+  The six PV5 exceptions and official encoder settings remain unchanged.
+
 - 2026-10-24 late sync: align with carrot-nav24c1ba5e, including bounded HUD
   libx264 conversion/encoding pools (one each). Preserve all six PV5 features
   and brighter three-sided BSD brackets. No device performance claim.
