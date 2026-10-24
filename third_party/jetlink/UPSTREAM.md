@@ -16,25 +16,22 @@ the production daemon now uses the extended `JetlinkClient`.
 Carrot's adapter, device-role policy, process placement and deployment tools are
 outside this directory. Updating the protocol requires testing both peers.
 
-`carrot-nav-pv5` selectively ports GPU recurrence/finite scanning from the
-owner's `codex/jetson-nav-runtime-port`.
-The designs derive from zoompilot/jetlink `d26001b4161f33bab28d806de6a99b96325a429b`
-(`JetlinkKit/Sources/JetlinkTRT/TrtEngine.swift`),
-under its existing MIT license. Carrot's finite checks, deadlines, framing,
-sequence checks, resets and failure containment remain. No held-output policy,
-frame skipping or different ONNX is imported. Release choices enable GPU state
-on the paired Jetson package. The owner subsequently cancelled the experimental
-asynchronous TX port: its transport, native writer and release option are now
-removed for all comma models. The daemon directly uses the official serial
-`transport/ffs.py`, verified identical to carrot-nav `3a03a39f` on 2026-10-21.
-Official userspace placement, write watchdog/cleanup and USB completion-priority
-ownership/restoration gates remain; the PV5 adapter subsequently permits C3/C3X
-as well as C4 on the same aarch64 Linux4.9.103 kernel, without new C3 timing or
-kernel-safety evidence. Existing optional AIO RX diagnostics are unrelated
-and unchanged. This is not a complete Jetlink upgrade or proof of 20Hz.
-See `docs/carrot_nav_pv5.md`.
+This review adds GPU-resident recurrent state, adapted from the
+tjdgus200/openpilot 7cbedfe03757c52482d9088dda49d89a94263ca4 and
+zoompilot/jetlink d26001b4161f33bab28d806de6a99b96325a429b
+(`JetlinkKit/Sources/JetlinkTRT/TrtEngine.swift`), under its MIT license.
+After the owner-requested Orin comparison, CARROT_TRT_DEVICE_STATE defaults ON
+for stateful TensorRT models; explicit 0 retains host state for diagnosis.
+The GPU scans every float16/float32 state
+element before its reply event; the original CPU driving-output validation,
+reset, protocol and failure rules remain. This patch does not add asynchronous
+USB writes, retained-frame output or a model change. Activation uses the
+normal signed host-runtime pin and boot updater.
+See docs/jetson_gpu_usb_review.md for the initial review and
+docs/jetson_gpu_state_activation_20261021.md for activation evidence and limits.
 
-On 2026-10-23 PV5 imports ajouatom/openpilot `cd986d7e`'s write-watchdog
-wake coalescing. Earlier deadlines and close still wake immediately; an
-already scheduled earlier wake rechecks a later deadline or cancellation.
-Serial USB writes, timeout budgets and abort ownership are unchanged.
+Carrot coalesces `transport/watchdog.py` notifications: a pending earlier wake
+rechecks a cancelled or later-rearmed write; an earlier deadline and close still
+wake immediately. Expiry/cancellation locking, abort callback, time budgets and
+thread scheduling stay unchanged. This removes per-write background Python
+wakeups from the comma FunctionFS path. See docs/jetlink_watchdog_latency_20261021.md.

@@ -28,17 +28,6 @@ this comma commit remains compatible but does not enable the reduction with an
 old host. A host package built from these sources is required on Jetson too.
 This commit does not upload/install that package or change update acceptance.
 
-### Paired package publication
-
-The subsequent package-selection commit publishes/selects
-[Jetson candidate-3 package](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-n16-projection-20261023-2e971adb),
-built from source `2e971adb3ac1d542062524707ffdaef5d00dd780`. Candidate 4 at
-that source revision changes comma preparation only. Model/runtime pins and
-the existing SHA-256 USB activation probe/rollback policy remain unchanged.
-Update comma's `carrot-nav-pv5`, then let the normal USB receiver install the
-selected package on Jetson boot while parked in P at zero speed. No actual
-device installation or reboot was performed during this package publication.
-
 ## Evidence and limits
 
 An earlier isolated live-device prototype compared 2,400 selected frames per

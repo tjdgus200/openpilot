@@ -1,7 +1,6 @@
 """Before activation only: imports, pinned engine load/build and finite inference."""
 from pathlib import Path
 from model_pin import read_spec
-import os
 import sys
 import subprocess
 import time
@@ -12,13 +11,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / 'third_party/jetlink')]
 
 def main():
   import numpy as np
-  # Import in a fresh interpreter with the service's script search path.
-  # This process already added ROOT; importing here can hide a broken server
-  # entrypoint that only fails after successful activation.
-  env = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
-  subprocess.run([sys.executable, '-c', 'import server'],
-                 cwd=ROOT / 'tools/jetlink', env=env, check=True, timeout=30,
-                 stdout=subprocess.DEVNULL)
+  import server  # noqa: F401 -- verify the application entry point's imports
   # Importing hud alone misses the renderer imports inside main(). Exercise
   # the real entry point without opening a panel or waiting for vehicle data.
   subprocess.run([sys.executable, str(ROOT / 'tools/jetlink/hud.py'), '--help'],

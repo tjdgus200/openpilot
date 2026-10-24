@@ -478,10 +478,14 @@ class EngineHost:
     if spec.stateful and hasattr(engine, 'configure_state_feedback'):
       engine.configure_state_feedback(spec.state_pairs)
     host_inputs = {n: engine.host_input(n) for n in engine.inputs}
+    # Only the reviewed N16 model AND full tensor contract default to the new
+    # staging paths. Explicit 0 retains the original diagnostic path.
+    from jetlink.output_projection import eligible
+    staging_default = '1' if eligible(spec) else '0'
     queues = make_queues(spec, host_inputs, getattr(engine, 'device_state', None),
-                         direct_map=os.getenv('CARROT_TRT_DIRECT_MAP', '0') == '1'
+                         direct_map=os.getenv('CARROT_TRT_DIRECT_MAP', staging_default) == '1'
                          and spec.stateful and 'nav_map' in spec.packed_shapes,
-                         native_image=os.getenv('CARROT_TRT_NATIVE_IMAGE', '1') == '1' and spec.stateful)
+                         native_image=os.getenv('CARROT_TRT_NATIVE_IMAGE', staging_default) == '1' and spec.stateful)
     warped = np.zeros(spec.warped_shape, np.uint8)
     packed = np.zeros(spec.packed_nelem, np.float32)
     queues.step_into(warped, packed, host_inputs)

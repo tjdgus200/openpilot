@@ -15,14 +15,12 @@ from hud_wifi_route import select_link
 
 
 @pytest.mark.parametrize('capability', [None, False, True])
-def test_legacy_wifi_only_jetson_starts_neither_wifi_nor_unnegotiated_usb(monkeypatch, capability):
+def test_jetson_never_uses_usb_display_even_on_setup_failure(monkeypatch, capability):
   legacy = Mock(side_effect=AssertionError('USB HUD selected'))
-  wifi = Mock(side_effect=AssertionError('Wi-Fi HUD started'))
-  monkeypatch.setattr(policy, 'WifiPublisher', wifi)
+  monkeypatch.setattr(policy, 'WifiPublisher', Mock(side_effect=OSError('offline')))
   peer = {'carrot_host': 'jetson', 'carrot_hud_v1': True, 'carrot_navi_v1': True, policy.CAPABILITY: capability}
   assert policy.publisher(None, peer, legacy) is None
   legacy.assert_not_called()
-  wifi.assert_not_called()
 
 
 def test_other_hosts_keep_their_existing_display(monkeypatch):
@@ -105,17 +103,13 @@ def test_private_ap_is_preferred_and_usb_route_is_rejected():
   assert select_link(networks[:1], ['172.29.77.2'], route) is None
 
 
-def test_onroad_internet_sharing_remains_deferred(monkeypatch):
+def test_ap_creation_is_offroad_only(monkeypatch):
   if sys.platform == 'win32':
     monkeypatch.setitem(sys.modules, 'fcntl', NS())
   import wifi_direct
   wireless = Mock()
   monkeypatch.setattr(wifi_direct, 'offroad', lambda: False)
-  ap = wifi_direct.AccessPoint(wireless)
-  ap.value = {'subnet': '172.29.77.0/24'}
-  ap.sharing = Mock()
-  ap.share_internet()
-  ap.sharing.ensure.assert_not_called()
+  assert wifi_direct.AccessPoint(wireless).start() is False
   wireless.create.assert_not_called()
 
 

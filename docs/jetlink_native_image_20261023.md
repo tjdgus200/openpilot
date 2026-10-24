@@ -27,9 +27,7 @@ result. Combined candidates require a separate test.
 
 ## Implementation and correctness
 
-Following the owner's deployment request, native image conversion is enabled
-by default for stateful models. `CARROT_TRT_NATIVE_IMAGE=0` explicitly selects
-the original NumPy path; `=1` explicitly enables the native candidate.
+`CARROT_TRT_NATIVE_IMAGE=1` enables the experiment; the default remains off.
 The native helper is compiled into a private temporary directory and self-tested
 once during model loading. A missing compiler, compile/load failure or failed
 self-test retains the original NumPy implementation. There is no compiler or
@@ -138,26 +136,6 @@ native conversion implementation and the measured TensorRT loop did not change.
 
 No numerical or reset-policy regression was observed in these tests. This is
 not a complete road-driving safety assessment or long-duration loaded transport
-test. The initial implementation was published default-off. The owner then
-requested default enablement and a new SHA-256 USB installation package. The
-default-on follow-up preserves compiler/load/self-test fallback, explicit `=0`
-disablement, map-direct default-off, model pins, update gates and rollback.
-The startup policy test covers absent, disabled and enabled environment values.
-The measurements above describe the isolated acceptance trial, not a fresh
-benchmark of the subsequently packaged runtime or an installation result.
-
-## Published default-on USB package
-
-Source `13542cc7c16d5f9758814e2ce4e493a418d8b967` is available as
-[the native-image USB release](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-native-image-20261023-13542cc7).
-The committed USB selection pins its 81,683,916-byte bundle with SHA-256
-`b1944a6eb2ad6feb5a9cbe72aad5d35265700c0e23cf102eaba3c4baa32a39dd`.
-All four assets were downloaded anonymously and matched their local bytes.
-
-Fresh archive-only server/HUD imports and actual default-on initialization
-passed, including compilation/self-test of the bundled C helper. Thirteen
-critical model/update/activation/rollback files are identical to the previous
-N16 package. Source CI passed 1,439 broad checks (61 skipped), 103 update checks,
-119 navigation checks, 11 storage checks, 11 network checks and Windows checks.
-Updating comma selects this package for its existing USB boot-update path;
-Jetson changes only after that installation and activation succeed.
+test. The change is published **default-off** for further controlled evaluation;
+enable only with `CARROT_TRT_NATIVE_IMAGE=1` in a runtime containing this source.
+No release package selection or production installation is included.

@@ -31,9 +31,9 @@ def nm(*args):
 
 def render(owner, profile, priority):
   uid = str(uuid.uuid5(uuid.NAMESPACE_URL, 'carrot-usb:' + owner + ':' + profile['id']))
-  text = ('[connection]\nid=' + PREFIX + uid + '\nuuid=' + uid + '\ntype=wifi\n' +
-          'autoconnect=true\nautoconnect-retries=0\nautoconnect-priority=' + str(priority) + '\n' +
-          '[wifi]\nmode=infrastructure\npowersave=2\nssid=' + nm_escape(profile['ssid']) + '\n' +
+  text = ('[connection]\nid=' + PREFIX + uid + '\nuuid=' + uid + '\ntype=wifi\n'
+          'autoconnect=true\nautoconnect-retries=0\nautoconnect-priority=' + str(priority) + '\n'
+          '[wifi]\nmode=infrastructure\nssid=' + nm_escape(profile['ssid']) + '\n'
           'hidden=' + ('true' if profile['hidden'] else 'false') + '\n')
   if profile['security'] != 'open':
     text += ('[wifi-security]\nkey-mgmt=' + profile['security'] + '\npsk=' +
@@ -51,7 +51,7 @@ def install(value, directory=DIRECTORY, command=nm):
   directory.mkdir(parents=True, exist_ok=True)
   # Install the new profiles before removing the previous comma's managed set.
   # Other administrator-created profiles are never deleted.
-  for name, (_uid, content) in desired.items():
+  for name, (uid, content) in desired.items():
     path = directory/name
     if path.is_symlink():
       raise ValueError('Unexpected network profile symlink')
@@ -83,8 +83,6 @@ def connect(ids, command=nm, preferred=None, force=False):
   active = command('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines() if preferred else []
   if not force and connected and (preferred is None or preferred in active):
     return 'connected'
-  if not force and any(':wifi:connecting' in row for row in states):
-    return 'connecting'  # Do not cancel NM's association/DHCP with another UP.
   if not ids:
     return 'waiting_for_comma_wifi'
   command('radio', 'wifi', 'on')
@@ -98,22 +96,6 @@ def connect(ids, command=nm, preferred=None, force=False):
     except RuntimeError:
       continue
   return 'retrying'
-
-
-def reconnect_required(old, desired):
-  """Policy-only changes apply on the next association, without interrupting it."""
-  def identity(files):
-    result = {}
-    for name, content in files.items():
-      value = configparser.ConfigParser(interpolation=None, strict=False)
-      value.read_string(content)
-      for section in ('wifi', '802-11-wireless'):
-        if section in value:
-          for option in ('powersave', 'bssid'):
-            value.remove_option(section, option)
-      result[name] = {section: dict(value[section]) for section in value.sections()}
-    return result
-  return identity(old) != identity(desired)
 
 
 def saved_ids(directory=DIRECTORY):
@@ -204,8 +186,8 @@ class Worker:
           new = list(desired)
           atomic(journal, json.dumps({'old': old, 'new': new}), 0o600)
           ids = install(value, self.directory, self.command)
-          preferred = next((uid for uid, p in zip(ids, value['profiles'], strict=True) if p['active']), None)
-          self.state = connect(ids, self.command, preferred=preferred, force=reconnect_required(old, desired))
+          preferred = next((uid for uid, p in zip(ids, value['profiles']) if p['active']), None)
+          self.state = connect(ids, self.command, preferred=preferred, force=old != desired)
           active = self.command('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines()
           if self.state != 'connected' or not set(active).intersection(ids):
             raise RuntimeError('Candidate Wi-Fi not connected')

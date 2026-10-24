@@ -23,7 +23,7 @@ from Crypto.Cipher import AES
 
 from hud_protocol import HUD_PACKET, MAX_HUD_BYTES, HEADER as SNAPSHOT_HEADER
 from hud_navi import CHUNK, HEADER as MEDIA_HEADER, HostForwarder
-from hud_wifi_route import select_link, receiver_network, direct_peer
+from hud_wifi_route import select_link
 
 MAGIC = b'CHW1'
 HEADER = struct.Struct('!QIf')  # sequence, plaintext length, source age seconds
@@ -155,8 +155,7 @@ class Runtime:
             break
         if time.monotonic() >= next_network:
           try:
-            addresses = wlan_addresses()
-            self.network = receiver_network(addresses) if self.role == 'receive' else tuple(addresses)
+            self.network = tuple(wlan_addresses())
             self.link = select_link(self.network, target_addresses()) if self.role == 'send' else None
           except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
             self.network, self.link = (), None
@@ -256,11 +255,8 @@ class Runtime:
           listener.settimeout(.2)
           while not self.stop.is_set() and self.network == network:
             try:
-              sock, peer = listener.accept()
+              sock, _ = listener.accept()
             except TimeoutError:
-              continue
-            if not direct_peer(peer[0], sock.getsockname()[0]):
-              sock.close()
               continue
             if self.slots.acquire(blocking=False):
               self.start_thread(self.receiver, sock, network)

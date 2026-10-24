@@ -133,7 +133,7 @@ def test_preview_worker_follows_display_lifetime(monkeypatch):
   import hud_camera
   from openpilot.common import jetlink_status
   monkeypatch.setattr(jetlink_status, '_fresh', lambda *a: {})
-  settings = {'ClusterHud': 0, 'IsOnroad': True, 'ClusterHudDebug': 0, 'ClusterHudCameraViewMode': 2}
+  settings = {'ClusterHud': 0, 'IsOnroad': True, 'ClusterHudDebug': 0}
   created, closed = [], []
 
   def camera():
@@ -149,16 +149,12 @@ def test_preview_worker_follows_display_lifetime(monkeypatch):
   for _ in range(3):
     assert builder.camera_previews() == {'road': 'frame'}
   assert len(created) == 1
-  settings['ClusterHudCameraViewMode'] = 0
-  assert builder.camera_previews() == {} and len(closed) == 1
-  settings['ClusterHudCameraViewMode'] = 2
-  assert builder.camera_previews() == {'road': 'frame'} and len(created) == 2
   settings['IsOnroad'] = False
-  assert builder.camera_previews() == {} and len(closed) == 2
+  assert builder.camera_previews() == {} and len(closed) == 1
   settings['ClusterHudDebug'] = 1
-  assert builder.camera_previews() == {'road': 'frame'} and len(created) == 3
+  assert builder.camera_previews() == {'road': 'frame'} and len(created) == 2
   settings['ClusterHud'] = 0
-  assert builder.camera_previews() == {} and len(closed) == 3
+  assert builder.camera_previews() == {} and len(closed) == 2
 
 
 def test_jetson_panel_heartbeat_enables_preview_with_vehicle_switch_off(monkeypatch):
@@ -176,7 +172,7 @@ def test_jetson_panel_heartbeat_enables_preview_with_vehicle_switch_off(monkeypa
   monkeypatch.setattr(hud_camera, 'CameraPublisher', camera)
   builder = object.__new__(hud_protocol.SnapshotBuilder)
   builder.camera = None
-  settings = {'ClusterHud': 0, 'IsOnroad': True, 'ClusterHudDebug': 0, 'ClusterHudCameraViewMode': 2}
+  settings = {'ClusterHud': 0, 'IsOnroad': True, 'ClusterHudDebug': 0}
   builder.params = NS(get_int=lambda k: settings[k], get_bool=lambda k: settings[k])
   assert builder.camera_previews() == {'road': 'frame'} and len(created) == 1
   record['telemetry_updated'] = 17.

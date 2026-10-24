@@ -23,7 +23,7 @@ from openpilot.selfdrive.modeld.jetlink.scheduling import UsbCompletionPriority
 from openpilot.selfdrive.modeld.jetlink.contracts import model_name
 from openpilot.selfdrive.modeld.jetlink.selection import ModelChanged, check_loaded
 from openpilot.selfdrive.modeld.jetlink.startup import (CAPABILITY as BOOT_UPDATE_CAPABILITY, wait_for_boot_update,
-                                                       RuntimeHandoff, initial_connection_wait)
+                                                       RuntimeHandoff, ConnectionStartup)
 from jetlink.client import JetlinkClient
 from jetlink.transport.base import LinkError, LinkTimeout
 from jetlink.transport.ffs import FfsTransport
@@ -237,12 +237,9 @@ def serve_local(listener, client, peer, wifi=None):
   try:
     _serve_local(listener, client, peer, publisher, phase, wifi)
   finally:
-    try:
-      phase.close()
-    finally:
-      if publisher is not None:
-        publisher.close()
-
+    phase.close()
+    if publisher is not None:
+      publisher.close()
 
 
 def _serve_local(listener, client, peer, publisher, phase, wifi=None):
@@ -334,7 +331,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
             send(connection, shared.nonce)
             continue
           first_request = False
-          if shared is not None and len(request) == shared_input.TOKEN.size:
+          shared_request = shared is not None and len(request) == shared_input.TOKEN.size
+          if shared_request:
             frame, reset, source_sof, images, packed = shared.read(request)
           else:
             if len(request) != REQUEST.size + spec.warped_nbytes + spec.packed_nbytes:
@@ -397,6 +395,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
             context={'frame_id': frame, 'usb_seq': seq},
             housekeeping_ms=(receive_started-loop_started)*1000,
             ipc_receive_ms=(received-receive_started)*1000,
+            ipc_request_bytes=4 + len(request),
+            ipc_shared_input=int(shared_request),
             request_parse_ms=(started-received)*1000,
             usb_send_ms=(sent-started)*1000,
             request_bytes=getattr(client, 'last_request_bytes', spec.infer_req_nbytes),
@@ -429,8 +429,6 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
 
 
 def main():
-  from runtime_port_options import apply
-  apply()
   global TRANSPORT_MODE, SESSION_MODE, ACTIVE_UDC, SESSION_DETACHED
   logging.basicConfig(level=logging.INFO)
   TRANSPORT_MODE = transport_mode()
@@ -466,15 +464,13 @@ def main():
   usb_mode = None
   tcp_seen = False
   mobile_unavailable = False
-  initial_connect_started = None
-  ready_once = False
+  startup = ConnectionStartup()
   usb_power = UsbInputPower()
   try:
     while True:
       usb_power.step()
       if not usb_power.protected:
-        # A failed current cut must not silently continue drawing from the host.
-        # Keep only Jetlink unavailable; modeld retains its native local fallback.
+        # PV5 always uses independent main power. Fail only the optional link.
         publish('blocked', peer=None, error=usb_power.error)
         time.sleep(1)
         continue
@@ -484,8 +480,9 @@ def main():
         time.sleep(1)
         continue
       if SESSION_DETACHED or not host_attached():
-        if not ready_once:
-          initial_connect_started = None
+        from openpilot.common.params import Params
+        road_params = Params()
+        startup.absent(offroad=road_params.get_bool('IsOffroad'), onroad=road_params.get_bool('IsOnroad'))
         if owner is not None or cable is not None:
           cleanup_error = close_resources(cable, owner)
           owner = cable = None
@@ -511,8 +508,7 @@ def main():
       transport = None
       usb_priority = UsbCompletionPriority()
       preparing = False
-      if initial_connect_started is None:
-        initial_connect_started = time.monotonic()
+      startup.begin(time.monotonic())
       try:
         publish('connecting', peer=peer, protocol=protocol.version)
         gc.collect()
@@ -565,7 +561,8 @@ def main():
             raise ValueError('Selected iOS cable requires protocol 3')
           wire_protocol = ProtocolChoice('3')
         transport.protocol_version = wire_protocol.version
-        client = JetlinkClient(transport, name='carrot-jetlink', allow_output_projection=True)
+        client = JetlinkClient(transport, name='carrot-jetlink', allow_output_projection=True,
+                               allow_request_chunks=os.getenv('JETLINK_REQUEST_CHUNKS', '1') != '0')
         if TRANSPORT_MODE == 'auto' and transport is owner and usb_mode is None and not mobile_unavailable:
           usb_probes += 1
           publish('connecting', peer=None, preparation={'stage': 'usb-probe',
@@ -639,7 +636,7 @@ def main():
         if needs_setup and not setup_allowed():
           raise PreparationDeferred('Jetson setup permission expired')
         log.info('Jetlink ready: %s', peer)
-        ready_once = True
+        startup.ready_once = True
         serve_local(listener, client, peer, wifi)
       except RuntimeHandoff as exc:
         log.info('%s', exc)
@@ -659,8 +656,7 @@ def main():
         else:
           publish('retrying', peer=None, error=str(exc)[:300])
       except Exception as exc:
-        if initial_connection_wait(exc, elapsed=time.monotonic() - initial_connect_started,
-                                   ready_once=ready_once, preparing=preparing):
+        if startup.waiting(exc, now=time.monotonic(), preparing=preparing):
           log.info('Waiting for initial Jetlink handshake: %s', exc)
           publish('connecting', peer=peer, error=str(exc)[:300], preparation={'stage': 'waiting-host'})
         else:

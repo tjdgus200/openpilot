@@ -1,9 +1,9 @@
 """Read NetworkManager secrets only in a low-priority, private USB worker."""
 import hashlib
-import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -34,42 +34,52 @@ def direct_client_id(uid):
 
 
 def collect():
-  # Never read/export phone or other saved client credentials. Uplink changes
-  # must not alter the provisioning identity and reconnect the Jetson station.
-  uid = direct_profile_id()
   active = nm('-t', '-f', 'UUID', 'connection', 'show', '--active').splitlines()
-  if uid not in active:
-    return []
-  if nm('-g', 'connection.interface-name', 'connection', 'show', 'uuid', uid) != DIRECT_INTERFACE:
-    return []
-  fields = nm('--show-secrets', '-g',
-    '802-11-wireless.ssid,802-11-wireless.mode,802-11-wireless.hidden,802-11-wireless-security.key-mgmt,802-11-wireless-security.psk',
-    'connection', 'show', 'uuid', uid).split('\n')
-  fields += [''] * (5 - len(fields))
-  if len(fields) != 5:
-    raise ValueError('Invalid direct AP settings')
-  ssid, mode, hidden, security, password = fields
-  if mode != 'ap' or security != 'wpa-psk' or not password:
-    raise ValueError('Owned direct AP unavailable')
-  profile = {'id': direct_client_id(uid), 'ssid': ssid, 'hidden': hidden in ('yes', 'true'),
-             'active': True, 'security': security, 'password': password}
-  validate({'version': 1, 'owner': '0' * 64, 'profiles': [profile]})
-  return [profile]
-
-
-def provisioning(owner, onroad):
-  profiles = collect()
-  # Derive the observed AP prefix without opening its root-only identity file.
-  # Only our active AP may supply it. Empty means wait; never substitute wlan0.
-  subnet = None
-  if profiles:
-    address = nm('-g', 'ipv4.addresses', 'connection', 'show', 'uuid', direct_profile_id())
-    interface = ipaddress.ip_interface(address)
-    if interface.ip != interface.network.network_address + 1:
-      raise ValueError('Invalid direct AP address')
-    subnet = str(interface.network)
-  return validate({'version': 1, 'owner': owner, 'profiles': profiles, 'onroad': onroad,
-                   'wifi_policy': 'direct_only', 'direct_subnet': subnet})
+  rows = nm('-t', '-f', 'UUID,TYPE', 'connection', 'show').splitlines()
+  ids = [row.split(':')[0] for row in rows if row.endswith(':802-11-wireless')]
+  ids.sort(key=lambda uid: uid not in active)
+  profiles = []
+  direct = None
+  try:
+    direct_id = direct_profile_id()
+  except OSError:
+    direct_id = None
+  for uid in ids[:8]:
+    if not re.fullmatch('[0-9a-f-]{36}', uid):
+      continue
+    fields = nm('--show-secrets', '-g',
+      '802-11-wireless.ssid,802-11-wireless.mode,802-11-wireless.hidden,802-11-wireless-security.key-mgmt,802-11-wireless-security.psk',
+      'connection', 'show', 'uuid', uid).split('\n')
+    # Empty trailing fields are meaningful; query output is normalized below.
+    fields += [''] * (5 - len(fields))
+    if len(fields) != 5:
+      continue
+    ssid, mode, hidden, security, password = fields
+    is_direct = mode == 'ap' and uid == direct_id and uid in active
+    if mode not in ('infrastructure', '') and not is_direct:
+      continue  # Only the explicitly owned, active Jetson AP is importable.
+    if is_direct and nm('-g', 'connection.interface-name', 'connection', 'show', 'uuid', uid) != DIRECT_INTERFACE:
+      continue
+    if security in ('wpa-psk', 'sae') and not password:
+      raise RuntimeError('Saved Wi-Fi secret unavailable')
+    profile = dict(id=direct_client_id(uid) if is_direct else uid, ssid=ssid, hidden=hidden in ('yes', 'true'), active=uid in active,
+                   security=security or 'open', password=password)
+    try:
+      validate(dict(version=1, owner='0' * 64, profiles=[profile]))
+    except ValueError:
+      continue
+    if is_direct:
+      direct = profile
+    else:
+      profiles.append(profile)
+  if direct is not None:
+    # Stable order/active selection prevents phone disconnect/rejoin from
+    # reconnecting Jetson or changing its HUD path. Keep ordinary fallbacks.
+    profiles.sort(key=lambda p: p['id'])
+    for p in profiles:
+      p['active'] = False
+    profiles = [direct, *profiles[:7]]
+  return profiles
 
 
 def road_state(raw):
@@ -84,8 +94,6 @@ def road_state(raw):
 
 
 def main(fd):
-  from wifi_direct import low_priority
-  low_priority()
   from openpilot.common.params import Params
   params = Params()
   owner = hashlib.sha256(Path('/etc/machine-id').read_bytes()).hexdigest()
@@ -93,7 +101,7 @@ def main(fd):
   manifest = selected_release(release)
   channel = socket.socket(fileno=fd)
   channel.setblocking(False)
-  config = None
+  profiles = None
   refresh = 0
   next_ap = 0
   while True:
@@ -107,21 +115,16 @@ def main(fd):
       next_ap = now + 30
     if now >= refresh:
       try:
-        config = provisioning(owner, None)
-        # The private worker can finish AP creation after our first packet.
-        # Recheck briefly while absent, retaining the normal low query rate
-        # after activation. Never wait for AP readiness or delay boot control.
-        refresh = now + (30 if config['profiles'] else 5)
+        profiles = collect()
+        refresh = now + 30
       except Exception:
-        # Keep boot-update control alive even without a usable AP/NM query.
-        # Legacy recovery treats an empty profile set as non-destructive.
-        config = {'version': 1, 'owner': owner, 'profiles': [], 'onroad': None,
-                  'wifi_policy': 'direct_only', 'direct_subnet': None}
+        # Do not send an empty deletion set after an access/query failure.
+        profiles = None
         refresh = now + 5
-    if config is not None:
+    if profiles is not None:
       raw = params.get('IsOnroad')
       onroad = road_state(raw)
-      value = dict(config, onroad=onroad)
+      value = dict(version=1, owner=owner, profiles=profiles, onroad=onroad)
       if manifest is not None:
         value['jetson_release'] = manifest
       data = json.dumps(value, separators=(',', ':')).encode()

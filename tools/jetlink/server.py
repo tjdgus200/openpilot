@@ -6,8 +6,6 @@ import sys
 import time
 
 if __name__ == '__main__':
-  from runtime_port_options import apply
-  apply()
   if Path('/etc/nv_tegra_release').is_file():
     from install_updates import migrate_running_release
     migrate_running_release()
@@ -15,7 +13,6 @@ if __name__ == '__main__':
   wait_for_runtime()
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'third_party/jetlink'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hud_protocol import HUD_CAPABILITY, HUD_MESSAGE, MAX_HUD_BYTES, HUD_PACKET, HEADER
@@ -23,11 +20,11 @@ from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE, Hos
 from hud_navi import PUMP_CAPABILITY
 from hud_wifi import CAPABILITY as HUD_WIFI_CAPABILITY, USB_CAPABILITY as HUD_USB_CAPABILITY
 from hud_wifi import REQUEST as HUD_WIFI_REQUEST, RESPONSE as HUD_WIFI_RESPONSE, Worker
-import aux_vision
 from host_reader import ReadAheadTransport
 from host_health import health_worker
 from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, MESSAGE as WIFI_MESSAGE, receive as receive_wifi
 from jetlink import protocol as P
+from jetlink import request_chunks
 from jetlink.server.session import Session
 from jetlink.server import main as server
 
@@ -63,6 +60,7 @@ class CarrotSession(Session):
 
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
+    self.request_chunks = request_chunks.Receiver()
     # Restore the bounded USB display receiver. The new capability is separate
     # from old HUD support so a Wi-Fi-only comma never starts USB accidentally.
     self.usb_display = True
@@ -72,9 +70,6 @@ class CarrotSession(Session):
     self.telemetry = DisplayTelemetry(self.telemetry)
     self.navi = HostForwarder() if sys.platform == 'linux' and self.usb_display else None
     self.hud_wifi = None
-    self.aux_cpu = None
-    self.aux_cpu_supported = aux_vision.supported()
-    self.aux_cpu_error = '' if self.aux_cpu_supported else aux_vision.support_problem()
 
   def _send_json(self, msg_type, seq, obj, flags=0):
     if msg_type == P.Msg.ENGINE_RESP and obj.get('state') == 'failed' and self.telemetry.health is not None:
@@ -86,37 +81,27 @@ class CarrotSession(Session):
       obj = {**obj, HUD_CAPABILITY: legacy_display, NAVI_CAPABILITY: legacy_display,
              PUMP_CAPABILITY: legacy_display, WIFI_CAPABILITY: host == 'jetson', 'carrot_host': host,
              HUD_WIFI_CAPABILITY: self.hud_wifi_supported,
-             HUD_USB_CAPABILITY: host == 'jetson' and legacy_display,
-             aux_vision.CAPABILITY: host == 'jetson' and getattr(self, 'aux_cpu_supported', False),
-             aux_vision.DIAGNOSTICS_CAPABILITY: host == 'jetson',
-             'carrot_aux_cpu_error': getattr(self, 'aux_cpu_error', 'runtime_incomplete')}
+             HUD_USB_CAPABILITY: host == 'jetson' and legacy_display}
       if host == 'jetson':
+        obj[request_chunks.CAPABILITY] = request_chunks.descriptor()
         obj['carrot_source_commit'] = (ROOT / 'SOURCE_COMMIT').read_text().strip()
         obj['carrot_boot_update_installed'] = Path('/opt/carrot-jetlink/boot-update-required').is_file()
     return super()._send_json(msg_type, seq, obj, flags)
 
   def handle(self, msg):
-    if msg.msg_type == aux_vision.REQUEST:
+    if msg.msg_type == P.Msg.HELLO_REQ:
+      self.request_chunks.clear()
+    elif msg.msg_type == request_chunks.MESSAGE:
+      if self.t.protocol_version != 2:
+        raise request_chunks.LinkError('chunked requests require protocol 2')
+      msg = self.request_chunks.accept(msg, self.last_seq)
+      if msg is None:
+        return
+    elif getattr(self, 'request_chunks', None) is not None and self.request_chunks.key is not None:
       if msg.seq <= self.last_seq:
         return
-      self.last_seq = msg.seq
-      ready = False
-      try:
-        if not self.aux_cpu_supported or not 0 < len(msg.payload) <= 128:
-          raise ValueError('Auxiliary vision negotiation unavailable')
-        request = json.loads(bytes(msg.payload))
-        key = request['key']
-        if set(request) != {'key'} or not isinstance(key, str) or len(key) != 64 or len(bytes.fromhex(key)) != 32:
-          raise ValueError('Auxiliary vision session key')
-        if self.aux_cpu is not None:
-          self.aux_cpu.close()
-          self.aux_cpu = None
-        self.aux_cpu = aux_vision.receiver(key)
-        ready = True
-      except (OSError, ValueError, KeyError, TypeError, RuntimeError):
-        pass  # No image/result payload or session key in USB status/logs.
-      self._send_json(aux_vision.RESPONSE, msg.seq, {'ready': ready})
-      return
+      self.request_chunks.clear()
+      raise request_chunks.LinkError('interrupted chunked request')
     if msg.msg_type == HUD_WIFI_REQUEST:
       if msg.seq <= self.last_seq:
         return
@@ -168,20 +153,14 @@ class CarrotSession(Session):
       pass  # An unavailable display does not stop inference.
 
   def close(self):
-    auxiliary = getattr(self, 'aux_cpu', None)
-    try:
-      if auxiliary is not None:
-        auxiliary.close()
-    finally:
-      self.aux_cpu = None
-      if self.hud_wifi is not None:
-        self.hud_wifi.close()
-        self.hud_wifi = None
-      if self.navi is not None:
-        self.navi.close()
-      if isinstance(self.t, ReadAheadTransport):
-        self.t.close()
-      super().close()
+    if self.hud_wifi is not None:
+      self.hud_wifi.close()
+      self.hud_wifi = None
+    if self.navi is not None:
+      self.navi.close()
+    if isinstance(self.t, ReadAheadTransport):
+      self.t.close()
+    super().close()
 
 
 if __name__ == '__main__':

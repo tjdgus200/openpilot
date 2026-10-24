@@ -132,19 +132,6 @@ def test_real_packets_require_nat_and_cleanup_preserves_unrelated_rule():
     unrelated = ('-s', '203.0.113.0/24', '-m', 'comment', '--comment', 'unrelated-test', '-j', 'RETURN')
     command(backend, '-t', 'nat', '-A', 'POSTROUTING', *unrelated)
     assert ping() == 0
-    # Real Linux routes/packets: removing the optional Internet uplink must
-    # leave the comma-to-Jetson private path usable. Veth is not a radio test.
-    from hud_wifi_route import select_link
-    networks = [('wlan0', '192.0.2.1'), ('wljetson0', '172.29.77.1')]
-    expected = ('wljetson0', '172.29.77.1', '172.29.77.2')
-    assert select_link(networks, ['192.0.2.2', '172.29.77.2']) == expected
-    command('ip', 'link', 'set', 'wlan0', 'down')
-    assert select_link(networks[1:], ['172.29.77.2']) == expected
-    command('ping', '-n', '-I', '172.29.77.1', '-c', '1', '-W', '1', '172.29.77.2')
-    assert select_link(networks, ['192.0.2.2']) is None
-    command('ip', 'link', 'set', 'wlan0', 'up')
-    assert select_link(networks, ['172.29.77.2']) == expected
-    assert ping() == 0
     sharing.ensure('172.29.77.0/24')
     sharing.close()
     command(backend, '-t', 'nat', '-C', 'POSTROUTING', *unrelated)

@@ -69,23 +69,23 @@ def test_open_and_sae_and_psk_hex():
     protocol.validate(value)
     _, data = host.render(value['owner'], value['profiles'][0], 100)
     assert ('[wifi-security]' in data) == (security != 'open')
-    import configparser
-    parsed = configparser.ConfigParser(interpolation=None)
-    parsed.read_string(data)
-    assert parsed['wifi'].getint('powersave') == 2
 
 
-def test_sender_never_reads_phone_credentials_without_direct_ap(monkeypatch):
+def test_sender_uses_saved_secrets_and_excludes_hotspot(monkeypatch):
   uid = config()['profiles'][0]['id']
-  calls = []
+  hotspot = '22345678-1234-1234-1234-123456789abc'
   def nm(*args):
-    calls.append(args)
-    assert '--show-secrets' not in args
-    return uid
+    if args[-1] == '--active':
+      return uid
+    if args[-1] == 'show':
+      return f'{hotspot}:802-11-wireless\n{uid}:802-11-wireless'
+    if args[-1] == hotspot:
+      return 'hotspot\nap\nno\nwpa-psk\nsynthetic'
+    assert '--show-secrets' in args
+    return 'phone\ninfrastructure\nno\nwpa-psk\nsynthetic'
   monkeypatch.setattr(sender, 'nm', nm)
-  monkeypatch.setattr(sender, 'direct_profile_id', lambda: '22345678-1234-1234-1234-123456789abc')
-  assert sender.collect() == []
-  assert len(calls) == 1
+  profiles = sender.collect()
+  assert len(profiles) == 1 and profiles[0]['id'] == uid
 
 
 def test_connected_wifi_is_not_interrupted():
@@ -95,25 +95,6 @@ def test_connected_wifi_is_not_interrupted():
     return 'wlan0:wifi:connected'
   assert host.connect(['synthetic'], nm) == 'connected'
   assert len(calls) == 1
-
-
-def test_association_or_dhcp_in_progress_is_not_cancelled_by_recovery():
-  calls = []
-  def nm(*args):
-    calls.append(args)
-    return 'wlan0:wifi:connecting (getting IP configuration)'
-  assert host.connect(['synthetic'], nm) == 'connecting'
-  assert len(calls) == 1
-
-
-def test_policy_only_changes_do_not_force_a_healthy_connection_down():
-  value = config()
-  uid, old = host.render(value['owner'], value['profiles'][0], 100)
-  _, new = host.render(value['owner'], value['profiles'][0], 100)
-  name = 'carrot-usb-' + uid + '.nmconnection'
-  assert not host.reconnect_required({name: old.replace('powersave=2\n', '')}, {name: new})
-  _, changed = host.render(value['owner'], dict(value['profiles'][0], password='changed private credential'), 100)
-  assert host.reconnect_required({name: old}, {name: changed})
 
 
 def test_comma_active_network_change_is_applied():

@@ -63,15 +63,17 @@ def host_label(peer, mode='usb'):
   return 'Jetlink'
 
 
-def _fresh(path, now, preparing=False):
+def _fresh(path, now, *, handshake=False, preparing=False):
   try:
     value = _read(path)
-    # HTTPS open/read has a 30s timeout. File preparation reports progress on
-    # blocks, but a bounded blocking read is not a lost USB/model connection.
-    # Do not grant this allowance to live inference, telemetry or other waits.
+    # HELLO blocks for 3s in auto probing, or 5s in the normal path. A 3s
+    # display lease falsely declares a dead daemon during that bounded wait.
+    # Cover HELLO + the 2s reconnect pause; all other reports still expire at 3s.
+    limit = 8 if handshake and value.get('state') == 'connecting' else 3
     update = value.get('host_update') or {}
-    limit = 35 if (preparing and value.get('state') == 'updating' and isinstance(update, dict)
-                   and update.get('state') in ('downloading', 'checking_files')) else 3
+    if (preparing and value.get('state') == 'updating' and isinstance(update, dict)
+        and update.get('state') in ('downloading', 'checking_files')):
+      limit = 35
     if isinstance(value, dict) and 0 <= now - value['updated'] < limit:
       return value
   except (OSError, ValueError, KeyError, TypeError):
@@ -83,7 +85,7 @@ def diagnostics():
   """Only current telemetry can report health or an address; HELLO is identity."""
   now = time.monotonic()
   saved = _read(LINK_STATUS)
-  link = _fresh(LINK_STATUS, now, preparing=True)
+  link = _fresh(LINK_STATUS, now, handshake=True, preparing=True)
   model = _fresh(MODEL_STATUS, now)
   if not saved.get('peer') and saved.get('state') not in ('connecting', 'loading', 'retrying', 'blocked') and not model.get('active'):
     return None
@@ -136,7 +138,7 @@ def diagnostics():
 
 def badge():
   now = time.monotonic()
-  link = _fresh(LINK_STATUS, now, preparing=True)
+  link = _fresh(LINK_STATUS, now, handshake=True, preparing=True)
   model = _fresh(MODEL_STATUS, now)
   label = host_label(link.get('peer'), link.get('transport', 'usb'))
   if link.get('state') == 'updating' and label == 'jetSON':

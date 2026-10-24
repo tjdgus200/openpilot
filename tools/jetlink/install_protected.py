@@ -90,4 +90,4 @@ WantedBy=local-fs-pre.target
         '[Unit]\nRequires=carrot-protected-storage.service\nAfter=carrot-protected-storage.service carrot-image-setup.service\n'
         '[Service]\nExecStart=\nExecStart=/usr/bin/python3 /usr/lib/carrot-jetlink-storage/wifi_apply.py\n')
   write(root, '/etc/NetworkManager/conf.d/carrot-retry.conf',
-        '[connection]\nconnection.autoconnect-retries=0\nwifi.powersave=2\n')
+        '[connection]\nconnection.autoconnect-retries=0\n')

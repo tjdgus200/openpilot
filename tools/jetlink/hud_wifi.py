@@ -14,15 +14,15 @@ PORT = 7716
 
 
 class Worker:
-  def __init__(self, role, key, script='hud_wifi_worker.py', port=PORT):
+  def __init__(self, role, key):
     self.socket, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     self.process = None
     try:
       self.process = subprocess.Popen(
-        [sys.executable, str(Path(__file__).with_name(script)), role, str(child.fileno())],
+        [sys.executable, str(Path(__file__).with_name('hud_wifi_worker.py')), role, str(child.fileno())],
         pass_fds=(child.fileno(),), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
       self.socket.settimeout(2.)
-      self.socket.send(json.dumps({'key': key, 'port': port}).encode())
+      self.socket.send(json.dumps({'key': key, 'port': PORT}).encode())
       if self.socket.recv(64) != b'ready':
         raise RuntimeError('HUD Wi-Fi worker did not initialize')
     except BaseException:
@@ -77,11 +77,15 @@ def publisher(client, peer, legacy):
     if not all(peer.get(key) is True for key in ('carrot_hud_v1', 'carrot_navi_v1', 'carrot_navi_pump_v1')):
       return None
     return legacy(navi=True, nav_map=True)
-  # HUD uses the existing USB publication window only. A legacy Wi-Fi-only
-  # receiver needs an update; do not negotiate a WLAN worker or add USB traffic
-  # without the explicit USB receiver contract above.
-  return None
-
+  if peer.get(CAPABILITY) is not True:
+    return None  # Old Jetson runtimes must be updated; never send display over USB.
+  try:
+    return WifiPublisher(client)
+  except Exception:
+    # Do not log the control payload/key or silently put HUD back onto USB.
+    import logging
+    logging.getLogger(__name__).warning('HUD Wi-Fi setup failed; model link unchanged, reconnect to retry')
+    return None
 
 
 def supported():

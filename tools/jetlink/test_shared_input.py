@@ -1,15 +1,12 @@
 """Real Linux memfd/Unix sockets; no device, GPU or driving processes required."""
 import array
-import errno
 import gc
 import json
 import os
 import socket
-import struct
 import threading
 import time
 from contextlib import contextmanager
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -263,64 +260,64 @@ def test_invalid_context_closes_reserved_slot_without_a_request():
       client.close()
 
 
-@pytest.mark.parametrize('stage', ['memfd_create', 'ftruncate', 'mmap'])
-def test_allocation_failure_leaves_no_fd_or_mapping(monkeypatch, stage):
-  a, b = socket.socketpair()
+@pytest.mark.parametrize('shared_enabled', [False, True])
+@pytest.mark.parametrize('projected', [False, True])
+def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, monkeypatch, shared_enabled, projected):
+  import hashlib
+  import sys
+  from types import SimpleNamespace as NS
+  from openpilot.selfdrive.modeld.jetlink import daemon
+  from jetlink import output_projection as projection
+  monkeypatch.setenv('JETLINK_RAM_INPUT', str(int(shared_enabled)))
+  monkeypatch.setitem(sys.modules, 'openpilot.common.params', NS(Params=lambda: NS(put_bool_nonblocking=lambda *a: None)))
+  monkeypatch.setitem(sys.modules, 'openpilot.common.swaglog', NS(cloudlog=NS(event=lambda *a, **kw: None)))
+  monkeypatch.setattr(daemon, 'publish', lambda *a, **kw: None)
+  monkeypatch.setattr(daemon, 'update_affinity', lambda: None)
+  monkeypatch.setattr(daemon, 'check_loaded', lambda *a: None)
+  stop = threading.Event()
+  monkeypatch.setattr(daemon, 'host_attached', lambda: not stop.is_set())
+  captured, failures = [], []
+  class USB:
+    spec = SPEC
+    output_projection_available = projected
+    project_output = False
+    last_state = None
+    last_timings = (24000, 600, 25000)
+    t = NS(last_receive={})
+    def infer_begin(self, image, packed, frame, reset, want_state):
+      captured.append((hashlib.sha256(image.tobytes() + packed.tobytes()).digest(), frame, reset))
+      # Actual daemon must send the matching reply before a slot is reusable.
+      return frame
+    def infer_end(self, frame):
+      return np.full(projection.COUNT if self.project_output else SPEC.output_nelem, frame, np.float32)
+    def state(self): return None
+  listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+  path = tmp_path / 'daemon'
+  listener.bind(str(path)); listener.listen(1); listener.settimeout(.1)
+  def serve():
+    try: daemon._serve_local(listener, USB(), {'carrot_host': 'jetson'}, None, NS(sent=lambda *a: None))
+    except Exception as exc: failures.append(repr(exc))
+  thread = threading.Thread(target=serve); thread.start()
+  expected = []
+  client = None
   try:
-    before = len(os.listdir('/proc/self/fd'))
-    def exhausted(*args, **kwargs):
-      raise OSError(errno.ENOMEM, 'injected allocation failure')
-    target = shm.mmap if stage == 'mmap' else os
-    monkeypatch.setattr(target, stage, exhausted)
-    with pytest.raises(OSError) as exc:
-      shm.Reader.offer(a, SPEC)
-    assert exc.value.errno == errno.ENOMEM
-    assert len(os.listdir('/proc/self/fd')) == before
+    client = link.Client(str(path), timeout=1.)
+    assert (client.shared is not None) == shared_enabled
+    assert client.project_output == projected
+    for frame in range(1, 25):
+      # Also accept a legacy payload on a negotiated connection when no slot
+      # has been reserved, preserving existing Client.infer-only callers.
+      image = client.image_buffer() if frame % 3 else None
+      if image is None: image = np.empty(SPEC.warped_shape, np.uint8)
+      image[:] = frame
+      packed = np.arange(SPEC.packed_nelem, dtype=np.float32) * frame
+      expected.append((hashlib.sha256(image.tobytes() + packed.tobytes()).digest(), frame, frame == 1))
+      out = client.infer(image, packed, frame, reset=frame == 1)
+      assert np.all(out == frame)
+      if client.shared is not None: assert not client.shared.busy
+    assert captured == expected
   finally:
-    a.close()
-    b.close()
-
-
-def test_writer_mapping_failure_closes_received_descriptor(monkeypatch):
-  a, b = socket.socketpair()
-  reader = shm.Reader.offer(a, SPEC)
-  try:
-    link.send(a, reader.nonce)
-    before = len(os.listdir('/proc/self/fd'))
-    def exhausted(*args, **kwargs):
-      raise OSError(errno.ENOMEM, 'injected writer mapping failure')
-    monkeypatch.setattr(shm.mmap, 'mmap', exhausted)
-    with pytest.raises(OSError):
-      shm.Writer.receive(b, SPEC, link.receive, time.monotonic() + .5)
-    assert len(os.listdir('/proc/self/fd')) == before
-  finally:
-    reader.close()
-    a.close()
-    b.close()
-
-
-@pytest.mark.parametrize('size', [0, -4, shm.MAX_BYTES + 4, 1 << 100])
-def test_size_bound_rejects_before_allocation(size):
-  with pytest.raises(ValueError):
-    shm.size_for(SimpleNamespace(warped_nbytes=size, packed_nbytes=0))
-
-
-@pytest.mark.parametrize('field', ['generation', 'frame', 'source_sof'])
-def test_integer_overflow_retires_connection_without_sending(field):
-  with pair() as (_, writer):
-    a, b = socket.socketpair()
-    client = object.__new__(link.Client)
-    client.sock, client.shared, client.spec = b, writer, SPEC
-    client.timeout, client.project_output = .5, False
-    if field == 'generation':
-      writer.generation = (1 << 64) - 1
-    image = client.image_buffer()
-    try:
-      with pytest.raises(struct.error):
-        client.infer(image, np.zeros(SPEC.packed_nelem, np.float32),
-                     1 << 32 if field == 'frame' else 1,
-                     source_sof=1 << 64 if field == 'source_sof' else 0)
-      assert writer.closed and a.recv(1) == b''
-    finally:
-      a.close()
-      client.close()
+    stop.set()
+    if client is not None: client.close()
+    thread.join(2); listener.close()
+  assert not thread.is_alive() and not failures

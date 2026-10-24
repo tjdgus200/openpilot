@@ -2,6 +2,8 @@
 from collections import deque
 from dataclasses import replace
 import json
+import socket
+import threading
 from types import SimpleNamespace as NS
 
 import numpy as np
@@ -10,7 +12,7 @@ import pytest
 from test_nav_rl import SPEC, Parser, parse_outputs
 from jetlink import output_projection as C, protocol as P
 from jetlink.client import JetlinkClient
-from jetlink.queues import StatefulQueues
+from jetlink.queues import StatefulQueues, DeviceStateQueues
 from jetlink.server.session import Session
 from jetlink.transport.base import Transport, Message, LinkError
 from openpilot.selfdrive.modeld.jetlink import link
@@ -175,16 +177,21 @@ def test_compact_receiver_rejects_corrupt_responses(fault):
 
 
 @pytest.mark.parametrize('capable,raw', [(False, False), (True, False), (True, True)])
-def test_local_ipc_negotiates_without_changing_legacy_requests(monkeypatch, capable, raw):
+@pytest.mark.parametrize("enabled", [None, "0", "1"])
+def test_local_ipc_negotiates_without_changing_legacy_requests(monkeypatch, capable, raw, enabled):
+  if enabled is None: monkeypatch.delenv("JETLINK_COMPACT_REPLY", raising=False)
+  else: monkeypatch.setenv("JETLINK_COMPACT_REPLY", enabled)
   if raw: monkeypatch.setenv('SEND_RAW_PRED', '1')
   else: monkeypatch.delenv('SEND_RAW_PRED', raising=False)
   hello = {'spec': SPEC.to_dict()}
   if capable: hello[C.IPC_CAPABILITY] = C.descriptor()
   sock = NS(settimeout=lambda *a: None, connect=lambda *a: None, close=lambda: None)
+  # This test replaces the socket; no native Unix socket is opened on Windows.
+  monkeypatch.setattr(link.socket, 'AF_UNIX', 1, raising=False)
   monkeypatch.setattr(link.socket, 'socket', lambda *a: sock)
   monkeypatch.setattr(link, 'receive', lambda *a: json.dumps(hello).encode())
   client = link.Client()
-  compact = capable and not raw
+  compact = capable and not raw and enabled != "0"
   assert client.project_output == compact
   count = C.COUNT if compact else C.FULL_COUNT
   payload = bytearray(link.REPLY.pack(7, 24, 1, 25) + np.arange(count, dtype=np.float32).tobytes())
@@ -208,3 +215,106 @@ def test_parser_all_retained_outputs_are_bitwise_equal():
     for name in b:
       assert a[name].shape == b[name].shape
       assert a[name].tobytes() == b[name].tobytes(), name
+
+
+@pytest.mark.parametrize('fault', [None, 'omitted_nan', 'device_state'])
+def test_projection_keeps_gpu_state_validation_and_failure_reset(fault):
+  client, _, loaded, outputs = pair()
+  calls = []
+  def validate():
+    calls.append('validate')
+    if fault == 'device_state':
+      raise FloatingPointError('nonfinite GPU state')
+  device = NS(input_names=set(SPEC.state_pairs), output_names=set(SPEC.state_pairs.values()),
+              reset=lambda: calls.append('reset'), validate=validate)
+  loaded.queues = DeviceStateQueues(SPEC, loaded.host_inputs, device)
+  driving = outputs['outputs']
+  outputs.clear()
+  outputs['outputs'] = driving
+  if fault == 'omitted_nan': driving.reshape(-1)[C.COUNT + 7] = np.nan
+  calls.clear()
+  client.project_output = True
+  if fault:
+    with pytest.raises(LinkError, match='NOT_FINITE'):
+      infer(client)
+    assert calls == (['reset'] if fault == 'omitted_nan' else ['validate', 'reset'])
+  else:
+    assert infer(client).size == C.COUNT
+    assert calls == ['validate']
+
+
+@pytest.mark.parametrize('compact', [False, True])
+@pytest.mark.parametrize('fault', ['short', 'long', 'frame', 'nan', 'wrong_contract'])
+def test_local_ipc_rejects_malformed_output(monkeypatch, compact, fault):
+  monkeypatch.delenv('SEND_RAW_PRED', raising=False)
+  monkeypatch.setattr(link.socket, 'AF_UNIX', 1, raising=False)
+  monkeypatch.setattr(link.socket, 'socket', lambda *a: NS(settimeout=lambda *a: None, connect=lambda *a: None, close=lambda: None))
+  hello = {'spec': SPEC.to_dict()}
+  if compact: hello[C.IPC_CAPABILITY] = C.descriptor()
+  monkeypatch.setattr(link, 'receive', lambda *a: json.dumps(hello).encode())
+  monkeypatch.setattr(link, 'send_parts', lambda *a, **kw: None)
+  client = link.Client()
+  count = C.COUNT if compact else C.FULL_COUNT
+  if fault == 'wrong_contract': count = C.FULL_COUNT if compact else C.COUNT
+  values = np.zeros(count, np.float32)
+  if fault == 'nan': values[0] = np.nan
+  payload = link.REPLY.pack(8 if fault == 'frame' else 7, 24, 1, 25) + values.tobytes()
+  if fault == 'short': payload = payload[:-4]
+  if fault == 'long': payload += bytes(4)
+  client.reader = NS(receive=lambda *a: memoryview(payload))
+  with pytest.raises(ValueError):
+    client.infer(np.zeros(SPEC.warped_shape, np.uint8), np.zeros(SPEC.packed_nelem, np.float32), 7)
+
+
+@pytest.mark.skipif(not hasattr(socket.socket, 'sendmsg'), reason='native POSIX socket framing')
+def test_full_compact_switches_use_real_stream_framing():
+  from jetlink.transport.tcp import TcpTransport
+  _, original, loaded, outputs = pair()
+  outputs['outputs'].reshape(-1)[:] = np.arange(C.FULL_COUNT, dtype=np.float32)
+  ours, peer = socket.socketpair()
+  server = TcpTransport(peer)
+  session = Session(server, original.host)
+  errors = []
+  def serve():
+    try:
+      hello = server.recv(timeout=3)
+      session._greet(hello)
+      session.on_hello(hello)
+      for _ in range(4): session._infer(loaded, server.recv(timeout=3))
+    except BaseException as exc:
+      errors.append(exc)
+    finally:
+      server.close()
+  thread = threading.Thread(target=serve, daemon=True)
+  thread.start()
+  client = JetlinkClient(TcpTransport(ours), deadline=3, allow_output_projection=True)
+  try:
+    client.hello()
+    client.spec = SPEC
+    for frame, compact in enumerate((False, True, True, False)):
+      client.project_output = compact
+      result = infer(client, frame=frame, reset=frame == 0, state=True)
+      count = C.COUNT if compact else C.FULL_COUNT
+      assert result.tobytes() == np.arange(count, dtype=np.float32).tobytes()
+      assert client.last_state == {'temperature': 42}
+  finally:
+    client.close()
+    thread.join(timeout=5)
+  assert not thread.is_alive()
+  assert not errors
+
+
+def test_future_full_2066_model_keeps_the_original_parser_contract():
+  # 개수가 같아도 다른 정상 모델의 전체 출력을 N16 축소 응답으로 오인하면 안 된다.
+  from openpilot.selfdrive.modeld.jetlink.contracts import validate_model_spec
+  future = replace(SPEC, sha256='3' * 64,
+                   output_shapes={**SPEC.output_shapes, 'outputs': (1, C.COUNT)},
+                   output_slices={name: at for name, at in SPEC.output_slices.items() if name not in C.OMITTED})
+  assert validate_model_spec(future) is future and not C.eligible(future)
+  full = np.linspace(-1, 1, C.COUNT, dtype=np.float32)
+  expected = Parser().parse_outputs({name: full[None, at] for name, at in future.output_slices.items()})
+  actual = parse_outputs(Parser(), future, full)
+  assert actual.keys() == expected.keys()
+  for name in actual:
+    assert actual[name].shape == expected[name].shape
+    assert actual[name].tobytes() == expected[name].tobytes(), name

@@ -10,39 +10,6 @@ import usb_priority as priority
 from openpilot.selfdrive.modeld.jetlink import scheduling
 
 
-@pytest.mark.parametrize('model', [b'comma tici', b'comma tizi', b'comma mici'])
-def test_c3_c3x_c4_are_eligible_only_with_the_known_arm_kernel(monkeypatch, model):
-  monkeypatch.setattr(priority.os, 'uname', lambda: SimpleNamespace(release='4.9.103', machine='aarch64'), raising=False)
-  monkeypatch.setattr(priority, 'Path', lambda *_: SimpleNamespace(read_bytes=lambda: model + b'\0\n'))
-  assert priority.supported()
-
-
-@pytest.mark.parametrize('kernel,machine,model', [
-  ('5.15.0', 'aarch64', b'comma tici'), ('4.9.103-custom', 'aarch64', b'comma tizi'),
-  ('4.9.103', 'x86_64', b'comma tici'), ('4.9.103', 'aarch64', b'unknown'),
-  ('4.9.103', 'aarch64', b'comma tici future'),
-])
-def test_unknown_kernel_architecture_or_board_keeps_existing_policy(monkeypatch, kernel, machine, model):
-  monkeypatch.setattr(priority.os, 'uname', lambda: SimpleNamespace(release=kernel, machine=machine), raising=False)
-  monkeypatch.setattr(priority, 'Path', lambda *_: SimpleNamespace(read_bytes=lambda: model))
-  assert not priority.supported()
-
-
-def test_unreadable_board_identity_cannot_enable_priority(monkeypatch):
-  monkeypatch.setattr(priority.os, 'uname', lambda: SimpleNamespace(release='4.9.103', machine='aarch64'), raising=False)
-  def denied():
-    raise PermissionError('board unavailable')
-  monkeypatch.setattr(priority, 'Path', lambda *_: SimpleNamespace(read_bytes=denied))
-  assert not priority.supported()
-
-
-def test_unsupported_host_never_opens_trace_or_changes_scheduler(monkeypatch):
-  monkeypatch.setattr(priority, 'supported', lambda: False)
-  monkeypatch.setattr(priority, 'Trace', lambda: pytest.fail('unsupported trace activation'))
-  monkeypatch.setattr(priority.os, 'sched_setscheduler', lambda *a: pytest.fail('unsupported scheduling change'), raising=False)
-  priority.run()
-
-
 @pytest.fixture
 def workers(tmp_path, monkeypatch):
   monkeypatch.setattr(os, 'SCHED_OTHER', 0, raising=False)
@@ -214,3 +181,25 @@ def test_failed_restoration_blocks_session_reuse():
   helper.process = SimpleNamespace(stdin=SimpleNamespace(close=lambda: None), wait=lambda **kw: 2)
   with pytest.raises(RuntimeError, match='restoration failed'):
     helper.close()
+
+
+@pytest.mark.parametrize('board,allowed', [
+  (b'comma tici\0', True), (b'comma tizi\0\n', True), (b'comma mici', True),
+  (b'other tici', False), (b'comma tici-extra', False), (b'', False),
+])
+@pytest.mark.parametrize('release,machine,eligible', [
+  ('4.9.103', 'aarch64', True), ('4.9.103-custom', 'aarch64', False),
+  ('4.9.104', 'aarch64', False), ('4.9.103', 'x86_64', False),
+])
+def test_board_and_exact_kernel_gate(monkeypatch, board, allowed, release, machine, eligible):
+  monkeypatch.setattr(os, 'uname', lambda: SimpleNamespace(release=release, machine=machine), raising=False)
+  monkeypatch.setattr(priority.Path, 'read_bytes', lambda _: board)
+  assert priority.supported() is (allowed and eligible)
+
+
+def test_unreadable_board_is_ineligible(monkeypatch):
+  monkeypatch.setattr(os, 'uname', lambda: SimpleNamespace(release='4.9.103', machine='aarch64'), raising=False)
+  def denied(_):
+    raise PermissionError('device tree unavailable')
+  monkeypatch.setattr(priority.Path, 'read_bytes', denied)
+  assert not priority.supported()

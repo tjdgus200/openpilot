@@ -1,5 +1,17 @@
 # Repository memory
 
+- 2026-10-24 owner supersedes earlier selective-sync policies: align PV5 runtime
+  with official carrot-nav3032c4c6, retaining only BSD physical walls/gradient,
+  W/temperature and battery8 HUD (including its display diagnostics), unconditional
+  auxiliary USB input cutoff, and explicitly reaffirmed fresh Park/zero onroad
+  update permission. Upstream bounded same-request AIO is now requested, despite
+  the older cancelled PV5 async experiment. Use official Wi-Fi/brightness/gating,
+  new regression switches, startup/DHCP/parser guards and N16 staging defaults.
+  Preserve PV5 public SHA USB package selection and exact model/runtime checks.
+  Never select an official HUD bundle that removes PV5 overlays. Source alignment
+  does not erase existing device OS/network configuration. No device install or
+  performance claim without fresh evidence. See docs/pv5_nav_sync_20261024.md.
+
 - N16 response projection package2026-10-23: published source2e971adb,
   81,679,272bytes/SHA46f15bbb3aa7c41cea27e31f8e00577291e2170b8943574e9807d10a9f6d0d6a;
   tag jetson-pv5-n16-projection-20261023-2e971adb. All four public assets

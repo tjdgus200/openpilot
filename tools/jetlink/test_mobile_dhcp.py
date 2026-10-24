@@ -9,6 +9,8 @@ import time
 
 import pytest
 
+pytestmark = pytest.mark.skipif(sys.platform != 'linux', reason='Linux /proc, symlink and pidfd lifecycle checks')
+
 SCRIPT = Path(__file__).with_name('setup_mobile.sh')
 
 
