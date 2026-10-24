@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-bsd-filled-corners-20261025-73976a71",
-  "source_commit": "73976a71ea9ff6ba78cb82f8177f4aca4fe90dad",
+  "profile": "pv5-bsd-turn-flash-20261025-a2d5ecb1",
+  "source_commit": "a2d5ecb1bfd91eb7e5fe3c1c5de4efb627bd3063",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-bsd-filled-corners-20261025-73976a71/host.tar.gz",
-    "sha256": "39728121972187a90dcd7681814a4348905b237c79be52758b12048df8f5fee9",
-    "size": 64781738
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-bsd-turn-flash-20261025-a2d5ecb1/host.tar.gz",
+    "sha256": "fc98e4019b8ba0f14beeaa44df1410bcd3c3f4ddc4b11d2f41d346c7a074782e",
+    "size": 64782360
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",
