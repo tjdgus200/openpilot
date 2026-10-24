@@ -99,12 +99,45 @@ def test_stale_invalid_or_missing_data_never_keeps_a_red_warning(change):
   assert warning_sides(state, (stamp, data), now) == (False, False)
 
 
-def test_two_hz_pulse_starts_bright_and_never_disappears():
-  from hud_bsd import edge_alpha, DIM_ALPHA
+@pytest.mark.parametrize('signals', [(False, False), (True, False), (False, True), (True, True)])
+def test_five_hz_at_ten_fps_and_steady_without_same_side_signal(signals):
+  from hud_bsd import WarningPulse
+  pulse = WarningPulse()
+  frames = [pulse.update((True, True), signals) for _ in range(100)]
+  for side, signal in enumerate(signals):
+    assert [frame[side] for frame in frames] == ([255, 0] * 50 if signal else [255] * 100)
+  # Turn cancellation immediately restores the steady warning, even in off phase.
+  assert pulse.update((True, True), (False, False)) == (255, 255)
+  assert pulse.update((True, True), signals) == (255, 255)
+  assert pulse.update((False, False), signals) == (0, 0)
+  assert pulse.update((True, True), signals) == (255, 255)
 
-  assert [edge_alpha(10 + i / 10, 10) for i in range(10)] == [255, 255, 255, DIM_ALPHA, DIM_ALPHA, 255, 255, 255, DIM_ALPHA, DIM_ALPHA]
-  assert edge_alpha(9, 10) == 255
-  assert edge_alpha(float('nan'), 10) == 255
+
+def test_render_uses_turn_request_not_lamp_phase_and_resets_on_stale(monkeypatch):
+  import hud_health as hud
+  import hud_protocol
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer.screen_mode = 0
+  state = NS(left_signal=True, right_signal=False, left_blindspot=True, right_blindspot=True)
+  current = [snapshot()]
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: current[0])
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: 10.1)
+  monkeypatch.setattr(hud, '_fresh', lambda *args: {})
+  outputs = []
+  monkeypatch.setattr(hud.ClusterUiRenderer, 'render', lambda *args: outputs.append(renderer._bsd_alpha))
+  # Arrow lamp brightness is deliberately opposite; request state owns flashing.
+  for _ in range(4):
+    renderer.render(state, (False, True))
+  assert outputs == [(255, 255), (0, 255), (255, 255), (0, 255)]
+  current[0] = None
+  renderer.render(state)
+  assert outputs[-1] == (0, 0)
+  current[0] = snapshot()
+  renderer.render(state)
+  assert outputs[-1] == (255, 255)
+  state.left_signal = False
+  renderer.render(state)
+  assert outputs[-1] == (255, 255)
 
 
 def test_official_visual_bsd_augments_vehicle_bsd_before_hud_warning():
@@ -162,14 +195,14 @@ def test_vehicle_or_fresh_local_bsd_survives_usb_hud_snapshot(tmp_path, monkeypa
 
 @pytest.mark.parametrize('layout', [0, 1])
 @pytest.mark.parametrize('sides', [(True, False), (False, True), (True, True), (False, False)])
-@pytest.mark.parametrize('now,alpha', [(10.0, 255), (10.35, 128)])
+@pytest.mark.parametrize('now,alpha', [(10.0, 255), (10.1, 0)])
 def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeypatch, layout, sides, now, alpha):
   import hud_health as hud
 
   renderer = object.__new__(hud.HealthRenderer)
   renderer.width, renderer.height, renderer.language, renderer.panel_layout = 1920, 480, 'ko', layout
   renderer.host_health, renderer.host_badge_drawn = {'severity': 'ok'}, True
-  renderer._bsd_warning, renderer._bsd_started = sides, (10.0, 10.0)
+  renderer._bsd_warning, renderer._bsd_alpha = sides, (alpha, alpha)
   calls = []
   monkeypatch.setattr(hud.time, 'monotonic', lambda: now)
   for name in ('rl_push_matrix', 'rl_pop_matrix', 'rl_scalef'):
@@ -182,6 +215,7 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_alert_overlay', lambda *a: calls.append(('vehicle', ())))
   renderer._draw_alert_overlay(NS(size=3, text1='TAKE OVER', text2=''))
   assert (calls[0][0] == 'batch') == any(sides)
+  sides = tuple(active and alpha > 0 for active in sides)
   gradients = [a for kind, a in calls if kind == 'gradient' and a[3] == 480]
   assert [a[:4] for a in gradients] == [rect for rect, active in zip([(0, 0, 640, 480), (1280, 0, 640, 480)], sides) if active]
   assert [(a[4].a, a[5].a) for a in gradients] == [alpha for alpha, active in zip([(96, 0), (0, 96)], sides) if active]
@@ -212,7 +246,7 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
     if kind == 'gradient' and a[3] in (24, 48):
       opacity = alpha if a[3] == 24 else int(alpha * .3)
       # Both top and bottom must fade in the correct physical direction,
-      # including the halo and the dim phase of the pulse.
+      # including the halo; the off phase has no warning geometry.
       assert (a[4].a, a[5].a) == ((opacity, 0) if a[0] < 640 else (0, opacity))
   for kind, rect in calls:
     if kind in ('edge', 'gradient'):

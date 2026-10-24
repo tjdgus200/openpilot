@@ -204,7 +204,7 @@ def test_pv5_signal_render_keeps_power_badge_bsd_walls_and_alert_last(monkeypatc
   r.screen_mode = 8
   r._signal_display_reader = remote.reader()
   r._brake_display_reader = NS(read=lambda frame: None)
-  r._bsd_warning, r._bsd_started = (left, right), (100., 100.)
+  r._bsd_warning, r._bsd_alpha = (left, right), (255, 255)
   r._vehicle_data_current, r.host_badge_drawn = True, False
   r.host_health = {'power_w': 14.7, 'temp_c': 59., 'severity': 'ok', 'thermal_severity': 'ok'}
   draws, labels = [], []

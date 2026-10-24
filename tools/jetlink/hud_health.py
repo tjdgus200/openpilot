@@ -139,14 +139,16 @@ class HealthRenderer(ClusterUiRenderer):
 
   def render(self, state, signal_lights=None):
     from hud_protocol import read_snapshot
-    from hud_bsd import warning_sides
+    from hud_bsd import warning_sides, WarningPulse
     snapshot = read_snapshot()
     self._vehicle_data_current = vehicle_data_ready(snapshot)
     now = time.monotonic()
     self._bsd_warning = warning_sides(state, snapshot, now)
-    previous = getattr(self, '_bsd_started', (None, None))
-    self._bsd_started = tuple((stamp if stamp is not None else now) if active else None
-                              for active, stamp in zip(self._bsd_warning, previous, strict=True))
+    if not hasattr(self, '_bsd_pulse'):
+      self._bsd_pulse = WarningPulse()
+    self._bsd_alpha = self._bsd_pulse.update(self._bsd_warning,
+                                            (getattr(state, 'left_signal', False),
+                                             getattr(state, 'right_signal', False)))
     self.host_health = _fresh(STATUS, time.monotonic())
     self.host_badge_drawn = False
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
@@ -194,21 +196,20 @@ class HealthRenderer(ClusterUiRenderer):
     try:
       # Fixed geometry reuses the current frame; no new detector, CAN poll or
       # process. Existing vehicle alerts are still drawn last over this cue.
-      from hud_bsd import edge_alpha, GRADIENT_ALPHA
-      now = time.monotonic()
-      starts = getattr(self, '_bsd_started', (now, now))
+      from hud_bsd import GRADIENT_ALPHA
+      alphas = getattr(self, '_bsd_alpha', (255, 255))
       # Physical screen sides stay left/right even when the panels are swapped.
       for side, active in enumerate((left, right)):
-        if active:
+        if active and alphas[side]:
           # One constant, translucent native quad per side. No image buffers,
           # shader, thread or timer; reuses the 10 Hz renderer. The center third
-          # remains untinted, and the broad background never flashes.
+          # remains untinted. Same-side turn requests flash the whole cue.
           shade, clear = rl_color((255, 30, 30), GRADIENT_ALPHA), rl_color((255, 30, 30), 0)
           width = int(DESIGN_WIDTH / 3)
           rl.draw_rectangle_gradient_h(0 if side == 0 else int(DESIGN_WIDTH) - width,
                                        0, width, int(DESIGN_HEIGHT),
                                        shade if side == 0 else clear, clear if side == 0 else shade)
-          alpha = edge_alpha(now, starts[side])
+          alpha = alphas[side]
           # Three-sided brackets surround only the physical outer third.
           # Filled square outer corners keep the rounded inner wall/rail join.
           radius = 72

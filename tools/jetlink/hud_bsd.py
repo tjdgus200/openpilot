@@ -1,17 +1,27 @@
-"""Display-only warning from fresh BSD flags, independent of turn signals."""
+"""Fresh BSD stays visible; a same-side turn request flashes the 10 Hz HUD."""
 import math
 
-PULSE_HZ = 2.0
-PULSE_DUTY = .6
-DIM_ALPHA = 128
 GRADIENT_ALPHA = 96
 
 
-def edge_alpha(now, started):
-  """Immediate bright onset, then 2 Hz; the warning never disappears entirely."""
-  if not all(type(v) in (int, float) and math.isfinite(v) for v in (now, started)) or now < started:
-    return 255
-  return 255 if ((now - started) * PULSE_HZ) % 1 < PULSE_DUTY else DIM_ALPHA
+class WarningPulse:
+  """One phase step per rendered frame: nominal 5 Hz at the existing 10 fps.
+
+  Frame locking avoids time-phase aliasing at this output-rate limit. Dropped
+  output frames can slow the visible cadence; no extra USB frames are produced.
+  """
+  def __init__(self):
+    self.flashing = (False, False)
+    self.alpha = (0, 0)
+
+  def update(self, warnings, signals):
+    flashing = tuple(active and signal is True for active, signal in zip(warnings, signals, strict=True))
+    self.alpha = tuple(0 if not active else
+                       255 if not flash or not previous else 255 - alpha
+                       for active, flash, previous, alpha in
+                       zip(warnings, flashing, self.flashing, self.alpha, strict=True))
+    self.flashing = flashing
+    return self.alpha
 
 
 def warning_sides(state, snapshot, now):
