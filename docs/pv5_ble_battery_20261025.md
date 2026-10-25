@@ -23,8 +23,10 @@ listener, Internet upload, model payload, or vehicle-control consumer is added.
   characteristic are also checked. These reduce accidental device selection;
   they are not cryptographic authentication. Other Bluetooth users are not
   disabled or reconfigured. Do not use the OBD adapter as a remote-control input.
-* One fixed read-only diagnostic DID (`0101`) is polled, with a two-second
-  sleep after each completed response. No raw CAN subscription, ECU writes,
+* Three fixed read-only diagnostic DIDs (`0101`, `0105`, `0106`) are polled
+  sequentially, with a two-second sleep after each complete cycle (at most
+  1.5 requests/second over repeated cycles, not a strict per-second burst limit).
+  No raw CAN subscription, ECU writes,
   DTC clearing, arbitrary command API or diagnostic-session changes.
 * Low-priority process (`nice 19`, ordinary scheduler), not a model/HUD callback.
   The HUD reads at most 4 KiB configuration and 4 KiB snapshot once per second.
@@ -40,6 +42,16 @@ listener, Internet upload, model payload, or vehicle-control consumer is added.
   behavior still requires a live fault/reconnect test.
 * Failure clears the snapshot; crashed-reader values expire after five seconds.
   Configuration identity prevents reuse of a former device/confirmation snapshot.
+  Timestamp the cycle before its first request, so later replies cannot refresh
+  older values. Any failed/unsupported DID aborts the entire cycle and backs off;
+  it does not leave a partially refreshed mixture of fields.
+* Five-minute maximum-temperature change uses two fixed arrays of 153 doubles:
+  2,448 bytes of numeric storage, plus fixed Python object overhead. No CAN
+  history is retained. Samples are at least two seconds apart; use the oldest
+  sample only when its age is 298–302 seconds. Invalid values, reversed time,
+  gaps over five seconds, reconnects and configuration changes discard history.
+  Before a complete window exists the trend remains unavailable. The collector's
+  total RSS and BlueZ overhead are separate from this small history allocation.
 
 ## Calibration gate
 
@@ -57,16 +69,37 @@ cell spread under more than one sample; plausible ranges alone are insufficient.
 Do not connect Car Scanner and this collector to the adapter simultaneously.
 Use sequential stable-condition comparisons with timestamps.
 
-Displayed SOC, coolant inlet, thermal management and five-minute temperature
-trend are not synthesized by this reader. Battery inlet is not assumed to be
-coolant inlet, and BMS SOC is not substituted for dashboard SOC. Existing
-passive-profile operation remains available when BLE is disabled.
+The owner approved the inlet/management/display-SOC meanings, but that approval
+does not validate byte offsets. Additional candidates are:
+
+| HUD field | DID and zero-based data offset (excluding `62 xx xx`) | Candidate conversion |
+| --- | --- | --- |
+| Display SOC | `0105`, D31 (AF) | unsigned byte / 2; reject above 100% |
+| Coolant inlet | `0106`, D4 | signed byte in degrees Celsius; accept -30 to 120 |
+| Thermal management | `0106`, D9 | 0 idle, 185 cooling, 125 heating; omit unknown codes |
+| Maximum-temperature change | calibrated maximum-temperature history | current minus approximately five minutes earlier |
+
+The `0106` map follows
+[evDash's eGMP decoder](https://github.com/nickn17/evDash/blob/master/src/CarHyundaiEgmp.cpp).
+It is an other-model reference, not a PV5 specification. Exact accepted payload
+lengths including the three-byte DID prefix are 62/46/38 bytes respectively.
+Seven matching `0106` transactions in the supplied accumulated scanner log
+gave inlet candidates from 17 to 29 degrees and management code zero. They were
+not simultaneous independent temperature measurements. The older Kona/Niro
+`0101` D22 inlet interpretation is deliberately not used. Neither heater
+temperature nor available discharge power is substituted for thermal-system
+electrical consumption; that field remains unavailable. Internal BMS SOC is not
+substituted for display SOC. Trend confirmation also requires maximum-temperature
+confirmation. Existing passive-profile operation remains available when BLE is
+disabled.
 
 ## Validation (PC only)
 
-* 78 focused tests pass on Windows and WSL Linux: protocol, malformed replies,
+* 107 focused tests pass on Windows and WSL Linux: protocol, malformed replies,
   queue limits, timeout/reconnect, identity/setup rejection, cleanup failure,
   manager activation gate, opt-in/calibration CLI and existing HUD behavior.
+  These include cross-DID rejection, signed/range conversion, unknown management
+  codes, bounded history through 5,000 samples, history resets and cycle freshness.
 * Ruff passes for the new reader, configuration tool and tests.
 * Local replay of the supplied accumulated scanner log: 15 matching transactions,
   14 accepted, one rejected. Logged command boundaries reconstruct prompts;

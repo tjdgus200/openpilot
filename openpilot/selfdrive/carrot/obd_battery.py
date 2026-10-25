@@ -1,9 +1,10 @@
 """Opt-in, single-device BLE battery reader; never used by vehicle controls.
 
-The HKMC 0101 layout is a candidate for PV5. Only individually compared fields
+The HKMC 0101/0105/0106 layouts are candidates for PV5. Only individually compared fields
 from the local configuration reach the HUD. No general-purpose ELM/UDS API.
 """
 import asyncio
+from array import array
 from contextlib import suppress
 import hashlib
 import json
@@ -23,10 +24,12 @@ DEVICE = 'org.bluez.Device1'
 GATT = 'org.bluez.GattCharacteristic1'
 ADAPTER = 'org.bluez.Adapter1'
 PERIOD = 2.0
-FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv'))
+FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv', 'coolant_inlet_c',
+                    'soc_percent', 'thermal_mode', 'temp_change_5min_c'))
+REPLIES = {'220101': (62, b'\x62\x01\x01'), '220105': (46, b'\x62\x01\x05'), '220106': (38, b'\x62\x01\x06')}
 SETUP = ('ATE0', 'ATL0', 'ATM0', 'ATSP6', 'ATCAF1', 'ATCFC1', 'ATFCSM0',
          'ATSH7E4', 'ATCRA7EC', 'ATH1', 'ATD0', 'ATS0', 'ATAL', 'ATST96')
-COMMANDS = frozenset((*SETUP, 'ATI', '220101'))
+COMMANDS = frozenset((*SETUP, 'ATI', *REPLIES))
 
 
 def read_json(path, limit=4096):
@@ -50,6 +53,8 @@ def configuration(value):
     raise ValueError('unverified metric')
   if len(set(fields)) != len(fields):
     raise ValueError('duplicate metric')
+  if 'temp_change_5min_c' in fields and 'max_temp_c' not in fields:
+    raise ValueError('trend requires calibrated maximum temperature')
   return address, frozenset(fields)
 
 
@@ -58,8 +63,11 @@ def config_id(config):
   return hashlib.sha256(json.dumps([address, sorted(fields)]).encode()).hexdigest()
 
 
-def parse_reply(reply):
+def parse_reply(reply, command='220101'):
   """One prompt-terminated ELM transaction, one 7EC ISO-TP payload only."""
+  if command not in REPLIES:
+    raise ValueError('unsupported DID')
+  expected_length, prefix = REPLIES[command]
   if not isinstance(reply, bytes) or len(reply) > 4096 or reply.count(b'>') != 1 or not reply.endswith(b'>'):
     raise ValueError('ELM framing')
   lines = reply[:-1].decode('ascii').replace('\n', '\r').split('\r')
@@ -72,16 +80,16 @@ def parse_reply(reply):
       raise ValueError('ELM response source/status')
     frame = bytes.fromhex(line[3:])
     if length is None:
-      if frame[:2] != b'\x10\x3e':
-        raise ValueError('unexpected 0101 length')
-      length = 62
+      if frame[:2] != bytes((0x10, expected_length)):
+        raise ValueError('unexpected DID length')
+      length = expected_length
       payload.extend(frame[2:])
     else:
       if len(payload) >= length or frame[0] != 0x20 | sequence:
         raise ValueError('ISO-TP sequence')
       payload.extend(frame[1:1 + min(7, length - len(payload))])
       sequence = (sequence + 1) & 15
-  if len(payload) != 62 or payload[:3] != b'\x62\x01\x01':
+  if len(payload) != expected_length or payload[:3] != prefix:
     raise ValueError('incomplete or wrong DID')
   return bytes(payload)
 
@@ -110,9 +118,80 @@ def candidate_metrics(payload):
   return {name: value for name, value in result.items() if valid_value(name, value)}
 
 
-def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None):
+def coolant_candidate(payload):
+  """eGMP 0106 candidate, NOT an independently calibrated PV5 mapping.
+
+  nickn17/evDash CarHyundaiEgmp.cpp uses response hex characters 14:16:
+  payload byte 7, or data byte 4 after 62 01 06, signed Celsius.
+  Accept only the 38-byte layout observed in the supplied scanner log.
+  Do not use older Kona/Niro 0101 D22 as a substitute.
+  """
+  if len(payload) != 38 or payload[:3] != b'\x62\x01\x06':
+    raise ValueError('coolant payload layout')
+  value = int.from_bytes(payload[7:8], 'big', signed=True)
+  values = {'coolant_inlet_c': value} if -30 <= value <= 120 else {}
+  # Same eGMP reference, data byte 9. Unknown/low-temperature-range codes
+  # do not establish heating or cooling and must not appear as idle.
+  mode = {0: 'idle', 185: 'cooling', 125: 'heating'}.get(payload[12])
+  if mode is not None:
+    values['thermal_mode'] = mode
+  return values
+
+
+def soc_candidate(payload):
+  """Ioniq 5 0105 AF/2: display SOC candidate, not 0101 BMS/internal SOC."""
+  if len(payload) != 46 or payload[:3] != b'\x62\x01\x05':
+    raise ValueError('SOC payload layout')
+  value = payload[34] / 2
+  return {'soc_percent': value} if value <= 100 else {}
+
+
+class TemperatureTrend:
+  """Fixed numeric ring; no CAN payloads, per-sample objects or growing list."""
+  CAPACITY = 153
+
+  def __init__(self):
+    self.times = array('d', [0.0]) * self.CAPACITY
+    self.values = array('d', [0.0]) * self.CAPACITY
+    self.head = self.count = 0
+
+  def update(self, stamp, value):
+    if not finite_number(stamp) or not valid_value('max_temp_c', value):
+      self.head = self.count = 0
+      return None
+    if self.count:
+      last = self.times[(self.head + self.count - 1) % self.CAPACITY]
+      if not 0 < stamp - last <= 5:
+        self.head = self.count = 0
+      elif stamp - last < PERIOD:
+        return None
+    while self.count and stamp - self.times[self.head] > 302:
+      self.head = (self.head + 1) % self.CAPACITY
+      self.count -= 1
+    if self.count == self.CAPACITY:
+      self.head = (self.head + 1) % self.CAPACITY
+      self.count -= 1
+    index = (self.head + self.count) % self.CAPACITY
+    self.times[index], self.values[index] = stamp, value
+    self.count += 1
+    if 298 <= stamp - self.times[self.head] <= 302:
+      return value - self.values[self.head]
+    return None
+
+
+async def poll_metrics(link):
+  # Timestamp before all requests: later reads cannot rejuvenate older
+  # 0101 values. Any timeout/malformed response aborts the complete cycle.
+  observed_at = time.monotonic()
+  values = candidate_metrics(parse_reply(await link.command('220101')))
+  values.update(soc_candidate(parse_reply(await link.command('220105'), '220105')))
+  values.update(coolant_candidate(parse_reply(await link.command('220106'), '220106')))
+  return observed_at, values
+
+
+def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None, observed_at=None):
   candidates = candidates or {}
-  record = {'version': 1, 'updated': time.monotonic(), 'state': state, 'config_id': identity,
+  record = {'version': 1, 'updated': time.monotonic() if observed_at is None else observed_at, 'state': state, 'config_id': identity,
             'candidates': candidates, 'metrics': {k: v for k, v in candidates.items() if k in confirmed}}
   raw = json.dumps(record, allow_nan=False, separators=(',', ':')).encode()
   if len(raw) > 4096:
@@ -301,13 +380,17 @@ async def run():
         link = Link(router, address)
         try:
           await link.connect()
+          trend = TemperatureTrend()
           # Configuration is immutable for this session. A config change causes
           # a clean reconnect before any further poll or publication.
           while configuration(read_json(CONFIG)) == (address, confirmed):
-            candidates = candidate_metrics(parse_reply(await link.command('220101')))
+            observed_at, candidates = await poll_metrics(link)
+            change = trend.update(observed_at, candidates.get('max_temp_c'))
+            if change is not None:
+              candidates['temp_change_5min_c'] = change
             if configuration(read_json(CONFIG)) != (address, confirmed):
               break
-            write_snapshot('receiving', candidates, confirmed, identity=identity)
+            write_snapshot('receiving', candidates, confirmed, identity=identity, observed_at=observed_at)
             backoff = 5
             await asyncio.sleep(PERIOD)
         finally:

@@ -21,7 +21,7 @@ def payload():
 
 def response(p=None):
   p = p or payload()
-  frames = [b'\x10\x3e' + p[:6]]
+  frames = [bytes((0x10, len(p))) + p[:6]]
   for index, start in enumerate(range(6, len(p), 7), 1):
     frames.append(bytes([0x20 | index]) + p[start:start + 7].ljust(7, b'\0'))
   return b'\r'.join(b'7EC' + f.hex().upper().encode() for f in frames) + b'\r>'
@@ -36,6 +36,125 @@ def test_complete_transaction_and_offsets():
   assert metrics['cell_delta_mv'] == 20
   assert 'soc_percent' not in metrics
   assert 'coolant_inlet_c' not in metrics
+
+
+def coolant_payload(value=27):
+  data = bytearray(35)
+  data[4] = value & 255
+  data[9] = 255  # Unknown mode, no guessed idle.
+  return b'\x62\x01\x06' + data
+
+
+def soc_payload(raw=150):
+  data = bytearray(43)
+  data[31] = raw
+  return b'\x62\x01\x05' + data
+
+
+@pytest.mark.parametrize('raw', [0, 1, 150, 200, 201, 255])
+def test_soc_is_display_candidate_and_bounded(raw):
+  p = b.parse_reply(response(soc_payload(raw)), '220105')
+  assert b.soc_candidate(p) == ({'soc_percent': raw / 2} if raw <= 200 else {})
+  with pytest.raises(ValueError):
+    b.soc_candidate(payload())
+  with pytest.raises(ValueError):
+    b.parse_reply(response(soc_payload(raw)), '220106')
+
+
+@pytest.mark.parametrize('raw,mode', [(0, 'idle'), (185, 'cooling'), (125, 'heating'), (100, None), (255, None)])
+def test_thermal_mode_does_not_guess_unknown_or_electrical_power(raw, mode):
+  p = bytearray(coolant_payload())
+  p[12] = raw
+  values = b.coolant_candidate(p)
+  assert values.get('thermal_mode') == mode
+  assert 'thermal_power_kw' not in values
+
+
+def test_trend_fixed_storage_wrap_and_reset():
+  trend = b.TemperatureTrend()
+  assert len(trend.times) * trend.times.itemsize + len(trend.values) * trend.values.itemsize == 2448
+  for second in range(0, 10000, 2):
+    value = 20 + second / 1000
+    change = trend.update(second, value)
+    assert trend.count <= 153
+    if second < 298:
+      assert change is None
+    else:
+      assert change == pytest.approx(.298 if second == 298 else .300 if second == 300 else .302)
+  assert len(trend.times) == len(trend.values) == 153
+  assert trend.update(10010, 30) is None  # Gap discards previous history.
+  assert trend.count == 1
+  assert trend.update(10000, 30) is None  # Clock reversal also resets.
+  assert trend.count == 1
+  assert trend.update(10001, 31) is None  # Faster calls do not fill the ring.
+  assert trend.count == 1
+  assert trend.update(10002, float('nan')) is None
+  assert trend.count == 0
+
+
+def test_trend_confirmation_requires_maximum():
+  with pytest.raises(ValueError, match='trend requires'):
+    b.configuration({'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': ['temp_change_5min_c']})
+
+
+@pytest.mark.parametrize('value,expected', [(27, 27), (-30, -30), (120, 120), (-31, None), (121, None), (-1, -1)])
+def test_coolant_signed_layout_and_bounds(value, expected):
+  p = b.parse_reply(response(coolant_payload(value)), '220106')
+  assert b.coolant_candidate(p) == ({} if expected is None else {'coolant_inlet_c': expected})
+  with pytest.raises(ValueError):
+    b.parse_reply(response(coolant_payload(value)))
+  with pytest.raises(ValueError):
+    b.coolant_candidate(payload())
+
+
+@pytest.mark.parametrize('raw', [
+  response(coolant_payload())[:-1], response(coolant_payload()) + b'>',
+  response(coolant_payload()).replace(b'7EC', b'7ED', 1),
+  response(coolant_payload()).replace(b'7EC21', b'7EC22', 1),
+  response(coolant_payload()).replace(b'1026', b'1027', 1),
+  response(coolant_payload()).replace(b'620106', b'620101', 1),
+  b'NO DATA\r>', b'7EC037F223100000000\r>', response(),
+])
+def test_coolant_bad_or_cross_did_reply_rejected(raw):
+  with pytest.raises(ValueError):
+    b.parse_reply(raw, '220106')
+
+
+def test_poll_cycle_failure_and_conservative_freshness(tmp_path, monkeypatch):
+  clock = [100.0]
+  monkeypatch.setattr(b.time, 'monotonic', lambda: clock[0])
+
+  class PollLink:
+    def __init__(self, failure=None):
+      self.commands = []
+      self.failure = failure
+
+    async def command(self, command):
+      self.commands.append(command)
+      if command == self.failure:
+        raise TimeoutError('synthetic timeout')
+      clock[0] += 1
+      return response({'220101': payload(), '220105': soc_payload(), '220106': coolant_payload()}[command])
+
+  async def check():
+    link = PollLink()
+    stamp, values = await b.poll_metrics(link)
+    assert link.commands == ['220101', '220105', '220106']
+    assert stamp == 100 and values['coolant_inlet_c'] == 27
+    path = tmp_path / 'coolant.json'
+    b.write_snapshot('receiving', values, frozenset(['coolant_inlet_c']), path, 'cfg', observed_at=stamp)
+    record = b.read_json(path)
+    assert b.snapshot_packet(record, 104, 'cfg')['fields']['coolant_inlet_c'] == {'value': 27, 'age_s': 4.0}
+    assert not b.snapshot_packet(record, 106, 'cfg')['fields']
+    # Default configuration never exposes an uncalibrated coolant value.
+    b.write_snapshot('receiving', values, path=path, identity='cfg', observed_at=stamp)
+    assert not b.snapshot_packet(b.read_json(path), 104, 'cfg')['fields']
+    for failed, expected in [('220101', ['220101']), ('220106', ['220101', '220105', '220106'])]:
+      link = PollLink(failed)
+      with pytest.raises(TimeoutError):
+        await b.poll_metrics(link)
+      assert link.commands == expected
+  asyncio.run(check())
 
 
 @pytest.mark.parametrize('mutate', [
@@ -65,7 +184,7 @@ def test_implausible_fields_are_not_published():
 def test_config_no_arbitrary_targets_or_commands():
   config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
   assert b.configuration(config) == ('00:11:22:33:44:55', frozenset())
-  for change in ({'version': True}, {'address': '*'}, {'confirmed_fields': ['coolant_inlet_c']},
+  for change in ({'version': True}, {'address': '*'}, {'confirmed_fields': ['thermal_power_kw']},
                  {'confirmed_fields': ['max_temp_c', 'max_temp_c']}, {'command': 'ATZ'}):
     with pytest.raises(ValueError):
       b.configuration(config | change)
@@ -152,7 +271,7 @@ def test_no_can_or_control_dependencies():
   source = Path(b.__file__).read_text()
   assert 'sendcan' not in source
   assert 'sub_sock' not in source
-  assert b.COMMANDS - set(b.SETUP) == {'ATI', '220101'}
+  assert b.COMMANDS - set(b.SETUP) == {'ATI', '220101', '220105', '220106'}
 
 
 def test_non_uart_notifications_do_not_block_and_oversize_fails():
@@ -239,15 +358,16 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
       sessions.append(self)
     async def connect(self):
       pass
-    async def command(self, _command):
+    async def command(self, command):
       if self.index == 0:
         raise TimeoutError('synthetic partial response')
-      return response()
+      return response({'220101': payload(), '220105': soc_payload(), '220106': coolant_payload()}[command])
     async def close(self):
       self.closed = True
   async def sleep(delay):
     if delay == b.PERIOD:
       raise asyncio.CancelledError
+    assert len(sessions) <= 2, 'unexpected retry loop in synthetic transport'
   monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
   monkeypatch.setattr(b, 'Link', Session)
   monkeypatch.setattr(b, 'read_json', lambda _: config)
@@ -262,16 +382,18 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
 def test_hud_reads_ram_without_opening_bluetooth_or_can(tmp_path, monkeypatch):
   from tools.jetlink.hud_battery import BatteryPublisher  # noqa: TID251
   config_path, snapshot_path = tmp_path / 'config', tmp_path / 'snapshot'
-  config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': ['max_temp_c']}
+  values = {'max_temp_c': 28, 'min_temp_c': 25, 'soc_percent': 75.5, 'coolant_inlet_c': 27,
+            'thermal_mode': 'cooling', 'temp_change_5min_c': -2}
+  config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': sorted(values)}
   config_path.write_text(json.dumps(config))
   monkeypatch.setattr(b, 'CONFIG', config_path)
   monkeypatch.setattr(b, 'SNAPSHOT', snapshot_path)
   now = b.time.monotonic()
-  b.write_snapshot('receiving', {'max_temp_c': 28}, frozenset(['max_temp_c']), snapshot_path,
+  b.write_snapshot('receiving', values, frozenset(values), snapshot_path,
                    b.config_id(b.configuration(config)))
   publisher = BatteryPublisher(tmp_path / 'no_passive_profile')
   packet = publisher.update('KIA_PV5', True, now + .1)
-  assert packet['fields']['max_temp_c']['value'] == 28
+  assert {k: v['value'] for k, v in packet['fields'].items()} == values
   assert publisher.socket is None and publisher.messaging is None
   assert not publisher.update('KIA_PV5', True, now + 6)['fields']
   config_path.write_text(json.dumps(config | {'confirmed_fields': []}))
