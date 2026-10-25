@@ -1,8 +1,10 @@
-"""Passive, opt-in PV5 battery telemetry in the low-priority comma HUD worker.
+"""Opt-in PV5 battery telemetry in the low-priority comma HUD worker.
 
 No active UDS/ISO-TP requests or flow control. There is deliberately no bundled
 enabled PID profile: PV5 offsets and coolant/Battery Care semantics need a
 parked-vehicle comparison first. Without a validated profile no CAN socket opens.
+A separately configured BLE reader supplies a bounded RAM snapshot; this HUD
+worker itself never opens Bluetooth or issues diagnostic requests.
 """
 from collections import deque
 import json
@@ -230,6 +232,10 @@ class BatteryPublisher:
         self.messaging = None
         self.profile_bytes = None
         self.slow_metrics = {}
+        self.ble_record = None
+        self.ble_enabled = False
+        self.ble_identity = None
+        self.next_ble_read = 0.0
 
     def close(self):
         self.socket = self.decoder = self.messaging = None
@@ -237,6 +243,10 @@ class BatteryPublisher:
         self.vehicle = None
         self.next_profile = self.next_report = self.next_power_report = 0.0
         self.slow_metrics = {}
+        self.ble_record = None
+        self.ble_enabled = False
+        self.ble_identity = None
+        self.next_ble_read = 0.0
 
     def update(self, vehicle, enabled, now):
         if not enabled:
@@ -245,6 +255,23 @@ class BatteryPublisher:
         if vehicle != self.vehicle:
             self.close()
             self.vehicle = vehicle
+        # Bounded RAM read at 1 Hz; no Bluetooth, subprocess or vehicle requests
+        # on the USB HUD worker. BLE connection/response waits run elsewhere.
+        from openpilot.selfdrive.carrot.obd_battery import CONFIG, SNAPSHOT, config_id, configuration, read_json, snapshot_packet
+        if now >= self.next_ble_read:
+            self.next_ble_read = now + 1.0
+            self.ble_enabled = vehicle == 'KIA_PV5' and CONFIG.is_file()
+            self.ble_record = None
+            self.ble_identity = None
+            if self.ble_enabled:
+                try:
+                    self.ble_identity = config_id(configuration(read_json(CONFIG)))
+                    self.ble_record = read_json(SNAPSHOT)
+                except (OSError, ValueError, TypeError):
+                    pass
+        if self.ble_enabled:
+            self.socket = self.decoder = None
+            return snapshot_packet(self.ble_record, now, self.ble_identity)
         if now >= self.next_profile:
             self.next_profile = now + 5.0
             try:

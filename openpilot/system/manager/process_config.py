@@ -62,6 +62,12 @@ def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started
 
 
+def obd_battery(started: bool, params: Params, CP: car.CarParams) -> bool:
+  # No OBD polling while the car is asleep; opt-in device config survives reboot.
+  # This display-only process never subscribes to raw CAN or publishes controls.
+  return started and not CP.notCar and CP.carFingerprint == 'KIA_PV5' and os.path.isfile('/data/jetlink/obd-battery.json')
+
+
 def signal_color_observer(started: bool, params: Params, CP: car.CarParams) -> bool:
   from openpilot.selfdrive.modeld.signal_color_shadow import requested
   return started and requested()
@@ -185,6 +191,7 @@ procs = [
 
   PythonProcess("carrot_server", "openpilot.selfdrive.carrot.carrot_server", always_run, enabled=not CARROT_WEB_EXTERNAL),
   PythonProcess("carrot_bluetooth", "openpilot.selfdrive.carrot.bluetooth.daemon", always_run, enabled=TICI, restart_if_crash=True),
+  PythonProcess("carrot_obd_battery", "openpilot.selfdrive.carrot.obd_battery", obd_battery, enabled=TICI, restart_if_crash=True),
   PythonProcess("cweb_push", "openpilot.selfdrive.carrot.cweb_push", always_run, enabled=not PC),
   PythonProcess("carrot_cluster", "openpilot.selfdrive.carrot.cluster_autorun", enable_cluster_hud, restart_if_crash=True),
 

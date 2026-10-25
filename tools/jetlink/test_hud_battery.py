@@ -64,7 +64,6 @@ def test_wrong_vehicle_and_no_profile_never_open_can(tmp_path):
 
 
 def test_passive_socket_is_bounded_and_retired_on_page_or_vehicle_change(tmp_path, monkeypatch):
-    import openpilot.cereal
     queue = [event(single(b'\x62\xab\xcd\x20')) for _ in range(100)]
     opened, received = [], []
     def sub_sock(name, **kwargs):
@@ -76,7 +75,8 @@ def test_passive_socket_is_bounded_and_retired_on_page_or_vehicle_change(tmp_pat
     # No publisher/send function exists on this stub. The production path
     # must operate through the receive-only API, not a mocked transmit API.
     api = NS(sub_sock=sub_sock, recv_one_or_none=receive)
-    monkeypatch.setattr(openpilot.cereal, 'messaging', api, raising=False)
+    # This test exercises the bounded consumer, not native cereal bindings.
+    monkeypatch.setitem(sys.modules, 'openpilot.cereal', NS(messaging=api))
     monkeypatch.setattr(b.time, 'monotonic', lambda: 10.0)
     path = tmp_path / 'profile'
     raw = json.dumps(profile())

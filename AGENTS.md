@@ -1,5 +1,13 @@
 # Repository memory
 
+- 2026-10-25 PV5 battery8: owner requests one-device BLE OBD auto-connection
+  with low comma resource use. Preserve the local opt-in collector and RAM-to-USB
+  battery snapshot as part of battery8. No private address in Git; onroad real
+  KIA_PV5 only, fixed read-only DID, two-second polling sleep, bounded retry and
+  stale suppression. Individual fields remain gated until independent PV5
+  comparison; BLE success is not sensor calibration. See
+  docs/pv5_ble_battery_20261025.md. PC tests do not prove live CPU or road safety.
+
 - 2026-10-25 BSD styling: keep bright vertical walls; top/bottom rails and
   halos fade toward the central third to transparent. Preserve mirrored
   directions, fresh OEM OR local ONNX and vehicle-alert layering. Latest owner
