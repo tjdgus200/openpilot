@@ -42,7 +42,11 @@ listener, Internet upload, model payload, or vehicle-control consumer is added.
   not restart an exhausted worker. Deadline cleanup can take up to two additional
   seconds, without starting more connections or polls.
   A successful complete cycle removes the startup deadline; healthy collection
-  continues. A later connection/poll failure gets a fresh 60-second recovery window.
+  continues. A later connection/poll failure gets a fresh 300-second recovery window.
+  Every subsequent complete validated poll re-arms that recovery allowance for
+  the next disconnect. Connection/setup alone does not replenish it, and failed
+  attempts share one deadline. The initial connection window remains 60 seconds;
+  the five-second retry sleep and five-second snapshot freshness limit are unchanged.
   Discovery is bounded; the BlueZ service and unrelated devices are untouched.
 * Wrong response ID/DID/length/sequence, partial data, extra prompts, unsolicited
   queued data and queue overflow reject the transaction. A timeout never
@@ -123,6 +127,14 @@ independent PV5 field calibration. PC tests do not establish on-road safety.
 No device was installed/rebooted during this implementation.
 
 ### 2026-10-26 bounded retry update
+
+Follow-up: recovery allowance is now 300 seconds after a complete validated poll,
+while initial startup remains 60 seconds. Windows and WSL Linux each pass 114
+focused tests, including repeated successful recovery, stuck connection/first
+poll, immediate failures without deadline extension, cleanup before the next
+attempt, exhaustion without manager restart, and existing stale HUD rejection.
+No extra history buffer or concurrent connection is introduced. No live adapter
+reconnection or device installation was performed for this follow-up.
 
 111 focused tests pass on Windows and WSL Linux, including cancellation of a stuck connection
 and first poll, five-second production retry delay, no new attempt after budget

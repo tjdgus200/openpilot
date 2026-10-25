@@ -1,5 +1,12 @@
 # Repository memory
 
+- 2026-10-26 OBD retry follow-up: initial budget remains60s; after each complete
+  validated poll, the next disconnect gets a fresh300s recovery window. Failed
+  connection/setup/poll attempts share that deadline and do not replenish it.
+  Keep5s retry sleep, sequential target cleanup and5s snapshot freshness. No
+  simultaneous IOS/Android connections. PC114 tests pass on Windows/Linux;
+  actual adapter recovery and device installation remain unverified.
+
 - 2026-10-25 PV5 battery8: owner requests one-device BLE OBD auto-connection
   with low comma resource use. Preserve the local opt-in collector and RAM-to-USB
   battery snapshot as part of battery8. No private address in Git; onroad real

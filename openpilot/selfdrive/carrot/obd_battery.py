@@ -26,6 +26,7 @@ ADAPTER = 'org.bluez.Adapter1'
 PERIOD = 2.0
 RETRY_INTERVAL = 5.0
 RETRY_WINDOW = 60.0
+RECOVERY_WINDOW = 300.0
 FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv', 'coolant_inlet_c',
                     'soc_percent', 'thermal_mode', 'temp_change_5min_c'))
 REPLIES = {'220101': (62, b'\x62\x01\x01'), '220105': (46, b'\x62\x01\x05'), '220106': (38, b'\x62\x01\x06')}
@@ -376,7 +377,7 @@ async def run():
   deadline = loop.time() + RETRY_WINDOW
   while True:
     if deadline is None:
-      deadline = loop.time() + RETRY_WINDOW
+      deadline = loop.time() + RECOVERY_WINDOW
     if loop.time() >= deadline:
       write_snapshot('retry_exhausted')
       # Stay alive: manager restart_if_crash must not replenish this budget.
@@ -405,6 +406,8 @@ async def run():
                 break
               write_snapshot('receiving', candidates, confirmed, identity=identity, observed_at=observed_at)
               startup_timeout.reschedule(None)
+              # Only a complete validated poll earns a fresh recovery budget.
+              # Bluetooth connection/setup alone must not extend failed retries.
               deadline = None
               await asyncio.sleep(PERIOD)
           finally:
@@ -419,7 +422,7 @@ async def run():
       # No credentials, raw frames, or unbounded exception/log loop.
       write_snapshot('unavailable')
       if deadline is None:
-        deadline = loop.time() + RETRY_WINDOW
+        deadline = loop.time() + RECOVERY_WINDOW
       # Five seconds after failure/cleanup, never overlapping attempts.
       await asyncio.sleep(min(RETRY_INTERVAL, max(0.0, deadline - loop.time())))
 
