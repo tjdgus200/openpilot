@@ -24,6 +24,8 @@ DEVICE = 'org.bluez.Device1'
 GATT = 'org.bluez.GattCharacteristic1'
 ADAPTER = 'org.bluez.Adapter1'
 PERIOD = 2.0
+RETRY_INTERVAL = 5.0
+RETRY_WINDOW = 60.0
 FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv', 'coolant_inlet_c',
                     'soc_percent', 'thermal_mode', 'temp_change_5min_c'))
 REPLIES = {'220101': (62, b'\x62\x01\x01'), '220105': (46, b'\x62\x01\x05'), '220106': (38, b'\x62\x01\x06')}
@@ -370,40 +372,56 @@ class Link:
 
 async def run():
   from jeepney.io.asyncio import open_dbus_router
-  backoff = 5
+  loop = asyncio.get_running_loop()
+  deadline = loop.time() + RETRY_WINDOW
   while True:
+    if deadline is None:
+      deadline = loop.time() + RETRY_WINDOW
+    if loop.time() >= deadline:
+      write_snapshot('retry_exhausted')
+      # Stay alive: manager restart_if_crash must not replenish this budget.
+      # The next manager-controlled offroad/onroad start gets a new window.
+      await asyncio.Event().wait()
     try:
       address, confirmed = configuration(read_json(CONFIG))
       identity = config_id((address, confirmed))
       write_snapshot('connecting', identity=identity)
-      async with open_dbus_router('SYSTEM') as router:
-        link = Link(router, address)
-        try:
-          await link.connect()
-          trend = TemperatureTrend()
-          # Configuration is immutable for this session. A config change causes
-          # a clean reconnect before any further poll or publication.
-          while configuration(read_json(CONFIG)) == (address, confirmed):
-            observed_at, candidates = await poll_metrics(link)
-            change = trend.update(observed_at, candidates.get('max_temp_c'))
-            if change is not None:
-              candidates['temp_change_5min_c'] = change
-            if configuration(read_json(CONFIG)) != (address, confirmed):
-              break
-            write_snapshot('receiving', candidates, confirmed, identity=identity, observed_at=observed_at)
-            backoff = 5
-            await asyncio.sleep(PERIOD)
-        finally:
-          write_snapshot('disconnected', identity=identity)
-          with suppress(TimeoutError):
-            await asyncio.wait_for(link.close(), 2.0)
+      # Includes discovery, connection, setup and the first complete poll.
+      # Individual D-Bus timeouts cannot extend the overall retry window.
+      async with asyncio.timeout_at(deadline) as startup_timeout:
+        async with open_dbus_router('SYSTEM') as router:
+          link = Link(router, address)
+          try:
+            await link.connect()
+            trend = TemperatureTrend()
+            # Configuration is immutable for this session. A config change causes
+            # a clean reconnect before any further poll or publication.
+            while configuration(read_json(CONFIG)) == (address, confirmed):
+              observed_at, candidates = await poll_metrics(link)
+              change = trend.update(observed_at, candidates.get('max_temp_c'))
+              if change is not None:
+                candidates['temp_change_5min_c'] = change
+              if configuration(read_json(CONFIG)) != (address, confirmed):
+                break
+              write_snapshot('receiving', candidates, confirmed, identity=identity, observed_at=observed_at)
+              startup_timeout.reschedule(None)
+              deadline = None
+              await asyncio.sleep(PERIOD)
+          finally:
+            write_snapshot('disconnected', identity=identity)
+            # Deadline/cancellation may require up to two more seconds to clean
+            # up this target; no further connection or polling starts here.
+            with suppress(TimeoutError):
+              await asyncio.wait_for(link.close(), 2.0)
     except asyncio.CancelledError:
       raise
     except Exception:
       # No credentials, raw frames, or unbounded exception/log loop.
       write_snapshot('unavailable')
-      await asyncio.sleep(backoff)
-      backoff = min(backoff * 2, 60)
+      if deadline is None:
+        deadline = loop.time() + RETRY_WINDOW
+      # Five seconds after failure/cleanup, never overlapping attempts.
+      await asyncio.sleep(min(RETRY_INTERVAL, max(0.0, deadline - loop.time())))
 
 
 def main():

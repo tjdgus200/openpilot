@@ -367,6 +367,7 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
   async def sleep(delay):
     if delay == b.PERIOD:
       raise asyncio.CancelledError
+    assert delay == 5.0
     assert len(sessions) <= 2, 'unexpected retry loop in synthetic transport'
   monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
   monkeypatch.setattr(b, 'Link', Session)
@@ -377,6 +378,112 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
     asyncio.run(b.run())
   assert [x[0] for x in snapshots] == ['connecting', 'disconnected', 'unavailable', 'connecting', 'receiving', 'disconnected']
   assert all(s.closed for s in sessions) and len(sessions) == 2
+
+
+@pytest.mark.parametrize('failure', ['connect', 'first_poll', 'immediate'])
+def test_retry_budget_expires_and_worker_stays_alive(monkeypatch, failure):
+  from contextlib import asynccontextmanager
+  import jeepney.io.asyncio
+  config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
+  sessions, snapshots = [], []
+  exhausted = asyncio.Event()
+  def snapshot(state, **kwargs):
+    snapshots.append(state)
+    if state == 'retry_exhausted':
+      exhausted.set()
+  @asynccontextmanager
+  async def router(*args):
+    yield None
+  class Session:
+    def __init__(self, _router, address):
+      self.closed = False
+      sessions.append(self)
+    async def connect(self):
+      if failure == 'immediate':
+        raise ConnectionError
+      if failure == 'connect':
+        await asyncio.Event().wait()
+    async def close(self):
+      self.closed = True
+  async def poll(_link):
+    await asyncio.Event().wait()
+  monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
+  monkeypatch.setattr(b, 'Link', Session)
+  monkeypatch.setattr(b, 'poll_metrics', poll)
+  monkeypatch.setattr(b, 'read_json', lambda _: config)
+  monkeypatch.setattr(b, 'RETRY_WINDOW', .08)
+  monkeypatch.setattr(b, 'RETRY_INTERVAL', .02)
+  monkeypatch.setattr(b, 'write_snapshot', snapshot)
+  async def check():
+    task = asyncio.create_task(b.run())
+    try:
+      await asyncio.wait_for(exhausted.wait(), 2)
+      count = len(sessions)
+      await asyncio.sleep(.10)
+      assert not task.done()  # A normal return would trigger manager restart.
+      assert len(sessions) == count
+      assert snapshots[-1] == 'retry_exhausted'
+      assert 'receiving' not in snapshots
+      assert all(s.closed for s in sessions)
+      if failure != 'immediate':
+        assert count == 1  # Hung connect/poll cancelled by overall deadline.
+    finally:
+      task.cancel()
+      with pytest.raises(asyncio.CancelledError):
+        await task
+  asyncio.run(check())
+
+
+def test_healthy_session_outlives_startup_budget_then_gets_one_recovery_window(monkeypatch):
+  from contextlib import asynccontextmanager
+  import jeepney.io.asyncio
+  config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
+  sessions, snapshots, polls = [], [], []
+  exhausted = asyncio.Event()
+  def snapshot(state, *args, **kwargs):
+    snapshots.append((state, asyncio.get_running_loop().time()))
+    if state == 'retry_exhausted':
+      exhausted.set()
+  @asynccontextmanager
+  async def router(*args):
+    yield None
+  class Session:
+    def __init__(self, _router, address):
+      self.closed = False
+      self.index = len(sessions)
+      sessions.append(self)
+    async def connect(self):
+      if self.index:
+        await asyncio.Event().wait()
+    async def close(self):
+      self.closed = True
+  async def poll(_link):
+    polls.append(asyncio.get_running_loop().time())
+    if len(polls) == 7:
+      raise ConnectionError
+    return b.time.monotonic(), {'max_temp_c': 28}
+  monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
+  monkeypatch.setattr(b, 'Link', Session)
+  monkeypatch.setattr(b, 'poll_metrics', poll)
+  monkeypatch.setattr(b, 'read_json', lambda _: config)
+  monkeypatch.setattr(b, 'RETRY_WINDOW', .08)
+  monkeypatch.setattr(b, 'RETRY_INTERVAL', .02)
+  monkeypatch.setattr(b, 'PERIOD', .025)
+  monkeypatch.setattr(b, 'write_snapshot', snapshot)
+  async def check():
+    task = asyncio.create_task(b.run())
+    try:
+      await asyncio.wait_for(exhausted.wait(), 2)
+      assert len(polls) == 7
+      assert polls[-1] - polls[0] > .08
+      assert snapshots[-1][1] - polls[-1] >= .08
+      assert len(sessions) == 2 and all(s.closed for s in sessions)
+      assert sum(state == 'receiving' for state, _ in snapshots) == 6
+    finally:
+      task.cancel()
+      with pytest.raises(asyncio.CancelledError):
+        await task
+  asyncio.run(check())
 
 
 def test_hud_reads_ram_without_opening_bluetooth_or_can(tmp_path, monkeypatch):

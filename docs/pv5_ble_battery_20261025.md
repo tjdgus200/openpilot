@@ -33,7 +33,16 @@ listener, Internet upload, model payload, or vehicle-control consumer is added.
 * One request at a time, three-second transaction deadline, bounded BLE
   notification queue (32 entries, at most 512 bytes each), at most 4 KiB per
   reply. These are payload bounds, **not total Python process RSS**.
-* Failure closes the dedicated connection and retries with 5–60 second backoff.
+* Failure closes the dedicated connection and waits five seconds before retrying.
+  A monotonic 60-second window includes discovery, connection, setup and the first
+  complete polling cycle. Slow attempts consume this budget; attempts never overlap.
+  After exhaustion, `retry_exhausted` clears the data and the process sleeps without
+  reconnecting (not exiting into a manager restart loop). A new manager-controlled
+  offroad/onroad start or reboot starts a new window. Configuration edits alone do
+  not restart an exhausted worker. Deadline cleanup can take up to two additional
+  seconds, without starting more connections or polls.
+  A successful complete cycle removes the startup deadline; healthy collection
+  continues. A later connection/poll failure gets a fresh 60-second recovery window.
   Discovery is bounded; the BlueZ service and unrelated devices are untouched.
 * Wrong response ID/DID/length/sequence, partial data, extra prompts, unsolicited
   queued data and queue overflow reject the transaction. A timeout never
@@ -112,3 +121,18 @@ Still required: actual comma RSS/CPU and model/HUD latency under simultaneous
 load, ignition/offroad lifecycle, adapter disappearance/reconnection and
 independent PV5 field calibration. PC tests do not establish on-road safety.
 No device was installed/rebooted during this implementation.
+
+### 2026-10-26 bounded retry update
+
+111 focused tests pass on Windows and WSL Linux, including cancellation of a stuck connection
+and first poll, five-second production retry delay, no new attempt after budget
+exhaustion, a healthy session lasting beyond startup budget and a fresh bounded
+recovery window after failure. Shortened wall-clock windows in synthetic tests
+exercise the same deadline logic; they do not measure live adapter timing.
+
+The manufacturer's "JINXUSOLU OBD-II converter and bluetooth chips comparison
+table V5" lists wireless wake support for MIC34LE.
+That does not establish the wake trigger or deep-sleep behavior of this assembled
+adapter/firmware. Existing BLE discovery/connect and `ATI` identity verification
+remain unchanged; no guessed wake command, ECU write or permanent sleep-disable
+setting is added. A real sleep-to-connect test is still required.
