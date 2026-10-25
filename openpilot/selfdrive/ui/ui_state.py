@@ -7,6 +7,7 @@ from enum import Enum
 from openpilot.cereal import messaging, car, log
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
+from openpilot.common.obd_status import ObdBadgeStatus
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.egpu_recovery_status import read_status as read_egpu_recovery, recovery_badge
 from openpilot.selfdrive.modeld.helpers import active_usbgpu_compiled_path, usbgpu_compile_pending
@@ -121,6 +122,8 @@ class UIState:
     self.usbgpu_active: bool = False
     self.usbgpu_startup_failed: bool = False
     self.jetlink_badge = None
+    self._obd_status = ObdBadgeStatus()
+    self.bleobd_receiving = False
 
     self.update_params()
 
@@ -145,6 +148,8 @@ class UIState:
     self.sm.update(0)
     self._update_state()
     self._update_status()
+    self.bleobd_receiving = self._obd_status.update(
+      time.monotonic(), self.started and self.CP is not None and not self.CP.notCar and self.CP.carFingerprint == 'KIA_PV5')
     if time.monotonic() - self._param_update_time > 5.0:
       self.update_params()
     device.update()

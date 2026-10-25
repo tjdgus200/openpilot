@@ -13,6 +13,27 @@ persists under `/data/jetlink`; the manager starts the reader once a real
 `KIA_PV5` is identified and onroad, including Park. It stops offroad. This is
 not a daemon that wakes a parked sleeping vehicle indefinitely.
 
+## Comma BLEOBD indicator
+
+C3 and C4 show a green `BLEOBD` badge below the Jetlink/eGPU badge when the
+automatic collector reports a complete, validated three-DID cycle. Manual
+Bluetooth pairing/connection alone does not light this badge. It indicates
+recent data reception, not independent calibration of battery measurements.
+It can therefore be green while unconfirmed battery-screen fields remain blank.
+
+The target-address configuration is a one-time local enrollment, not a switch
+the driver must enable on every trip. There is currently no separate GUI toggle.
+PV5/onroad detection and the three queries run automatically after enrollment.
+This change does not create or overwrite any device's existing enrollment.
+
+The comma UI reads two bounded files (at most 4 KiB each) at most once per second
+while onroad in a real PV5. It holds only a timestamp between reads. Missing,
+malformed, wrong-identity or non-receiving snapshots hide the badge. Timestamps
+expire after five seconds, checked on each UI update without additional reads;
+offroad/non-PV5 clears the indicator. No Bluetooth calls, worker thread, diagnostic
+requests or history buffer are added to the UI. Physical-device resource use and
+display layout still require confirmation; PC tests do not establish road safety.
+
 ## Data path and resource bounds
 
 OBD BLE adapter → separate comma reader → atomic RAM snapshot → existing USB

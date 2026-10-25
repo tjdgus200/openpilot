@@ -1,5 +1,12 @@
 # Repository memory
 
+- 2026-10-26 BLEOBD badge: C3/C4 green badge below Jetlink means a fresh
+  automatic three-DID receiving snapshot matching the local adapter configuration,
+  not just Bluetooth connection or sensor calibration. Cache bounded reads at1Hz,
+  expire at5s and clear offroad/non-PV5. Keep one-time local enrollment and separate
+  field-confirmation gates. PC170 focused checks pass; no device install or live
+  layout/resource verification in this change.
+
 - 2026-10-26 OBD retry follow-up: initial budget remains60s; after each complete
   validated poll, the next disconnect gets a fresh300s recovery window. Failed
   connection/setup/poll attempts share that deadline and do not replenish it.

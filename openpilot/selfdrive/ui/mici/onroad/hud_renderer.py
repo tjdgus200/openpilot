@@ -316,6 +316,18 @@ class HudRenderer(Widget):
     self._draw_steering_wheel(rect)
 
     self._draw_egpu_badge(rect)
+    self._draw_bleobd_badge(rect)
+
+  def _draw_bleobd_badge(self, rect: rl.Rectangle) -> None:
+    if not getattr(ui_state, 'bleobd_receiving', False):
+      return
+    size = measure_text_cached(self._font_semi_bold, 'BLEOBD', 22)
+    width = size.x + 20
+    badge = rl.Rectangle(rect.x + rect.width - width - 24, rect.y + 56, width, size.y + 10)
+    color = rl.Color(0, 255, 0, 230)
+    rl.draw_rectangle_rounded(badge, 0.35, 8, rl.Color(0, 0, 0, 150))
+    rl.draw_rectangle_rounded_lines_ex(badge, 0.35, 8, 2, color)
+    rl.draw_text_ex(self._font_semi_bold, 'BLEOBD', rl.Vector2(badge.x + 10, badge.y + 5), 22, 0, color)
 
 
   def _draw_egpu_badge(self, rect: rl.Rectangle) -> None:

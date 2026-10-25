@@ -318,6 +318,19 @@ class HudRenderer(Widget):
     self._draw_date_time(rect)
     self._draw_tpms(rect)
     self._draw_egpu_badge(rect)
+    self._draw_bleobd_badge(rect)
+
+  def _draw_bleobd_badge(self, rect: rl.Rectangle) -> None:
+    if not getattr(ui_state, 'bleobd_receiving', False):
+      return
+    size = measure_text_cached(self._font_semi_bold, 'BLEOBD', 30)
+    width = size.x + 36
+    right = rect.x + rect.width - UI_CONFIG.border_size - UI_CONFIG.button_size - 24
+    badge = rl.Rectangle(right - width, rect.y + 88, width, size.y + 16)
+    color = COLORS.GREEN_210
+    rl.draw_rectangle_rounded(badge, 0.35, 8, rl.Color(0, 0, 0, 150))
+    rl.draw_rectangle_rounded_lines_ex(badge, 0.35, 8, 3, color)
+    rl.draw_text_ex(self._font_semi_bold, 'BLEOBD', rl.Vector2(badge.x + 18, badge.y + 8), 30, 0, color)
 
   def user_interacting(self) -> bool:
     return self._exp_button.is_pressed
