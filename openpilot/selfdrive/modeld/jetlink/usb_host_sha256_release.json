@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-charging-heatmap-20261027-3576cf2c",
-  "source_commit": "3576cf2cdf579851b376f9627b14f41fff394998",
+  "profile": "pv5-heatmap-active-20261027-b624a1c2",
+  "source_commit": "b624a1c2e184579f6f6dc58f7e9edb42c1eb1aa1",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-charging-heatmap-20261027-3576cf2c/host.tar.gz",
-    "sha256": "8e4d42a0a02672e9d093dbacd931e5ff8b127ecee3eaf1f3af1752ed060d3aea",
-    "size": 64803729
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-heatmap-active-20261027-b624a1c2/host.tar.gz",
+    "sha256": "83c0e0217694945b7f294ab2ed5aa07a745a131a29fece38724499219849ee4a",
+    "size": 64805205
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

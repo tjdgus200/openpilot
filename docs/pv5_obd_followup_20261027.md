@@ -186,3 +186,15 @@ were anonymously downloaded and hash-verified. Export-only server/HUD imports,
 native image/direct-map defaults and exact N16 pins passed. Device installation
 and field confirmation were not performed. The selected package preserves
 existing SHA/model/runtime validation and previous-release retention.
+
+Owner-enabled observation package: source`b624a1c2e184579f6f6dc58f7e9edb42c1eb1aa1`,
+64805205 bytes, SHA-256`83c0e0217694945b7f294ab2ed5aa07a745a131a29fece38724499219849ee4a`.
+All four public
+[prerelease assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-heatmap-active-20261027-b624a1c2)
+were anonymously downloaded and hash-verified. This selection includes the default
+activation and explicit unverified-field labels above. PC365 focused tests and
+isolated package imports passed. At publication,
+[source CI40368662835](https://github.com/tjdgus200/openpilot/actions/runs/40368662835)
+was still in progress in the software HUD encoder stage; CI success is not claimed.
+The owner requested activation now and vehicle comparison later. No comma/Jetson
+installation or real charging/resource/safety validation was performed.
