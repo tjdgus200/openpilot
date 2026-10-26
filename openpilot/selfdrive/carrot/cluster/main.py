@@ -578,7 +578,13 @@ def resolved_usb_brightness(
     live_source: OpenpilotLiveSource | None,
     *,
     auto_enabled: bool,
+    renderer=None,
+    state=None,
 ) -> int:
+    brightness_override = getattr(renderer, "usb_brightness_setting", None)
+    if brightness_override is not None:
+        setting = brightness_override(state, setting)
+        auto_enabled = auto_enabled or setting == 0
     normalized = normalize_cluster_brightness_percent(setting)
     if normalized > 0 or not auto_enabled:
         return normalized
@@ -1602,6 +1608,8 @@ def run_demo(
                     active_brightness_setting,
                     live_source,
                     auto_enabled=usb_brightness_auto_enabled,
+                    renderer=renderer,
+                    state=state,
                 )
                 usb_display.set_brightness(next_usb_brightness)
                 next_orientation = usb_orientation_param_reader.read()

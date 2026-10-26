@@ -9,6 +9,64 @@ def snapshot():
   return 10.0, {'sent': 100.0, 'received': {'carState': 99.95}, 'valid': {'carState': True}, 'alive': {'carState': True}}
 
 
+@pytest.mark.parametrize('side', [0, 1])
+def test_brightness_max_through_off_phases_then_immediate_auto_and_manual_override(side):
+  from hud_bsd import WarningBrightness, WarningPulse
+  brightness, pulse = WarningBrightness(), WarningPulse()
+  warnings = (True, True)
+  signals = (side == 0, side == 1)
+  assert brightness.update(40, warnings, (False, False)) == 40
+  for _ in range(20):
+    pulse.update(warnings, signals)
+    assert brightness.update(40, warnings, signals) == 100
+  assert brightness.update(40, warnings, (False, False)) == 0
+  assert brightness.update(40, (False, False), signals) == 0
+  assert brightness.update(50, warnings, (False, False)) == 50
+  assert brightness.update(50, warnings, signals) == 100
+  assert brightness.update(50, (False, False), signals) == 0
+
+
+def test_brightness_hook_expires_stale_snapshot_without_rendering(monkeypatch):
+  import hud_health as hud
+  import hud_protocol
+  renderer = object.__new__(hud.HealthRenderer)
+  state = NS(left_signal=True, right_signal=False, left_blindspot=True, right_blindspot=False)
+  current = [snapshot()]
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: current[0])
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: 10.1)
+  assert renderer.usb_brightness_setting(state, 40) == 100
+  current[0] = None
+  assert renderer.usb_brightness_setting(state, 40) == 0
+  current[0] = snapshot()
+  assert renderer.usb_brightness_setting(state, 40) == 100
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: 10.4)
+  assert renderer.usb_brightness_setting(state, 40) == 0
+
+
+def test_main_brightness_resolver_preserves_stock_and_honors_warning_hook():
+  import ast
+  from pathlib import Path
+  from cluster_config import normalize_cluster_brightness_percent
+  from hud_bsd import WarningBrightness
+  source = Path('openpilot/selfdrive/carrot/cluster/main.py').read_text(encoding='utf-8')
+  tree = ast.parse(source)
+  fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'resolved_usb_brightness')
+  fn.returns = None
+  for arg in fn.args.args + fn.args.kwonlyargs:
+    arg.annotation = None
+  env = {'normalize_cluster_brightness_percent': normalize_cluster_brightness_percent, 'DEFAULT_USB_BRIGHTNESS': 80}
+  exec(compile(ast.Module(body=[fn], type_ignores=[]), '<brightness>', 'exec'), env)
+  resolve = env['resolved_usb_brightness']
+  live = NS(screen_brightness_percent=lambda: 35)
+  assert resolve(40, live, auto_enabled=True) == 40
+  assert resolve(0, live, auto_enabled=False) == 0
+  policy = WarningBrightness()
+  renderer = NS(usb_brightness_setting=lambda state, setting: policy.update(setting, state, (True, False)))
+  assert resolve(40, live, auto_enabled=True, renderer=renderer, state=(True, False)) == 100
+  assert resolve(40, live, auto_enabled=True, renderer=renderer, state=(False, False)) == 35
+  assert resolve(60, live, auto_enabled=True, renderer=renderer, state=(False, False)) == 60
+
+
 @pytest.mark.parametrize('turn_left,turn_right', [(False, False), (True, False), (False, True), (True, True)])
 @pytest.mark.parametrize('bsd_left,bsd_right', [(False, False), (True, False), (False, True), (True, True)])
 def test_warning_follows_bsd_without_turn_signal_gate(turn_left, turn_right, bsd_left, bsd_right):
@@ -223,10 +281,10 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   assert (calls[0][0] == 'batch') == any(sides)
   sides = tuple(active and alpha > 0 for active in sides)
   gradients = [a for kind, a in calls if kind == 'gradient' and a[3] == 480]
-  assert [a[:4] for a in gradients] == [rect for rect, active in zip([(0, 0, 640, 480), (1280, 0, 640, 480)], sides) if active]
-  assert [(a[4].a, a[5].a) for a in gradients] == [alpha for alpha, active in zip([(96, 0), (0, 96)], sides) if active]
+  assert [a[:4] for a in gradients] == [rect for rect, active in zip([(0, 0, 640, 480), (1280, 0, 640, 480)], sides, strict=True) if active]
+  assert [(a[4].a, a[5].a) for a in gradients] == [alpha for alpha, active in zip([(96, 0), (0, 96)], sides, strict=True) if active]
   edges = [a[:4] for kind, a in calls if kind == 'edge' and a[2] == 24]
-  assert edges == [rect for rect, active in zip([(0, 72, 24, 336), (1896, 72, 24, 336)], sides) if active]
+  assert edges == [rect for rect, active in zip([(0, 72, 24, 336), (1896, 72, 24, 336)], sides, strict=True) if active]
   rails = [a[:4] for kind, a in calls if kind == 'gradient' and a[3] == 24]
   expected = ([(72, 0, 568, 24), (72, 456, 568, 24)] if sides[0] else [])
   expected += ([(1280, 0, 568, 24), (1280, 456, 568, 24)] if sides[1] else [])
@@ -242,7 +300,7 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
     assert all(0 <= y <= 480 and (0 <= x <= 72 or 1848 <= x <= 1920) for x, y in points)
     # Every triangle has consistent winding and nonzero area; the square
     # physical corner is filled, with no self-overlap within either layer.
-    for (ax, ay), (bx, by) in zip(points[1:-1], points[2:]):
+    for (ax, ay), (bx, by) in zip(points[1:-1], points[2:], strict=True):
       assert (ax - ox) * (by - oy) - (ay - oy) * (bx - ox) < 0
     cx, cy = (72 if ox == 0 else 1848), (72 if oy == 0 else 408)
     radius = 48 if color.a == alpha else 24

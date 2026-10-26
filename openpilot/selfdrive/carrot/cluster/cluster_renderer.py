@@ -4072,21 +4072,22 @@ class ClusterUiRenderer:
         detail = f"{labels['minimum']} {number('min_temp_c', suffix='°C')}   {labels['spread']} {spread}"
         self._draw_text(detail, middle + 18, 169, 20, theme.muted)
         power = data.value('pack_power_kw')
-        power_text = '-- kW' if power is None else f'{abs(power):.1f} kW'
+        power_text = '-- kW' if power is None else f'{power:.1f} kW'
         mode = data.value('thermal_mode')
         mode_text = labels.get(mode, '--')
         rows = (
             (219, labels['regeneration'] if power is not None and power < 0 else labels['consumption'], power_text),
             (273, labels['coolant'], number('coolant_inlet_c', suffix='°C')),
             (327, labels['thermal'], f"{mode_text} · {number('thermal_power_kw', 1, ' kW')}"),
-            (381, labels['trend'], number('temp_change_5min_c', 1, '°C', signed=True)),
+            (381, labels['charge80'], number('dc_charge_80_min', suffix=' ' + labels['minutes'])),
             (429, labels['cells'], number('cell_delta_mv', suffix=' mV')),
         )
         for y, label, value in rows:
             rl.draw_line_ex(rl.Vector2(left, y - 27), rl.Vector2(right, y - 27), 1.0, rl_color(theme.faint))
             # Reserve a fixed right column so English/Korean labels cannot overlap values.
             self._draw_text(self._ellipsize_text(label, 20, width * 0.56), left, y, 20, theme.muted)
-            self._draw_text(self._ellipsize_text(value, 26, width * 0.4), right, y, 26, theme.text, anchor='right')
+            color = (80, 235, 140) if y == 219 and power is not None and power < 0 else theme.text
+            self._draw_text(self._ellipsize_text(value, 26, width * 0.4), right, y, 26, color, anchor='right')
         self._draw_battery_status(labels[data.status], left, width - 48, theme.muted)
 
     def _draw_battery_status(self, text, left, width, color) -> None:

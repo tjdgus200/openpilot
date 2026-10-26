@@ -4,6 +4,26 @@ import math
 GRADIENT_ALPHA = 96
 
 
+def flashing_sides(warnings, signals):
+  return tuple(active is True and signal is True for active, signal in zip(warnings, signals, strict=True))
+
+
+class WarningBrightness:
+  """Boost throughout a warning, then use auto until the setting is changed."""
+  def __init__(self):
+    self.setting = None
+    self.auto_after_warning = False
+
+  def update(self, setting, warnings, signals):
+    if setting != self.setting:
+      self.setting = setting
+      self.auto_after_warning = False
+    if any(flashing_sides(warnings, signals)):
+      self.auto_after_warning = True
+      return 100
+    return 0 if self.auto_after_warning else setting
+
+
 class WarningPulse:
   """Two frames on, two off: nominal 2.5 Hz at the existing 10 fps.
 
@@ -16,7 +36,7 @@ class WarningPulse:
     self.phase = (0, 0)
 
   def update(self, warnings, signals):
-    flashing = tuple(active and signal is True for active, signal in zip(warnings, signals, strict=True))
+    flashing = flashing_sides(warnings, signals)
     # Bounded integer phase avoids drift/overflow. Each phase lasts one frame;
     # at 10fps the on/off dwell times are both 200ms, without extra USB traffic.
     self.phase = tuple((phase + 1) % 4 if flash and previous else 0

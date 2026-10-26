@@ -4,7 +4,6 @@ The HKMC 0101/0105/0106 layouts are candidates for PV5. Only individually compar
 from the local configuration reach the HUD. No general-purpose ELM/UDS API.
 """
 import asyncio
-from array import array
 from contextlib import suppress
 import hashlib
 import json
@@ -23,10 +22,10 @@ UART = 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f'
 DEVICE = 'org.bluez.Device1'
 GATT = 'org.bluez.GattCharacteristic1'
 ADAPTER = 'org.bluez.Adapter1'
-PERIOD = 2.0
+PERIOD = 1.0
+POWER_PERIOD = 0.5
 RETRY_INTERVAL = 5.0
-RETRY_WINDOW = 60.0
-RECOVERY_WINDOW = 300.0
+ATTEMPT_TIMEOUT = 60.0
 FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv', 'coolant_inlet_c',
                     'soc_percent', 'thermal_mode', 'temp_change_5min_c'))
 REPLIES = {'220101': (62, b'\x62\x01\x01'), '220105': (46, b'\x62\x01\x05'), '220106': (38, b'\x62\x01\x06')}
@@ -133,11 +132,10 @@ def coolant_candidate(payload):
     raise ValueError('coolant payload layout')
   value = int.from_bytes(payload[7:8], 'big', signed=True)
   values = {'coolant_inlet_c': value} if -30 <= value <= 120 else {}
-  # Same eGMP reference, data byte 9. Unknown/low-temperature-range codes
-  # do not establish heating or cooling and must not appear as idle.
-  mode = {0: 'idle', 185: 'cooling', 125: 'heating'}.get(payload[12])
-  if mode is not None:
-    values['thermal_mode'] = mode
+  # The other-model D9 mode map disagreed with PV5 conditioning observed by
+  # the owner. Do not label an active 5.5kW conditioning event as idle, or
+  # derive thermal consumption from total pack power. Keep this unavailable
+  # until PV5 mode/power observations establish the actual source.
   return values
 
 
@@ -149,53 +147,42 @@ def soc_candidate(payload):
   return {'soc_percent': value} if value <= 100 else {}
 
 
-class TemperatureTrend:
-  """Fixed numeric ring; no CAN payloads, per-sample objects or growing list."""
-  CAPACITY = 153
-
+class MetricPoller:
+  """One sequential request stream; fixed-size values and per-field timestamps."""
   def __init__(self):
-    self.times = array('d', [0.0]) * self.CAPACITY
-    self.values = array('d', [0.0]) * self.CAPACITY
-    self.head = self.count = 0
+    self.values, self.observed = {}, {}
+    self.next_slow = 0.0
 
-  def update(self, stamp, value):
-    if not finite_number(stamp) or not valid_value('max_temp_c', value):
-      self.head = self.count = 0
-      return None
-    if self.count:
-      last = self.times[(self.head + self.count - 1) % self.CAPACITY]
-      if not 0 < stamp - last <= 5:
-        self.head = self.count = 0
-      elif stamp - last < PERIOD:
-        return None
-    while self.count and stamp - self.times[self.head] > 302:
-      self.head = (self.head + 1) % self.CAPACITY
-      self.count -= 1
-    if self.count == self.CAPACITY:
-      self.head = (self.head + 1) % self.CAPACITY
-      self.count -= 1
-    index = (self.head + self.count) % self.CAPACITY
-    self.times[index], self.values[index] = stamp, value
-    self.count += 1
-    if 298 <= stamp - self.times[self.head] <= 302:
-      return value - self.values[self.head]
-    return None
-
-
-async def poll_metrics(link):
-  # Timestamp before all requests: later reads cannot rejuvenate older
-  # 0101 values. Any timeout/malformed response aborts the complete cycle.
-  observed_at = time.monotonic()
-  values = candidate_metrics(parse_reply(await link.command('220101')))
-  values.update(soc_candidate(parse_reply(await link.command('220105'), '220105')))
-  values.update(coolant_candidate(parse_reply(await link.command('220106'), '220106')))
-  return observed_at, values
+  async def poll(self, link):
+    # Always obtain power first. Slow fields keep their original timestamps
+    # between reads; a new power sample must not rejuvenate old temperatures.
+    started = time.monotonic()
+    groups = [('220101', candidate_metrics, ('pack_power_kw',))]
+    slow = started >= self.next_slow
+    if slow:
+      groups += [('220105', soc_candidate, ('soc_percent',)),
+                 ('220106', coolant_candidate, ('coolant_inlet_c', 'thermal_mode'))]
+    for command, decode, fields in groups:
+      stamp = time.monotonic()
+      values = decode(parse_reply(await link.command(command), command))
+      if command == '220101' and slow:
+        fields += ('max_temp_c', 'min_temp_c', 'cell_delta_mv')
+      for name in fields:
+        self.values.pop(name, None)
+        self.observed.pop(name, None)
+        if name in values:
+          self.values[name], self.observed[name] = values[name], stamp
+    if slow:
+      self.next_slow = started + PERIOD
+    return min(self.observed.values(), default=started), self.values.copy(), self.observed.copy()
 
 
-def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None, observed_at=None):
+def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None, observed_at=None, field_times=None):
   candidates = candidates or {}
   record = {'version': 1, 'updated': time.monotonic() if observed_at is None else observed_at, 'state': state, 'config_id': identity,
             'candidates': candidates, 'metrics': {k: v for k, v in candidates.items() if k in confirmed}}
+  if field_times is not None:
+    record['field_times'] = field_times
   raw = json.dumps(record, allow_nan=False, separators=(',', ':')).encode()
   if len(raw) > 4096:
     raise ValueError('snapshot size')
@@ -218,7 +205,11 @@ def snapshot_packet(record, now, expected_identity=None):
   values = record.get('metrics')
   if not isinstance(values, dict) or len(values) > len(FIELDS):
     return packet_from_metrics({}, now)
-  metrics = {k: (v, stamp) for k, v in values.items() if k in FIELDS and valid_value(k, v)}
+  field_times = record.get('field_times')
+  if field_times is not None and (not isinstance(field_times, dict) or len(field_times) > len(FIELDS)):
+    return packet_from_metrics({}, now)
+  metrics = {k: (v, stamp if field_times is None else field_times.get(k))
+             for k, v in values.items() if k in FIELDS and valid_value(k, v)}
   if metrics.get('min_temp_c', (-50,))[0] > metrics.get('max_temp_c', (130,))[0]:
     metrics.pop('min_temp_c', None)
     metrics.pop('max_temp_c', None)
@@ -374,42 +365,31 @@ class Link:
 async def run():
   from jeepney.io.asyncio import open_dbus_router
   loop = asyncio.get_running_loop()
-  deadline = loop.time() + RETRY_WINDOW
   while True:
-    if deadline is None:
-      deadline = loop.time() + RECOVERY_WINDOW
-    if loop.time() >= deadline:
-      write_snapshot('retry_exhausted')
-      # Stay alive: manager restart_if_crash must not replenish this budget.
-      # The next manager-controlled offroad/onroad start gets a new window.
-      await asyncio.Event().wait()
     try:
       address, confirmed = configuration(read_json(CONFIG))
       identity = config_id((address, confirmed))
       write_snapshot('connecting', identity=identity)
-      # Includes discovery, connection, setup and the first complete poll.
-      # Individual D-Bus timeouts cannot extend the overall retry window.
-      async with asyncio.timeout_at(deadline) as startup_timeout:
+      # Each attempt is bounded, but failures never exhaust the onroad retry
+      # allowance. Manager still stops this display-only reader offroad.
+      async with asyncio.timeout(ATTEMPT_TIMEOUT) as startup_timeout:
         async with open_dbus_router('SYSTEM') as router:
           link = Link(router, address)
           try:
             await link.connect()
-            trend = TemperatureTrend()
+            poller = MetricPoller()
             # Configuration is immutable for this session. A config change causes
             # a clean reconnect before any further poll or publication.
             while configuration(read_json(CONFIG)) == (address, confirmed):
-              observed_at, candidates = await poll_metrics(link)
-              change = trend.update(observed_at, candidates.get('max_temp_c'))
-              if change is not None:
-                candidates['temp_change_5min_c'] = change
+              started = loop.time()
+              observed_at, candidates, field_times = await poller.poll(link)
               if configuration(read_json(CONFIG)) != (address, confirmed):
                 break
-              write_snapshot('receiving', candidates, confirmed, identity=identity, observed_at=observed_at)
+              write_snapshot('receiving', candidates, confirmed, identity=identity,
+                             observed_at=observed_at, field_times=field_times)
               startup_timeout.reschedule(None)
-              # Only a complete validated poll earns a fresh recovery budget.
-              # Bluetooth connection/setup alone must not extend failed retries.
-              deadline = None
-              await asyncio.sleep(PERIOD)
+              # No overlapping requests and no catch-up burst after a slow poll.
+              await asyncio.sleep(max(0.0, started + POWER_PERIOD - loop.time()))
           finally:
             write_snapshot('disconnected', identity=identity)
             # Deadline/cancellation may require up to two more seconds to clean
@@ -421,10 +401,8 @@ async def run():
     except Exception:
       # No credentials, raw frames, or unbounded exception/log loop.
       write_snapshot('unavailable')
-      if deadline is None:
-        deadline = loop.time() + RECOVERY_WINDOW
       # Five seconds after failure/cleanup, never overlapping attempts.
-      await asyncio.sleep(min(RETRY_INTERVAL, max(0.0, deadline - loop.time())))
+      await asyncio.sleep(RETRY_INTERVAL)
 
 
 def main():

@@ -66,30 +66,10 @@ def test_thermal_mode_does_not_guess_unknown_or_electrical_power(raw, mode):
   p = bytearray(coolant_payload())
   p[12] = raw
   values = b.coolant_candidate(p)
-  assert values.get('thermal_mode') == mode
+  assert 'thermal_mode' not in values
   assert 'thermal_power_kw' not in values
 
 
-def test_trend_fixed_storage_wrap_and_reset():
-  trend = b.TemperatureTrend()
-  assert len(trend.times) * trend.times.itemsize + len(trend.values) * trend.values.itemsize == 2448
-  for second in range(0, 10000, 2):
-    value = 20 + second / 1000
-    change = trend.update(second, value)
-    assert trend.count <= 153
-    if second < 298:
-      assert change is None
-    else:
-      assert change == pytest.approx(.298 if second == 298 else .300 if second == 300 else .302)
-  assert len(trend.times) == len(trend.values) == 153
-  assert trend.update(10010, 30) is None  # Gap discards previous history.
-  assert trend.count == 1
-  assert trend.update(10000, 30) is None  # Clock reversal also resets.
-  assert trend.count == 1
-  assert trend.update(10001, 31) is None  # Faster calls do not fill the ring.
-  assert trend.count == 1
-  assert trend.update(10002, float('nan')) is None
-  assert trend.count == 0
 
 
 def test_trend_confirmation_requires_maximum():
@@ -138,7 +118,7 @@ def test_poll_cycle_failure_and_conservative_freshness(tmp_path, monkeypatch):
 
   async def check():
     link = PollLink()
-    stamp, values = await b.poll_metrics(link)
+    stamp, values, field_times = await b.MetricPoller().poll(link)
     assert link.commands == ['220101', '220105', '220106']
     assert stamp == 100 and values['coolant_inlet_c'] == 27
     path = tmp_path / 'coolant.json'
@@ -152,7 +132,7 @@ def test_poll_cycle_failure_and_conservative_freshness(tmp_path, monkeypatch):
     for failed, expected in [('220101', ['220101']), ('220106', ['220101', '220105', '220106'])]:
       link = PollLink(failed)
       with pytest.raises(TimeoutError):
-        await b.poll_metrics(link)
+        await b.MetricPoller().poll(link)
       assert link.commands == expected
   asyncio.run(check())
 
@@ -365,7 +345,7 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
     async def close(self):
       self.closed = True
   async def sleep(delay):
-    if delay == b.PERIOD:
+    if 0 <= delay <= b.POWER_PERIOD:
       raise asyncio.CancelledError
     assert delay == 5.0
     assert len(sessions) <= 2, 'unexpected retry loop in synthetic transport'
@@ -380,173 +360,10 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
   assert all(s.closed for s in sessions) and len(sessions) == 2
 
 
-@pytest.mark.parametrize('failure', ['connect', 'first_poll', 'immediate'])
-def test_retry_budget_expires_and_worker_stays_alive(monkeypatch, failure):
-  from contextlib import asynccontextmanager
-  import jeepney.io.asyncio
-  config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
-  sessions, snapshots = [], []
-  exhausted = asyncio.Event()
-  def snapshot(state, **kwargs):
-    snapshots.append(state)
-    if state == 'retry_exhausted':
-      exhausted.set()
-  @asynccontextmanager
-  async def router(*args):
-    yield None
-  class Session:
-    def __init__(self, _router, address):
-      self.closed = False
-      sessions.append(self)
-    async def connect(self):
-      if failure == 'immediate':
-        raise ConnectionError
-      if failure == 'connect':
-        await asyncio.Event().wait()
-    async def close(self):
-      self.closed = True
-  async def poll(_link):
-    await asyncio.Event().wait()
-  monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
-  monkeypatch.setattr(b, 'Link', Session)
-  monkeypatch.setattr(b, 'poll_metrics', poll)
-  monkeypatch.setattr(b, 'read_json', lambda _: config)
-  monkeypatch.setattr(b, 'RETRY_WINDOW', .08)
-  monkeypatch.setattr(b, 'RETRY_INTERVAL', .02)
-  monkeypatch.setattr(b, 'write_snapshot', snapshot)
-  async def check():
-    task = asyncio.create_task(b.run())
-    try:
-      await asyncio.wait_for(exhausted.wait(), 2)
-      count = len(sessions)
-      await asyncio.sleep(.10)
-      assert not task.done()  # A normal return would trigger manager restart.
-      assert len(sessions) == count
-      assert snapshots[-1] == 'retry_exhausted'
-      assert 'receiving' not in snapshots
-      assert all(s.closed for s in sessions)
-      if failure != 'immediate':
-        assert count == 1  # Hung connect/poll cancelled by overall deadline.
-    finally:
-      task.cancel()
-      with pytest.raises(asyncio.CancelledError):
-        await task
-  asyncio.run(check())
 
 
-def test_healthy_session_outlives_startup_budget_then_gets_one_recovery_window(monkeypatch):
-  from contextlib import asynccontextmanager
-  import jeepney.io.asyncio
-  config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
-  sessions, snapshots, polls = [], [], []
-  exhausted = asyncio.Event()
-  def snapshot(state, *args, **kwargs):
-    snapshots.append((state, asyncio.get_running_loop().time()))
-    if state == 'retry_exhausted':
-      exhausted.set()
-  @asynccontextmanager
-  async def router(*args):
-    yield None
-  class Session:
-    def __init__(self, _router, address):
-      self.closed = False
-      self.index = len(sessions)
-      sessions.append(self)
-    async def connect(self):
-      if self.index:
-        await asyncio.Event().wait()
-    async def close(self):
-      self.closed = True
-  async def poll(_link):
-    polls.append(asyncio.get_running_loop().time())
-    if len(polls) == 7:
-      raise ConnectionError
-    return b.time.monotonic(), {'max_temp_c': 28}
-  monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
-  monkeypatch.setattr(b, 'Link', Session)
-  monkeypatch.setattr(b, 'poll_metrics', poll)
-  monkeypatch.setattr(b, 'read_json', lambda _: config)
-  monkeypatch.setattr(b, 'RETRY_WINDOW', .08)
-  monkeypatch.setattr(b, 'RECOVERY_WINDOW', .16)
-  monkeypatch.setattr(b, 'RETRY_INTERVAL', .02)
-  monkeypatch.setattr(b, 'PERIOD', .025)
-  monkeypatch.setattr(b, 'write_snapshot', snapshot)
-  async def check():
-    task = asyncio.create_task(b.run())
-    try:
-      await asyncio.wait_for(exhausted.wait(), 2)
-      assert len(polls) == 7
-      assert polls[-1] - polls[0] > .08
-      assert snapshots[-1][1] - polls[-1] >= .16
-      assert len(sessions) == 2 and all(s.closed for s in sessions)
-      assert sum(state == 'receiving' for state, _ in snapshots) == 6
-    finally:
-      task.cancel()
-      with pytest.raises(asyncio.CancelledError):
-        await task
-  asyncio.run(check())
 
 
-@pytest.mark.parametrize('failure', ['connect', 'first_poll', 'immediate'])
-def test_each_recovered_poll_rearms_budget_but_failed_attempts_do_not(monkeypatch, failure):
-  from contextlib import asynccontextmanager
-  import jeepney.io.asyncio
-  config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
-  sessions, snapshots = [], []
-  exhausted = asyncio.Event()
-  def snapshot(state, *args, **kwargs):
-    snapshots.append((state, asyncio.get_running_loop().time()))
-    if state == 'retry_exhausted':
-      exhausted.set()
-  @asynccontextmanager
-  async def router(*args):
-    yield None
-  class Session:
-    def __init__(self, _router, address):
-      assert all(s.closed for s in sessions)
-      self.index, self.polls, self.closed = len(sessions), 0, False
-      sessions.append(self)
-    async def connect(self):
-      if self.index == 1 or (self.index >= 3 and failure == 'connect'):
-        await asyncio.sleep(.10)  # Recovery exceeds the initial .04s window.
-      if self.index >= 3 and failure == 'immediate':
-        raise ConnectionError
-    async def close(self):
-      self.closed = True
-  async def poll(link):
-    if link.index >= 3:
-      await asyncio.Event().wait()
-    link.polls += 1
-    if link.polls > 1:
-      raise ConnectionError
-    return b.time.monotonic(), {'max_temp_c': 28}
-  monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
-  monkeypatch.setattr(b, 'Link', Session)
-  monkeypatch.setattr(b, 'poll_metrics', poll)
-  monkeypatch.setattr(b, 'read_json', lambda _: config)
-  monkeypatch.setattr(b, 'RETRY_WINDOW', .04)
-  monkeypatch.setattr(b, 'RECOVERY_WINDOW', .20)
-  monkeypatch.setattr(b, 'RETRY_INTERVAL', .02)
-  monkeypatch.setattr(b, 'PERIOD', .01)
-  monkeypatch.setattr(b, 'write_snapshot', snapshot)
-  async def check():
-    task = asyncio.create_task(b.run())
-    try:
-      await asyncio.wait_for(exhausted.wait(), 2)
-      receiving = [t for state, t in snapshots if state == 'receiving']
-      assert len(receiving) == 3
-      assert receiving[1] - receiving[0] >= .10
-      failed_at = next(t for state, t in snapshots if state == 'unavailable' and t > receiving[-1])
-      assert .20 <= snapshots[-1][1] - failed_at < .70
-      count = len(sessions)
-      await asyncio.sleep(.05)
-      assert len(sessions) == count and all(s.closed for s in sessions)
-      assert not task.done() and snapshots[-1][0] == 'retry_exhausted'
-    finally:
-      task.cancel()
-      with pytest.raises(asyncio.CancelledError):
-        await task
-  asyncio.run(check())
 
 
 def test_hud_reads_ram_without_opening_bluetooth_or_can(tmp_path, monkeypatch):

@@ -1,5 +1,7 @@
 # PV5 battery display through a dedicated BLE adapter
 
+> Updated 2026-10-27: retry limits, polling cadence, temperature history and thermal-mode output below are historical. Current behavior and remaining mapping limits are documented in [the OBD/HUD follow-up](pv5_obd_followup_20261027.md).
+
 ## Scope and evidence
 
 The owner demonstrated a successful BLE GATT connection, ELM identity reply,

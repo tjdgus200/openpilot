@@ -1,5 +1,17 @@
 # Repository memory
 
+- 2026-10-27 owner follow-up: PV5 BLE retries indefinitely onroad with a bounded
+  60s startup attempt and 5s wait after cleanup. Target pack power at0.5s,
+  other fields at1s, sequential/no catch-up; retain individual field times and
+  5s expiry. Remove temperature histories; render regeneration signed/green.
+  Same-side fresh BSD plus turn request holds Jetson HUD brightness100% through
+  dark pulse frames; event end/expiry restores auto at the next100ms check,
+  until a later brightness-setting change. Requires a new PV5 host package.
+  Stop publishing the unverified other-model thermal mode after the owner's
+  conditioning mismatch. Do not infer compressor/thermal power from pack power
+  or RPM. CALC-to80% inputs remain pending; show unavailable, never guessed data.
+  See docs/pv5_obd_followup_20261027.md. PC tests are not live device validation.
+
 - 2026-10-26 BLEOBD badge: C3/C4 green badge below Jetlink means a fresh
   automatic three-DID receiving snapshot matching the local adapter configuration,
   not just Bluetooth connection or sensor calibration. Cache bounded reads at1Hz,

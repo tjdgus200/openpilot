@@ -110,10 +110,10 @@ def test_slow_reports_cache_values_for_one_second_without_renewing_receive_age(m
     # A late worker emits once, rather than replaying missed report slots.
     assert source.update('KIA_PV5', True, 20)['fields'] == {}
     assert source.next_report == 21
-    assert source.next_power_report == 20.1
+    assert source.next_power_report == 20.5
 
 
-def test_power_can_change_at_ten_hz_without_refreshing_slow_values_or_stale_age(monkeypatch):
+def test_power_can_change_at_two_hz_without_refreshing_slow_values_or_stale_age(monkeypatch):
     source = b.BatteryPublisher()
     source.vehicle, source.next_profile = 'KIA_PV5', 100
     source.decoder = b.PassiveDecoder([signal()])
@@ -122,12 +122,12 @@ def test_power_can_change_at_ten_hz_without_refreshing_slow_values_or_stale_age(
     source.decoder.metrics = {'max_temp_c': (32, 10), 'pack_power_kw': (10, 10)}
     source.update('KIA_PV5', True, 10)
     source.decoder.metrics = {'max_temp_c': (33, 10.1), 'pack_power_kw': (-5, 10.1)}
-    second = source.update('KIA_PV5', True, 10.1)
-    assert second['fields']['pack_power_kw'] == {'value': -5, 'age_s': pytest.approx(0)}
-    assert second['fields']['max_temp_c'] == {'value': 32, 'age_s': pytest.approx(.1)}
-    assert len(source.decoder.history) == 1
+    second = source.update('KIA_PV5', True, 10.5)
+    assert second['fields']['pack_power_kw'] == {'value': -5, 'age_s': pytest.approx(.4)}
+    assert second['fields']['max_temp_c'] == {'value': 32, 'age_s': pytest.approx(.5)}
+    assert not hasattr(source.decoder, 'history')
     source.decoder.metrics.pop('pack_power_kw')
-    assert 'pack_power_kw' not in source.update('KIA_PV5', True, 10.21)['fields']
+    assert 'pack_power_kw' not in source.update('KIA_PV5', True, 11.0)['fields']
     assert source.update('KIA_PV5', True, 15.2)['fields'] == {}
     source.close()
     assert not source.slow_metrics and source.next_power_report == 0
@@ -159,16 +159,6 @@ def test_unrelated_can_payload_is_not_copied_and_frame_scan_stays_bounded():
     assert not decoder.metrics
 
 
-def test_two_hz_reports_keep_temperature_history_at_one_hz():
-    decoder = b.PassiveDecoder([signal()])
-    for tick in range(1201):
-        stamp = tick * 0.5
-        decoder.metrics['max_temp_c'] = 20 + stamp * 0.01, stamp
-        decoder.packet(stamp)
-        assert len(decoder.history) <= 302
-    assert all(second[0] - first[0] >= 1
-               for first, second in zip(decoder.history, list(decoder.history)[1:], strict=False))
-    assert decoder.packet(600)['fields']['temp_change_5min_c']['value'] == pytest.approx(3.01)
 
 
 def test_thermal_power_does_not_infer_cooling_or_heating():
@@ -252,26 +242,13 @@ def test_derived_power_and_cell_spread_require_coherent_inputs():
     assert 'pack_power_kw' not in decoder.metrics
 
 
-def test_temperature_trend_needs_five_minutes_of_continuous_fresh_data():
-    decoder = b.PassiveDecoder([signal()])
-    for stamp in range(1000):
-        decoder.metrics['max_temp_c'] = 20 + stamp * 0.01, float(stamp)
-        result = decoder.packet(stamp)
-        if stamp < 298:
-            assert 'temp_change_5min_c' not in result['fields']
-        assert len(decoder.history) <= 302
-    assert result['fields']['temp_change_5min_c']['value'] == pytest.approx(3.01)
-    decoder.metrics['max_temp_c'] = 31, 1006
-    assert 'temp_change_5min_c' not in decoder.packet(1006)['fields']
-    assert 'temp_change_5min_c' not in decoder.packet(1012)['fields']
-    assert not decoder.history
 
 
 def test_inconsistent_temperature_range_discards_the_trend_history():
     decoder = b.PassiveDecoder([signal()])
     decoder.metrics = {'max_temp_c': (30, 10), 'min_temp_c': (31, 10)}
     assert decoder.packet(10)['fields'] == {}
-    assert not decoder.history
+    assert not hasattr(decoder, 'history')
 
 
 def test_each_field_expires_independently_and_zero_is_not_missing():
@@ -345,6 +322,26 @@ def test_battery_layout_has_no_removed_fields_and_preserves_alert_order(monkeypa
     ui._draw_alert_overlay = lambda *a: calls.append('vehicle_alert')
     ui.render(standby_state(), (False, False))
     assert calls == ['world', 'hud', 'vehicle_alert']
+
+
+@pytest.mark.parametrize('power,green', [(-5.5, True), (0., False), (5.5, False), (None, False)])
+def test_regeneration_sign_green_and_no_temperature_history_row(monkeypatch, power, green):
+    ui = object.__new__(renderer.ClusterUiRenderer)
+    ui.language, ui.panel_layout, ui.screen_mode = 'ko', 0, CLUSTER_SCREEN_MODE_BATTERY
+    ui.theme_mode, ui.width, ui.height = 1, 1920, 480
+    texts = []
+    ui._rounded_rect = lambda *a: None
+    ui._ellipsize_text = lambda text, *a: text
+    ui._draw_text = lambda text, *args, **kw: texts.append((text, args))
+    monkeypatch.setattr(renderer.rl, 'draw_line_ex', lambda *a: None)
+    metrics = {} if power is None else {'pack_power_kw': (power, 10)}
+    state = replace(standby_state(), battery=panel_from_wire(packet_from_metrics(metrics, 10)))
+    ui._draw_battery_panel(state)
+    text, args = next((text, args) for text, args in texts if args[1] == 219 and text.endswith(' kW'))
+    assert text == ('-- kW' if power is None else f'{power:.1f} kW')
+    assert (args[3] == (80, 235, 140)) == green
+    assert any('80%' in text for text, _ in texts)
+    assert not any('5분' in text for text, _ in texts)
 
 
 def test_mode_selection_defaults_and_valid_zero_rendering():

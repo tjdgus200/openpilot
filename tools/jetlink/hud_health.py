@@ -23,8 +23,9 @@ def _bsd_corner_mesh(cx, cy, start, edge_width):
   # translucent layer never darkens itself through overlapping primitives.
   radius = 72
   end = start + 90
-  outer = lambda angle: (cx + radius * round(math.cos(math.radians(angle))),
-                         cy + radius * round(math.sin(math.radians(angle))))
+  def outer(angle):
+    return (cx + radius * round(math.cos(math.radians(angle))),
+            cy + radius * round(math.sin(math.radians(angle))))
   first, last = outer(start), outer(end)
   corner = (first[0] + last[0] - cx, first[1] + last[1] - cy)
   inner = [(cx + (radius - edge_width) * math.cos(math.radians(start + i * 90 / 16)),
@@ -87,6 +88,15 @@ def health_banner(health, language):
 
 
 class HealthRenderer(ClusterUiRenderer):
+  def usb_brightness_setting(self, state, setting):
+    from hud_protocol import read_snapshot
+    from hud_bsd import warning_sides, WarningBrightness
+    if not hasattr(self, '_bsd_brightness'):
+      self._bsd_brightness = WarningBrightness()
+    return self._bsd_brightness.update(
+      setting, warning_sides(state, read_snapshot(), time.monotonic()),
+      (getattr(state, 'left_signal', False), getattr(state, 'right_signal', False)))
+
   def _host_metrics(self):
     from hud_runtime_stats import RuntimeFooterSampler
     if not hasattr(self, '_runtime_footer'):

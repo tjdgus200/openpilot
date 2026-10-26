@@ -6,13 +6,12 @@ parked-vehicle comparison first. Without a validated profile no CAN socket opens
 A separately configured BLE reader supplies a bounded RAM snapshot; this HUD
 worker itself never opens Bluetooth or issues diagnostic requests.
 """
-from collections import deque
 import json
 from pathlib import Path
 import time
 
 from openpilot.selfdrive.carrot.cluster.cluster_battery import (
-    MAX_AGE_S, METRICS, finite_number, packet_from_metrics, valid_value,
+    METRICS, finite_number, packet_from_metrics, valid_value,
 )
 
 PROFILE_PATH = Path('/data/jetlink/pv5-battery-profile.json')
@@ -20,7 +19,7 @@ MAX_PROFILE_BYTES = 8192
 MAX_SIGNALS = 16
 MAX_MESSAGE_BYTES = 1024
 REPORT_INTERVAL_S = 1.0
-POWER_INTERVAL_S = 0.1
+POWER_INTERVAL_S = 0.5
 SOURCE_LIMITS = {
     'pack_voltage_v': (0.0, 1500.0), 'pack_current_a': (-2000.0, 2000.0),
     'max_cell_v': (0.0, 5.0), 'min_cell_v': (0.0, 5.0),
@@ -99,8 +98,6 @@ class PassiveDecoder:
         self.addresses = {(s['bus'], s['response_id']) for s in signals}
         self.pending = {}
         self.metrics = {}
-        self.history = deque(maxlen=302)
-        self.last_temp_stamp = None
         self.last_event_stamp = -1.0
 
     def feed(self, bus, address, data, stamp):
@@ -199,26 +196,8 @@ class PassiveDecoder:
         maximum = self.metrics.get('max_temp_c')
         minimum = self.metrics.get('min_temp_c')
         if maximum is not None and minimum is not None and minimum[0] > maximum[0]:
-            for name in ('min_temp_c', 'max_temp_c', 'temp_change_5min_c'):
+            for name in ('min_temp_c', 'max_temp_c'):
                 self.metrics.pop(name, None)
-            maximum = None
-        if maximum is None or not 0 <= now - maximum[1] <= MAX_AGE_S:
-            self.history.clear()
-            self.last_temp_stamp = None
-            self.metrics.pop('temp_change_5min_c', None)
-        elif maximum[1] != self.last_temp_stamp:
-            value, stamp = maximum
-            if self.history and (stamp - self.history[-1][0] > MAX_AGE_S or stamp < self.history[-1][0]):
-                self.history.clear()
-            if not self.history or stamp - self.history[-1][0] >= 1.0:
-                self.history.append((stamp, value))
-            self.last_temp_stamp = stamp
-            while self.history and stamp - self.history[0][0] > 302:
-                self.history.popleft()
-            if self.history and 298 <= stamp - self.history[0][0] <= 302:
-                self.metrics['temp_change_5min_c'] = value - self.history[0][1], stamp
-            else:
-                self.metrics.pop('temp_change_5min_c', None)
         return packet_from_metrics(self.metrics, now, 'receiving')
 
 
@@ -255,11 +234,11 @@ class BatteryPublisher:
         if vehicle != self.vehicle:
             self.close()
             self.vehicle = vehicle
-        # Bounded RAM read at 1 Hz; no Bluetooth, subprocess or vehicle requests
+        # Bounded RAM read at 2 Hz; no Bluetooth, subprocess or vehicle requests
         # on the USB HUD worker. BLE connection/response waits run elsewhere.
         from openpilot.selfdrive.carrot.obd_battery import CONFIG, SNAPSHOT, config_id, configuration, read_json, snapshot_packet
         if now >= self.next_ble_read:
-            self.next_ble_read = now + 1.0
+            self.next_ble_read = now + POWER_INTERVAL_S
             self.ble_enabled = vehicle == 'KIA_PV5' and CONFIG.is_file()
             self.ble_record = None
             self.ble_identity = None
@@ -303,8 +282,7 @@ class BatteryPublisher:
         if self.decoder is not None:
             if self.report is None or now >= self.next_report:
                 self.next_report = now + REPORT_INTERVAL_S
-                # Validate ranges and advance the bounded temperature history
-                # only at 1 Hz. Preserve original receive stamps in the cache.
+                # Validate ranges at 1 Hz. Preserve receive stamps in the cache.
                 self.decoder.packet(now)
                 self.slow_metrics = {k: v for k, v in self.decoder.metrics.items()
                                      if k in METRICS and k != 'pack_power_kw'}
