@@ -92,3 +92,7 @@ comma CPU/RSS, vehicle power behavior, inference P99 or road safety. No live
 comma/Jetson installation or vehicle restart is performed by this change.
 
 Focused Linux PC validation: 268 tests passed; Windows core reader/status checks: 90 passed. Windows-supported display subset: 100 passed (77 native-schema cases run on Linux). User documentation and two localized Wiki brightness pages pass their validators. These counts overlap and must not be added as distinct tests.
+
+Public host package: source `e3ef8184a0d7df5c72a4c901fa5ecad0d78d21a3`, 64796884 bytes, SHA-256 `c059c1cb0987f9292d318f18eafcc8d60315d4569d5f3f337da396cc144943b4`. All four public assets were anonymously downloaded and verified. [Release](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-obd-hud-20261027-e3ef8184). Source CI [40352105827](https://github.com/tjdgus200/openpilot/actions/runs/40352105827) passed both Linux contracts and Windows installer checks. Device installation was not performed. Korean/English Wiki manual edits pass validation but remain in a local commit because upstream Wiki write authentication was unavailable.
+
+After selecting this exact public package, 337 combined Linux PC checks passed, including USB SHA-256 delivery, interrupted transfers, failed candidate retention and fresh Park/zero update permission.
