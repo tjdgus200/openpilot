@@ -1,7 +1,7 @@
 """Opt-in, single-device BLE battery reader; never used by vehicle controls.
 
-The HKMC 0101/0105/0106 layouts are candidates for PV5. Only individually compared fields
-from the local configuration reach the HUD. No general-purpose ELM/UDS API.
+The HKMC layouts are candidates for PV5. Owner-enabled charging detail fields
+are displayed as unverified; scalar confirmation remains separate. No general-purpose ELM/UDS API.
 """
 import asyncio
 from contextlib import suppress
@@ -29,6 +29,10 @@ ATTEMPT_TIMEOUT = 60.0
 FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv', 'coolant_inlet_c',
                     'soc_percent', 'thermal_mode', 'temp_change_5min_c', 'pack_voltage_v', 'pack_current_a',
                     'charge_mode', 'cell_voltages_v', 'module_temps_c'))
+# Owner explicitly enabled these display-only observations before vehicle
+# comparison. Never rewrite confirmed_fields or represent them as calibrated.
+CHARGING_PREVIEW_FIELDS = frozenset(('charge_mode', 'cell_voltages_v', 'module_temps_c',
+                                     'pack_voltage_v', 'pack_current_a'))
 REPLIES = {'220101': (62, b'\x62\x01\x01'), '220105': (46, b'\x62\x01\x05'), '220106': (38, b'\x62\x01\x06')}
 # Only the four blocks actually observed before the PV5 metadata/zero tail.
 CELL_BLOCKS = (('220102', 32), ('220103', 32), ('220104', 32), ('22010A', 12))
@@ -66,7 +70,7 @@ def configuration(value):
 
 def config_id(config):
   address, fields = config
-  return hashlib.sha256(json.dumps([address, sorted(fields)]).encode()).hexdigest()
+  return hashlib.sha256(json.dumps([address, sorted(fields), 'charging-preview-v1']).encode()).hexdigest()
 
 
 def parse_reply(reply, command='220101'):
@@ -265,8 +269,10 @@ class MetricPoller:
 
 def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None, observed_at=None, field_times=None):
   candidates = candidates or {}
+  displayed = confirmed | CHARGING_PREVIEW_FIELDS
   record = {'version': 1, 'updated': time.monotonic() if observed_at is None else observed_at, 'state': state, 'config_id': identity,
-            'candidates': candidates, 'metrics': {k: v for k, v in candidates.items() if k in confirmed}}
+            'candidates': candidates, 'metrics': {k: v for k, v in candidates.items() if k in displayed},
+            'unverified_fields': sorted((CHARGING_PREVIEW_FIELDS - confirmed) & candidates.keys())}
   if field_times is not None:
     record['field_times'] = field_times
   raw = json.dumps(record, allow_nan=False, separators=(',', ':')).encode()
@@ -280,7 +286,7 @@ def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT,
 
 
 def snapshot_packet(record, now, expected_identity=None):
-  """HUD reads confirmed fields only; PC/Jetson clocks are not mixed here."""
+  """Preserve explicit preview provenance and per-field age across USB."""
   if not isinstance(record, dict) or type(record.get('version')) is not int or record['version'] != 1:
     return packet_from_metrics({}, now)
   if expected_identity is None or record.get('config_id') != expected_identity:
@@ -299,7 +305,11 @@ def snapshot_packet(record, now, expected_identity=None):
   if metrics.get('min_temp_c', (-50,))[0] > metrics.get('max_temp_c', (130,))[0]:
     metrics.pop('min_temp_c', None)
     metrics.pop('max_temp_c', None)
-  return packet_from_metrics(metrics, now, 'receiving' if metrics else 'profile_required')
+  pending = record.get('unverified_fields', [])
+  if (not isinstance(pending, list) or len(pending) > len(CHARGING_PREVIEW_FIELDS)
+      or any(not isinstance(k, str) or k not in CHARGING_PREVIEW_FIELDS for k in pending)):
+    return packet_from_metrics({}, now)
+  return packet_from_metrics(metrics, now, 'receiving' if metrics else 'profile_required', unverified=pending)
 
 
 class NotificationQueue(asyncio.Queue):
@@ -464,13 +474,10 @@ async def run():
           try:
             await link.connect()
             poller = MetricPoller()
-            # Once AC/DC flags have been compared, collect candidate arrays for
-            # their separate comparison; array confirmation still gates the HUD.
-            details = 'charge_mode' in confirmed
+            details = 'charge_mode' in (confirmed | CHARGING_PREVIEW_FIELDS)
             monitor = None
             if details:
-              from openpilot.cereal import messaging
-              monitor = messaging.SubMaster(['carState'])
+              monitor = vehicle_monitor()
               poller.details = True
             # Configuration is immutable for this session. A config change causes
             # a clean reconnect before any further poll or publication.
@@ -502,6 +509,11 @@ async def run():
       write_snapshot('unavailable')
       # Five seconds after failure/cleanup, never overlapping attempts.
       await asyncio.sleep(RETRY_INTERVAL)
+
+
+def vehicle_monitor():
+  from openpilot.cereal import messaging
+  return messaging.SubMaster(['carState'])
 
 
 def parked_state(monitor, now):

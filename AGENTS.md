@@ -1,5 +1,14 @@
 # Repository memory
 
+- 2026-10-27 owner explicitly enables charging heatmap observations before
+  vehicle comparison, superseding the prior confirmation-only launch below.
+  Existing one-device OBD enrollment now enables charge_mode,108 voltages,
+  15 temperatures and pack V/A by default. Do not rewrite confirmed_fields;
+  carry unverified_fields through the bounded RAM/USB packet and visibly
+  label unverified observations. Preserve fresh300ms Park/zero, per-field
+  expiry, sequential bounded reads, scalar calibration and offroad gates.
+  No private adapter address in Git, no compressor guesses or control changes.
+
 - 2026-10-27 charging heatmaps: mode8 may replace road/3D with battery detail
   only on separately confirmed AC/DC mode plus fresh300ms Park/zero state.
   Observe108 voltage channels (32/32/32/12),15 temperature sensors; exclude

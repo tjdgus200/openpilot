@@ -8,7 +8,8 @@ import json
 import os
 import time
 
-from openpilot.selfdrive.carrot.obd_battery import CONFIG, SNAPSHOT, FIELDS, config_id, configuration, read_json
+from openpilot.selfdrive.carrot.obd_battery import (CONFIG, SNAPSHOT, FIELDS, CHARGING_PREVIEW_FIELDS,
+                                                  config_id, configuration, read_json)
 
 
 def save(value):
@@ -37,7 +38,7 @@ def main():
     if CONFIG.exists():
       parser.error('configuration already exists; use status or disable before changing the target')
     save({'version': 1, 'address': args.address.upper(), 'confirmed_fields': []})
-    print('ENABLED: candidate collection when PV5 is onroad; HUD awaits field comparison')
+    print('ENABLED: PV5 onroad collection; charging/heatmap preview active, other fields await comparison')
   elif args.action == 'disable':
     CONFIG.unlink(missing_ok=True)
     print('DISABLED')
@@ -56,6 +57,7 @@ def main():
       fresh = record.get('config_id') == identity and 0 <= age <= 5 and record.get('state') == 'receiving'
       print(json.dumps({'state': record.get('state'), 'fresh': fresh,
                         'candidate_values_NOT_YET_CALIBRATED': record.get('candidates', {}) if fresh else {},
+                        'enabled_unverified_display_fields': sorted(CHARGING_PREVIEW_FIELDS),
                         'confirmed_fields': value['confirmed_fields']}, ensure_ascii=True))
     except (OSError, ValueError, KeyError, TypeError):
       print('WAITING: no readable fresh snapshot')

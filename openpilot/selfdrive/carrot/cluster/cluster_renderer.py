@@ -4051,8 +4051,8 @@ class ClusterUiRenderer:
             self._profile_add("hud.pop_matrix", profile_stage)
 
     def _charging_dashboard_visible(self, state: ClusterUiState) -> bool:
-        # The Jetson renderer sets this only from fresh vehicle + calibrated OBD
-        # state. The generic renderer never guesses charging from a default 0.
+        # Jetson requires fresh vehicle + owner-enabled OBD display state;
+        # unverified observations carry their label. Never guess from default0.
         return getattr(self, '_charging_dashboard_active', False)
 
     def _draw_charging_detail(self, state: ClusterUiState) -> None:
@@ -4065,6 +4065,8 @@ class ClusterUiRenderer:
         ko = self.language == 'ko'
         mode = data.value('charge_mode')
         title = ('DC 급속 충전' if mode == 'dc' else 'AC 완속 충전') if ko else ('DC CHARGING' if mode == 'dc' else 'AC CHARGING')
+        if data.status == 'unverified':
+            title += ' · 실차 미검증' if ko else ' · UNVERIFIED'
         self._rounded_rect(x, 1, width, DESIGN_HEIGHT - 2, 10, theme.panel_bg, theme.faint, 1)
         self._draw_text(title, left, 33, 27, theme.text)
         voltage, current = data.value('pack_voltage_v'), data.value('pack_current_a')

@@ -99,6 +99,23 @@ After selecting this exact public package, 337 combined Linux PC checks passed, 
 
 ## Charging detail and bounded heatmaps (follow-up)
 
+**Activation update, 2026-10-27:** the owner explicitly requested activation
+before real charging comparison. This supersedes the confirmation-only launch
+described in the original implementation record below. An existing enrolled
+PV5 adapter now enables `charge_mode`, `cell_voltages_v`, `module_temps_c`,
+`pack_voltage_v` and `pack_current_a` automatically. Local `confirmed_fields`
+is never rewritten; unconfirmed preview provenance is carried in bounded
+`unverified_fields` metadata to the HUD, which labels these observations as
+vehicle-unverified. Other scalar fields retain their existing confirmation gate.
+A changed configuration identity prevents reuse of pre-activation snapshots.
+Park/zero and300ms vehicle freshness, individual5s expiry, strict response
+parsing, sequential cell scans, existing onroad lifetime and all update/rollback
+checks remain. No actual device install or vehicle calibration is claimed.
+PC365 focused checks passed for this activation, including old-config automatic
+display, unchanged confirmation files, malformed provenance rejection and expiry.
+
+Original confirmation-only implementation record:
+
 The owner requested an AC/DC charging view in the existing road/3D area, retaining
 the battery summary, physical BSD overlay, W/temperature badge and alerts. The
 new view requires mode8, a separately confirmed charge mode and Park/stationary

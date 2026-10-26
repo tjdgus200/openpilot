@@ -87,7 +87,7 @@ def test_arrays_are_bounded_immutable_expire_and_unknowns_stay_grey():
   ('P', 0., True, True), ('D', 0., True, False), ('P', 1., True, False),
   ('P', 0., False, False), ('P', float('nan'), True, False), ('P', -1., True, False),
 ])
-def test_charging_view_requires_confirmed_mode_and_fresh_park(gear, speed, fresh, expected):
+def test_charging_view_requires_mode_and_fresh_park(gear, speed, fresh, expected):
   data = panel_from_wire(packet_from_metrics({'charge_mode': ('dc', 100.)}, 100.))
   assert charging_view(data, gear, speed, fresh) == expected
   assert not charging_view(BatteryPanelData(), gear, speed, fresh)
@@ -124,15 +124,51 @@ def test_cell_scans_are_sequential_power_first_only_after_enrollment_park_charge
   asyncio.run(check())
 
 
-def test_new_arrays_and_charge_never_bypass_confirmation(tmp_path):
+def test_owner_enabled_preview_is_not_recorded_as_calibration(tmp_path):
   values = {'cell_voltages_v': [3.88] * 108, 'module_temps_c': [20] * 15, 'charge_mode': 'dc'}
   path = tmp_path / 'snapshot'
   b.write_snapshot('receiving', values, path=path, identity='cfg', observed_at=100.)
-  assert not b.snapshot_packet(b.read_json(path), 100., 'cfg')['fields']
+  record = b.read_json(path)
+  packet = b.snapshot_packet(record, 100., 'cfg')
+  assert set(packet['fields']) == set(values)
+  assert set(packet['unverified_fields']) == set(values)
+  assert panel_from_wire(packet).status == 'unverified'
+  assert not b.snapshot_packet(record, 106., 'cfg')['fields']
   b.write_snapshot('receiving', values, frozenset(values), path=path, identity='cfg', observed_at=100.)
   packet = b.snapshot_packet(b.read_json(path), 100., 'cfg')
   assert len(packet['fields']['cell_voltages_v']['value']) == 108
+  assert 'unverified_fields' not in packet and panel_from_wire(packet).status == 'receiving'
   assert path.stat().st_size < 4096 and len(json.dumps(packet)) < 2048
+
+
+def test_existing_enrollment_automatically_displays_preview_and_keeps_scalar_gate(tmp_path, monkeypatch):
+  from hud_battery import BatteryPublisher
+  config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
+  cfg, snap = tmp_path / 'cfg', tmp_path / 'snap'
+  cfg.write_text(json.dumps(config))
+  original = cfg.read_bytes()
+  monkeypatch.setattr(b, 'CONFIG', cfg)
+  monkeypatch.setattr(b, 'SNAPSHOT', snap)
+  now = 100.
+  values = {'charge_mode': 'ac', 'module_temps_c': [20]*15, 'cell_voltages_v': [3.88]*108,
+            'max_temp_c': 20, 'thermal_mode': 'heating'}
+  b.write_snapshot('receiving', values, path=snap, identity=b.config_id(b.configuration(config)), observed_at=now)
+  packet = BatteryPublisher(tmp_path/'no_profile').update('KIA_PV5', True, now)
+  assert set(packet['fields']) == {'charge_mode', 'module_temps_c', 'cell_voltages_v'}
+  panel = panel_from_wire(packet)
+  assert panel.status == 'unverified' and charging_view(panel, 'P', 0., True)
+  assert cfg.read_bytes() == original and json.loads(original)['confirmed_fields'] == []
+  assert not BatteryPublisher(tmp_path/'no_profile').update('OTHER', True, now)['fields']
+
+
+@pytest.mark.parametrize('pending', [None, 'charge_mode', [['charge_mode']], ['unknown'], ['charge_mode']*6])
+def test_bad_preview_provenance_fails_closed(pending):
+  record = {'version':1, 'updated':100., 'state':'receiving', 'config_id':'cfg',
+            'metrics':{'charge_mode':'ac'}, 'unverified_fields':pending}
+  assert not b.snapshot_packet(record,100.,'cfg')['fields']
+  if pending != ['charge_mode']*6:
+    assert not panel_from_wire({'version':1,'fields':{'charge_mode':{'value':'ac','age_s':0.}},
+                                'unverified_fields':pending}).fields
 
 
 def test_health_renderer_reverts_on_stale_motion_end_charge_or_gear_change(monkeypatch):

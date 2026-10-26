@@ -126,9 +126,11 @@ def test_poll_cycle_failure_and_conservative_freshness(tmp_path, monkeypatch):
     record = b.read_json(path)
     assert b.snapshot_packet(record, 104, 'cfg')['fields']['coolant_inlet_c'] == {'value': 27, 'age_s': 4.0}
     assert not b.snapshot_packet(record, 106, 'cfg')['fields']
-    # Default configuration never exposes an uncalibrated coolant value.
+    # Owner-enabled charging preview does not expose uncalibrated coolant.
     b.write_snapshot('receiving', values, path=path, identity='cfg', observed_at=stamp)
-    assert not b.snapshot_packet(b.read_json(path), 104, 'cfg')['fields']
+    fields = b.snapshot_packet(b.read_json(path), 104, 'cfg')['fields']
+    assert 'coolant_inlet_c' not in fields
+    assert 'charge_mode' in fields
     for failed, expected in [('220101', ['220101']), ('220106', ['220101', '220105', '220106'])]:
       link = PollLink(failed)
       with pytest.raises(TimeoutError):
@@ -351,6 +353,7 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
     assert len(sessions) <= 2, 'unexpected retry loop in synthetic transport'
   monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
   monkeypatch.setattr(b, 'Link', Session)
+  monkeypatch.setattr(b, 'vehicle_monitor', lambda: NS(update=lambda _: None))
   monkeypatch.setattr(b, 'read_json', lambda _: config)
   monkeypatch.setattr(b, 'write_snapshot', lambda *args, **kwargs: snapshots.append(args))
   monkeypatch.setattr(b.asyncio, 'sleep', sleep)

@@ -68,6 +68,10 @@ def panel_from_wire(record, elapsed_s=0.0):
     fields = record.get('fields')
     if not isinstance(fields, dict) or len(fields) > len(METRICS):
         return BatteryPanelData()
+    pending = record.get('unverified_fields', [])
+    if (not isinstance(pending, list) or len(pending) > len(METRICS)
+            or any(not isinstance(name, str) or name not in METRICS for name in pending)):
+        return BatteryPanelData()
     accepted = []
     for name in sorted(METRICS):
         item = fields.get(name)
@@ -86,15 +90,23 @@ def panel_from_wire(record, elapsed_s=0.0):
     status = record.get('status', 'waiting')
     if status not in ('waiting', 'profile_required', 'receiving'):
         status = 'waiting'
-    return BatteryPanelData(tuple(accepted), 'receiving' if accepted else ('profile_required' if status == 'profile_required' else 'waiting'))
+    if accepted:
+        status = 'unverified' if any(name in pending for name, _, _ in accepted) else 'receiving'
+    else:
+        status = 'profile_required' if status == 'profile_required' else 'waiting'
+    return BatteryPanelData(tuple(accepted), status)
 
 
-def packet_from_metrics(metrics, now, status='waiting'):
+def packet_from_metrics(metrics, now, status='waiting', unverified=()):
     fields = {}
     for name, (value, stamp) in metrics.items():
         if name in METRICS and valid_value(name, value) and finite_number(stamp) and 0 <= now - stamp <= MAX_AGE_S:
             fields[name] = {'value': value, 'age_s': now - stamp}
-    return {'version': 1, 'sampled_at': now, 'status': status, 'fields': fields}
+    packet = {'version': 1, 'sampled_at': now, 'status': status, 'fields': fields}
+    pending = sorted(name for name in fields if name in unverified)
+    if pending:
+        packet['unverified_fields'] = pending
+    return packet
 
 
 def remote_panel(snapshot, now):
@@ -131,7 +143,7 @@ def heat_color(value, reference, name):
 
 
 def charging_view(data, gear, speed, fresh_vehicle):
-    # Charge mode is independently confirmed; negative pack power can be regen.
+    # Owner enables unverified mode preview too; power sign cannot identify charge.
     return (fresh_vehicle is True and gear == 'P' and finite_number(speed) and 0 <= speed <= 0.1
             and data is not None and data.value('charge_mode') in ('ac', 'dc'))
 
@@ -148,6 +160,7 @@ def panel_labels(data, language='en'):
             'cells': '셀 전압차', 'waiting': '배터리 데이터 수신 대기',
             'profile_required': 'PV5 신호 검증 · 프로필 등록 필요',
             'receiving': '항목별 유효시간 5초', 'idle': '대기', 'cooling': '냉각 중',
+            'unverified': '충전·히트맵 관측값 · 실차 미검증',
             'heating': '가열 중', 'mixed': '냉각·가열 작동',
         }
     if language == 'zh':
@@ -160,6 +173,7 @@ def panel_labels(data, language='en'):
             'cells': '电芯电压差', 'waiting': '等待电池数据',
             'profile_required': '需要验证PV5信号并安装配置',
             'receiving': '每项有效期5秒', 'idle': '待机', 'cooling': '冷却中',
+            'unverified': '充电/热图观测值 · 实车未验证',
             'heating': '加热中', 'mixed': '冷却与加热运行',
         }
     return {
@@ -171,5 +185,6 @@ def panel_labels(data, language='en'):
         'cells': 'Cell voltage spread', 'waiting': 'Waiting for battery data',
         'profile_required': 'PV5 signals need validation and a profile',
         'receiving': 'Each value expires after 5 s', 'idle': 'Standby', 'cooling': 'Cooling',
+        'unverified': 'Charge / heatmap observations · vehicle unverified',
         'heating': 'Heating', 'mixed': 'Cooling and heating',
     }

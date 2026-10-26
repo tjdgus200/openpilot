@@ -66,7 +66,7 @@ def test_unlimited_retries_keep_attempt_deadlines_cleanup_and_cancellation(monke
     async def close(self):
       self.closed = True
   class Poller:
-    async def poll(self, link):
+    async def poll(self, link, **kwargs):
       await asyncio.Event().wait()
   real_sleep = asyncio.sleep
   delays = []
@@ -80,6 +80,7 @@ def test_unlimited_retries_keep_attempt_deadlines_cleanup_and_cancellation(monke
   monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
   monkeypatch.setattr(b, 'Link', Session)
   monkeypatch.setattr(b, 'MetricPoller', Poller)
+  monkeypatch.setattr(b, 'vehicle_monitor', lambda: SimpleNamespace(update=lambda _: None))
   monkeypatch.setattr(b, 'read_json', lambda _: config)
   monkeypatch.setattr(b, 'ATTEMPT_TIMEOUT', .01)
   monkeypatch.setattr(b, 'write_snapshot', lambda state, **kwargs: states.append(state))
