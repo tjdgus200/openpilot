@@ -159,3 +159,13 @@ validator passed. These are not measurements of comma RSS/CPU, real BLE scan
 latency, charger transitions, long-term connection stability or physical display
 readability. This follow-up requires a new host package; the previous source
 e3ef8184 release listed above does not contain the charging heatmap.
+
+Published charging/heatmap host: source`3576cf2cdf579851b376f9627b14f41fff394998`,
+64803729 bytes, SHA-256`8e4d42a0a02672e9d093dbacd931e5ff8b127ecee3eaf1f3af1752ed060d3aea`.
+[Source CI40365431515](https://github.com/tjdgus200/openpilot/actions/runs/40365431515)
+passed Linux contracts and Windows installer checks. All four public
+[release assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-charging-heatmap-20261027-3576cf2c)
+were anonymously downloaded and hash-verified. Export-only server/HUD imports,
+native image/direct-map defaults and exact N16 pins passed. Device installation
+and field confirmation were not performed. The selected package preserves
+existing SHA/model/runtime validation and previous-release retention.
