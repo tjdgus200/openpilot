@@ -2,9 +2,14 @@
 import asyncio
 from dataclasses import replace
 import json
+from pathlib import Path
+import sys
 from types import SimpleNamespace as NS
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path[:0] = [str(ROOT / 'tools/jetlink'), str(ROOT / 'openpilot/selfdrive/carrot/cluster')]
 
 from openpilot.selfdrive.carrot import obd_battery as b
 from cluster_battery import (BatteryPanelData, charging_view, heat_color, packet_from_metrics,
