@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from host_health import STATUS
 from openpilot.common.jetlink_status import _fresh
-from cluster_battery import remote_panel
+from cluster_battery import remote_panel, charging_view
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
                               WIFI_STATUS_CENTER_X, WIFI_STATUS_ICON_SIZE, TOP_CLOCK_CENTER_X, TOP_STATUS_CENTER_Y,
@@ -47,6 +47,18 @@ def vehicle_data_ready(snapshot):
   value = snapshot[1]
   return bool(value.get('alive', {}).get('carState') and value.get('valid', {}).get('carState')
               and value.get('events', {}).get('carState'))
+
+
+def vehicle_motion_fresh(snapshot, now):
+  if not vehicle_data_ready(snapshot):
+    return False
+  try:
+    received, record = snapshot
+    ages = (now - received, record['sent'] - record['received']['carState'])
+    return (all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in ages)
+            and all(0 <= age <= .3 for age in ages) and sum(ages) <= .3)
+  except (KeyError, TypeError, ValueError, OverflowError):
+    return False
 
 
 def temperature_label(health):
@@ -163,6 +175,10 @@ class HealthRenderer(ClusterUiRenderer):
     self.host_badge_drawn = False
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
       state = replace(state, battery=remote_panel(snapshot, time.monotonic()))
+    self._charging_dashboard_active = (
+      getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY
+      and charging_view(state.battery, state.gear_text, state.speed_kph,
+                        self._vehicle_data_current and vehicle_motion_fresh(snapshot, now)))
     super().render(state, signal_lights)
 
   def _draw_speed_block(self, state, *, tpms_offset_x=0.):

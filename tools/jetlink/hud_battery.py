@@ -24,7 +24,9 @@ SOURCE_LIMITS = {
     'pack_voltage_v': (0.0, 1500.0), 'pack_current_a': (-2000.0, 2000.0),
     'max_cell_v': (0.0, 5.0), 'min_cell_v': (0.0, 5.0),
 }
-PRODUCED = (METRICS - {'temp_change_5min_c'}) | SOURCE_LIMITS.keys()
+# Arrays and charge enums use the dedicated, bounded BLE layout. Scalar passive
+# profiles must not accidentally accept them as arbitrary one-byte signals.
+PRODUCED = (METRICS - {'temp_change_5min_c', 'cell_voltages_v', 'module_temps_c', 'charge_mode'}) | SOURCE_LIMITS.keys()
 
 
 def integer(value, low, high):
@@ -198,7 +200,7 @@ class PassiveDecoder:
         if maximum is not None and minimum is not None and minimum[0] > maximum[0]:
             for name in ('min_temp_c', 'max_temp_c'):
                 self.metrics.pop(name, None)
-        return packet_from_metrics(self.metrics, now, 'receiving')
+        return packet_from_metrics({k: v for k, v in self.metrics.items() if k not in SOURCE_LIMITS}, now, 'receiving')
 
 
 class BatteryPublisher:
@@ -285,7 +287,7 @@ class BatteryPublisher:
                 # Validate ranges at 1 Hz. Preserve receive stamps in the cache.
                 self.decoder.packet(now)
                 self.slow_metrics = {k: v for k, v in self.decoder.metrics.items()
-                                     if k in METRICS and k != 'pack_power_kw'}
+                                     if k in METRICS and k != 'pack_power_kw' and k not in SOURCE_LIMITS}
             if self.report is None or now >= self.next_power_report:
                 self.next_power_report = now + POWER_INTERVAL_S
                 metrics = dict(self.slow_metrics)

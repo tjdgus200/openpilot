@@ -19,7 +19,7 @@ from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
 from openpilot.selfdrive.carrot.signal_display import SignalDisplayReader, project_box
 from openpilot.selfdrive.carrot.lead_brake_lights import BrakeDisplayReader
-from cluster_battery import BatteryPanelData, panel_labels
+from cluster_battery import BatteryPanelData, heat_color, panel_labels
 
 from cluster_gles_dmabuf import DirectNv12DmabufError, create_tici_nv12_dmabuf_pool
 from cluster_gles_readback import DirectNv12ReadbackError, create_tici_direct_readback
@@ -1513,7 +1513,7 @@ class ClusterUiRenderer:
         if signal_lights is None:
             signal_lights = self._turn_signal_lights(state)
         profile_stage = self._profile_start()
-        if self.screen_mode in (CLUSTER_SCREEN_MODE_DEBUG_GRAPH, CLUSTER_SCREEN_MODE_NAVI):
+        if self._charging_dashboard_visible(state) or self.screen_mode in (CLUSTER_SCREEN_MODE_DEBUG_GRAPH, CLUSTER_SCREEN_MODE_NAVI):
             self._clear_world()
         else:
             self._render_world(state, signal_lights)
@@ -3947,6 +3947,11 @@ class ClusterUiRenderer:
         self._profile_add("hud.push_scale", profile_stage)
         try:
             screen_mode = self._effective_screen_mode(state)
+            if self._charging_dashboard_visible(state):
+                self._draw_battery_panel(state)
+                self._draw_charging_detail(state)
+                self._draw_status_footer(state)
+                return
             if screen_mode == CLUSTER_SCREEN_MODE_NAV_MODEL:
                 self._draw_driving_hud_content(state, screen_mode, left_signal_lit, right_signal_lit)
                 self._draw_nav_model_map()
@@ -4045,6 +4050,58 @@ class ClusterUiRenderer:
             rl.rl_pop_matrix()
             self._profile_add("hud.pop_matrix", profile_stage)
 
+    def _charging_dashboard_visible(self, state: ClusterUiState) -> bool:
+        # The Jetson renderer sets this only from fresh vehicle + calibrated OBD
+        # state. The generic renderer never guesses charging from a default 0.
+        return getattr(self, '_charging_dashboard_active', False)
+
+    def _draw_charging_detail(self, state: ClusterUiState) -> None:
+        from statistics import median
+        data = state.battery or BatteryPanelData()
+        theme = self._current_theme()
+        x = self._driving_panel_offset_design_x()
+        width = CAMERA_BACKGROUND_W
+        left = x + 24
+        ko = self.language == 'ko'
+        mode = data.value('charge_mode')
+        title = ('DC 급속 충전' if mode == 'dc' else 'AC 완속 충전') if ko else ('DC CHARGING' if mode == 'dc' else 'AC CHARGING')
+        self._rounded_rect(x, 1, width, DESIGN_HEIGHT - 2, 10, theme.panel_bg, theme.faint, 1)
+        self._draw_text(title, left, 33, 27, theme.text)
+        voltage, current = data.value('pack_voltage_v'), data.value('pack_current_a')
+        electric = f"{voltage:.1f} V" if voltage is not None else '-- V'
+        electric += f"   {current:+.1f} A" if current is not None else '   -- A'
+        self._draw_text(electric, left, 65, 20, theme.text)
+        # Separate sensors and voltage channels; no invented pack position or
+        # cell-by-cell temperature. Fixed arrays, no history or image textures.
+        for name, label, top, columns, row_height in (
+            ('module_temps_c', '온도 센서 15개' if ko else '15 temperature sensors', 112, 8, 34),
+            ('cell_voltages_v', '전압 채널 108개' if ko else '108 voltage channels', 231, 18, 36),
+        ):
+            values = data.value(name)
+            available = [v for v in values if v is not None] if values is not None else []
+            reference = median(available) if available else None
+            spread = max(available) - min(available) if available else None
+            diff_label = '차이' if ko else 'spread'
+            suffix = (f' · {diff_label} {spread * 1000:.0f} mV' if name == 'cell_voltages_v' else f' · {diff_label} {spread:.0f}°C') if spread is not None else ' · --'
+            self._draw_text(label + suffix, left, top - 20, 20, theme.text)
+            count = 108 if name == 'cell_voltages_v' else 15
+            cell_width = (width - 48) / columns
+            for i in range(count):
+                value = values[i] if values is not None else None
+                px, py = left + (i % columns) * cell_width, top + (i // columns) * row_height
+                color = heat_color(value, reference, name)
+                rl.draw_rectangle(int(px), int(py), int(cell_width - 3), row_height - 3, rl_color(color))
+                ink = (16, 22, 28) if value is not None else (220, 220, 225)
+                if name == 'cell_voltages_v':
+                    self._draw_text(f'{i+1:03d}', px + 4, py + 9, 13, ink)
+                    self._draw_text(f'{value:.2f}' if value is not None else '--', px + 4, py + 24, 17, ink)
+                else:
+                    text = f'T{i+1:02d}  {value:.0f}°C' if value is not None else f'T{i+1:02d}  --'
+                    self._draw_text(text, px + 5, py + 16, 18, ink)
+        legend = ('색상: 중앙값 편차 · 진단용 / 회색: 미수신' if ko else
+                  'Color: deviation from median / diagnostic only · Gray: unavailable')
+        self._draw_text(self._ellipsize_text(legend, 15, width - 48), left, 461, 15, theme.muted)
+
     def _draw_battery_panel(self, state: ClusterUiState) -> None:
         data = state.battery or BatteryPanelData()
         labels = panel_labels(data, self.language)
@@ -4073,10 +4130,12 @@ class ClusterUiRenderer:
         self._draw_text(detail, middle + 18, 169, 20, theme.muted)
         power = data.value('pack_power_kw')
         power_text = '-- kW' if power is None else f'{power:.1f} kW'
+        power_label = (labels['charging_power'] if data.value('charge_mode') in ('ac', 'dc') else
+                       labels['regeneration'] if power is not None and power < 0 else labels['consumption'])
         mode = data.value('thermal_mode')
         mode_text = labels.get(mode, '--')
         rows = (
-            (219, labels['regeneration'] if power is not None and power < 0 else labels['consumption'], power_text),
+            (219, power_label, power_text),
             (273, labels['coolant'], number('coolant_inlet_c', suffix='°C')),
             (327, labels['thermal'], f"{mode_text} · {number('thermal_power_kw', 1, ' kW')}"),
             (381, labels['charge80'], number('dc_charge_80_min', suffix=' ' + labels['minutes'])),

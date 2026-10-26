@@ -27,8 +27,12 @@ POWER_PERIOD = 0.5
 RETRY_INTERVAL = 5.0
 ATTEMPT_TIMEOUT = 60.0
 FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv', 'coolant_inlet_c',
-                    'soc_percent', 'thermal_mode', 'temp_change_5min_c'))
+                    'soc_percent', 'thermal_mode', 'temp_change_5min_c', 'pack_voltage_v', 'pack_current_a',
+                    'charge_mode', 'cell_voltages_v', 'module_temps_c'))
 REPLIES = {'220101': (62, b'\x62\x01\x01'), '220105': (46, b'\x62\x01\x05'), '220106': (38, b'\x62\x01\x06')}
+# Only the four blocks actually observed before the PV5 metadata/zero tail.
+CELL_BLOCKS = (('220102', 32), ('220103', 32), ('220104', 32), ('22010A', 12))
+REPLIES.update({cmd: (39, bytes.fromhex('62' + cmd[2:])) for cmd, _ in CELL_BLOCKS})
 SETUP = ('ATE0', 'ATL0', 'ATM0', 'ATSP6', 'ATCAF1', 'ATCFC1', 'ATFCSM0',
          'ATSH7E4', 'ATCRA7EC', 'ATH1', 'ATD0', 'ATS0', 'ATAL', 'ATST96')
 COMMANDS = frozenset((*SETUP, 'ATI', *REPLIES))
@@ -147,13 +151,54 @@ def soc_candidate(payload):
   return {'soc_percent': value} if value <= 100 else {}
 
 
+def charge_candidate(payload):
+  """Other-model 0101 J bit7 active, bits5/6 AC/DC; needs PV5 comparison.
+
+  A plug alone is not charging. Conflicting port bits remain unavailable.
+  Never infer this from power sign or automatically confirm the candidate.
+  """
+  if len(payload) != 62 or payload[:3] != b'\x62\x01\x01':
+    raise ValueError('charge payload layout')
+  flags = payload[12]
+  if not flags & 0x80:
+    return {'charge_mode': 'off'}
+  ports = flags & 0x60
+  return {'charge_mode': {0x20: 'ac', 0x40: 'dc'}[ports]} if ports in (0x20, 0x40) else {}
+
+
+def temperature_array(first, fifth):
+  if (len(first) != 62 or first[:3] != b'\x62\x01\x01'
+      or len(fifth) != 46 or fifth[:3] != b'\x62\x01\x05'):
+    raise ValueError('temperature array layout')
+  # 5 + 7 + 3 observed sensors. Slot16 (0105 byte45) was padding in every log sample.
+  raw = first[19:24] + fifth[12:19] + fifth[42:45]
+  values = [int.from_bytes(bytes((v,)), 'big', signed=True) for v in raw]
+  # A real temperature may be zero or below zero. Never truncate at 0 C.
+  return [v if -40 <= v <= 90 else None for v in values]
+
+
+def cell_array(blocks):
+  values = []
+  for command, count in CELL_BLOCKS:
+    payload = blocks[command]
+    if len(payload) != 39 or payload[:3] != REPLIES[command][1]:
+      raise ValueError('cell array layout')
+    # Discard metadata after channel108. Invalid interior readings are holes,
+    # not a new cell count; never slide a later channel into an earlier index.
+    values.extend(v / 50 if 100 <= v <= 225 else None for v in payload[7:7+count])
+  return values
+
+
 class MetricPoller:
   """One sequential request stream; fixed-size values and per-field timestamps."""
-  def __init__(self):
+  def __init__(self, details=False):
     self.values, self.observed = {}, {}
     self.next_slow = 0.0
+    self.next_cells = 0.0
+    self.details = details
+    self.cell_blocks, self.cell_started = {}, 0.0
 
-  async def poll(self, link):
+  async def poll(self, link, parked=False):
     # Always obtain power first. Slow fields keep their original timestamps
     # between reads; a new power sample must not rejuvenate old temperatures.
     started = time.monotonic()
@@ -162,9 +207,19 @@ class MetricPoller:
     if slow:
       groups += [('220105', soc_candidate, ('soc_percent',)),
                  ('220106', coolant_candidate, ('coolant_inlet_c', 'thermal_mode'))]
+    payloads, times = {}, {}
     for command, decode, fields in groups:
       stamp = time.monotonic()
-      values = decode(parse_reply(await link.command(command), command))
+      payloads[command] = parse_reply(await link.command(command), command)
+      times[command] = stamp
+      values = decode(payloads[command])
+      if command == '220101':
+        fields += ('charge_mode', 'pack_voltage_v', 'pack_current_a')
+        values.update(charge_candidate(payloads[command]))
+        if 'pack_power_kw' in values:
+          data = payloads[command][3:]
+          values.update(pack_voltage_v=int.from_bytes(data[12:14], 'big') / 10,
+                        pack_current_a=int.from_bytes(data[10:12], 'big', signed=True) / 10)
       if command == '220101' and slow:
         fields += ('max_temp_c', 'min_temp_c', 'cell_delta_mv')
       for name in fields:
@@ -173,7 +228,38 @@ class MetricPoller:
         if name in values:
           self.values[name], self.observed[name] = values[name], stamp
     if slow:
+      temperatures = temperature_array(payloads['220101'], payloads['220105'])
+      self.values['module_temps_c'] = temperatures
+      self.observed['module_temps_c'] = min(times['220101'], times['220105'])
       self.next_slow = started + PERIOD
+    active = (self.values.get('charge_mode') in ('ac', 'dc')
+              and 0 <= time.monotonic() - self.observed.get('charge_mode', -10.) <= 1.)
+    safe_parked = parked() if callable(parked) else parked is True
+    if not (self.details and safe_parked and active):
+      self.values.pop('cell_voltages_v', None)
+      self.observed.pop('cell_voltages_v', None)
+      self.cell_blocks.clear()
+    elif started >= self.next_cells:
+      if not self.cell_blocks or time.monotonic() - self.cell_started > 2.5:
+        self.cell_blocks.clear()
+        self.cell_started = time.monotonic()
+      command, _ = CELL_BLOCKS[len(self.cell_blocks)]
+      # At most one optional cell block per existing poll, after power. No burst,
+      # parallel BLE connection or extra wakeup; a slow adapter can still be late.
+      self.cell_blocks[command] = parse_reply(await link.command(command), command)
+      if len(self.cell_blocks) == len(CELL_BLOCKS):
+        if time.monotonic() - self.cell_started <= 2.5:
+          self.values['cell_voltages_v'] = cell_array(self.cell_blocks)
+          self.observed['cell_voltages_v'] = self.cell_started
+        self.cell_blocks.clear()
+        self.next_cells = time.monotonic() + 2.0
+    # Old optional scans cannot invalidate fresh power through the enclosing
+    # snapshot's minimum stamp. Discard them; do not renew their observation age.
+    now = time.monotonic()
+    for name in tuple(self.observed):
+      if not 0 <= now - self.observed[name] <= 5:
+        self.observed.pop(name, None)
+        self.values.pop(name, None)
     return min(self.observed.values(), default=started), self.values.copy(), self.observed.copy()
 
 
@@ -378,11 +464,24 @@ async def run():
           try:
             await link.connect()
             poller = MetricPoller()
+            # Once AC/DC flags have been compared, collect candidate arrays for
+            # their separate comparison; array confirmation still gates the HUD.
+            details = 'charge_mode' in confirmed
+            monitor = None
+            if details:
+              from openpilot.cereal import messaging
+              monitor = messaging.SubMaster(['carState'])
+              poller.details = True
             # Configuration is immutable for this session. A config change causes
             # a clean reconnect before any further poll or publication.
             while configuration(read_json(CONFIG)) == (address, confirmed):
               started = loop.time()
-              observed_at, candidates, field_times = await poller.poll(link)
+              if monitor is not None:
+                monitor.update(0)
+                observed_at, candidates, field_times = await poller.poll(
+                  link, parked=lambda monitor=monitor: parked_state(monitor, loop.time()))
+              else:
+                observed_at, candidates, field_times = await poller.poll(link)
               if configuration(read_json(CONFIG)) != (address, confirmed):
                 break
               write_snapshot('receiving', candidates, confirmed, identity=identity,
@@ -403,6 +502,18 @@ async def run():
       write_snapshot('unavailable')
       # Five seconds after failure/cleanup, never overlapping attempts.
       await asyncio.sleep(RETRY_INTERVAL)
+
+
+def parked_state(monitor, now):
+  """Read-only freshness gate for optional cell requests, never vehicle controls."""
+  try:
+    car = monitor['carState']
+    speed = car.vEgo
+    return (monitor.valid['carState'] and monitor.alive['carState']
+            and 0 <= now - monitor.recv_time['carState'] <= .3
+            and str(car.gearShifter) == 'park' and finite_number(speed) and abs(speed) <= .01)
+  except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+    return False
 
 
 def main():

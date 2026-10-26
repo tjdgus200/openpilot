@@ -1,5 +1,17 @@
 # Repository memory
 
+- 2026-10-27 charging heatmaps: mode8 may replace road/3D with battery detail
+  only on separately confirmed AC/DC mode plus fresh300ms Park/zero state.
+  Observe108 voltage channels (32/32/32/12),15 temperature sensors; exclude
+  known metadata/padding tails. Interior invalid voltages are gray holes;0C
+  is a valid temperature. Fixed median-deviation colors are diagnostic, not
+  OEM safety thresholds or physical pack geometry. Bounded sequential cell
+  scans start only after charge-mode comparison and fresh Park. Never auto
+  confirm new fields or derive charge from negative power. Owner is not
+  charging now; actual charging flags, ignition-off lifetime and compressor
+  mapping remain pending. Preserve existing offroad gates and all six PV5
+  features. See docs/pv5_obd_followup_20261027.md for limits and verification.
+
 - 2026-10-27 owner follow-up: PV5 BLE retries indefinitely onroad with a bounded
   60s startup attempt and 5s wait after cleanup. Target pack power at0.5s,
   other fields at1s, sequential/no catch-up; retain individual field times and

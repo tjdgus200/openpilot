@@ -5,6 +5,9 @@ import math
 
 MAX_AGE_S = 5.0
 THERMAL_MODES = frozenset(('idle', 'cooling', 'heating', 'mixed'))
+CHARGE_MODES = frozenset(('off', 'ac', 'dc'))
+# Observed PV5 response topology, not a claim about physical pack geometry.
+ARRAYS = {'cell_voltages_v': (108, 2.0, 4.5), 'module_temps_c': (15, -40.0, 90.0)}
 LIMITS = {
     'soc_percent': (0.0, 100.0),
     'max_temp_c': (-50.0, 130.0),
@@ -15,8 +18,10 @@ LIMITS = {
     'thermal_power_kw': (0.0, 100.0),
     'dc_charge_80_min': (0.0, 3600.0),
     'temp_change_5min_c': (-180.0, 180.0),
+    'pack_voltage_v': (150.0, 550.0),
+    'pack_current_a': (-1000.0, 1000.0),
 }
-METRICS = frozenset((*LIMITS, 'thermal_mode'))
+METRICS = frozenset((*LIMITS, *ARRAYS, 'thermal_mode', 'charge_mode'))
 
 
 def finite_number(value):
@@ -29,6 +34,13 @@ def finite_number(value):
 def valid_value(name, value):
     if name == 'thermal_mode':
         return isinstance(value, str) and value in THERMAL_MODES
+    if name == 'charge_mode':
+        return isinstance(value, str) and value in CHARGE_MODES
+    if name in ARRAYS:
+        count, low, high = ARRAYS[name]
+        return (isinstance(value, (list, tuple)) and len(value) == count
+                and any(v is not None for v in value)
+                and all(v is None or (finite_number(v) and low <= v <= high) for v in value))
     limits = LIMITS.get(name)
     return limits is not None and finite_number(value) and limits[0] <= value <= limits[1]
 
@@ -36,7 +48,7 @@ def valid_value(name, value):
 @dataclass(frozen=True, slots=True)
 class BatteryPanelData:
     # Each field retains its own age. A fresh SOC must not revive an old temperature.
-    fields: tuple[tuple[str, float | str, float], ...] = ()
+    fields: tuple[tuple[str, float | str | tuple, float], ...] = ()
     status: str = 'waiting'
 
     def value(self, name):
@@ -66,7 +78,7 @@ def panel_from_wire(record, elapsed_s=0.0):
             continue
         age += elapsed_s
         if age <= MAX_AGE_S:
-            accepted.append((name, value, age))
+            accepted.append((name, tuple(value) if name in ARRAYS else value, age))
     values = {key: value for key, value, _ in accepted}
     # Do not present a self-contradictory temperature range.
     if values.get('min_temp_c', -math.inf) > values.get('max_temp_c', math.inf):
@@ -102,6 +114,28 @@ def remote_panel(snapshot, now):
     return panel_from_wire(battery, sent - sampled + now - received)
 
 
+def heat_color(value, reference, name):
+    """Fixed median-deviation scale, not an OEM fault/safety classification."""
+    if not finite_number(value) or not finite_number(reference) or name not in ARRAYS:
+        return (85, 90, 100)
+    delta = abs(value - reference)
+    knots = (0.02, 0.04, 0.08, 0.12) if name == 'cell_voltages_v' else (1., 3., 5., 8.)
+    colors = ((55, 205, 115), (245, 215, 65), (255, 145, 45), (240, 65, 65))
+    if delta <= knots[0]:
+        return colors[0]
+    for i in range(1, len(knots)):
+        if delta <= knots[i]:
+            ratio = (delta - knots[i-1]) / (knots[i] - knots[i-1])
+            return tuple(round(a + (b-a) * ratio) for a, b in zip(colors[i-1], colors[i], strict=True))
+    return colors[-1]
+
+
+def charging_view(data, gear, speed, fresh_vehicle):
+    # Charge mode is independently confirmed; negative pack power can be regen.
+    return (fresh_vehicle is True and gear == 'P' and finite_number(speed) and 0 <= speed <= 0.1
+            and data is not None and data.value('charge_mode') in ('ac', 'dc'))
+
+
 def panel_labels(data, language='en'):
     """Complete localized labels, shared by the renderer and PC checks."""
     if language == 'ko':
@@ -109,6 +143,7 @@ def panel_labels(data, language='en'):
             'title': '배터리 종합', 'soc': '잔량', 'maximum': '최고 온도',
             'minimum': '최저', 'spread': '온도차', 'consumption': '전체 소비 전력',
             'regeneration': '전체 회생 전력', 'coolant': '배터리 냉각수 입구',
+            'charging_power': '배터리 충전 전력',
             'thermal': '열관리 상태 · 소비 전력', 'charge80': '급속충전 80% 예상 시간', 'minutes': '분',
             'cells': '셀 전압차', 'waiting': '배터리 데이터 수신 대기',
             'profile_required': 'PV5 신호 검증 · 프로필 등록 필요',
@@ -120,6 +155,7 @@ def panel_labels(data, language='en'):
             'title': '电池信息', 'soc': '电量', 'maximum': '最高温度',
             'minimum': '最低', 'spread': '温差', 'consumption': '总耗电功率',
             'regeneration': '总回收功率', 'coolant': '电池冷却液入口',
+            'charging_power': '电池充电功率',
             'thermal': '热管理状态 · 功率', 'charge80': '快充至80%预计时间', 'minutes': '分钟',
             'cells': '电芯电压差', 'waiting': '等待电池数据',
             'profile_required': '需要验证PV5信号并安装配置',
@@ -130,6 +166,7 @@ def panel_labels(data, language='en'):
         'title': 'Battery overview', 'soc': 'Charge', 'maximum': 'Maximum temp',
         'minimum': 'Min', 'spread': 'Spread', 'consumption': 'Total battery draw',
         'regeneration': 'Total regeneration', 'coolant': 'Battery coolant inlet',
+        'charging_power': 'Battery charge power',
         'thermal': 'Thermal mode / electrical power', 'charge80': 'DC charge to 80% / estimate', 'minutes': 'min',
         'cells': 'Cell voltage spread', 'waiting': 'Waiting for battery data',
         'profile_required': 'PV5 signals need validation and a profile',

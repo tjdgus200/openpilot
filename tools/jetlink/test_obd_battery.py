@@ -251,7 +251,7 @@ def test_no_can_or_control_dependencies():
   source = Path(b.__file__).read_text()
   assert 'sendcan' not in source
   assert 'sub_sock' not in source
-  assert b.COMMANDS - set(b.SETUP) == {'ATI', '220101', '220105', '220106'}
+  assert b.COMMANDS - set(b.SETUP) == {'ATI', '220101', '220105', '220106', '220102', '220103', '220104', '22010A'}
 
 
 def test_non_uart_notifications_do_not_block_and_oversize_fails():

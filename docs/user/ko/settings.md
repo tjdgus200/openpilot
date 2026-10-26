@@ -312,7 +312,7 @@ Jetson HUD에는 `jetSON` 아래에 Jetson 내부 센서의 최고 온도가 표
 | 경로 표시 | `ShowPathMode`, `ShowPathColor`, `ShowPathColorCruiseOff`, `ShowPathModeLane`, `ShowPathColorLane` | 레인리스·레인모드·크루즈 OFF 상태의 경로 모양과 색상 |
 | 밝기·주행화면 | `ShowCustomBrightness`, `ShowModelView`, `ShowCameraWithCluster` | 주행 중 밝기, 카메라·모델 표시 조합과 외부 HUD 연결 중 본체 카메라 표시 |
 | 외부 HUD·기본 | `ClusterHud`, `ClusterHudBrightness`, `ClusterHudOrientation`, `ClusterHudMirror`, `ClusterHudTheme`, `ClusterNaviMapTheme`, `ClusterNaviMapType`, `ClusterNaviMapFps` | TURZX 외부 HUD, BSD 점멸 시 최대 밝기·종료 후 자동 밝기, 화면 회전과 지도 테마 |
-| 외부 HUD·화면·카메라 | `ClusterHudEncoder`, `ClusterHudScreenMode`, `ClusterHudPanelLayout`, `ClusterHudCameraViewMode` | 인코더와 화면·카메라·좌우 패널 구성 |
+| 외부 HUD·화면·카메라 | `ClusterHudEncoder`, `ClusterHudScreenMode`, `ClusterHudPanelLayout`, `ClusterHudCameraViewMode` | 인코더와 화면·카메라·좌우 패널 구성, PV5 충전 상세·히트맵 |
 | 외부 HUD·레이더 표시 | `ClusterHudRadarInfo`, `ClusterHudRadarDisplay`, `ClusterHudRadarSourceColor` | 외부 HUD의 레이더 정보와 색상 |
 | 외부 HUD·디버그 | `ClusterHudDebug` | 진단 정보 |
 
@@ -471,6 +471,7 @@ USB/HUD 일반 카메라 화면에 `BRAKE?`로 표시하고 기록합니다. `BR
 기본 코드는 공식 carrot-nav `24c1ba5e`과 맞췄으며 아래 예외를 유지합니다.
 
 - 외부 HUD 화면 모드 8은 PV5 배터리 종합 화면입니다. 초기값은 8이고 기존 저장값은 유지합니다. 수동 수신은 검증된 PV5 프로필을 요구하며 진단 CAN 요청을 보내지 않습니다. 별도로 설정한 opt-in BLE 수집기는 실제 PV5의 onroad 상태에서 한 어댑터에 고정된 읽기 전용 DID `0101`/`0105`/`0106`을 요청하고, 전력은 0.5초, 나머지 센서는 1초 간격을 목표로 순차 조회합니다. 요청이 느리면 실제 갱신도 늦어지며 밀린 요청을 몰아서 보내지 않습니다. 연결 실패 후 5초 대기하며 온로드 동안 횟수 제한 없이 재시도합니다. 각 항목은 PV5에서 독립 비교·확인해야 표시되며 연결 성공만으로 검증되지 않습니다. 미수신·미확인·5초 초과 값은 `--`입니다. [BLE 설정과 검증 조건](../../pv5_ble_battery_20261025.md)을 참고하세요.
+- 모드 8에는 충전 상세 화면이 추가됩니다. 독립 비교·확인한 AC/DC 충전 상태와 300ms 이내 P단·정차 데이터가 모두 유효할 때 도로·3D 영역을 배터리 상세 영역으로 바꾸고, 조건이 사라지면 기존 화면으로 복귀합니다. 전력 부호만으로 충전을 판단하지 않습니다. 전압 108채널과 온도 센서 15개의 관측 순서 히트맵이며 실제 배터리 물리 배치나 셀마다의 온도가 아닙니다. 색상은 중앙값 편차에 대한 고정 진단용 눈금(전압 20/40/80/120mV, 온도 1/3/5/8°C)으로 초록·노랑·주황·빨강으로 변하며 제조사 위험 기준이 아닙니다. 결측·만료는 회색이고 0°C는 정상 측정값으로 허용합니다. 로그에서 확인된 전압 꼬리 메타데이터와 16번째 온도 패딩 슬롯은 제외합니다. 확인된 충전 상태에서 P단일 때만 기존 전력 조회 뒤 셀 블록을 한 번에 하나씩 순차 요청하며, 전체 배열은 최대 2.5초 안에 완성된 경우만 사용합니다. 추가 항목은 별도 확인 전에는 표시되지 않으며 기존 구성에 자동으로 확인 표시하지 않습니다. 현재 충전 실차 비교와 시동을 끈 충전 지원은 완료되지 않았으므로 기존 온로드·전원 조건을 유지합니다.
 - 최신 차량 BSD OR 유효한 콤마 로컬 ONNX BSD가 해당 화면 끝과 바깥 1/3의 위·아래에 빨간 테두리와 그라데이션(최대 alpha96)을 표시합니다. ONNX를 사용할 수 없어도 차량 BSD는 표시됩니다. 물리적 사각 모서리는 채우고 안쪽 접합부는 72px 반경으로 둥글게 유지하며, 위·아래 테두리와 halo는 중앙 쪽으로 투명해집니다. 같은 쪽 방향지시 요청이 없으면 전체 표시를 유지하고, 요청 중에는 전체 표시가 10fps에서 두 프레임 켜짐/두 프레임 꺼짐으로 반복됩니다(명목 2.5Hz, 출력 누락 시 느려질 수 있음). 깜빡이는 화살표 위상이 아닌 방향지시 요청 상태를 사용합니다. 점멸 이벤트 전체에서 HUD 밝기를 100%로 유지하며, 종료·데이터 만료 후 다음 100ms 밝기 확인 시 자동 밝기로 복귀합니다. 이후 밝기 설정을 변경하면 그 설정을 적용합니다. 300ms 최신성 검사를 유지하고 차량 경고를 최상단에 표시합니다.
 - Wi-Fi 아이콘 옆 W·온도 배지와 배터리 화면의 자원·추론 통계를 유지합니다. 전력은 0.5초마다 갱신하며 센서가 없거나 오래되면 `--`입니다. 추론 통계는 GPU 사용량이나 주행 안전성을 보장하는 지표가 아닙니다.
 - Jetson USB 입력 전류를 부팅 초기 실행기와 Jetlink 연결 전에 차단합니다. 별도의 차량/주 전원이 필수이며 USB 데이터 역할은 바꾸지 않습니다. 부트 ROM/커널 시작부터 전기적으로 분리하는 기능은 아닙니다.

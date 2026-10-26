@@ -46,7 +46,7 @@ listener, Internet upload, model payload, or vehicle-control consumer is added.
   characteristic are also checked. These reduce accidental device selection;
   they are not cryptographic authentication. Other Bluetooth users are not
   disabled or reconfigured. Do not use the OBD adapter as a remote-control input.
-* Three fixed read-only diagnostic DIDs (`0101`, `0105`, `0106`) are polled
+* Three baseline read-only diagnostic DIDs (`0101`, `0105`, `0106`) are polled
   sequentially, with a two-second sleep after each complete cycle (at most
   1.5 requests/second over repeated cycles, not a strict per-second burst limit).
   No raw CAN subscription, ECU writes,
