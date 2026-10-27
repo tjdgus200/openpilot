@@ -1,5 +1,14 @@
 # Repository memory
 
+- HUD telemetry recovery delivery2026-10-27: public corrected sourceaf2cfe37,
+  tagjetson-pv5-hud-telemetry-fix-20261027-af2cfe37,65021048bytes,
+  SHA1db947fb5cdf35fe662b5980f465aa5fdd471138fe9891b67ade6430687af60d.
+  Four anonymous assets match; exported fresh telemetry and injected missing
+  optional module pass. Prior9210 release is superseded, original assets kept.
+  Normal recovery order: parked comma pull/reboot completion, then Jetson
+  reboot/USB update. No live recovery confirmation. Keep all update permissions,
+  activation checks, model/runtime identity and previous-release rollback.
+
 - HUD telemetry regression2026-10-27: owner's installed9210de4b HUD reported
   ModuleNotFoundError(openpilot) and lost vehicle data. Reproduced in a fresh
   interpreter from tools/jetlink with no checkout PYTHONPATH: server imported,

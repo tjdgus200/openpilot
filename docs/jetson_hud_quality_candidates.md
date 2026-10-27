@@ -137,7 +137,7 @@ arguments are checked on PC, but loading that ARM library on Jetson, optical
 quality, delivered 10fps, total CPU/memory/USB load and loaded model P99 are
 not yet measured. No measured winner is supplied with the software.
 
-Published source: `9210de4bd430c323336b9b1a26851f393713a749`. The selected
+Initial, now superseded source: `9210de4bd430c323336b9b1a26851f393713a749`. Its
 [PC-tested Jetson prerelease](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-quality-20261027-9210de4b)
 contains a 65,020,650-byte host bundle, SHA256
 `94fb65c532619734bce80ab1e7c3b9c3854d22f2e766baa65ac92121c993642e`.
@@ -163,3 +163,12 @@ including repeated reads, stale status, invalid quality and an injected missing
 optional module. Related Windows checks: 38 passed; Linux checks: 345 passed,
 one native FFmpeg skip. No vehicle or physical recovery is established by PC
 checks. Activation probes, model/USB sessions and update rollback are unchanged.
+
+The selected [corrected Jetson package](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-telemetry-fix-20261027-af2cfe37)
+contains source `af2cfe37b741190a0b3bb11053c6da337c081a9c`, 65,021,048 bytes,
+SHA256 `1db947fb5cdf35fe662b5980f465aa5fdd471138fe9891b67ade6430687af60d`.
+All four public assets match anonymous downloads; isolated exported fresh HUD
+telemetry and optional-module failure cases pass. The prior release is marked
+superseded with assets retained unchanged. Update the comma first and let it
+finish a normal parked reboot, then normally reboot Jetson for its USB host
+update. Actual vehicle reconnection still requires confirmation on the device.

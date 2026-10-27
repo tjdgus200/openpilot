@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-hud-quality-20261027-9210de4b",
-  "source_commit": "9210de4bd430c323336b9b1a26851f393713a749",
+  "profile": "pv5-hud-telemetry-fix-20261027-af2cfe37",
+  "source_commit": "af2cfe37b741190a0b3bb11053c6da337c081a9c",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-quality-20261027-9210de4b/host.tar.gz",
-    "sha256": "94fb65c532619734bce80ab1e7c3b9c3854d22f2e766baa65ac92121c993642e",
-    "size": 65020650
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-telemetry-fix-20261027-af2cfe37/host.tar.gz",
+    "sha256": "1db947fb5cdf35fe662b5980f465aa5fdd471138fe9891b67ade6430687af60d",
+    "size": 65021048
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",
