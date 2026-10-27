@@ -120,12 +120,12 @@ def test_poll_cycle_failure_and_conservative_freshness(tmp_path, monkeypatch):
     link = PollLink()
     stamp, values, field_times = await b.MetricPoller().poll(link)
     assert link.commands == ['220101', '220105', '220106']
-    assert stamp == 100 and values['coolant_inlet_c'] == 27
+    assert stamp == 102 and values['coolant_inlet_c'] == 27
     path = tmp_path / 'coolant.json'
-    b.write_snapshot('receiving', values, frozenset(['coolant_inlet_c']), path, 'cfg', observed_at=stamp)
+    b.write_snapshot('receiving', values, frozenset(['coolant_inlet_c']), path, 'cfg', observed_at=stamp, field_times=field_times)
     record = b.read_json(path)
-    assert b.snapshot_packet(record, 104, 'cfg')['fields']['coolant_inlet_c'] == {'value': 27, 'age_s': 4.0}
-    assert not b.snapshot_packet(record, 106, 'cfg')['fields']
+    assert b.snapshot_packet(record, 104, 'cfg')['fields']['coolant_inlet_c'] == {'value': 27, 'age_s': 2.0}
+    assert not b.snapshot_packet(record, 108, 'cfg')['fields']
     # Owner-enabled charging preview does not expose uncalibrated coolant.
     b.write_snapshot('receiving', values, path=path, identity='cfg', observed_at=stamp)
     fields = b.snapshot_packet(b.read_json(path), 104, 'cfg')['fields']
@@ -359,7 +359,8 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
   monkeypatch.setattr(b.asyncio, 'sleep', sleep)
   with pytest.raises(asyncio.CancelledError):
     asyncio.run(b.run())
-  assert [x[0] for x in snapshots] == ['connecting', 'disconnected', 'unavailable', 'connecting', 'receiving', 'disconnected']
+  assert [x[0] for x in snapshots] == ['connecting', 'disconnected', 'unavailable', 'connecting',
+                                      'receiving', 'receiving', 'receiving', 'disconnected']
   assert all(s.closed for s in sessions) and len(sessions) == 2
 
 

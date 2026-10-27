@@ -4,13 +4,27 @@
 
 - The enrolled, single BLE target retries indefinitely while the manager enables
   the reader for a real PV5 onroad. Each connection/setup/first-poll attempt is
-  bounded to 60 seconds; cleanup finishes before a five-second retry wait. This
+  bounded to 60 seconds until a complete, valid transaction or exact terminal
+  `NO DATA` reply proves the ELM session responsive. Cleanup finishes before a
+  five-second retry wait. This
   does not run after manager offroad shutdown or enable other Bluetooth targets.
 - The reader targets `0101` at 0.5 seconds and `0105`/`0106` at one second.
   Temperature/cell-spread publication also targets one second. Requests stay
   sequential, with no queue or catch-up burst. Slow adapter transactions reduce
   the achievable rate; these are scheduling targets, not measured adapter rates.
   There are four read-only DID requests/second with an instantaneous adapter.
+- Each completed DID response updates the bounded RAM snapshot before the next
+  request, rather than waiting for the whole group. Existing HUD consumer and
+  badge cache rates are unchanged. A complete battery response can establish
+  receiving state without all three DIDs succeeding; no-data alone cannot.
+- Requests use GATT write-with-response and await exactly one terminal ELM
+  prompt before proceeding. A quiet gap adapts between50 and500ms, increasing
+  with response time or `NO DATA` and gradually reducing after successful replies.
+  These are local pacing heuristics, not Bluetooth-standard timing guarantees.
+- Only an exact, bounded, prompt-terminated `NO DATA` reply is recoverable without
+  disconnecting. Back off that DID for2/4/8/16/30seconds and continue other reads.
+  Incomplete/extra prompts, unsolicited data, overflow, write failures and timeouts
+  remain session failures; never discard uncertain bytes into another request.
 - Every field retains its own observation time. Invalid fields are removed on
   their next scheduled read. A timeout or malformed transaction clears the whole
   session snapshot; reconnection starts with empty state. Existing configuration
@@ -112,20 +126,46 @@ fresh-D refusal and genuinely stale-P refusal. This is a comma collector fix;
 the already published battery-hold Jetson package supports the same wire data.
 No actual vehicle voltage reception or Bluetooth fault diagnosis is claimed.
 
-Connection analysis also reproduced a complete`NO DATA` coolant response and a
+Before the adaptive follow-up below, connection analysis reproduced a complete`NO DATA` coolant response and a
 transaction timeout causing StopNotify/Disconnect, without injecting a radio
-failure: the present outer error handler resets the entire link on either.
+failure: the then-current outer error handler reset the entire link on either.
 Requests are sequential; an idealized20ms mock produces40 standard requests per
 10s, plus12 cell-block requests while parked. These counts are scheduling
 examples, not actual adapter performance or evidence of bus overload. Single
 polls can contain3/4 back-to-back sequential requests without an inter-command
 gap. GATT writes have a2s deadline; the ELM prompt uses a3s transaction deadline.
-Runtime exceptions currently collapse to an unavailable snapshot with no saved
+Runtime exceptions then collapsed to an unavailable snapshot with no saved
 cause, so physical radio/driver loss cannot be distinguished from application
 initiated teardown using the existing status alone. Future diagnostics should
 separate those cases using bounded error categories and the BlueZ disconnect
 reason ([upstream management protocol](https://github.com/bluez/bluez/blob/master/doc/mgmt-protocol.rst)).
-No change to the Bluetooth reset/retry policy was made in this collector fix.
+That collector fix did not change Bluetooth reset/retry policy. The subsequent
+adaptive follow-up supersedes the complete-NO-DATA behavior and adds local
+failure categories; it does not establish the physical disconnect reason.
+
+### Adaptive response publication and recovery
+
+The latest comma-side follow-up publishes after each complete response and adds
+the50-500ms quiet gap and per-DID2-30second no-data backoff described above.
+The0.5s power and1s other-metric periods remain best-effort targets. The poller
+does not queue missed periods, overlap commands or add a worker. Slow hardware
+can also fail to complete the optional four-block cell scan within its unchanged
+2.5s bound; no mixed or partial array is published in that case.
+
+The local snapshot's optional `collection` object contains the last fixed DID,
+result category, bounded no-data counter, last no-data DID, request-gap and
+response timing, plus a failure category when unavailable. It contains no raw
+frames, private address or exception text. JSON4096bytes, notification queue32,
+chunk512bytes, response4096bytes and64-notification bounds remain. Complete
+no-data does not renew any field timestamp or create values; existing power5s,
+other-fields60s display retention and five-second badge freshness remain.
+
+PC416 focused checks passed, including per-response publication, DID backoff,
+no-data-only session retention, pacing/decay, late-byte rejection, fatal timeout
+classification, complete cell generations and RAM snapshot bounds. This is
+synthetic validation, not a measured reduction in real Bluetooth disconnects,
+CPU use or road risk. The selected battery-hold Jetson bundle supports the
+unchanged wire data; this follow-up requires a comma update only.
 
 Latest BLE retention follow-up: total pack draw/regeneration expires five seconds
 after its own last valid observation; other battery fields, including heatmaps,

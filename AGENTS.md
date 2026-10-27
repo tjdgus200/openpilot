@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-10-27 owner requests stable, adaptive one-request/one-reply BLE updates.
+  Publish each complete DID response before the next request, keeping each
+  field's original observation time. GATT request writes and one ELM terminal
+  prompt remain required; add an adaptive50-500ms quiet gap after responses.
+  Exact complete NO DATA backs off only that DID for2-30s without resetting
+  the link; no-data alone is waiting_data, never a green receiving badge.
+  Timeout, overflow, unsolicited or malformed data still close/reconnect the
+  allowlisted target after5s. Keep bounded buffers, fresh300ms Park/zero,
+  2.5s cell generation, power5s/other60s display expiry and no catch-up bursts.
+  Diagnostics are bounded categories/timing only, not raw replies/addresses.
+  PC416 checks pass; live stability/resources remain unmeasured. Collector-only:
+  current battery-hold Jetson package supports unchanged wire data.
+
 - 2026-10-27 owner confirms108 PV5 voltage channels; do not equate channel-count
   confirmation with independent validation of every voltage/scale. Keep the
   already enabled108-slot display and bounded32/32/32/12 decoding. Read carState

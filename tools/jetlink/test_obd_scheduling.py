@@ -27,7 +27,7 @@ def test_power_two_hz_slow_fields_one_hz_keep_own_ages(monkeypatch, tmp_path):
       assert stamps['pack_power_kw'] == clock[0]
       assert stamps['max_temp_c'] == 100 + frame // 2
       assert stamps['soc_percent'] == 100 + frame // 2
-      assert observed == min(stamps.values())
+      assert observed == max(stamps.values())
       path = tmp_path / 'snapshot'
       b.write_snapshot('receiving', values, frozenset(values), path, 'cfg', observed_at=observed, field_times=stamps)
       fields = b.snapshot_packet(b.read_json(path), clock[0], 'cfg')['fields']

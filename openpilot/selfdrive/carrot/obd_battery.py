@@ -26,6 +26,8 @@ PERIOD = 1.0
 POWER_PERIOD = 0.5
 RETRY_INTERVAL = 5.0
 ATTEMPT_TIMEOUT = 60.0
+REQUEST_GAP_MIN = 0.05
+REQUEST_GAP_MAX = 0.5
 FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv', 'coolant_inlet_c',
                     'soc_percent', 'thermal_mode', 'temp_change_5min_c', 'pack_voltage_v', 'pack_current_a',
                     'charge_mode', 'cell_voltages_v', 'module_temps_c'))
@@ -40,6 +42,18 @@ REPLIES.update({cmd: (39, bytes.fromhex('62' + cmd[2:])) for cmd, _ in CELL_BLOC
 SETUP = ('ATE0', 'ATL0', 'ATM0', 'ATSP6', 'ATCAF1', 'ATCFC1', 'ATFCSM0',
          'ATSH7E4', 'ATCRA7EC', 'ATH1', 'ATD0', 'ATS0', 'ATAL', 'ATST96')
 COMMANDS = frozenset((*SETUP, 'ATI', *REPLIES))
+
+
+class QueryError(ValueError):
+  """Bounded local failure category; never contains replies or credentials."""
+  def __init__(self, code):
+    self.code = code
+    super().__init__(code)
+
+
+def no_data(reply):
+  return (isinstance(reply, bytes) and len(reply) <= 4096
+          and re.fullmatch(rb'[ \r\n]*NO DATA[ \r\n]*>', reply) is not None)
 
 
 def read_json(path, limit=4096):
@@ -201,8 +215,39 @@ class MetricPoller:
     self.next_cells = 0.0
     self.details = details
     self.cell_blocks, self.cell_started = {}, 0.0
+    self.retry_at, self.failures = {}, {}
+    self.last_command, self.last_result, self.no_data_count = None, None, 0
+    self.last_no_data_command = None
 
-  async def poll(self, link, parked=False):
+  def snapshot(self):
+    now = time.monotonic()
+    for name in tuple(self.observed):
+      if not 0 <= now - self.observed[name] <= 5:
+        self.observed.pop(name, None)
+        self.values.pop(name, None)
+    return max(self.observed.values(), default=now), self.values.copy(), self.observed.copy()
+
+  async def read(self, link, command):
+    if time.monotonic() < self.retry_at.get(command, 0.):
+      return False, None
+    self.last_command = command
+    self.last_result = 'pending'
+    raw = await link.command(command)
+    if no_data(raw):
+      failures = min(self.failures.get(command, 0) + 1, 5)
+      self.failures[command] = failures
+      self.retry_at[command] = time.monotonic() + min(30., 2. ** failures)
+      self.no_data_count = min(65535, self.no_data_count + 1)
+      self.last_no_data_command = command
+      self.last_result = 'no_data'
+      return True, None
+    value = parse_reply(raw, command)
+    self.retry_at.pop(command, None)
+    self.failures.pop(command, None)
+    self.last_result = 'ok'
+    return True, value
+
+  async def poll(self, link, parked=False, publish=None):
     # Always obtain power first. Slow fields keep their original timestamps
     # between reads; a new power sample must not rejuvenate old temperatures.
     started = time.monotonic()
@@ -214,7 +259,12 @@ class MetricPoller:
     payloads, times = {}, {}
     for command, decode, fields in groups:
       stamp = time.monotonic()
-      payloads[command] = parse_reply(await link.command(command), command)
+      attempted, reply = await self.read(link, command)
+      if reply is None:
+        if attempted and publish is not None:
+          publish(*self.snapshot())
+        continue
+      payloads[command] = reply
       times[command] = stamp
       values = decode(payloads[command])
       if command == '220101':
@@ -231,10 +281,12 @@ class MetricPoller:
         self.observed.pop(name, None)
         if name in values:
           self.values[name], self.observed[name] = values[name], stamp
+      if command == '220105' and '220101' in payloads and times['220105'] - times['220101'] <= 1.:
+        self.values['module_temps_c'] = temperature_array(payloads['220101'], payloads['220105'])
+        self.observed['module_temps_c'] = min(times['220101'], times['220105'])
+      if publish is not None:
+        publish(*self.snapshot())
     if slow:
-      temperatures = temperature_array(payloads['220101'], payloads['220105'])
-      self.values['module_temps_c'] = temperatures
-      self.observed['module_temps_c'] = min(times['220101'], times['220105'])
       self.next_slow = started + PERIOD
     safe_parked = parked() if callable(parked) else parked is True
     if not (self.details and safe_parked):
@@ -248,24 +300,25 @@ class MetricPoller:
       command, _ = CELL_BLOCKS[len(self.cell_blocks)]
       # At most one optional cell block per existing poll, after power. No burst,
       # parallel BLE connection or extra wakeup; a slow adapter can still be late.
-      self.cell_blocks[command] = parse_reply(await link.command(command), command)
-      if len(self.cell_blocks) == len(CELL_BLOCKS):
+      attempted, reply = await self.read(link, command)
+      if reply is None:
+        self.cell_blocks.clear()
+        self.next_cells = self.retry_at.get(command, time.monotonic() + 2.)
+      else:
+        self.cell_blocks[command] = reply
+      if reply is not None and len(self.cell_blocks) == len(CELL_BLOCKS):
         if time.monotonic() - self.cell_started <= 2.5:
           self.values['cell_voltages_v'] = cell_array(self.cell_blocks)
           self.observed['cell_voltages_v'] = self.cell_started
         self.cell_blocks.clear()
         self.next_cells = time.monotonic() + 2.0
-    # Old optional scans cannot invalidate fresh power through the enclosing
-    # snapshot's minimum stamp. Discard them; do not renew their observation age.
-    now = time.monotonic()
-    for name in tuple(self.observed):
-      if not 0 <= now - self.observed[name] <= 5:
-        self.observed.pop(name, None)
-        self.values.pop(name, None)
-    return min(self.observed.values(), default=started), self.values.copy(), self.observed.copy()
+      if attempted and publish is not None:
+        publish(*self.snapshot())
+    return self.snapshot()
 
 
-def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None, observed_at=None, field_times=None):
+def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None, observed_at=None, field_times=None,
+                   diagnostics=None):
   candidates = candidates or {}
   displayed = confirmed | CHARGING_PREVIEW_FIELDS
   record = {'version': 1, 'updated': time.monotonic() if observed_at is None else observed_at, 'state': state, 'config_id': identity,
@@ -273,6 +326,8 @@ def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT,
             'unverified_fields': sorted((CHARGING_PREVIEW_FIELDS - confirmed) & candidates.keys())}
   if field_times is not None:
     record['field_times'] = field_times
+  if diagnostics is not None:
+    record['collection'] = diagnostics
   raw = json.dumps(record, allow_nan=False, separators=(',', ':')).encode()
   if len(raw) > 4096:
     raise ValueError('snapshot size')
@@ -340,6 +395,9 @@ class Link:
     self.queue = NotificationQueue()
     self.filter = None
     self.notifying = False
+    self.request_gap = REQUEST_GAP_MIN
+    self.next_request = 0.
+    self.last_latency_ms = 0.
 
   async def call(self, path, interface, method, signature=None, body=(), bus='org.bluez', timeout=5):  # noqa: ASYNC109
     from jeepney import DBusAddress, new_method_call
@@ -419,27 +477,47 @@ class Link:
   async def command(self, command):
     if command not in COMMANDS:
       raise ValueError('command not allowed')
+    delay = max(0., self.next_request - time.monotonic())
+    if delay:
+      await asyncio.sleep(delay)
     if self.queue.overflow or not self.queue.empty():
-      raise ValueError('unsolicited ELM data')
-    deadline = time.monotonic() + 3
-    await self.call(self.uart, GATT, 'WriteValue', 'aya{sv}', ((command + '\r').encode(), {'type': ('s', 'request')}), timeout=2)
+      raise QueryError('unsolicited ELM data')
+    started = time.monotonic()
+    deadline = started + 3
+    try:
+      await self.call(self.uart, GATT, 'WriteValue', 'aya{sv}', ((command + '\r').encode(), {'type': ('s', 'request')}), timeout=2)
+    except TimeoutError:
+      raise QueryError('gatt_write_timeout') from None
+    except Exception:
+      raise QueryError('gatt_write_failed') from None
     buffer = bytearray()
     for _ in range(64):
-      message = await asyncio.wait_for(self.queue.get(), max(0, deadline - time.monotonic()))
+      try:
+        message = await asyncio.wait_for(self.queue.get(), max(0, deadline - time.monotonic()))
+      except TimeoutError:
+        raise QueryError('elm_prompt_timeout') from None
       if self.queue.overflow:
-        raise ValueError('notification overflow')
+        raise QueryError('notification overflow')
       interface, changed, _invalidated = message.body
       if interface != GATT or 'Value' not in changed:
         continue
       value = bytes(changed['Value'][1])
       if len(value) > 512 or len(buffer) + len(value) > 4096:
-        raise ValueError('ELM overflow')
+        raise QueryError('ELM overflow')
       buffer.extend(value)
       if b'>' in buffer:
         if buffer.count(b'>') != 1 or not buffer.endswith(b'>'):
-          raise ValueError('ELM trailing data')
-        return bytes(buffer)
-    raise ValueError('notification limit')
+          raise QueryError('ELM trailing data')
+        reply = bytes(buffer)
+        finished = time.monotonic()
+        self.last_latency_ms = round((finished - started) * 1000., 1)
+        target = max(REQUEST_GAP_MIN, min(REQUEST_GAP_MAX, (finished - started) * .25))
+        self.request_gap = min(REQUEST_GAP_MAX, max(target, self.request_gap * .9))
+        if command in REPLIES and no_data(reply):
+          self.request_gap = min(REQUEST_GAP_MAX, max(.1, self.request_gap * 2.))
+        self.next_request = finished + self.request_gap
+        return reply
+    raise QueryError('notification limit')
 
   async def close(self):
     if self.notifying:
@@ -460,6 +538,7 @@ async def run():
   from jeepney.io.asyncio import open_dbus_router
   loop = asyncio.get_running_loop()
   while True:
+    link = poller = None
     try:
       address, confirmed = configuration(read_json(CONFIG))
       identity = config_id((address, confirmed))
@@ -477,22 +556,26 @@ async def run():
             if details:
               monitor = vehicle_monitor()
               poller.details = True
+            def publish(observed_at, candidates, field_times,
+                        session=(address, confirmed, identity, link, poller, startup_timeout)):
+              target, fields, source_id, transport, reader, timeout = session
+              if configuration(read_json(CONFIG)) != (target, fields):
+                raise ValueError('configuration changed')
+              write_snapshot('receiving' if candidates else 'waiting_data', candidates, fields, identity=source_id,
+                             observed_at=observed_at, field_times=field_times, diagnostics=collection_info(transport, reader))
+              # Even a complete NO DATA prompt proves that this ELM session is
+              # responsive; it does not make an absent battery field valid.
+              timeout.reschedule(None)
             # Configuration is immutable for this session. A config change causes
             # a clean reconnect before any further poll or publication.
             while configuration(read_json(CONFIG)) == (address, confirmed):
               started = loop.time()
               if monitor is not None:
-                observed_at, candidates, field_times = await poller.poll(
-                  link, parked=lambda monitor=monitor: current_parked_state(monitor))
+                await poller.poll(link, parked=lambda monitor=monitor: current_parked_state(monitor), publish=publish)
               else:
-                observed_at, candidates, field_times = await poller.poll(link)
-              if configuration(read_json(CONFIG)) != (address, confirmed):
-                break
-              write_snapshot('receiving', candidates, confirmed, identity=identity,
-                             observed_at=observed_at, field_times=field_times)
-              startup_timeout.reschedule(None)
+                await poller.poll(link, publish=publish)
               # No overlapping requests and no catch-up burst after a slow poll.
-              await asyncio.sleep(max(0.0, started + POWER_PERIOD - loop.time()))
+              await asyncio.sleep(max(REQUEST_GAP_MIN, started + POWER_PERIOD - loop.time()))
           finally:
             write_snapshot('disconnected', identity=identity)
             # Deadline/cancellation may require up to two more seconds to clean
@@ -501,11 +584,20 @@ async def run():
               await asyncio.wait_for(link.close(), 2.0)
     except asyncio.CancelledError:
       raise
-    except Exception:
+    except Exception as exc:
       # No credentials, raw frames, or unbounded exception/log loop.
-      write_snapshot('unavailable')
+      code = exc.code if isinstance(exc, QueryError) else 'timeout' if isinstance(exc, TimeoutError) else 'response_or_setup_failed'
+      write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {'failure': code})
       # Five seconds after failure/cleanup, never overlapping attempts.
       await asyncio.sleep(RETRY_INTERVAL)
+
+
+def collection_info(link, poller):
+  return {'request': getattr(poller, 'last_command', None), 'result': getattr(poller, 'last_result', None),
+          'no_data_count': getattr(poller, 'no_data_count', 0),
+          'no_data_request': getattr(poller, 'last_no_data_command', None),
+          'request_gap_ms': round(getattr(link, 'request_gap', REQUEST_GAP_MIN) * 1000., 1),
+          'response_ms': getattr(link, 'last_latency_ms', 0.)}
 
 
 def vehicle_monitor():
