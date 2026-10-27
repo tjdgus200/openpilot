@@ -1,5 +1,21 @@
 # Repository memory
 
+- 2026-10-28 OBD transport follows supplied Car Scanner log/protocol guidance,
+  not its private implementation. Explicit ATAT1 restores normal adaptive mode
+  (ELM defaults to1; no prior disabled-mode claim). Same enrolled BLE address:
+  prefer observed FF12/FF14/FF15 UART, vendor E781/BEF8 sequential fallback after
+  cleanup and5s wait, never concurrent IOS/Android or guessed MAC/Classic pairing.
+  Cache known target, LE-only discovery lease released before connect; monitor
+  actual disconnects. Permit only ASCII whitespace after terminal prompt, never
+  discard late payloads/extra prompts. Separate2s ATT write and adaptive3-6s ELM
+  reply budgets; completed fixed-source read22 rejections back off only that DID.
+  Keep pending78/mixed/malformed replies fatal, all queue/size limits, per-field
+  times, power5s/other60s expiry, fresh-P cell gates and one outstanding request.
+  Comma-only, unchanged HUD wire/Jetson package.262 PC checks pass, including
+  cleanup-before-route-retry ordering. PC fault injection is not a live
+  BLE reliability/CPU/road test; no new time-aligned HCI evidence yet. See
+  docs/pv5_obd_stream_20261028.md for evidence and remaining verification.
+
 - Q92/FPS delivery2026-10-27: sourceccbac7d4, public tag
   jetson-pv5-hud-fps-q92-20261027-ccbac7d4,65025624bytes,
   SHAaa61062e18b8a70c0a631c3e06b0a37649ab22e29471a5d65caf5d8ec5464ada.

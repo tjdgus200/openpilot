@@ -317,7 +317,7 @@ def test_only_allowlisted_device_identity_and_setup():
     assert link.commands == ['ATI', *b.SETUP]
     await link.close()
     assert {p for p, m in link.calls if m in ('Connect', 'Disconnect')} == {link.target}
-    assert len(link.rules) == 1
+    assert len(link.rules) == 2  # UART bytes and actual device disconnects.
     for option in ('wrong_identity', 'setup_failure'):
       failed = DiscoveryLink(**{option: True})
       with pytest.raises(ValueError):
