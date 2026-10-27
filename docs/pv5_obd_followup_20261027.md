@@ -212,3 +212,13 @@ isolated package imports passed. At publication,
 was still in progress in the software HUD encoder stage; CI success is not claimed.
 The owner requested activation now and vehicle comparison later. No comma/Jetson
 installation or real charging/resource/safety validation was performed.
+
+Parked-detail update: source`fef7e6b602472c9f6e944437702a6054c881e20f`,
+64805316 bytes, SHA-256`344c647a1ae40461a14968fc23b2bea8071dcaf70234d7e8e389c25e6bf835f2`.
+All four public
+[parked-detail prerelease assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-parked-heatmap-20261027-fef7e6b6)
+were anonymously downloaded and hash-verified; the selected USB manifest uses
+this package. Isolated server/HUD imports and exact model/native-input defaults
+passed. PC371 focused checks passed after integration on the morning-sync head.
+Source GitHub CI had not started at publication; CI success is not claimed.
+Device installation and real-vehicle comparison remain unperformed.
