@@ -17,6 +17,18 @@
   request, rather than waiting for the whole group. Existing HUD consumer and
   badge cache rates are unchanged. A complete battery response can establish
   receiving state without all three DIDs succeeding; no-data alone cannot.
+- The scheduler completes at most one transaction per iteration and reselects
+  the next due request afterward, including after the transport's quiet interval.
+  Due power takes priority; after a capacity-limited power transaction, allow
+  one overdue SOC/coolant request before another power transaction to prevent
+  starvation. No in-progress response is interrupted and missed periods do not
+  create queued requests. Fields already present in0101 refresh with that page.
+- Optional cell blocks use spare time before the next power request, estimated
+  from the previous completed transaction. A completed scan's next start is at
+  least four seconds after its first block and two seconds after completion.
+  This bounds background traffic on fast links. Busy links defer cells; partial
+  generations still expire at2.5s, and fresh Park is required before the request
+  and again after its response. A prediction is not a hard latency guarantee.
 - Requests use GATT write-with-response and await exactly one terminal ELM
   prompt before proceeding. A quiet gap adapts between50 and500ms, increasing
   with response time or `NO DATA` and gradually reducing after successful replies.
@@ -44,6 +56,38 @@
 The brightness and battery-renderer changes require the corresponding new
 Jetson host package. Updating comma's collector alone cannot change an installed
 older renderer. No package/model/runtime validation or rollback gate is removed.
+
+## Priority scheduler comparison (PC synthetic only)
+
+Compared the grouped scheduler at`d2068fd4` with the response-driven scheduler
+using identical fixed synthetic response delays and the actual Link framing/
+pacing code. Each arm runs until60seconds of fake-clock time; the final complete
+transaction can finish later. Park is permitted and no failures are injected.
+The values below are intervals between power-request starts, not Bluetooth
+round-trip latency, model inference latency or real-device measurements.
+
+| Injected response time | Previous power-gap P95 | Priority power-gap P95 |
+|---|---:|---:|
+|20ms|500ms|500ms|
+|120ms|680ms|510ms|
+|300ms|1500ms|750ms|
+|600ms|3000ms|1500ms|
+
+The20ms arms both made300 total requests with15 complete108-channel arrays.
+At120ms, mean power gap changed548.716 to507.542ms and completed arrays14 to15.
+At300/600ms, neither arm could complete a cell array within the unchanged bound;
+the priority version skipped optional requests while continuing all three basic
+DIDs. It does not promise0.5s/1s updates when the physical capacity is lower.
+
+PC424 focused checks passed, covering reselection after slow reads and quiet
+gaps, one in-flight transaction, basic-field fairness, idle/background limits,
+Park loss during a final block, original per-field ages and unmixed generations.
+The scheduler adds three fixed due timestamps, a few scalar states and one
+62-byte temperature page; no worker, raw history, growing queue or disk cache.
+Existing byte/notification limits, expiry and onroad lifetime remain. Live
+disconnect reduction, comma resource use and vehicle behavior remain untested.
+The current50-500ms pacing is retained pending a physical comparison; this
+comma-only change uses the existing selected Jetson battery-hold package.
 
 ## Thermal and compressor findings
 

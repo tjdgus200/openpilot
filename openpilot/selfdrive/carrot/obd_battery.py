@@ -211,7 +211,12 @@ class MetricPoller:
   """One sequential request stream; fixed-size values and per-field timestamps."""
   def __init__(self, details=False):
     self.values, self.observed = {}, {}
-    self.next_slow = 0.0
+    self.due = dict.fromkeys(('220101', '220105', '220106'), 0.)
+    self.last_core = None
+    self.power_limited = False
+    self.first_temperature_page = None
+    self.cells_allowed = False
+    self.read_seconds = 0.
     self.next_cells = 0.0
     self.details = details
     self.cell_blocks, self.cell_started = {}, 0.0
@@ -247,73 +252,110 @@ class MetricPoller:
     self.last_result = 'ok'
     return True, value
 
-  async def poll(self, link, parked=False, publish=None):
-    # Always obtain power first. Slow fields keep their original timestamps
-    # between reads; a new power sample must not rejuvenate old temperatures.
-    started = time.monotonic()
-    groups = [('220101', candidate_metrics, ('pack_power_kw',))]
-    slow = started >= self.next_slow
-    if slow:
-      groups += [('220105', soc_candidate, ('soc_percent',)),
-                 ('220106', coolant_candidate, ('coolant_inlet_c', 'thermal_mode'))]
-    payloads, times = {}, {}
-    for command, decode, fields in groups:
-      stamp = time.monotonic()
-      attempted, reply = await self.read(link, command)
-      if reply is None:
-        if attempted and publish is not None:
-          publish(*self.snapshot())
-        continue
-      payloads[command] = reply
-      times[command] = stamp
-      values = decode(payloads[command])
-      if command == '220101':
-        fields += ('charge_mode', 'pack_voltage_v', 'pack_current_a')
-        values.update(charge_candidate(payloads[command]))
-        if 'pack_power_kw' in values:
-          data = payloads[command][3:]
-          values.update(pack_voltage_v=int.from_bytes(data[12:14], 'big') / 10,
-                        pack_current_a=int.from_bytes(data[10:12], 'big', signed=True) / 10)
-      if command == '220101' and slow:
-        fields += ('max_temp_c', 'min_temp_c', 'cell_delta_mv')
-      for name in fields:
-        self.values.pop(name, None)
-        self.observed.pop(name, None)
-        if name in values:
-          self.values[name], self.observed[name] = values[name], stamp
-      if command == '220105' and '220101' in payloads and times['220105'] - times['220101'] <= 1.:
-        self.values['module_temps_c'] = temperature_array(payloads['220101'], payloads['220105'])
-        self.observed['module_temps_c'] = min(times['220101'], times['220105'])
-      if publish is not None:
-        publish(*self.snapshot())
-    if slow:
-      self.next_slow = started + PERIOD
-    safe_parked = parked() if callable(parked) else parked is True
-    if not (self.details and safe_parked):
+  def next_core(self, now):
+    ready = [cmd for cmd in self.due if now >= max(self.due[cmd], self.retry_at.get(cmd, 0.))]
+    others = [cmd for cmd in ready if cmd != '220101']
+    # Power first, but a slow power transaction cannot starve every other DID.
+    if '220101' in ready and (self.last_core != '220101' or not self.power_limited or not others):
+      return '220101'
+    return min(others, key=lambda cmd: self.due[cmd], default=None)
+
+  def cell_due(self, now, ready_at=0.):
+    command, _ = CELL_BLOCKS[len(self.cell_blocks)]
+    due = max(now, ready_at, self.next_cells, self.retry_at.get(command, 0.))
+    power_due = max(self.due['220101'], self.retry_at.get('220101', 0.))
+    # Use the previous completed transaction as a conservative slot estimate.
+    # It is not a hard prediction: every response remains non-preemptive.
+    if power_due > now and due + self.read_seconds > power_due:
+      due = max(due, power_due)
+    return due
+
+  def delay(self, link):
+    now = time.monotonic()
+    next_due = min(max(due, self.retry_at.get(cmd, 0.)) for cmd, due in self.due.items())
+    if self.details and self.cells_allowed:
+      next_due = min(next_due, self.cell_due(now, getattr(link, 'next_request', 0.)))
+    # Sleep to the next opportunity, not a fixed half-second after a group.
+    # The cap also checks vehicle/config changes while optional data is idle.
+    return max(REQUEST_GAP_MIN, min(POWER_PERIOD, max(next_due, getattr(link, 'next_request', 0.)) - now))
+
+  def park_allowed(self, parked):
+    self.cells_allowed = self.details and (parked() if callable(parked) else parked is True)
+    if not self.cells_allowed:
       self.values.pop('cell_voltages_v', None)
       self.observed.pop('cell_voltages_v', None)
       self.cell_blocks.clear()
-    elif started >= self.next_cells:
-      if not self.cell_blocks or time.monotonic() - self.cell_started > 2.5:
-        self.cell_blocks.clear()
-        self.cell_started = time.monotonic()
+    return self.cells_allowed
+
+  async def poll(self, link, parked=False, publish=None):
+    """Complete at most one transaction, then reselect priority on the next call."""
+    self.park_allowed(parked)
+    now = time.monotonic()
+    if self.cell_blocks and now - self.cell_started > 2.5:
+      self.cell_blocks.clear()
+      # A busy link defers the optional generation, never extends its age bound.
+      self.next_cells = now + 2.
+    if now < getattr(link, 'next_request', 0.):
+      return self.snapshot()
+    command = self.next_core(now)
+    if command is None:
+      if not self.cells_allowed or now < self.cell_due(now):
+        return self.snapshot()
       command, _ = CELL_BLOCKS[len(self.cell_blocks)]
-      # At most one optional cell block per existing poll, after power. No burst,
-      # parallel BLE connection or extra wakeup; a slow adapter can still be late.
-      attempted, reply = await self.read(link, command)
-      if reply is None:
+      if now < self.retry_at.get(command, 0.):
+        return self.snapshot()
+      if not self.cell_blocks:
+        self.cell_started = now
+    stamp = time.monotonic()
+    attempted, reply = await self.read(link, command)
+    self.read_seconds = max(0., time.monotonic() - stamp)
+    if command in self.due:
+      self.last_core = command
+      self.due[command] = stamp + (POWER_PERIOD if command == '220101' else PERIOD)
+      if command == '220101':
+        self.power_limited = max(time.monotonic() + REQUEST_GAP_MIN, getattr(link, 'next_request', 0.)) >= self.due[command]
+        self.first_temperature_page = (stamp, reply) if reply is not None else None
+      if reply is not None:
+        if command == '220101':
+          values = candidate_metrics(reply) | charge_candidate(reply)
+          fields = ('pack_power_kw', 'max_temp_c', 'min_temp_c', 'cell_delta_mv',
+                    'pack_voltage_v', 'pack_current_a', 'charge_mode')
+          if 'pack_power_kw' in values:
+            data = reply[3:]
+            values.update(pack_voltage_v=int.from_bytes(data[12:14], 'big') / 10,
+                          pack_current_a=int.from_bytes(data[10:12], 'big', signed=True) / 10)
+        elif command == '220105':
+          values, fields = soc_candidate(reply), ('soc_percent',)
+          first = self.first_temperature_page
+          if first is not None and 0 <= time.monotonic() - first[0] <= 1.:
+            values['module_temps_c'] = temperature_array(first[1], reply)
+            fields += ('module_temps_c',)
+        else:
+          values, fields = coolant_candidate(reply), ('coolant_inlet_c', 'thermal_mode')
+        for name in fields:
+          self.values.pop(name, None)
+          self.observed.pop(name, None)
+          if name in values:
+            self.values[name], self.observed[name] = values[name], stamp
+        if 'module_temps_c' in values:
+          self.observed['module_temps_c'] = min(self.first_temperature_page[0], stamp)
+    else:
+      # Consume fresh vehicle state again after a slow response, before publishing.
+      safe_parked = self.park_allowed(parked)
+      if safe_parked and reply is None:
         self.cell_blocks.clear()
         self.next_cells = self.retry_at.get(command, time.monotonic() + 2.)
-      else:
+      elif safe_parked:
         self.cell_blocks[command] = reply
-      if reply is not None and len(self.cell_blocks) == len(CELL_BLOCKS):
-        if time.monotonic() - self.cell_started <= 2.5:
-          self.values['cell_voltages_v'] = cell_array(self.cell_blocks)
-          self.observed['cell_voltages_v'] = self.cell_started
-        self.cell_blocks.clear()
-        self.next_cells = time.monotonic() + 2.0
-      if attempted and publish is not None:
-        publish(*self.snapshot())
+        if len(self.cell_blocks) == len(CELL_BLOCKS):
+          if time.monotonic() - self.cell_started <= 2.5:
+            self.values['cell_voltages_v'] = cell_array(self.cell_blocks)
+            self.observed['cell_voltages_v'] = self.cell_started
+          self.cell_blocks.clear()
+          # Limit background scan starts even when replies become very fast.
+          self.next_cells = max(self.cell_started + 4., time.monotonic() + 2.)
+    if attempted and publish is not None:
+      publish(*self.snapshot())
     return self.snapshot()
 
 
@@ -536,7 +578,6 @@ class Link:
 
 async def run():
   from jeepney.io.asyncio import open_dbus_router
-  loop = asyncio.get_running_loop()
   while True:
     link = poller = None
     try:
@@ -569,13 +610,12 @@ async def run():
             # Configuration is immutable for this session. A config change causes
             # a clean reconnect before any further poll or publication.
             while configuration(read_json(CONFIG)) == (address, confirmed):
-              started = loop.time()
               if monitor is not None:
                 await poller.poll(link, parked=lambda monitor=monitor: current_parked_state(monitor), publish=publish)
               else:
                 await poller.poll(link, publish=publish)
               # No overlapping requests and no catch-up burst after a slow poll.
-              await asyncio.sleep(max(REQUEST_GAP_MIN, started + POWER_PERIOD - loop.time()))
+              await asyncio.sleep(poller.delay(link))
           finally:
             write_snapshot('disconnected', identity=identity)
             # Deadline/cancellation may require up to two more seconds to clean

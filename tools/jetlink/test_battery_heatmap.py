@@ -14,7 +14,7 @@ sys.path[:0] = [str(ROOT / 'tools/jetlink'), str(ROOT / 'openpilot/selfdrive/car
 from openpilot.selfdrive.carrot import obd_battery as b
 from cluster_battery import (charging_view, heat_color, packet_from_metrics,
                              panel_from_wire, valid_value)
-from test_obd_battery import payload, response, soc_payload, coolant_payload
+from test_obd_battery import poll_round, payload, response, soc_payload, coolant_payload
 
 
 def block(command, value=194):
@@ -112,14 +112,14 @@ def test_cell_scans_are_sequential_power_first_only_after_enrollment_park(monkey
     for i in range(4):
       clock[0] = 100. + i * .5
       start = len(commands)
-      await p.poll(Link(), parked=True)
+      await poll_round(p, Link(), parked=True)
       assert commands[start] == '220101'
-      assert sum(c in dict(b.CELL_BLOCKS) for c in commands[start:]) == 1
+      assert all(c in b.REPLIES for c in commands[start:])
     assert len(p.values['cell_voltages_v']) == 108 and p.observed['cell_voltages_v'] == 100.
     assert len(p.cell_blocks) == 0
     # Leaving P immediately removes the full array. No extra requests follow.
     start = len(commands)
-    await p.poll(Link(), parked=False)
+    await poll_round(p, Link(), parked=False)
     assert 'cell_voltages_v' not in p.values and not p.cell_blocks
     assert not any(c in dict(b.CELL_BLOCKS) for c in commands[start:])
     assert len(p.values) <= len(b.FIELDS)
@@ -226,14 +226,16 @@ def test_slow_partial_scan_never_mixes_generations_and_park_is_rechecked(monkeyp
       return response(data[command] if command in data else block(command))
   async def check():
     poller = b.MetricPoller(details=True)
-    await poller.poll(Link(), parked=lambda: allowed[0])
+    await poll_round(poller, Link(), parked=lambda: allowed[0])
     assert set(poller.cell_blocks) == {'220102'}
     clock[0] = 103.
-    await poller.poll(Link(), parked=lambda: allowed[0])
+    await poll_round(poller, Link(), parked=lambda: allowed[0])
+    assert not poller.cell_blocks and 'cell_voltages_v' not in poller.values
+    clock[0] = 105.
+    await poll_round(poller, Link(), parked=lambda: allowed[0])
     assert set(poller.cell_blocks) == {'220102'} and commands[-1] == '220102'
-    assert 'cell_voltages_v' not in poller.values
     allowed[0] = False
-    await poller.poll(Link(), parked=lambda: allowed[0])
+    await poll_round(poller, Link(), parked=lambda: allowed[0])
     assert not poller.cell_blocks and 'cell_voltages_v' not in poller.values
     assert not b.MetricPoller(details=True).values  # A reconnect has no old owner/buffers.
   asyncio.run(check())
@@ -280,12 +282,14 @@ def test_cell_gate_refreshes_after_slow_ble_reads_without_relaxing_vehicle_age(m
       return response(data[command] if command in data else block(command))
   async def check():
     poller = b.MetricPoller(details=True)
-    for _ in range(4):
-      started = clock[0]
-      await poller.poll(Link(), parked=lambda: b.current_parked_state(monitor))
-      clock[0] = max(clock[0], started + .5)
+    link = Link()
+    for _ in range(60):
+      await poller.poll(link, parked=lambda: b.current_parked_state(monitor))
+      clock[0] += poller.delay(link)
+      if 'cell_voltages_v' in poller.values:
+        break
     assert ('cell_voltages_v' in poller.values) == expected
-    assert monitor.updates == 4
+    assert monitor.updates >= 4
     assert any(cmd in dict(b.CELL_BLOCKS) for cmd in commands) == expected
     if not expected:
       assert not poller.cell_blocks

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from openpilot.selfdrive.carrot import obd_battery as b
-from test_obd_battery import response, payload, soc_payload, coolant_payload
+from test_obd_battery import poll_round, response, payload, soc_payload, coolant_payload
 
 
 def test_power_two_hz_slow_fields_one_hz_keep_own_ages(monkeypatch, tmp_path):
@@ -21,25 +21,25 @@ def test_power_two_hz_slow_fields_one_hz_keep_own_ages(monkeypatch, tmp_path):
     poller = b.MetricPoller()
     for frame in range(8):
       clock[0] = 100.0 + frame * .5
-      observed, values, stamps = await poller.poll(Link())
+      observed, values, stamps = await poll_round(poller, Link())
       assert 'temp_change_5min_c' not in values
       assert 'thermal_mode' not in values
       assert stamps['pack_power_kw'] == clock[0]
-      assert stamps['max_temp_c'] == 100 + frame // 2
+      assert stamps['max_temp_c'] == clock[0]
       assert stamps['soc_percent'] == 100 + frame // 2
       assert observed == max(stamps.values())
       path = tmp_path / 'snapshot'
       b.write_snapshot('receiving', values, frozenset(values), path, 'cfg', observed_at=observed, field_times=stamps)
       fields = b.snapshot_packet(b.read_json(path), clock[0], 'cfg')['fields']
       assert fields['pack_power_kw']['age_s'] == 0
-      assert fields['max_temp_c']['age_s'] == frame % 2 * .5
+      assert fields['max_temp_c']['age_s'] == 0
     assert [c for _, c in commands].count('220101') == 8
     assert [c for _, c in commands].count('220105') == 4
     assert [c for _, c in commands].count('220106') == 4
     # No growing history or stale schedule catch-up after a long wait.
     assert not hasattr(poller, 'history')
     clock[0] += 10
-    await poller.poll(Link())
+    await poll_round(poller, Link())
     assert len(commands) == 19
     assert len(poller.values) <= len(b.FIELDS)
   asyncio.run(check())

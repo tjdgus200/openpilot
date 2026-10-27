@@ -100,41 +100,44 @@ def test_coolant_bad_or_cross_did_reply_rejected(raw):
     b.parse_reply(raw, '220106')
 
 
-def test_poll_cycle_failure_and_conservative_freshness(tmp_path, monkeypatch):
+async def poll_round(poller, link, **kwargs):
+  """At most four scheduler decisions; fixture clock is not advanced by sleeping."""
+  for _ in range(4):
+    result = await poller.poll(link, **kwargs)
+  return result
+
+
+def test_single_poll_is_one_transaction_and_keeps_individual_freshness(tmp_path, monkeypatch):
   clock = [100.0]
   monkeypatch.setattr(b.time, 'monotonic', lambda: clock[0])
-
   class PollLink:
     def __init__(self, failure=None):
-      self.commands = []
-      self.failure = failure
-
+      self.commands, self.failure = [], failure
     async def command(self, command):
       self.commands.append(command)
       if command == self.failure:
         raise TimeoutError('synthetic timeout')
-      clock[0] += 1
-      return response({'220101': payload(), '220105': soc_payload(), '220106': coolant_payload()}[command])
-
+      clock[0] += .1
+      return response({'220101':payload(), '220105':soc_payload(), '220106':coolant_payload()}[command])
   async def check():
-    link = PollLink()
-    stamp, values, field_times = await b.MetricPoller().poll(link)
-    assert link.commands == ['220101', '220105', '220106']
-    assert stamp == 102 and values['coolant_inlet_c'] == 27
+    link, poller = PollLink(), b.MetricPoller()
+    for count in range(1,4):
+      stamp, values, field_times = await poller.poll(link)
+      assert len(link.commands) == count
+    assert link.commands == ['220101','220105','220106']
+    assert stamp == pytest.approx(100.2) and values['coolant_inlet_c'] == 27
     path = tmp_path / 'coolant.json'
-    b.write_snapshot('receiving', values, frozenset(['coolant_inlet_c']), path, 'cfg', observed_at=stamp, field_times=field_times)
+    b.write_snapshot('receiving',values,frozenset(['coolant_inlet_c']),path,'cfg',observed_at=stamp,field_times=field_times)
     record = b.read_json(path)
-    assert b.snapshot_packet(record, 104, 'cfg')['fields']['coolant_inlet_c'] == {'value': 27, 'age_s': 2.0}
-    assert not b.snapshot_packet(record, 108, 'cfg')['fields']
-    # Owner-enabled charging preview does not expose uncalibrated coolant.
-    b.write_snapshot('receiving', values, path=path, identity='cfg', observed_at=stamp)
-    fields = b.snapshot_packet(b.read_json(path), 104, 'cfg')['fields']
-    assert 'coolant_inlet_c' not in fields
-    assert 'charge_mode' in fields
-    for failed, expected in [('220101', ['220101']), ('220106', ['220101', '220105', '220106'])]:
+    assert b.snapshot_packet(record,104.,'cfg')['fields']['coolant_inlet_c']['age_s'] == pytest.approx(3.8)
+    assert not b.snapshot_packet(record,106.,'cfg')['fields']
+    b.write_snapshot('receiving',values,path=path,identity='cfg',observed_at=stamp)
+    fields = b.snapshot_packet(b.read_json(path),104.,'cfg')['fields']
+    assert 'coolant_inlet_c' not in fields and 'charge_mode' in fields
+    for failed, expected in [('220101',['220101']),('220106',['220101','220105','220106'])]:
       link = PollLink(failed)
       with pytest.raises(TimeoutError):
-        await b.MetricPoller().poll(link)
+        await poll_round(b.MetricPoller(),link)
       assert link.commands == expected
   asyncio.run(check())
 
@@ -360,7 +363,7 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
   with pytest.raises(asyncio.CancelledError):
     asyncio.run(b.run())
   assert [x[0] for x in snapshots] == ['connecting', 'disconnected', 'unavailable', 'connecting',
-                                      'receiving', 'receiving', 'receiving', 'disconnected']
+                                      'receiving', 'disconnected']
   assert all(s.closed for s in sessions) and len(sessions) == 2
 
 

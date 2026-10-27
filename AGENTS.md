@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-10-27 owner approves response-driven priority scheduling. Each poll now
+  completes at most one transaction; reselect due power before the next slow
+  DID, but alternate an overdue slow DID after capacity-limited power so it
+  cannot starve. Three due timestamps and one62-byte temperature page replace
+  grouped reads; combine temperatures only within1s, preserving original ages.
+  Optional cells use estimated spare time before power, remain fresh-P gated
+  before and after the response, and retain the2.5s generation limit. After a
+  complete scan, next start >=first-block+4s and >=completion+2s. Under overload
+  defer cells rather than waste partial generations. Keep current50-500ms link
+  gap until live comparison, all framing/expiry/config/update guards and no
+  concurrent requests. PC424 checks pass. Synthetic fixed120ms replies reduce
+  power-request-gap P95 from680 to510ms;300ms replies1500 to750ms. These are not
+  real Bluetooth/CPU/road measurements. Comma-only; selected host stays unchanged.
+
 - 2026-10-27 owner requests stable, adaptive one-request/one-reply BLE updates.
   Publish each complete DID response before the next request, keeping each
   field's original observation time. GATT request writes and one ELM terminal

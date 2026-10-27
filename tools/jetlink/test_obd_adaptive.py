@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'tools/jetlink')]
 from openpilot.selfdrive.carrot import obd_battery as b
-from test_obd_battery import payload, response, soc_payload, coolant_payload, notification
+from test_obd_battery import poll_round, payload, response, soc_payload, coolant_payload, notification
 
 DATA = {'220101': payload(), '220105': soc_payload(), '220106': coolant_payload()}
 
@@ -30,7 +30,7 @@ def test_publish_each_reply_before_next_request_or_later_failure(monkeypatch):
     events.append(('published', len(published)))
   async def check():
     with pytest.raises(TimeoutError):
-      await b.MetricPoller().poll(Link(), publish=publish)
+      await poll_round(b.MetricPoller(), Link(), publish=publish)
   asyncio.run(check())
   assert events == [('request', '220101'), ('published', 1), ('request', '220105'),
                     ('published', 2), ('request', '220106')]
@@ -53,7 +53,7 @@ def test_complete_no_data_only_backs_off_that_did_and_never_fabricates_values(mo
     poller = b.MetricPoller()
     for frame in range(13):
       clock[0] = 100. + frame * .5
-      await poller.poll(Link(), publish=lambda *sample: published.append(sample))
+      await poll_round(poller, Link(), publish=lambda *sample: published.append(sample))
       if clock[0] < 106.:
         assert 'coolant_inlet_c' not in poller.values
       assert len(poller.retry_at) <= len(b.REPLIES)
@@ -93,16 +93,16 @@ def test_no_data_cell_scan_is_discarded_then_restarted_without_mixing(monkeypatc
     poller = b.MetricPoller(details=True)
     for now in (100., 100.5):
       clock[0] = now
-      await poller.poll(Link(), parked=True)
+      await poll_round(poller, Link(), parked=True)
     assert not poller.cell_blocks and 'cell_voltages_v' not in poller.values
     for now in (101., 101.5, 102.):
       clock[0] = now
       before = len(commands)
-      await poller.poll(Link(), parked=True)
+      await poll_round(poller, Link(), parked=True)
       assert not any(c in dict(b.CELL_BLOCKS) for c in commands[before:])
     for now in (102.5, 103., 103.5, 104.):
       clock[0] = now
-      await poller.poll(Link(), parked=True)
+      await poll_round(poller, Link(), parked=True)
     assert len(poller.values['cell_voltages_v']) == 108
     assert poller.observed['cell_voltages_v'] == 102.5
   asyncio.run(check())
@@ -137,7 +137,7 @@ def test_real_run_keeps_responsive_no_data_session_open_until_cancelled(monkeypa
     asyncio.run(b.run())
   assert len(connections) == 1 and closed == connections
   assert 'unavailable' not in states and 'receiving' not in states
-  assert states.count('waiting_data') == 3
+  assert states.count('waiting_data') == 1
 
 
 def test_pacing_adapts_to_latency_and_no_data_without_overlap(monkeypatch):
