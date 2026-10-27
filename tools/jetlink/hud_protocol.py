@@ -18,7 +18,7 @@ SERVICES = ('carState', 'carParams', 'modelV2', 'radarState', 'liveTracks', 'lon
             'roadCameraState', 'cameraOdometry', 'liveCalibration', 'livePose', 'drivingModelData',
             'liveDelay', 'liveParameters', 'liveTorqueParameters', 'navInstruction', 'navInstructionCarrot',
             'navRoute', 'carrotMan', 'carrotNavi', 'wideRoadCameraState')
-PARAMS = ('ClusterHud', 'ClusterHudDebug', 'ClusterHudBrightness', 'ClusterHudOrientation',
+PARAMS = ('ClusterHud', 'ClusterHudDebug', 'JetsonHudQuality', 'ClusterHudBrightness', 'ClusterHudOrientation',
           'ClusterHudMirror', 'ClusterHudTheme', 'ClusterHudRadarInfo', 'ClusterHudRadarDisplay',
           'ClusterHudRadarSourceColor', 'ClusterHudCameraViewMode', 'ClusterHudPanelLayout',
           'ClusterHudScreenMode', 'ShowPlotMode', 'LanguageSetting', 'IsMetric', 'ShowDateTime',

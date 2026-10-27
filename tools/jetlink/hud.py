@@ -1,4 +1,4 @@
-"""Run the existing Carrot renderer using read-only, Wi-Fi-forwarded cereal data."""
+"""Run the existing Carrot renderer using read-only USB-forwarded cereal data."""
 import base64
 import json
 import os
@@ -128,6 +128,16 @@ class RemoteSubMaster:
 
 
 def main():
+  from hud_quality import NAMES, PARAM, selection
+  from hud_quality import CpuJpegError, codec_options
+  import hud_quality
+  override = None
+  if '--jetson-quality-profile' in sys.argv:
+    index = sys.argv.index('--jetson-quality-profile')
+    if index + 1 >= len(sys.argv) or sys.argv[index + 1] not in NAMES:
+      raise SystemExit('Unknown Jetson HUD quality profile')
+    override = NAMES.index(sys.argv[index + 1])
+    del sys.argv[index:index + 2]
   if '--help' not in sys.argv:
     from boot_update import wait_for_runtime
     wait_for_runtime()
@@ -160,7 +170,7 @@ def main():
   from hud_camera import RemoteRoadCamera
   cluster_live_camera.LiveRoadCamera = RemoteRoadCamera
   import cluster_system_monitor
-  import hud_runtime_stats  # noqa: F401 -- preserve actual Jetson sampler for PV5 display.
+  import hud_runtime_stats  # Preserve the actual Jetson sampler for PV5 display.
   from hud_stats import VehicleSystemStats, VehicleCpuOverlay, VehicleNetworkAddress
   cluster_system_monitor.SystemStatsSampler = VehicleSystemStats
   cluster_system_monitor.ClusterProcessCoreUsageSampler = VehicleCpuOverlay
@@ -206,8 +216,34 @@ def main():
   class Display(cluster.TuringUsbDisplay):
     next_status = 0.
 
+    def encode_jpeg(self, *args, **kwargs):
+      try:
+        if self.jpeg_encoder == 'turbojpeg':
+          from hud_cpu_jpeg import Encoder
+          if getattr(self, '_cpu_jpeg', None) is None:
+            self._cpu_jpeg = Encoder()
+          return self._cpu_jpeg.encode(*args, quality=self.jpeg_quality, **kwargs)
+        return super().encode_jpeg(*args, **kwargs)
+      except (ImportError, OSError, RuntimeError, AttributeError, ValueError, TypeError) as exc:
+        raise CpuJpegError('CPU JPEG encoder unavailable or failed') from exc
+
+    def close(self):
+      try:
+        super().close()
+      finally:
+        self._cpu_jpeg = None
+
+    def send_jpeg(self, *args, **kwargs):
+      result = super().send_jpeg(*args, **kwargs)
+      self.publish_status()
+      return result
+
     def send_h264_chunk(self, *args, **kwargs):
       result = super().send_h264_chunk(*args, **kwargs)
+      self.publish_status()
+      return result
+
+    def publish_status(self):
       now = time.monotonic()
       if now >= self.next_status:
         path = Path('/dev/shm/carrot-jetlink-hud-status.json')
@@ -216,30 +252,72 @@ def main():
         remote_nav_preview.fresh()
         display_metrics['nav_model_map'] = remote_nav_preview.status
         signal_color, signal_held, signal_online = remote_signals.status()
-        display_metrics['signal_display'] = dict(enabled=remote_signals.enabled, color=signal_color,
-                                                held=signal_held, online=signal_online)
+        display_metrics['signal_display'] = {'enabled': remote_signals.enabled, 'color': signal_color,
+                                             'held': signal_held, 'online': signal_online}
         tmp.write_text(json.dumps({'updated': now, **display_metrics,
+                                  'quality': self_quality(),
                                   'vehicle_network_address': VehicleNetworkAddress().address(),
                                   'vehicle_cpu': stats.cpu_core_percents,
                                   'vehicle_memory_percent': stats.memory_used_percent}))
         os.replace(tmp, path)
         self.next_status = now + 1
-      return result
   cluster.TuringUsbDisplay = Display
   # Jetson has no video encoder block. Keep inference CPU/GPU headroom and
   # use the existing software encoder at the normal 10 FPS cluster rate.
   # Bound conversion/encoding concurrency; an explicit trailing CLI value of
   # zero restores FFmpeg's automatic thread pools for comparisons.
-  sys.argv = [__file__, '--input', 'live', '--output', 'usb', '--fps', '10',
-              '--usb-codec', 'h264', '--usb-h264-backend', 'ffmpeg',
-              '--usb-h264-ffmpeg-encoder', 'libx264', '--usb-h264-ffmpeg-threads', '1',
-              '--cluster-hud-mode', '1', *sys.argv[1:]]
-  if '--help' in sys.argv:
-    cluster.main()
-  else:
-    from display_owner import panel_owner
-    with panel_owner(hud=True):
-      cluster.main()
+  settings, extra_args = DisplayParams(), sys.argv[1:]
+  quality_vehicle = RemoteSubMaster(['carState'])
+  def profile_allowed(target):
+    # Baseline recovery is always available. New experiments wait for a fresh
+    # stationary Park record onroad; offroad/explicit bench overrides can apply.
+    if target == 0 or override is not None or not settings.get_bool('IsOnroad'):
+      return True
+    from hud_health import vehicle_motion_fresh
+    snapshot = read_snapshot()
+    if not vehicle_motion_fresh(snapshot, time.monotonic()):
+      return False
+    quality_vehicle.update(0)
+    car = quality_vehicle['carState']
+    return str(car.gearShifter) == 'park' and car.vEgo == 0.
+  class QualityWatch:
+    def read(self):
+      target = selection(settings.get_int(PARAM))
+      return int(override is None and target != requested and profile_allowed(target))
+  # Reuse the renderer's clean, main-loop exit instead of throwing from a USB
+  # sender thread. This adapter is private to the host and does not change the
+  # comma's ClusterHudEncoder behavior. A zero sentinel means unchanged.
+  cluster.ClusterHudEncoderParamReader = QualityWatch
+  def self_quality():
+    from hud_runtime_stats import quality_status
+    return quality_status()
+  from display_owner import panel_owner
+  base = [__file__, '--input', 'live', '--output', 'usb', '--fps', '10', '--cluster-hud-mode', '1',
+          '--cluster-hud-encoder', '0']
+  requested = 0
+  while True:
+    target = selection(settings.get_int(PARAM)) if override is None else override
+    if profile_allowed(target):
+      requested = target
+    effective, error = requested, ''
+    while True:
+      hud_quality.RUN_PROFILE = (requested, effective, error)
+      hud_runtime_stats.QUALITY_STATUS = {}
+      sys.argv = [*base, *codec_options(NAMES[effective]), *extra_args]
+      try:
+        if '--help' in sys.argv:
+          cluster.main()
+        else:
+          with panel_owner(hud=True):
+            cluster.main(exit_on_error=False)
+        if QualityWatch().read():
+          break  # Recreate only the display; finally paths close all buffers.
+        return
+      except CpuJpegError:
+        if not effective:
+          raise
+        effective, error = 0, 'CPU JPEG unavailable; using baseline H.264'
+        print(error, flush=True)
 
 
 if __name__ == '__main__':

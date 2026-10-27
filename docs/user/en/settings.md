@@ -294,9 +294,13 @@ In modes `EnableRadarTracks=1`–`3`, a confirmed departing front lead can recei
 <a id="display"></a>
 ## Display
 
-Display contains 34 settings. External-HUD settings control the layout and output of separate display hardware.
+Display contains 35 settings. External-HUD settings control the layout and output of separate display hardware.
 
 `ClusterHud` (External HUD Display) switches a **direct USB HUD** on or off. A HUD connected to Jetson starts automatically even when this value is `0`, and normally turns its display off with ignition. Use the existing always-on `ClusterHudDebug` modes to keep it visible offroad. Brightness and layout settings also apply to the Jetson HUD.
+
+`JetsonHudQuality` (Jetson HUD Quality Candidate) offers **eight Jetson USB HUD-only profiles**: 0 preserves H264 auto; 1–3 select H264 at 4/8/12Mbps; 4–6 use CPU TurboJPEG quality 68/85/92; 7 uses CPU Pillow JPEG quality 85. All retain 10fps and leave the comma-side `ClusterHudEncoder` behavior unchanged. Onroad changes wait for stationary Park and reopen only the HUD; returning to 0 is immediate. An updated Jetson package is required.
+
+The Tools Jetlink card lists each candidate’s GPU inference mean/P99, >50ms count/rate and server P99. After excluding the first 15 seconds, at least two candidates must each have 60 seconds and 1,000 samples before the lowest observed GPU P99 is indicated. The HUD inference strip also names the current profile and `B:` lowest-P99 profile. This does not measure the full comma/USB round trip, visual quality or driving safety. A failed JPEG candidate returns to baseline H264 without crediting those samples to JPEG. Comparisons reset on model/runtime-session changes; use matching workloads and thermal conditions.
 
 ESP32-S3 Wi-Fi display support has been removed. Connect the USB display to Jetson. Comma sends HUD and navigation data over the dedicated Wi-Fi connection, without falling back to USB display transport. The comma-to-Jetson USB link carries model inference and connection provisioning. Both ends require the updated software.
 

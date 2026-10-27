@@ -38,12 +38,17 @@ class DisplayTelemetry:
 
   def read(self):
     connected = False
+    quality = None
     try:
       status = json.loads(Path('/dev/shm/carrot-jetlink-hud-status.json').read_text())
       connected = 0 <= time.monotonic() - status['updated'] < 2
+      if connected:
+        from openpilot.common.hud_quality_status import quality_status
+        quality = quality_status(status.get('quality'))
     except (OSError, ValueError, KeyError, TypeError):
       pass
     return {**self.original.read(), 'carrot_hud_connected': connected,
+            **({'carrot_hud_quality': quality} if quality else {}),
             **({'carrot_health': self.health.read()} if self.health else {})}
 
 

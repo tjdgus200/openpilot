@@ -118,6 +118,10 @@ def diagnostics():
   except (KeyError, TypeError, ValueError):
     return result
   result.update(fresh=True, severity=health.get('severity', 'unknown'), reason=str(health.get('reason', ''))[:240])
+  from openpilot.common.hud_quality_status import quality_status
+  quality = quality_status((link.get('telemetry') or {}).get('carrot_hud_quality'))
+  if quality:
+    result['hud_quality'] = quality
   if result['severity'] not in ('ok', 'warning', 'error', 'unknown'):
     result['severity'] = 'unknown'
   temperature = health.get('temp_c')

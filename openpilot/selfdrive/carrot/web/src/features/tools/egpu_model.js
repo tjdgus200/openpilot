@@ -1,11 +1,22 @@
 "use strict";
 
+import {renderQualityComparison} from "./hud_quality.js";
+
 const POLL_INTERVAL_MS = 2000;
 let pollTimer = null;
 let lastStatus = null;
 let restartPending = false;
 
 const FALLBACK_STRINGS = {
+  quality_title: "Jetson HUD candidate comparison",
+  quality_candidate: "Candidate",
+  quality_unavailable: "Waiting for the updated Jetson runtime / current observations.",
+  quality_waiting: "Waiting for fresh inference samples.",
+  quality_warmup: "Warm-up: the first 15 seconds are excluded.",
+  quality_measuring: "Measuring: each candidate needs at least 60s and 1000 samples.",
+  quality_ready: "● Current output · ★ Lowest observed GPU P99, shown after at least two candidates qualify.",
+  quality_fallback: "CPU JPEG failed: baseline H264 is active. This is not a JPEG result.",
+  quality_scope: "Select in Settings > External HUD > Screen & Camera > Jetson HUD Quality Candidate. GPU timing matches the HUD inference display; server timing also includes preparation. Neither includes the complete comma/USB round trip. Results reset on model/runtime session changes; matching workloads and visual-quality checks are still required. No automatic winner selection.",
   recovering: "eGPU reconnecting",
   recovering_detail: "The internal model remains in use while eGPU recovery is attempted, up to three times.",
   recovery_ready: "eGPU READY",
@@ -139,6 +150,15 @@ function render(status = lastStatus) {
     detailEl.after(hostEl);
   }
   const host = status.jetlink;
+  let qualityEl = document.getElementById("jetlinkHudQuality");
+  if (!qualityEl) {
+    qualityEl = document.createElement("div");
+    qualityEl.id = "jetlinkHudQuality";
+    qualityEl.className = "egpu-model-card__detail";
+    hostEl.after(qualityEl);
+  }
+  qualityEl.hidden = !host;
+  renderQualityComparison(qualityEl, host?.hud_quality, t);
   hostEl.hidden = !host;
   if (host) {
     const severity = ["ok", "warning", "error", "unknown"].includes(host.severity) ? host.severity : "unknown";

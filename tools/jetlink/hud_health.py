@@ -165,6 +165,11 @@ class HealthRenderer(ClusterUiRenderer):
     snapshot = read_snapshot()
     self._vehicle_data_current = vehicle_data_ready(snapshot)
     now = time.monotonic()
+    # Keep the existing low-priority sampler alive in layouts that omit its
+    # visible footer too; quality observations must not depend on screen mode.
+    from hud_quality import RUN_PROFILE
+    if RUN_PROFILE is not None:
+      self._host_metrics()
     self._bsd_warning = warning_sides(state, snapshot, now)
     if not hasattr(self, '_bsd_pulse'):
       self._bsd_pulse = WarningPulse()

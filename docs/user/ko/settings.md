@@ -293,9 +293,13 @@ VW MEB(ID.4 포함)에도 수동 조향비와 학습 비율이 적용됩니다. 
 <a id="display"></a>
 ## 화면 표시
 
-화면 표시에는 34개 항목이 있습니다. 외부 HUD 항목은 별도 하드웨어의 화면 구성과 출력 방식을 조정합니다.
+화면 표시에는 35개 항목이 있습니다. 외부 HUD 항목은 별도 하드웨어의 화면 구성과 출력 방식을 조정합니다.
 
 `ClusterHud`(외부 HUD 활성화)는 **본체 USB에 직접 연결한 HUD**를 켜고 끄는 설정입니다. Jetson에 연결한 HUD는 이 값이 `0`이어도 자동 실행되며, 기본적으로 시동 OFF 시 화면을 끕니다. 시동 OFF에도 표시하려면 기존 `ClusterHudDebug`의 항상 켜기를 사용합니다. 밝기·화면 구성 설정은 Jetson HUD에도 적용됩니다.
+
+`JetsonHudQuality`(Jetson HUD 화질 후보)는 **Jetson USB HUD 전용** 8개 선택지입니다. 0은 기존 H264 자동, 1~3은 H264 4/8/12Mbps, 4~6은 CPU TurboJPEG 품질 68/85/92, 7은 CPU Pillow JPEG 품질 85입니다. 모두 10fps를 유지하며 본체의 `ClusterHudEncoder` 동작은 바꾸지 않습니다. 온로드에서는 정차 P단에서 HUD만 다시 열어 적용하며, 0으로 복귀는 즉시 가능합니다. 새 Jetson 패키지가 필요합니다.
+
+도구의 Jetlink 카드에서 후보별 GPU 추론 평균·P99·50ms 초과 횟수/비율과 서버 P99를 확인할 수 있습니다. 첫 15초를 제외하고 60초·1,000개 이상인 후보가 두 개 있어야 관측 GPU P99 최저를 표시합니다. HUD의 기존 추론 통계에 현재 후보와 `B:` 최저 후보도 표시합니다. 이 시간은 콤마·USB 전체 왕복 시간이 아니며 화질이나 주행 안전성의 우열을 판정하지 않습니다. JPEG 실패 시 기본 H264로 복귀하고 그 값을 JPEG 결과로 기록하지 않습니다. 모델·실행 세션 변경 시 비교를 초기화하며 동일한 부하·온도 조건에서 비교하세요.
 
 ESP32-S3 Wi-Fi 디스플레이 지원은 제거되었습니다. USB 디스플레이를 Jetson에 연결하세요. 콤마는 전용 Wi-Fi로 HUD·지도 데이터를 보내며, Wi-Fi가 끊겨도 USB HUD 전송으로 전환하지 않습니다. 콤마와 Jetson의 USB 연결은 모델 추론과 연결 협상에 사용합니다. 양쪽 모두 새 버전이 필요합니다.
 
@@ -312,7 +316,7 @@ Jetson HUD에는 `jetSON` 아래에 Jetson 내부 센서의 최고 온도가 표
 | 경로 표시 | `ShowPathMode`, `ShowPathColor`, `ShowPathColorCruiseOff`, `ShowPathModeLane`, `ShowPathColorLane` | 레인리스·레인모드·크루즈 OFF 상태의 경로 모양과 색상 |
 | 밝기·주행화면 | `ShowCustomBrightness`, `ShowModelView`, `ShowCameraWithCluster` | 주행 중 밝기, 카메라·모델 표시 조합과 외부 HUD 연결 중 본체 카메라 표시 |
 | 외부 HUD·기본 | `ClusterHud`, `ClusterHudBrightness`, `ClusterHudOrientation`, `ClusterHudMirror`, `ClusterHudTheme`, `ClusterNaviMapTheme`, `ClusterNaviMapType`, `ClusterNaviMapFps` | TURZX 외부 HUD, BSD 점멸 시 최대 밝기·종료 후 자동 밝기, 화면 회전과 지도 테마 |
-| 외부 HUD·화면·카메라 | `ClusterHudEncoder`, `ClusterHudScreenMode`, `ClusterHudPanelLayout`, `ClusterHudCameraViewMode` | 인코더와 화면·카메라·좌우 패널 구성, PV5 충전 상세·히트맵 |
+| 외부 HUD·화면·카메라 | `ClusterHudEncoder`, `JetsonHudQuality`, `ClusterHudScreenMode`, `ClusterHudPanelLayout`, `ClusterHudCameraViewMode` | 인코더와 화면·카메라·좌우 패널 구성, PV5 충전 상세·히트맵 |
 | 외부 HUD·레이더 표시 | `ClusterHudRadarInfo`, `ClusterHudRadarDisplay`, `ClusterHudRadarSourceColor` | 외부 HUD의 레이더 정보와 색상 |
 | 외부 HUD·디버그 | `ClusterHudDebug` | 진단 정보 |
 

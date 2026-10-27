@@ -1,5 +1,22 @@
 # Repository memory
 
+- 2026-10-27 owner requests eight Jetson HUD codec candidates selectable in
+  Carrot Web with inference comparisons. JetsonHudQuality0 preserves CPU
+  libx26410fps/auto2333k;1-3 are4/8/12Mbps,4-6 pinned CPU TurboJPEG68/85/92,
+  7 CPU Pillow85. Only HUD resources reopen; onroad new choices wait for fresh
+  300ms valid/alive Park/zero, baseline recovery is immediate. JPEG failure
+  falls back visibly to0 without crediting the JPEG trial. No CUDA/NVENC,
+  comma encoder/worker, model inputs or update/auth/rollback changes. Reuse
+  existing1Hz stats and USB telemetry: raw GPU/server samples max64/read,
+  current trial max6000 in Jetson RAM, eight summaries max16KiB. Exclude15s
+  warm-up; qualify60s/1000samples; >=2 candidates permit lowest observed GPU
+  P99, never automatic selection or optical/USB-roundtrip/safety claims.
+  Clear model/runtime session mismatches; >3s gaps restart current trial.
+  PC448 Linux checks and28 Web checks pass; native Windows FFmpeg comparisons
+  pass. Real Jetson ARM JPEG load/FPS/resource/20Hz comparison and device
+  installation remain unverified. This requires a paired new host package.
+  Preserve BSD, W/temp, battery8 and the existing launcher power policy.
+
 - 2026-10-27 owner approves response-driven priority scheduling. Each poll now
   completes at most one transaction; reselect due power before the next slow
   DID, but alternate an overdue slow DID after capacity-limited power so it

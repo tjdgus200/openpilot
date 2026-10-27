@@ -13,6 +13,12 @@ GPU_PATHS = (Path('/sys/class/devfreq/17000000.gpu/device/load'),
              Path('/sys/devices/platform/bus@0/17000000.gpu/load'),
              Path('/sys/devices/platform/17000000.gpu/load'))
 CONTROL = '/run/carrot-jetlink/control.sock'
+QUALITY_STATUS = {}
+QUALITY_UPDATED = 0.
+
+
+def quality_status():
+  return QUALITY_STATUS if 0 <= time.monotonic() - QUALITY_UPDATED < 3 else {}
 
 
 def gpu_percent(paths=GPU_PATHS):
@@ -48,6 +54,9 @@ def valid_timing(value):
 
 class RuntimeFooterSampler:
   def __init__(self):
+    from hud_quality import RUN_PROFILE
+    from hud_quality_compare import Comparison
+    self.comparison = Comparison(*RUN_PROFILE) if RUN_PROFILE is not None else None
     self.local = LocalSystemStatsSampler(refresh_interval_s=1.)
     self.lock = threading.Lock()
     self.stop = threading.Event()
@@ -80,7 +89,10 @@ class RuntimeFooterSampler:
       self.sock.settimeout(.15)
       self.sock.connect(CONTROL)
     self.sequence += 1
-    self.sock.sendall(json.dumps({'id': self.sequence, 'cmd': 'display_stats'}).encode() + b'\n')
+    request = {'id': self.sequence, 'cmd': 'display_stats'}
+    if getattr(self, 'comparison', None) is not None:
+      request['include_samples'] = True
+    self.sock.sendall(json.dumps(request).encode() + b'\n')
     deadline = time.monotonic() + .2
     for _ in range(32):
       if time.monotonic() >= deadline:
@@ -104,6 +116,7 @@ class RuntimeFooterSampler:
     raise TimeoutError('Display statistics deadline')
 
   def _run(self):
+    global QUALITY_STATUS, QUALITY_UPDATED
     try:
       if hasattr(os, 'sched_setscheduler'):
         os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
@@ -120,6 +133,10 @@ class RuntimeFooterSampler:
         self._disconnect()
       value = {'updated': time.monotonic(), 'cpu_percent': stats.cpu_used_percent,
                'memory_percent': stats.memory_used_percent, 'gpu_percent': gpu_percent(), 'timing': timing}
+      if self.comparison is not None:
+        QUALITY_STATUS = self.comparison.update(timing)
+        QUALITY_UPDATED = time.monotonic()
+        value['quality'] = QUALITY_STATUS
       with self.lock:
         self.value = value
       self.stop.wait(max(0, started + 1. - time.monotonic()))
@@ -161,12 +178,18 @@ def footer_segments(vehicle, host, language='ko'):
 
 
 def inference_segments(host):
-  result = [('Inf10s ', TEXT)]
+  from hud_quality import SHORT_NAMES
+  quality = host.get('quality') or {}
+  active = quality.get('effective')
+  result = [(f'{SHORT_NAMES[active]} 10s ' if type(active) is int and 0 <= active < 8 else 'Inf10s ', TEXT)]
   timing = valid_timing(host.get('timing'))
   for label, key in (('AVG:', 'mean'), (' P99:', 'p99'), (' MAX:', 'max')):
     value = timing['infer_ms'][key] if timing else None
     result.extend(((label, TEXT), ('--' if value is None else f'{value:.1f}', metric_color(value, 'infer'))))
   result.append(('ms', TEXT))
+  best = quality.get('best')
+  if type(best) is int and 0 <= best < 8:
+    result.append((f' B:{SHORT_NAMES[best]}', NORMAL))
   return tuple(result)
 
 

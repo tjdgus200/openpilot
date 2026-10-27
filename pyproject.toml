@@ -183,6 +183,7 @@ lint.ignore = [
 line-length = 160
 target-version ="py311"
 exclude = [
+  "tools/jetlink/jpeg_runtime",
   "body",
   "openpilot/cereal",
   "panda",

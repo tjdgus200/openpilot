@@ -448,8 +448,13 @@ class ControlServer:
     if getattr(self, '_display_engine', None) is not loaded:
       self._display_engine = loaded
       self._display_since = time.perf_counter()
-    summary = self.host.frame_stats.display_summary(self._display_since)
-    return {'display_stats': {**summary, 'model_sha256': loaded.sha256} if summary else None}
+    include_samples = msg.get('include_samples') is True
+    summary = self.host.frame_stats.display_summary(self._display_since, include_samples=include_samples)
+    if summary:
+      summary = {**summary, 'model_sha256': loaded.sha256}
+      if include_samples:
+        summary['sample_session'] = f'{loaded.sha256}:{self._display_since:.9f}'
+    return {'display_stats': summary}
 
 
   def _cmd_catalog(self, client: _Client, msg: dict) -> dict:
