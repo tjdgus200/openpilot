@@ -39,7 +39,10 @@ def p99(values):
 
 
 class Comparison:
-  def __init__(self, requested, effective, error='', *, path=PATH, clock=time.perf_counter):
+  def __init__(self, requested, effective, error='', *, path=PATH, clock=time.perf_counter, kind='codec'):
+    self.kind = kind
+    if kind == 'fps-q92' and path == PATH:
+      path = PATH.with_name('carrot-hud-fps-q92.json')
     self.requested, self.effective = requested, effective
     self.error, self.path, self.clock = error[:160], path, clock
     self.started = clock()
@@ -54,10 +57,11 @@ class Comparison:
       if len(raw) <= MAX_BYTES:
         saved = json.loads(raw)
         session = saved.get('session')
-        if saved.get('version') == 1 and isinstance(session, str) and len(session) <= 128:
+        if (saved.get('version') == 1 and saved.get('kind', 'codec') == kind
+            and isinstance(session, str) and len(session) <= 128):
           self.cached_session = session
           for row in saved.get('rows', [])[:8]:
-            if valid_row(row) and row['id'] != requested:
+            if valid_row(row) and row['id'] != requested and (kind != 'fps-q92' or row['id'] < 5):
               self.rows[row['id']] = row
     except (OSError, ValueError, TypeError, AttributeError):
       pass
@@ -109,7 +113,7 @@ class Comparison:
     ready = [row for row in rows if row['n'] >= MIN_SAMPLES and row['seconds'] >= MIN_SECONDS]
     best = (min(ready, key=lambda r: (r['p99_ms'], r['over50'] / r['n'], r['server_p99_ms']))
             if self.session is not None and state in ('measuring', 'ready') and len(ready) >= 2 else None)
-    value = {'version': 1, 'session': self.session or self.cached_session, 'active': self.requested,
+    value = {'version': 1, 'kind': self.kind, 'session': self.session or self.cached_session, 'active': self.requested,
              'effective': self.effective, 'state': state, 'error': self.error,
              'best': best['id'] if best else None, 'rows': rows}
     # One bounded RAM write per existing low-frequency stats sample, no thread.

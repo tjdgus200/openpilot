@@ -76,7 +76,9 @@ def publisher(client, peer, legacy):
     # sent USB display traffic just because their Wi-Fi connection failed.
     if not all(peer.get(key) is True for key in ('carrot_hud_v1', 'carrot_navi_v1', 'carrot_navi_pump_v1')):
       return None
-    return legacy(navi=True, nav_map=True)
+    from hud_rate import CAPABILITY as RATE_CAPABILITY
+    options = {'rate_control': True} if peer.get(RATE_CAPABILITY) is True else {}
+    return legacy(navi=True, nav_map=True, **options)
   if peer.get(CAPABILITY) is not True:
     return None  # Old Jetson runtimes must be updated; never send display over USB.
   try:

@@ -79,7 +79,8 @@ def test_arrays_are_bounded_immutable_expire_and_unknowns_stay_grey():
   assert heat_color(3.88, 3.88, 'cell_voltages_v') == (55, 205, 115)
   assert heat_color(4., 3.88, 'cell_voltages_v') == (240, 65, 65)
   # Fixed scale: a small spread is not normalized to red in every frame.
-  assert heat_color(3.89, 3.88, 'cell_voltages_v') == heat_color(3.88, 3.88, 'cell_voltages_v')
+  assert heat_color(3.89, 3.88, 'cell_voltages_v') != heat_color(3.88, 3.88, 'cell_voltages_v')
+  assert heat_color(3.89, 3.88, 'cell_voltages_v') != (240, 65, 65)
   assert heat_color(29, 21, 'module_temps_c') == (240, 65, 65)
 
 

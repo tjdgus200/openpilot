@@ -54,9 +54,9 @@ def valid_timing(value):
 
 class RuntimeFooterSampler:
   def __init__(self):
-    from hud_quality import RUN_PROFILE
+    from hud_quality import RUN_PROFILE, RUN_FPS
     from hud_quality_compare import Comparison
-    self.comparison = Comparison(*RUN_PROFILE) if RUN_PROFILE is not None else None
+    self.comparison = Comparison(*RUN_PROFILE, kind='fps-q92' if RUN_FPS else 'codec') if RUN_PROFILE is not None else None
     self.local = LocalSystemStatsSampler(refresh_interval_s=1.)
     self.lock = threading.Lock()
     self.stop = threading.Event()
@@ -180,6 +180,8 @@ def footer_segments(vehicle, host, language='ko'):
 def inference_segments(host):
   from hud_quality import SHORT_NAMES
   quality = host.get('quality') or {}
+  if quality.get('kind') == 'fps-q92':
+    from hud_rate import SHORT_NAMES
   active = quality.get('effective')
   result = [(f'{SHORT_NAMES[active]} 10s ' if type(active) is int and 0 <= active < 8 else 'Inf10s ', TEXT)]
   timing = valid_timing(host.get('timing'))

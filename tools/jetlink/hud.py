@@ -128,7 +128,8 @@ class RemoteSubMaster:
 
 
 def main():
-  from hud_quality import NAMES, PARAM, selection
+  from hud_quality import NAMES
+  from hud_rate import PARAM, RATES, selection, FrameRate
   from hud_quality import CpuJpegError, codec_options
   import hud_quality
   override = None
@@ -245,6 +246,9 @@ def main():
 
     def publish_status(self):
       now = time.monotonic()
+      if getattr(self, '_output_rate', None) is None:
+        self._output_rate = FrameRate()
+      self._output_rate.frame(now)
       if now >= self.next_status:
         path = Path('/dev/shm/carrot-jetlink-hud-status.json')
         tmp = path.with_suffix('.tmp')
@@ -254,18 +258,28 @@ def main():
         signal_color, signal_held, signal_online = remote_signals.status()
         display_metrics['signal_display'] = {'enabled': remote_signals.enabled, 'color': signal_color,
                                              'held': signal_held, 'online': signal_online}
+        quality = dict(self_quality())
+        quality['output_fps'] = self._output_rate.sample(now)
+        try:
+          with Path('/dev/shm/carrot-jetlink-hud-rate.json').open('rb') as source:
+            transfer = json.loads(source.read(257))
+          if 0 <= now - transfer['updated'] < 3:
+            quality['usb_fps'] = transfer['fps']
+        except (OSError, ValueError, KeyError, TypeError):
+          pass
+        snapshot = read_snapshot()
+        if snapshot is not None:
+          quality['source_fps'] = snapshot[1].get('hud_source_fps')
         tmp.write_text(json.dumps({'updated': now, **display_metrics,
-                                  'quality': self_quality(),
+                                  'quality': quality,
                                   'vehicle_network_address': VehicleNetworkAddress().address(),
                                   'vehicle_cpu': stats.cpu_core_percents,
                                   'vehicle_memory_percent': stats.memory_used_percent}))
         os.replace(tmp, path)
         self.next_status = now + 1
   cluster.TuringUsbDisplay = Display
-  # Jetson has no video encoder block. Keep inference CPU/GPU headroom and
-  # use the existing software encoder at the normal 10 FPS cluster rate.
-  # Bound conversion/encoding concurrency; an explicit trailing CLI value of
-  # zero restores FFmpeg's automatic thread pools for comparisons.
+  # Live production uses pinned CPU TurboJPEG Q92. Legacy codec overrides are
+  # confined to the explicit, separately gated private bench entry point.
   settings, extra_args = DisplayParams(), sys.argv[1:]
   quality_vehicle = RemoteSubMaster(['carState'])
   def profile_allowed(target):
@@ -300,10 +314,15 @@ def main():
     if profile_allowed(target):
       requested = target
     effective, error = requested, ''
+    codec = 6 if override is None else requested
     while True:
       hud_quality.RUN_PROFILE = (requested, effective, error)
+      hud_quality.RUN_FPS = override is None
       hud_runtime_stats.QUALITY_STATUS = {}
-      sys.argv = [*base, *codec_options(NAMES[effective]), *extra_args]
+      fps = RATES[effective] if override is None else 10
+      sys.argv = [*base, *codec_options(NAMES[codec]), *extra_args]
+      if override is None:
+        sys.argv += ['--fps', str(fps)]
       try:
         if '--help' in sys.argv:
           cluster.main()
@@ -314,8 +333,9 @@ def main():
           break  # Recreate only the display; finally paths close all buffers.
         return
       except CpuJpegError:
-        if not effective:
+        if codec == 0:
           raise
+        codec = 0
         effective, error = 0, 'CPU JPEG unavailable; using baseline H.264'
         print(error, flush=True)
 

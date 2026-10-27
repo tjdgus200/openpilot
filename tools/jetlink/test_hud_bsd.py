@@ -161,7 +161,7 @@ def test_stale_invalid_or_missing_data_never_keeps_a_red_warning(change):
 def test_two_point_five_hz_at_ten_fps_and_steady_without_same_side_signal(signals):
   from hud_bsd import WarningPulse
   pulse = WarningPulse()
-  frames = [pulse.update((True, True), signals) for _ in range(100)]
+  frames = [pulse.update((True, True), signals, now=i*.1) for i in range(100)]
   for side, signal in enumerate(signals):
     pattern = [255, 255, 0, 0]
     values = [frame[side] for frame in frames]
@@ -184,19 +184,22 @@ def test_render_uses_turn_request_not_lamp_phase_and_resets_on_stale(monkeypatch
   renderer.screen_mode = 0
   state = NS(left_signal=True, right_signal=False, left_blindspot=True, right_blindspot=True)
   current = [snapshot()]
+  clock = [10.]
   monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: current[0])
-  monkeypatch.setattr(hud.time, 'monotonic', lambda: 10.1)
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: clock[0])
   monkeypatch.setattr(hud, '_fresh', lambda *args: {})
   outputs = []
   monkeypatch.setattr(hud.ClusterUiRenderer, 'render', lambda *args: outputs.append(renderer._bsd_alpha))
   # Arrow lamp brightness is deliberately opposite; request state owns flashing.
-  for _ in range(4):
+  for i in range(4):
+    clock[0] = 10. + i * .1
+    current[0] = snapshot()[0] + i * .1, snapshot()[1]
     renderer.render(state, (False, True))
   assert outputs == [(255, 255), (255, 255), (0, 255), (0, 255)]
   current[0] = None
   renderer.render(state)
   assert outputs[-1] == (0, 0)
-  current[0] = snapshot()
+  current[0] = clock[0], snapshot()[1]
   renderer.render(state)
   assert outputs[-1] == (255, 255)
   state.left_signal = False

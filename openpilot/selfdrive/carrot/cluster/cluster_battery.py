@@ -132,17 +132,21 @@ def remote_panel(snapshot, now):
 
 
 def heat_color(value, reference, name):
-    """Fixed median-deviation scale, not an OEM fault/safety classification."""
+    """Fixed minimum-relative scale; colors are diagnostic, not fault thresholds."""
     if not finite_number(value) or not finite_number(reference) or name not in ARRAYS:
         return (85, 90, 100)
     delta = abs(value - reference)
-    knots = (0.02, 0.04, 0.08, 0.12) if name == 'cell_voltages_v' else (1., 3., 5., 8.)
+    knots = (0., 0.02, 0.06, 0.12) if name == 'cell_voltages_v' else (0., 1., 3., 8.)
     colors = ((55, 205, 115), (245, 215, 65), (255, 145, 45), (240, 65, 65))
-    if delta <= knots[0]:
+    if delta == 0:
         return colors[0]
     for i in range(1, len(knots)):
         if delta <= knots[i]:
             ratio = (delta - knots[i-1]) / (knots[i] - knots[i-1])
+            # A resolved nonzero difference must not disappear into the green
+            # baseline. Keep absolute scales: tiny spreads are not all red.
+            if i == 1:
+                ratio = .25 + .75 * ratio
             return tuple(round(a + (b-a) * ratio) for a, b in zip(colors[i-1], colors[i], strict=True))
     return colors[-1]
 

@@ -4056,7 +4056,6 @@ class ClusterUiRenderer:
         return getattr(self, '_charging_dashboard_active', False)
 
     def _draw_charging_detail(self, state: ClusterUiState) -> None:
-        from statistics import median
         data = state.battery or BatteryPanelData()
         theme = self._current_theme()
         x = self._driving_panel_offset_design_x()
@@ -4082,7 +4081,7 @@ class ClusterUiRenderer:
         ):
             values = data.value(name)
             available = [v for v in values if v is not None] if values is not None else []
-            reference = median(available) if available else None
+            reference = min(available) if available else None
             spread = max(available) - min(available) if available else None
             diff_label = '차이' if ko else 'spread'
             suffix = (f' · {diff_label} {spread * 1000:.0f} mV' if name == 'cell_voltages_v' else f' · {diff_label} {spread:.0f}°C') if spread is not None else ' · --'
@@ -4101,8 +4100,8 @@ class ClusterUiRenderer:
                 else:
                     text = f'T{i+1:02d}  {value:.0f}°C' if value is not None else f'T{i+1:02d}  --'
                     self._draw_text(text, px + 5, py + 16, 18, ink)
-        legend = ('색상: 중앙값 편차 · 진단용 / 회색: 미수신' if ko else
-                  'Color: deviation from median / diagnostic only · Gray: unavailable')
+        legend = ('색상: 최저값 대비 차이 · 진단용 / 회색: 미수신' if ko else
+                  'Color: difference from minimum / diagnostic only · Gray: unavailable')
         self._draw_text(self._ellipsize_text(legend, 15, width - 48), left, 461, 15, theme.muted)
 
     def _draw_battery_panel(self, state: ClusterUiState) -> None:

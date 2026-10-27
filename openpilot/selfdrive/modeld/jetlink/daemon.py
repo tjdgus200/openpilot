@@ -38,6 +38,7 @@ SESSION_DETACHED = False
 log = logging.getLogger('carrot.jetlink')
 sys.path.insert(0, str(VENDOR.parents[1] / 'tools/jetlink'))
 from hud_protocol import Publisher, HUD_MESSAGE
+from hud_rate import IdleBudget, request_ready
 from hud_wifi import publisher as display_publisher, USB_CAPABILITY as HUD_USB_CAPABILITY
 from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE
 from hud_navi import send_ready_after_reply, send_ready_during_inference, PUMP_CAPABILITY
@@ -64,11 +65,11 @@ def update_affinity():
       pass
 
 
-def publish_hud(client, publisher):
+def publish_hud(client, publisher, *, include_media=True):
   # Packet construction/Cap'n Proto encoding is in the publisher child. These
   # scopes measure only snapshot access and synchronous writes on the USB owner.
-  metrics = dict(display_snapshot_read_ms=0., display_hud_send_ms=0., display_media_read_ms=0.,
-                 display_media_send_ms=0., display_hud_bytes=0, display_media_bytes=0)
+  metrics = {'display_snapshot_read_ms': 0., 'display_hud_send_ms': 0., 'display_media_read_ms': 0.,
+             'display_media_send_ms': 0., 'display_hud_bytes': 0, 'display_media_bytes': 0}
   if publisher is not None:
     started = time.monotonic()
     try:
@@ -85,7 +86,7 @@ def publish_hud(client, publisher):
     metrics['display_hud_send_ms'] = (sent - ready) * 1000
     # At most one small fragment per inference window. No video
     # decoding or unbounded stream draining occurs on the USB owner's thread.
-    media = publisher.media_packet()
+    media = publisher.media_packet() if include_media else None
     ready = time.monotonic()
     metrics['display_media_read_ms'] = (ready - sent) * 1000
     if media:
@@ -256,6 +257,7 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
   usb_display = publisher is not None and (peer.get('carrot_host') != 'jetson' or peer.get(HUD_USB_CAPABILITY) is True)
   requested = True
   follows_app = peer.get('protocol') == 3 and may_provision(peer, session_mode())
+  idle_budget = IdleBudget()
   while host_attached():
     if follows_app and requested and params.get_bool('IsOffroad') and not params.get_bool('IsOnroad'):
       # The App's Use Model must not compete with our old ENGINE_REQ.
@@ -268,6 +270,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
       publish('ready', spec=spec, peer=peer, telemetry=client.last_state, telemetry_updated=telemetry_updated)
       last_status = time.monotonic()
     try:
+      if hasattr(listener, 'settimeout'):
+        listener.settimeout(1. / (2 * getattr(publisher, 'target_fps', 10)))
       connection, _ = listener.accept()
     except TimeoutError:
       if wifi is not None:
@@ -318,17 +322,35 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
             last_status = time.monotonic()
           receive_started = time.monotonic()
           try:
+            target_fps = getattr(publisher, 'target_fps', 10)
+            if usb_display and target_fps > 10 and not request_ready(connection, 1. / (2 * target_fps)):
+              # A ready model request always wins. Poll before the original
+              # complete-packet read: never shorten its partial-read deadline.
+              if idle_budget.allowed(time.monotonic()) and not request_ready(connection, 0.):
+                metrics = publish_hud(client, publisher, include_media=False) or {}
+                idle_budget.observe(time.monotonic(), metrics)
+              if (time.monotonic() - last_ping > 2
+                  and (idle_budget.last_model is None or time.monotonic() - idle_budget.last_model > .5)
+                  and not request_ready(connection, 0.)):
+                client.last_state = client.state()
+                check_loaded(client, client.last_state)
+                telemetry_updated = time.monotonic()
+                last_ping = time.monotonic()
+              continue
             request = reader.receive(connection)
           except TimeoutError:
             if wifi is not None:
               wifi.send(client)
             if usb_display:
               publish_hud(client, publisher)
-            client.last_state = client.state()
-            check_loaded(client, client.last_state)
-            telemetry_updated = time.monotonic()
+            if time.monotonic() - last_ping > 2:
+              client.last_state = client.state()
+              check_loaded(client, client.last_state)
+              telemetry_updated = time.monotonic()
+              last_ping = time.monotonic()
             continue
           received = time.monotonic()
+          idle_budget.model_started(received)
           if first_request and bytes(request) == shared_input.SETUP:
             first_request = False
             shared = shared_input.Reader.offer(connection, spec)
@@ -389,6 +411,7 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None):
           if client.last_state is not previous_state:
             telemetry_updated = time.monotonic()
           completed = time.monotonic()
+          idle_budget.completed(completed, completed - started)
           try:
             send_parts(connection, REPLY.pack(frame, *client.last_timings), output)
           finally:

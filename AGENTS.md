@@ -1,5 +1,16 @@
 # Repository memory
 
+- 2026-10-27 owner supersedes the eight live codec choices: production Jetson
+  HUD uses CPU TurboJPEG Q92; JetsonHudFps indices0..4 mean10/15/20/25/30fps
+  across comma snapshots, single-owner USB delivery and Jetson output. Default10;
+  fresh Park gates onroad changes except10fps recovery. Extra idle sends yield
+  to ready model IPC, omit NAV fragments and back off on slow USB/model timing;
+  no hard zero-inference-impact claim without hardware measurements. Preserve
+  the original complete IPC read timeout, no async model writer or Wi-Fi HUD.
+  Keep BSD nominal2.5Hz by elapsed time at all rates. Heatmaps are minimum-relative
+  fixed scales with visible nonzero tint; do not restore the median deadband.
+  Preserve power policy, W/temp, battery8, all data ages and update/auth/rollback.
+
 - HUD telemetry recovery delivery2026-10-27: public corrected sourceaf2cfe37,
   tagjetson-pv5-hud-telemetry-fix-20261027-af2cfe37,65021048bytes,
   SHA1db947fb5cdf35fe662b5980f465aa5fdd471138fe9891b67ade6430687af60d.

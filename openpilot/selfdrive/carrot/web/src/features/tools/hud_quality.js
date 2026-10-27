@@ -1,10 +1,12 @@
 "use strict";
 
 export const HUD_QUALITY_LABELS = ["H264 auto", "H264 4M", "H264 8M", "H264 12M", "TurboJPEG Q68", "TurboJPEG Q85", "TurboJPEG Q92", "Pillow Q85"];
+export const HUD_FPS_LABELS = [10, 15, 20, 25, 30].map((fps) => `Q92 · ${fps} fps`);
 
 export function qualityRows(report) {
   const rows = Array.isArray(report?.rows) ? report.rows.slice(0, 8) : [];
-  const result = HUD_QUALITY_LABELS.map((label, id) => {
+  const labels = !report || report.kind === "fps-q92" ? HUD_FPS_LABELS : HUD_QUALITY_LABELS;
+  const result = labels.map((label, id) => {
     const row = rows.find((value) => value?.id === id);
     const valid = row && Number.isInteger(row.n) && row.n > 0 && row.n <= 6000
       && [row.mean_ms, row.p99_ms, row.max_ms, row.server_p99_ms, row.seconds].every((n) => Number.isFinite(n) && n >= 0)
@@ -28,6 +30,9 @@ export function renderQualityComparison(element, report, text) {
   note.textContent = text(report ? `quality_${report.state}` : "quality_unavailable");
   const scope = document.createElement("p");
   scope.textContent = text("quality_scope");
+  const rates = document.createElement("p");
+  const fps = (value) => Number.isFinite(value) && value >= 0 && value <= 120 ? value.toFixed(1) : "--";
+  rates.textContent = `${text("quality_rates")}: ${fps(report?.source_fps)} / ${fps(report?.usb_fps)} / ${fps(report?.output_fps)} fps`;
   const wrap = document.createElement("div");
   wrap.style.overflowX = "auto";
   const table = document.createElement("table");
@@ -53,5 +58,5 @@ export function renderQualityComparison(element, report, text) {
     table.appendChild(row);
   }
   wrap.appendChild(table);
-  element.replaceChildren(title, note, wrap, scope);
+  element.replaceChildren(title, note, rates, wrap, scope);
 }

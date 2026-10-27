@@ -17,6 +17,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 PARAM = 'JetsonHudQuality'
 RUN_PROFILE = None
+RUN_FPS = False
 
 
 @dataclass(frozen=True)

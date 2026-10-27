@@ -175,7 +175,7 @@ class HealthRenderer(ClusterUiRenderer):
       self._bsd_pulse = WarningPulse()
     self._bsd_alpha = self._bsd_pulse.update(self._bsd_warning,
                                             (getattr(state, 'left_signal', False),
-                                             getattr(state, 'right_signal', False)))
+                                             getattr(state, 'right_signal', False)), now=now)
     self.host_health = _fresh(STATUS, time.monotonic())
     self.host_badge_drawn = False
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:

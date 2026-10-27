@@ -7,18 +7,21 @@ import socket
 import subprocess
 import sys
 import time
+from hud_rate import PARAM as FPS_PARAM, rate, selection, RATES, FrameRate
 
 HUD_MESSAGE = 0x4000
 HUD_CAPABILITY = 'carrot_hud_v1'
 MAX_HUD_BYTES = 512 * 1024
 HUD_PACKET = Path('/dev/shm/carrot-jetlink-hud.packet')
 HEADER = struct.Struct('<d')
+PUBLISHER_RATE = struct.Struct('<4sB')
+RATE_MAGIC = b'HFPS'
 SERVICES = ('carState', 'carParams', 'modelV2', 'radarState', 'liveTracks', 'longitudinalPlan',
             'lateralPlan', 'controlsState', 'selfdriveState', 'carControl', 'carOutput', 'deviceState',
             'roadCameraState', 'cameraOdometry', 'liveCalibration', 'livePose', 'drivingModelData',
             'liveDelay', 'liveParameters', 'liveTorqueParameters', 'navInstruction', 'navInstructionCarrot',
             'navRoute', 'carrotMan', 'carrotNavi', 'wideRoadCameraState')
-PARAMS = ('ClusterHud', 'ClusterHudDebug', 'JetsonHudQuality', 'ClusterHudBrightness', 'ClusterHudOrientation',
+PARAMS = ('ClusterHud', 'ClusterHudDebug', 'JetsonHudFps', 'ClusterHudBrightness', 'ClusterHudOrientation',
           'ClusterHudMirror', 'ClusterHudTheme', 'ClusterHudRadarInfo', 'ClusterHudRadarDisplay',
           'ClusterHudRadarSourceColor', 'ClusterHudCameraViewMode', 'ClusterHudPanelLayout',
           'ClusterHudScreenMode', 'ShowPlotMode', 'LanguageSetting', 'IsMetric', 'ShowDateTime',
@@ -28,7 +31,7 @@ PARAMS = ('ClusterHud', 'ClusterHudDebug', 'JetsonHudQuality', 'ClusterHudBright
 
 class Publisher:
   """Keep cereal decoding, JSON and preview work outside the USB owner's GIL."""
-  def __init__(self, navi=False, nav_map=False):
+  def __init__(self, navi=False, nav_map=False, rate_control=False):
     import os
     self.media_socket = self.media_process = None
     if navi:
@@ -42,9 +45,11 @@ class Publisher:
         child.close()
     self.path = Path(f'/dev/shm/carrot-jetlink-display-{os.getpid()}.packet')
     self.last_sent = 0.
+    self.target_fps = 10
+    self.rate_control = rate_control
     self.process = subprocess.Popen(['chrt', '--other', '0', sys.executable,
                                     str(Path(__file__).with_name('hud_publisher.py')), str(self.path),
-                                    *(['--nav-map'] if nav_map else [])],
+                                    *(['--nav-map'] if nav_map else []), *(['--rate-control'] if rate_control else [])],
                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
   def media_packet(self):
@@ -59,14 +64,22 @@ class Publisher:
   def packet(self):
     try:
       with self.path.open('rb') as f:
-        data = f.read(96 * 1024 + HEADER.size + 1)
-      if not HEADER.size < len(data) <= 96 * 1024 + HEADER.size:
+        stamp, = HEADER.unpack(f.read(HEADER.size))
+        if stamp == self.last_sent or not 0 <= time.monotonic() - stamp < .3:
+          return None
+        body = f.read(96 * 1024 + PUBLISHER_RATE.size + 1)
+      if not 0 < len(body) <= 96 * 1024 + PUBLISHER_RATE.size:
         return None
-      stamp, = HEADER.unpack_from(data)
-      if stamp == self.last_sent or not 0 <= time.monotonic() - stamp < .3:
+      if body.startswith(RATE_MAGIC):
+        if len(body) <= PUBLISHER_RATE.size:
+          return None
+        _, fps = PUBLISHER_RATE.unpack_from(body)
+        self.target_fps = rate(fps) if getattr(self, 'rate_control', False) else 10
+        body = body[PUBLISHER_RATE.size:]
+      if len(body) > 96 * 1024:
         return None
       self.last_sent = stamp
-      return data[HEADER.size:]
+      return body
     except (OSError, struct.error):
       return None
 
@@ -90,7 +103,7 @@ class Publisher:
 
 
 class SnapshotBuilder:
-  def __init__(self, nav_map=False):
+  def __init__(self, nav_map=False, rate_control=False):
     from openpilot.cereal import messaging
     from openpilot.common.params import Params
     self.sm = messaging.SubMaster(list(SERVICES))
@@ -98,6 +111,8 @@ class SnapshotBuilder:
     self.cached = {}
     self.settings = {}
     self.next_params = self.next_send = 0.
+    self.target_fps, self.requested_fps = 10, 10
+    self.rate_control = rate_control
     self.host_release = None
     release_file = Path(__file__).resolve().parents[2] / 'openpilot/selfdrive/modeld/jetlink/host_release.json'
     from openpilot.common.jetson_model import selected_release
@@ -174,7 +189,6 @@ class SnapshotBuilder:
     now = time.monotonic()
     if now < self.next_send:
       return None
-    self.next_send = now + .1 if now - self.next_send > .2 else self.next_send + .1
     self.sm.update(0)
     for name in SERVICES:
       if self.sm.updated[name]:
@@ -193,8 +207,25 @@ class SnapshotBuilder:
         except Exception:
           pass
       self.next_params = now + 1
+      try:
+        self.requested_fps = RATES[selection(base64.b64decode(self.settings.get(FPS_PARAM, 'MA==')))]
+      except (ValueError, TypeError):
+        self.requested_fps = 10
+    fps = getattr(self, 'requested_fps', 10) if getattr(self, 'rate_control', False) else 10
+    current = getattr(self, 'target_fps', 10)
+    if fps == 10 or fps == current or self.rate_increase_allowed(now):
+      self.target_fps = fps
+    # Forward the admitted rate, so a pending onroad increase cannot silently
+    # increase host rendering before the comma publisher's fresh-P check.
+    self.settings[FPS_PARAM] = base64.b64encode(str(RATES.index(self.target_fps)).encode()).decode()
+    period = 1. / self.target_fps
+    self.next_send = now + period
     device_badge = badge()
+    if not hasattr(self, 'source_rate'):
+      self.source_rate = FrameRate()
+    self.source_rate.frame(now)
     record = {'version': 1, 'sent': now, 'events': self.cached, 'params': self.settings,
+              'hud_source_fps': self.source_rate.sample(now),
               **({'jetson_release': self.host_release} if self.host_release is not None else {}),
               'vehicle_network_address': self.network.address(),
               'external_compute_label': device_badge[0] if device_badge and device_badge[1] == 'active' else '',
@@ -214,6 +245,14 @@ class SnapshotBuilder:
     # look future-dated, and slow optional work still counts toward their age.
     record['sent'] = time.monotonic()
     return encode_snapshot(record)
+
+  def rate_increase_allowed(self, now):
+    if self.settings.get('IsOnroad') == 'MA==':
+      return True
+    car = self.sm['carState']
+    return (self.sm.valid['carState'] and self.sm.alive['carState']
+            and 0 <= now - self.sm.recv_time['carState'] <= .3
+            and str(car.gearShifter) == 'park' and car.vEgo == 0.)
 
 
 def encode_snapshot(record):

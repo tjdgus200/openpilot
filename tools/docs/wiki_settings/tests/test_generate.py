@@ -86,7 +86,7 @@ class WikiSettingsGeneratorTest(unittest.TestCase):
       generated_at=STAMP,
     )
     self.assertEqual(len(result.generated_settings), 198)
-    self.assertIn("JetsonHudQuality", result.index["settings"])
+    self.assertIn("JetsonHudFps", result.index["settings"])
     self.assertIn("NNFF", result.index["settings"])
     self.assertNotIn("SteerHandoverMode", result.index["settings"])
     self.assertIn("SignalAssistMode", result.index["settings"])

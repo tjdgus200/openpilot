@@ -6,10 +6,10 @@ import signal
 import sys
 import time
 
-from hud_protocol import SnapshotBuilder, HEADER
+from hud_protocol import SnapshotBuilder, HEADER, PUBLISHER_RATE, RATE_MAGIC
 
 
-def main(path, nav_map=False):
+def main(path, nav_map=False, rate_control=False):
   from openpilot.common.display_scheduling import DisplayScheduler
   from openpilot.common.params import Params
   ctypes.CDLL(None).prctl(1, signal.SIGTERM, 0, 0, 0)
@@ -20,7 +20,7 @@ def main(path, nav_map=False):
   signal.signal(signal.SIGTERM, stop)
   scheduler = DisplayScheduler(7, enabled=True)
   params = Params()
-  builder = SnapshotBuilder(nav_map=nav_map)
+  builder = SnapshotBuilder(nav_map=nav_map, rate_control=rate_control)
   next_warning = 0.
   try:
     while True:
@@ -30,7 +30,7 @@ def main(path, nav_map=False):
         packet = builder.packet()
         if packet is not None:
           temporary = path.with_suffix('.tmp')
-          temporary.write_bytes(HEADER.pack(time.monotonic()) + packet)
+          temporary.write_bytes(HEADER.pack(time.monotonic()) + PUBLISHER_RATE.pack(RATE_MAGIC, builder.target_fps) + packet)
           os.replace(temporary, path)
       except Exception as exc:
         # A transient display/size failure expires the last snapshot. Retry in
@@ -38,7 +38,7 @@ def main(path, nav_map=False):
         if start >= next_warning:
           print(f'Jetlink display snapshot unavailable: {exc}', file=sys.stderr, flush=True)
           next_warning = start + 2
-      time.sleep(max(0, start + .1 - time.monotonic()))
+      time.sleep(max(.001, builder.next_send - time.monotonic()))
   finally:
     builder.close()
     path.unlink(missing_ok=True)
@@ -46,4 +46,4 @@ def main(path, nav_map=False):
 
 
 if __name__ == '__main__':
-  main(Path(sys.argv[1]), nav_map='--nav-map' in sys.argv[2:])
+  main(Path(sys.argv[1]), nav_map='--nav-map' in sys.argv[2:], rate_control='--rate-control' in sys.argv[2:])

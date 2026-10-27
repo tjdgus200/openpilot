@@ -1,5 +1,6 @@
-"""Fresh BSD stays visible; a same-side turn request flashes the 10 Hz HUD."""
+"""Fresh BSD stays visible; same-side turn requests flash independently of FPS."""
 import math
+import time
 
 GRADIENT_ALPHA = 96
 
@@ -25,22 +26,20 @@ class WarningBrightness:
 
 
 class WarningPulse:
-  """Two frames on, two off: nominal 2.5 Hz at the existing 10 fps.
-
-  Frame locking avoids time-phase aliasing at this output-rate limit. Dropped
-  output frames can slow the visible cadence; no extra USB frames are produced.
-  """
+  """200ms on / 200ms off, preserving 2.5Hz at every admitted output rate."""
   def __init__(self):
     self.flashing = (False, False)
     self.alpha = (0, 0)
     self.phase = (0, 0)
+    self.started = (None, None)
 
-  def update(self, warnings, signals):
+  def update(self, warnings, signals, now=None):
+    now = time.monotonic() if now is None else now
     flashing = flashing_sides(warnings, signals)
-    # Bounded integer phase avoids drift/overflow. Each phase lasts one frame;
-    # at 10fps the on/off dwell times are both 200ms, without extra USB traffic.
-    self.phase = tuple((phase + 1) % 4 if flash and previous else 0
-                       for flash, previous, phase in zip(flashing, self.flashing, self.phase, strict=True))
+    self.started = tuple(now if flash and (not previous or start is None or now < start) else start if flash else None
+                         for flash, previous, start in zip(flashing, self.flashing, self.started, strict=True))
+    self.phase = tuple(int(((now - start) % .4) * 10 + 1e-8) % 4 if start is not None else 0
+                       for start in self.started)
     self.alpha = tuple(0 if not active else 255 if not flash or phase < 2 else 0
                        for active, flash, phase in zip(warnings, flashing, self.phase, strict=True))
     self.flashing = flashing

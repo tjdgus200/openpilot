@@ -8,7 +8,8 @@ let lastStatus = null;
 let restartPending = false;
 
 const FALLBACK_STRINGS = {
-  quality_title: "Jetson HUD candidate comparison",
+  quality_title: "Jetson HUD frame-rate comparison",
+  quality_rates: "Source / USB receive / output",
   quality_candidate: "Candidate",
   quality_unavailable: "Waiting for the updated Jetson runtime / current observations.",
   quality_waiting: "Waiting for fresh inference samples.",
@@ -16,7 +17,7 @@ const FALLBACK_STRINGS = {
   quality_measuring: "Measuring: each candidate needs at least 60s and 1000 samples.",
   quality_ready: "● Current output · ★ Lowest observed GPU P99, shown after at least two candidates qualify.",
   quality_fallback: "CPU JPEG failed: baseline H264 is active. This is not a JPEG result.",
-  quality_scope: "Select in Settings > External HUD > Screen & Camera > Jetson HUD Quality Candidate. GPU timing matches the HUD inference display; server timing also includes preparation. Neither includes the complete comma/USB round trip. Results reset on model/runtime session changes; matching workloads and visual-quality checks are still required. No automatic winner selection.",
+  quality_scope: "Select Settings > External HUD > Screen & Camera > Jetson HUD Frame Rate. CPU TurboJPEG Q92 is fixed. Actual rates may be lower than the target: model requests take priority and late HUD frames are skipped. Onroad changes wait for stationary Park; 10fps recovery is immediate. GPU/server times are not the complete comma/USB round trip. Compare matching workloads; results reset on model/runtime changes. No automatic selection or zero-impact guarantee.",
   recovering: "eGPU reconnecting",
   recovering_detail: "The internal model remains in use while eGPU recovery is attempted, up to three times.",
   recovery_ready: "eGPU READY",

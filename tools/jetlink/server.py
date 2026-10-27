@@ -18,6 +18,7 @@ if __name__ == '__main__':
 sys.path.insert(0, str(ROOT / 'third_party/jetlink'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hud_protocol import HUD_CAPABILITY, HUD_MESSAGE, MAX_HUD_BYTES, HUD_PACKET, HEADER
+from hud_rate import CAPABILITY as HUD_RATE_CAPABILITY, FrameRate
 from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE, HostForwarder
 from hud_navi import PUMP_CAPABILITY
 from hud_wifi import CAPABILITY as HUD_WIFI_CAPABILITY, USB_CAPABILITY as HUD_USB_CAPABILITY
@@ -94,7 +95,8 @@ class CarrotSession(Session):
       obj = {**obj, HUD_CAPABILITY: legacy_display, NAVI_CAPABILITY: legacy_display,
              PUMP_CAPABILITY: legacy_display, WIFI_CAPABILITY: host == 'jetson', 'carrot_host': host,
              HUD_WIFI_CAPABILITY: self.hud_wifi_supported,
-             HUD_USB_CAPABILITY: host == 'jetson' and legacy_display}
+             HUD_USB_CAPABILITY: host == 'jetson' and legacy_display,
+             HUD_RATE_CAPABILITY: host == 'jetson' and legacy_display}
       if self.deferred_negotiated:
         obj[deferred_map.CAPABILITY] = deferred_map.descriptor()
       if host == 'jetson':
@@ -189,6 +191,17 @@ class CarrotSession(Session):
         f.write(HEADER.pack(time.monotonic()))
         f.write(msg.payload)
       os.replace(temporary, HUD_PACKET)
+      now = time.monotonic()
+      if not hasattr(self, 'hud_frame_rate'):
+        self.hud_frame_rate = FrameRate()
+        self.hud_rate_next = now + 1.
+      self.hud_frame_rate.frame(now)
+      if now >= self.hud_rate_next:
+        path = HUD_PACKET.with_name('carrot-jetlink-hud-rate.json')
+        tmp = path.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'updated': now, 'fps': self.hud_frame_rate.sample(now)}))
+        os.replace(tmp, path)
+        self.hud_rate_next = now + 1.
     except OSError:
       pass  # An unavailable display does not stop inference.
 

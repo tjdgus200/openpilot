@@ -1,5 +1,10 @@
 # Jetson HUD quality comparison candidates — 2026-10-27
 
+Historical codec comparison below. Production now fixes CPU TurboJPEG Q92 and
+offers five frame rates; see [current behavior](jetson_hud_fps_q92_20261027.md).
+`JetsonHudQuality` is no longer a Carrot Web selector. The old profiles are
+retained only for explicit private bench runs.
+
 Eight candidates are selectable through the new `JetsonHudQuality` Carrot Web
 setting. Source implementation/PC checks do not imply device installation or a
 measured performance improvement. All candidates use the existing host renderer

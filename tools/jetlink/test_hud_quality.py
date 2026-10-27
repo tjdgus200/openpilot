@@ -150,6 +150,8 @@ class TestDisplay:
       'remote_signals': NS(status=lambda: ('unknown', False, False), enabled=False),
       'display_metrics': {},
       'self_quality': dict,
+      'FrameRate': __import__('hud_rate').FrameRate,
+      'read_snapshot': lambda: None,
       'VehicleNetworkAddress': lambda: NS(address=lambda: 'test'),
     }
     cls = extract_class(quality.ROOT / 'tools/jetlink/hud.py', 'Display', namespace)
@@ -233,15 +235,15 @@ class TestNativeH264:
 class TestProfileGate:
   def test_profile_watcher_exits_only_for_an_allowed_new_choice(self):
     source = quality.ROOT / 'tools/jetlink/hud.py'
-    selected, allowed = [5], [False]
-    namespace = {'selection': quality.selection, 'PARAM': quality.PARAM, 'override': None,
+    selected, allowed = [3], [False]
+    namespace = {'selection': __import__('hud_rate').selection, 'PARAM': 'JetsonHudFps', 'override': None,
                  'requested': 0, 'settings': NS(get_int=lambda _: selected[0]),
                  'profile_allowed': lambda _: allowed[0]}
     watcher = extract_class(source, 'QualityWatch', namespace)()
     assert watcher.read() == 0
     allowed[0] = True
     assert watcher.read() == 1
-    namespace['requested'] = 5
+    namespace['requested'] = 3
     assert watcher.read() == 0
     namespace['override'] = 5
     selected[0] = 0
@@ -251,7 +253,7 @@ class TestProfileGate:
     source = quality.ROOT / 'tools/jetlink/hud.py'
     main = next(n for n in ast.parse(source.read_text(encoding='utf-8')).body if isinstance(n, ast.FunctionDef) and n.name == 'main')
     loop = next(n for n in reversed(main.body) if isinstance(n, ast.While))
-    contexts, entered, closed = [], [], []
+    contexts, entered, closed, commands = [], [], [], []
 
     class Owner:
       def __enter__(self):
@@ -264,21 +266,26 @@ class TestProfileGate:
 
     def render(**kwargs):
       contexts.append(local_quality.RUN_PROFILE)
+      commands.append(list(namespace['sys'].argv))
       if len(contexts) == 1:
         raise quality.CpuJpegError('test encoder failure')
 
-    namespace = {'selection': quality.selection, 'PARAM': quality.PARAM, 'override': None,
-                 'settings': NS(get_int=lambda _: 5), 'profile_allowed': lambda _: True,
+    namespace = {'selection': __import__('hud_rate').selection, 'PARAM': 'JetsonHudFps', 'override': None,
+                 'settings': NS(get_int=lambda _: 3), 'profile_allowed': lambda _: True,
                  'hud_quality': local_quality, 'hud_runtime_stats': runtime,
                  'sys': NS(argv=[]), 'base': ['hud.py'], 'codec_options': quality.codec_options,
-                 'NAMES': quality.NAMES, 'extra_args': [], 'cluster': NS(main=render),
+                 'NAMES': quality.NAMES, 'RATES': (10,15,20,25,30), 'extra_args': [], 'cluster': NS(main=render),
                  'panel_owner': lambda **kw: Owner(), 'CpuJpegError': quality.CpuJpegError,
                  'QualityWatch': lambda: NS(read=lambda: 0)}
     runner = ast.FunctionDef(name='run', args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
                              body=[loop], decorator_list=[])
     exec(compile(ast.fix_missing_locations(ast.Module(body=[runner], type_ignores=[])), str(source), 'exec'), namespace)
     namespace['run']()
-    assert contexts == [(5, 5, ''), (5, 0, 'CPU JPEG unavailable; using baseline H.264')]
+    assert contexts == [(3, 3, ''), (3, 0, 'CPU JPEG unavailable; using baseline H.264')]
+    assert commands[0][commands[0].index('--usb-jpeg-quality') + 1] == '92'
+    assert commands[0][-2:] == ['--fps', '25']
+    assert commands[1][commands[1].index('--usb-codec') + 1] == 'h264'
+    assert commands[1][-2:] == ['--fps', '10']
     assert len(entered) == len(closed) == 2
     assert runtime.QUALITY_STATUS == {}
 
