@@ -1,5 +1,13 @@
 # Repository memory
 
+- Q92/FPS delivery2026-10-27: sourceccbac7d4, public tag
+  jetson-pv5-hud-fps-q92-20261027-ccbac7d4,65025624bytes,
+  SHAaa61062e18b8a70c0a631c3e06b0a37649ab22e29471a5d65caf5d8ec5464ada.
+  Four anonymous assets/exported fresh telemetry pass; Linux544/5skip,
+  Windows72,Web37 and selected-update78 PC checks pass. No physical install,
+  live30fps/P99/resource/road-safety claim. GitHub dispatch still returns422
+  Actions-disabled despite permissions.enabled=true; no remote CI pass claimed.
+
 - 2026-10-27 owner supersedes the eight live codec choices: production Jetson
   HUD uses CPU TurboJPEG Q92; JetsonHudFps indices0..4 mean10/15/20/25/30fps
   across comma snapshots, single-owner USB delivery and Jetson output. Default10;
