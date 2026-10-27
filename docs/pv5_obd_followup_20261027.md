@@ -99,6 +99,20 @@ After selecting this exact public package, 337 combined Linux PC checks passed, 
 
 ## Charging detail and bounded heatmaps (follow-up)
 
+Latest owner follow-up: mode8 shows the same battery detail whenever fresh
+Park/stationary state is present, whether charging, not charging or the charge
+flag is unavailable. It retains the300ms motion gate and returns to road on
+gear/motion/vehicle expiry. Empty battery fields stay gray with no fabricated
+data; charge-off/unknown titles say parked battery overview. An enrolled details
+collector also reads the existing bounded cell scan while freshly parked without
+requiring active AC/DC flags. Request order, scan limits, per-field expiry and
+onroad lifetime are unchanged. This supersedes the charging-only view/scan
+condition in the earlier implementation record below. No new live-device claim.
+PC371 focused checks passed, including charge-off/unknown Park selection,
+sequential no-charge scans, motion/gear/expiry fallback and unchanged other modes.
+Actual-renderer synthetic previews were inspected for both panel layouts; Ruff
+and the KO/EN user-guide validator passed. These are not vehicle measurements.
+
 **Activation update, 2026-10-27:** the owner explicitly requested activation
 before real charging comparison. This supersedes the confirmation-only launch
 described in the original implementation record below. An existing enrolled

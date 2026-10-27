@@ -1,5 +1,12 @@
 # Repository memory
 
+- 2026-10-27 owner extends mode8 battery detail to fresh Park/stationary even
+  when not charging. Optional bounded sequential cell scans require enrolled
+  details and fresh Park, not AC/DC flags. Keep300ms vehicle freshness, gray
+  missing/expired fields, unverified provenance and all existing onroad/update
+  gates. Charging-off/unknown titles say parked overview, never AC charging.
+  Leaving P/moving/stale motion restores road; other modes remain unchanged.
+
 - 2026-10-27 owner explicitly enables charging heatmap observations before
   vehicle comparison, superseding the prior confirmation-only launch below.
   Existing one-device OBD enrollment now enables charge_mode,108 voltages,

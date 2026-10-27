@@ -236,10 +236,8 @@ class MetricPoller:
       self.values['module_temps_c'] = temperatures
       self.observed['module_temps_c'] = min(times['220101'], times['220105'])
       self.next_slow = started + PERIOD
-    active = (self.values.get('charge_mode') in ('ac', 'dc')
-              and 0 <= time.monotonic() - self.observed.get('charge_mode', -10.) <= 1.)
     safe_parked = parked() if callable(parked) else parked is True
-    if not (self.details and safe_parked and active):
+    if not (self.details and safe_parked):
       self.values.pop('cell_voltages_v', None)
       self.observed.pop('cell_voltages_v', None)
       self.cell_blocks.clear()

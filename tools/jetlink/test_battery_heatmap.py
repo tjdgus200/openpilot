@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'tools/jetlink'), str(ROOT / 'openpilot/selfdrive/carrot/cluster')]
 
 from openpilot.selfdrive.carrot import obd_battery as b
-from cluster_battery import (BatteryPanelData, charging_view, heat_color, packet_from_metrics,
+from cluster_battery import (charging_view, heat_color, packet_from_metrics,
                              panel_from_wire, valid_value)
 from test_obd_battery import payload, response, soc_payload, coolant_payload
 
@@ -87,18 +87,20 @@ def test_arrays_are_bounded_immutable_expire_and_unknowns_stay_grey():
   ('P', 0., True, True), ('D', 0., True, False), ('P', 1., True, False),
   ('P', 0., False, False), ('P', float('nan'), True, False), ('P', -1., True, False),
 ])
-def test_charging_view_requires_mode_and_fresh_park(gear, speed, fresh, expected):
-  data = panel_from_wire(packet_from_metrics({'charge_mode': ('dc', 100.)}, 100.))
-  assert charging_view(data, gear, speed, fresh) == expected
-  assert not charging_view(BatteryPanelData(), gear, speed, fresh)
-  assert not charging_view(panel_from_wire(packet_from_metrics({'pack_power_kw': (-10., 100.)}, 100.)), gear, speed, fresh)
+def test_detail_view_requires_fresh_park_not_charging(gear, speed, fresh, expected):
+  for metrics in ({'charge_mode': ('dc', 100.)}, {'charge_mode': ('ac', 100.)},
+                  {'charge_mode': ('off', 100.)}, {'pack_power_kw': (-10., 100.)}, {}):
+    data = panel_from_wire(packet_from_metrics(metrics, 100.))
+    assert charging_view(data, gear, speed, fresh) == expected
+  assert not charging_view(None, gear, speed, fresh)
 
 
-def test_cell_scans_are_sequential_power_first_only_after_enrollment_park_charge(monkeypatch):
+@pytest.mark.parametrize('flags', [0, 0xA0, 0xC0, 0x80])
+def test_cell_scans_are_sequential_power_first_only_after_enrollment_park(monkeypatch, flags):
   clock = [100.]
   monkeypatch.setattr(b, 'time', NS(monotonic=lambda: clock[0]))
   first = bytearray(payload())
-  first[12] = 0xC0
+  first[12] = flags  # P enables detail scans even when charge is off/unknown.
   commands = []
   class Link:
     async def command(self, command):
@@ -171,7 +173,7 @@ def test_bad_preview_provenance_fails_closed(pending):
                                 'unverified_fields':pending}).fields
 
 
-def test_health_renderer_reverts_on_stale_motion_end_charge_or_gear_change(monkeypatch):
+def test_health_renderer_reverts_on_stale_motion_or_gear_change_not_charge_end(monkeypatch):
   import hud_health as h
   import hud_protocol
   from cluster_live import standby_state
@@ -198,7 +200,15 @@ def test_health_renderer_reverts_on_stale_motion_end_charge_or_gear_change(monke
   clock[0] = 10.1
   record['battery_hud'] = packet_from_metrics({'charge_mode': ('off', 100.), 'pack_power_kw': (-5.,100.)},100.)
   ui.render(parked)
-  assert not ui._charging_dashboard_active  # Regen never selects the charge view.
+  assert ui._charging_dashboard_active  # P selects detail; charge end does not hide it.
+  ui.render(replace(parked, gear_text='D'))
+  assert not ui._charging_dashboard_active  # Negative power cannot select it in D.
+  record['battery_hud'] = packet_from_metrics({}, 100.)
+  ui.render(parked)
+  assert ui._charging_dashboard_active  # Missing battery values remain gray in P.
+  ui.screen_mode = 0
+  ui.render(parked)
+  assert not ui._charging_dashboard_active  # Other screen modes stay unchanged.
   assert not h.vehicle_motion_fresh(None, 10.)
   record['sent'] = 99.
   assert not h.vehicle_motion_fresh((10.,record), 10.1)  # Future-dated motion is rejected.
@@ -243,13 +253,16 @@ def test_optional_request_requires_fresh_parked_vehicle():
   assert not b.parked_state(monitor, 100.1)
 
 
-def test_charging_layout_draws_108_voltage_15_temperature_slots_without_world(monkeypatch):
+@pytest.mark.parametrize('mode,title', [('dc', 'DC CHARGING'), ('ac', 'AC CHARGING'),
+                                       ('off', 'PARKED BATTERY OVERVIEW'), (None, 'PARKED BATTERY OVERVIEW')])
+def test_charging_layout_draws_108_voltage_15_temperature_slots_without_world(monkeypatch, mode, title):
   import cluster_renderer as r
   from cluster_live import standby_state
   renderer = r.ClusterUiRenderer()
   renderer._charging_dashboard_active = True
   arrays = {'cell_voltages_v': ([3.88] * 107 + [None], 100.), 'module_temps_c': ([20] * 15, 100.),
-            'charge_mode': ('dc', 100.)}
+            **({'charge_mode': (mode, 100.)} if mode else {})}
+  renderer.language = 'en'
   state = replace(standby_state(), battery=panel_from_wire(packet_from_metrics(arrays, 100.)))
   rectangles, texts = [], []
   monkeypatch.setattr(r.rl, 'draw_rectangle', lambda *args: rectangles.append(args))
@@ -259,6 +272,7 @@ def test_charging_layout_draws_108_voltage_15_temperature_slots_without_world(mo
   renderer._draw_charging_detail(state)
   assert len(rectangles) == 108 + 15
   assert '--' in texts and any('108' in t for t in texts)
+  assert title in texts
   calls = []
   monkeypatch.setattr(renderer, '_clear_world', lambda: calls.append('clear'))
   monkeypatch.setattr(renderer, '_render_world', lambda *args: pytest.fail('charging must skip 3D'))

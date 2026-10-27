@@ -143,9 +143,10 @@ def heat_color(value, reference, name):
 
 
 def charging_view(data, gear, speed, fresh_vehicle):
-    # Owner enables unverified mode preview too; power sign cannot identify charge.
+    # The same detail view is available in P without charging. Empty/expired
+    # battery fields stay unavailable; only fresh vehicle state selects the view.
     return (fresh_vehicle is True and gear == 'P' and finite_number(speed) and 0 <= speed <= 0.1
-            and data is not None and data.value('charge_mode') in ('ac', 'dc'))
+            and isinstance(data, BatteryPanelData))
 
 
 def panel_labels(data, language='en'):

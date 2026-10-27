@@ -4064,7 +4064,8 @@ class ClusterUiRenderer:
         left = x + 24
         ko = self.language == 'ko'
         mode = data.value('charge_mode')
-        title = ('DC 급속 충전' if mode == 'dc' else 'AC 완속 충전') if ko else ('DC CHARGING' if mode == 'dc' else 'AC CHARGING')
+        title = ({'dc': 'DC 급속 충전', 'ac': 'AC 완속 충전'}.get(mode, 'P단 배터리 종합') if ko else
+                 {'dc': 'DC CHARGING', 'ac': 'AC CHARGING'}.get(mode, 'PARKED BATTERY OVERVIEW'))
         if data.status == 'unverified':
             title += ' · 실차 미검증' if ko else ' · UNVERIFIED'
         self._rounded_rect(x, 1, width, DESIGN_HEIGHT - 2, 10, theme.panel_bg, theme.faint, 1)
