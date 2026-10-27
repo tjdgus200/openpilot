@@ -99,6 +99,20 @@ After selecting this exact public package, 337 combined Linux PC checks passed, 
 
 ## Charging detail and bounded heatmaps (follow-up)
 
+Latest BLE retention follow-up: total pack draw/regeneration expires five seconds
+after its own last valid observation; other battery fields, including heatmaps,
+expire after60seconds. The comma HUD worker keeps one last-good value and original
+timestamp per field for the enrolled configuration. Reconnects, failed attempts
+and status writes do not renew these timestamps. Partial reconnection refreshes
+only fields actually received. Config/address changes, leaving the battery page,
+vehicle changes and backward clock jumps clear retained data. No rolling history,
+new worker, BLE request or disk cache is introduced. Held values are labeled after
+five seconds; missing/expired values remain unavailable/gray. Fresh USB and
+300ms vehicle/motion/Park checks, and the separate five-second BLE badge check,
+remain unchanged. PC396 focused checks passed, including expiry boundaries,
+partial reconnection, stale replay, provenance and all reset cases. No physical
+adapter stability or live CPU/RAM measurement is claimed.
+
 Latest owner follow-up: mode8 shows the same battery detail whenever fresh
 Park/stationary state is present, whether charging, not charging or the charge
 flag is unavailable. It retains the300ms motion gate and returns to road on

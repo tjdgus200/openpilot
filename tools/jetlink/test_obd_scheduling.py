@@ -95,7 +95,7 @@ def test_unlimited_retries_keep_attempt_deadlines_cleanup_and_cancellation(monke
 def test_snapshot_rejects_missing_bad_or_expired_individual_timestamps():
   record = {'version': 1, 'updated': 100., 'state': 'receiving', 'config_id': 'cfg',
             'metrics': {'pack_power_kw': -5., 'soc_percent': 70.},
-            'field_times': {'pack_power_kw': 104.5, 'soc_percent': 95.}}
+            'field_times': {'pack_power_kw': 104.5, 'soc_percent': 44.}}
   fields = b.snapshot_packet(record, 105., 'cfg')['fields']
   assert fields == {'pack_power_kw': {'value': -5., 'age_s': .5}}
   for invalid in (None, True, float('nan'), 106.):

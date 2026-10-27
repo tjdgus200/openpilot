@@ -385,7 +385,7 @@ def test_hud_reads_ram_without_opening_bluetooth_or_can(tmp_path, monkeypatch):
   packet = publisher.update('KIA_PV5', True, now + .1)
   assert {k: v['value'] for k, v in packet['fields'].items()} == values
   assert publisher.socket is None and publisher.messaging is None
-  assert not publisher.update('KIA_PV5', True, now + 6)['fields']
+  assert publisher.update('KIA_PV5', True, now + 6)['fields']['max_temp_c']['value'] == 28
   config_path.write_text(json.dumps(config | {'confirmed_fields': []}))
   assert not publisher.update('KIA_PV5', True, now + 7)['fields']
   assert publisher.update('KIA_PV5', False, now + 8) is None

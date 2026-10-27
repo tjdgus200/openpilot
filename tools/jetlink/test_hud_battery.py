@@ -108,9 +108,9 @@ def test_slow_reports_cache_values_for_one_second_without_renewing_receive_age(m
     assert third['fields']['max_temp_c'] == {'value': 33, 'age_s': pytest.approx(0.9)}
     assert third['sampled_at'] == 11
     # A late worker emits once, rather than replaying missed report slots.
-    assert source.update('KIA_PV5', True, 20)['fields'] == {}
-    assert source.next_report == 21
-    assert source.next_power_report == 20.5
+    assert source.update('KIA_PV5', True, 71)['fields'] == {}
+    assert source.next_report == 72
+    assert source.next_power_report == 71.5
 
 
 def test_power_can_change_at_two_hz_without_refreshing_slow_values_or_stale_age(monkeypatch):
@@ -128,7 +128,8 @@ def test_power_can_change_at_two_hz_without_refreshing_slow_values_or_stale_age(
     assert not hasattr(source.decoder, 'history')
     source.decoder.metrics.pop('pack_power_kw')
     assert 'pack_power_kw' not in source.update('KIA_PV5', True, 11.0)['fields']
-    assert source.update('KIA_PV5', True, 15.2)['fields'] == {}
+    assert source.update('KIA_PV5', True, 15.2)['fields']['max_temp_c']['value'] == 33
+    assert source.update('KIA_PV5', True, 70.2)['fields'] == {}
     source.close()
     assert not source.slow_metrics and source.next_power_report == 0
 
@@ -199,7 +200,7 @@ def test_only_fresh_valid_received_replies_match_a_validated_profile():
     decoder.consume(event(raw), 10)
     assert decoder.metrics['max_temp_c'] == (-2, 10)
     assert panel_from_wire(decoder.packet(10)).value('max_temp_c') == -2
-    assert panel_from_wire(decoder.packet(15.01)).value('max_temp_c') is None
+    assert panel_from_wire(decoder.packet(70.01)).value('max_temp_c') is None
 
 
 def test_can_fd_extended_single_frame():
@@ -252,7 +253,7 @@ def test_inconsistent_temperature_range_discards_the_trend_history():
 
 
 def test_each_field_expires_independently_and_zero_is_not_missing():
-    record = packet_from_metrics({'soc_percent': (0, 10), 'max_temp_c': (20, 6),
+    record = packet_from_metrics({'soc_percent': (0, 10), 'max_temp_c': (20, -49),
                                   'thermal_mode': ('idle', 10), 'thermal_power_kw': (0, 10)}, 10)
     panel = panel_from_wire(record, 2)
     assert panel.value('soc_percent') == 0

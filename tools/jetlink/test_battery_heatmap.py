@@ -70,7 +70,7 @@ def test_arrays_are_bounded_immutable_expire_and_unknowns_stay_grey():
   assert isinstance(panel.value('cell_voltages_v'), tuple)
   raw[0] = 3.0
   assert panel.value('cell_voltages_v')[0] == 3.88
-  assert panel_from_wire(packet, 4.01).value('cell_voltages_v') is None
+  assert panel_from_wire(packet, 59.01).value('cell_voltages_v') is None
   for invalid in ([3.88] * 109, [3.88] * 107, [None] * 108, [float('nan')] * 108,
                   [True] * 108, [[3.88]] * 108, [0.] * 108):
     assert not valid_value('cell_voltages_v', invalid)

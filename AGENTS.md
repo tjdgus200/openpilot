@@ -1,5 +1,13 @@
 # Repository memory
 
+- 2026-10-27 owner requests last-good battery display during BLE outages:
+  pack_power_kw expires5s, all other battery fields60s from their own actual
+  observations. Keep one bounded value per metric in the comma HUD worker;
+  no history, threads, persistent cache or renewed ages from reconnect/status
+  writes. Clear on config/address/page/vehicle changes and clock rollback.
+  Show retained-value status after5s. BLE badge still requires a fresh receiving
+  record at5s; USB/motion/BSD freshness and Park gating are not extended.
+
 - 2026-10-27 owner extends mode8 battery detail to fresh Park/stationary even
   when not charging. Optional bounded sequential cell scans require enrolled
   details and fresh Park, not AC/DC flags. Keep300ms vehicle freshness, gray

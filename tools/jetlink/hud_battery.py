@@ -11,7 +11,7 @@ from pathlib import Path
 import time
 
 from openpilot.selfdrive.carrot.cluster.cluster_battery import (
-    METRICS, finite_number, packet_from_metrics, valid_value,
+    ARRAYS, METRICS, field_max_age_s, finite_number, packet_from_metrics, valid_value,
 )
 
 PROFILE_PATH = Path('/data/jetlink/pv5-battery-profile.json')
@@ -217,6 +217,9 @@ class BatteryPublisher:
         self.ble_enabled = False
         self.ble_identity = None
         self.next_ble_read = 0.0
+        self.ble_cache_identity = None
+        self.ble_metrics = {}
+        self.ble_unverified = set()
 
     def close(self):
         self.socket = self.decoder = self.messaging = None
@@ -228,6 +231,34 @@ class BatteryPublisher:
         self.ble_enabled = False
         self.ble_identity = None
         self.next_ble_read = 0.0
+        self.ble_cache_identity = None
+        self.ble_metrics = {}
+        self.ble_unverified = set()
+
+    def ble_packet(self, record, identity, now):
+        """One bounded last-good value per field, scoped to the enrolled config."""
+        from openpilot.selfdrive.carrot.obd_battery import snapshot_packet
+        if identity is None or identity != self.ble_cache_identity:
+            self.ble_metrics.clear()
+            self.ble_unverified.clear()
+            self.ble_cache_identity = identity
+        packet = snapshot_packet(record, now, identity)
+        pending = packet.get('unverified_fields', ())
+        for name, item in packet['fields'].items():
+            stamp = packet['sampled_at'] - item['age_s']
+            previous = self.ble_metrics.get(name)
+            if previous is None or stamp > previous[1]:
+                value = tuple(item['value']) if name in ARRAYS else item['value']
+                self.ble_metrics[name] = value, stamp
+                self.ble_unverified.discard(name)
+                if name in pending:
+                    self.ble_unverified.add(name)
+        # Reconnect/setup/status writes never renew an observation. No history,
+        # disk persistence, BLE operations or additional thread in this worker.
+        self.ble_metrics = {name: item for name, item in self.ble_metrics.items()
+                            if 0 <= now - item[1] <= field_max_age_s(name)}
+        self.ble_unverified.intersection_update(self.ble_metrics)
+        return packet_from_metrics(self.ble_metrics, now, packet['status'], unverified=self.ble_unverified)
 
     def update(self, vehicle, enabled, now):
         if not enabled:
@@ -238,7 +269,7 @@ class BatteryPublisher:
             self.vehicle = vehicle
         # Bounded RAM read at 2 Hz; no Bluetooth, subprocess or vehicle requests
         # on the USB HUD worker. BLE connection/response waits run elsewhere.
-        from openpilot.selfdrive.carrot.obd_battery import CONFIG, SNAPSHOT, config_id, configuration, read_json, snapshot_packet
+        from openpilot.selfdrive.carrot.obd_battery import CONFIG, SNAPSHOT, config_id, configuration, read_json
         if now >= self.next_ble_read:
             self.next_ble_read = now + POWER_INTERVAL_S
             self.ble_enabled = vehicle == 'KIA_PV5' and CONFIG.is_file()
@@ -252,7 +283,12 @@ class BatteryPublisher:
                     pass
         if self.ble_enabled:
             self.socket = self.decoder = None
-            return snapshot_packet(self.ble_record, now, self.ble_identity)
+            self.report = None
+            self.slow_metrics.clear()
+            return self.ble_packet(self.ble_record, self.ble_identity, now)
+        self.ble_metrics.clear()
+        self.ble_unverified.clear()
+        self.ble_cache_identity = None
         if now >= self.next_profile:
             self.next_profile = now + 5.0
             try:
