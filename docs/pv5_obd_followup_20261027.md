@@ -236,3 +236,13 @@ this package. Isolated server/HUD imports and exact model/native-input defaults
 passed. PC371 focused checks passed after integration on the morning-sync head.
 Source GitHub CI had not started at publication; CI success is not claimed.
 Device installation and real-vehicle comparison remain unperformed.
+
+Battery-retention package: source`20dc029e1d0fdb0be4e19d8371c4cbe3cef3598b`,
+64807590 bytes, SHA-256`5149db6e68c77a3fef24126c0d710b3a5fc9766600d92ebf88b155cc5ed87a3e`.
+The selected USB manifest points to this
+[public prerelease](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-battery-hold-20261027-20dc029e).
+All four assets were anonymously downloaded and hash-verified. Isolated bundle
+imports, five/sixty-second display expiry and existing N16/native-input defaults
+passed. PC396 focused checks, Ruff, KO/EN docs and synthetic renderer previews
+passed. Source GitHub CI had not started at publication; CI success is not claimed.
+No actual comma/Jetson install or live Bluetooth stability/resource test was done.
