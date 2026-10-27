@@ -5,6 +5,9 @@ from pathlib import Path
 import sys
 import time
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
 if __name__ == '__main__':
   if Path('/etc/nv_tegra_release').is_file():
     from install_updates import migrate_running_release
@@ -12,7 +15,6 @@ if __name__ == '__main__':
   from boot_update import wait_for_runtime
   wait_for_runtime()
 
-ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'third_party/jetlink'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hud_protocol import HUD_CAPABILITY, HUD_MESSAGE, MAX_HUD_BYTES, HUD_PACKET, HEADER
@@ -45,7 +47,8 @@ class DisplayTelemetry:
       if connected:
         from openpilot.common.hud_quality_status import quality_status
         quality = quality_status(status.get('quality'))
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, ImportError):
+      # Optional HUD diagnostics must never tear down the inference session.
       pass
     return {**self.original.read(), 'carrot_hud_connected': connected,
             **({'carrot_hud_quality': quality} if quality else {}),

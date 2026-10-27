@@ -145,3 +145,21 @@ All four public assets were anonymously downloaded and matched local bytes.
 Independent exported server imports, HUD help and retained overlays pass.
 GitHub rejected workflow dispatch because repository Actions is disabled;
 remote CI did not run. Publication is distinct from device installation.
+
+## Fresh HUD telemetry import regression
+
+The installed 9210de4b package could display its HUD while repeatedly losing
+comma data with `ModuleNotFoundError: openpilot`. The new optional quality
+telemetry reader imported a common module after a fresh HUD status appeared,
+but server.py had not registered its runtime root on sys.path. The previous
+exported import/help checks never executed that branch.
+
+Reproduction uses a new interpreter from tools/jetlink with checkout PYTHONPATH
+removed and a synthetic fresh display status: three of four cases fail before
+the fix. Registering the runtime root before entrypoint imports fixes lookup;
+an optional quality ImportError now suppresses only those diagnostics and
+retains the original/health telemetry. The four subprocess cases now pass,
+including repeated reads, stale status, invalid quality and an injected missing
+optional module. Related Windows checks: 38 passed; Linux checks: 345 passed,
+one native FFmpeg skip. No vehicle or physical recovery is established by PC
+checks. Activation probes, model/USB sessions and update rollback are unchanged.

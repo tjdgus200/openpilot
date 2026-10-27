@@ -1,5 +1,18 @@
 # Repository memory
 
+- HUD telemetry regression2026-10-27: owner's installed9210de4b HUD reported
+  ModuleNotFoundError(openpilot) and lost vehicle data. Reproduced in a fresh
+  interpreter from tools/jetlink with no checkout PYTHONPATH: server imported,
+  but DisplayTelemetry.read() failed only after a fresh HUD status existed.
+  Register ROOT before entrypoint/bootstrap imports; optional quality import
+  failure now omits only quality diagnostics, retaining base/health telemetry.
+  New subprocess tests cover repeated fresh/stale/malformed-quality reads and
+  an injected missing optional module. Before fix3fail/1pass; after fix4pass,
+  related Windows38pass and Linux345pass/1native-FFmpegskip. Earlier import/help
+  probes missed the live telemetry branch. Preserve activation/GPU checks,
+  model/USB/boot/auth/rollback, all eight profiles and existing HUD overlays.
+  No live installation/recovery confirmation yet; corrected package required.
+
 - HUD-quality delivery2026-10-27: source9210de4b is pushed; selected public
   prerelease jetson-pv5-hud-quality-20261027-9210de4b contains65020650bytes,
   SHA94fb65c532619734bce80ab1e7c3b9c3854d22f2e766baa65ac92121c993642e.
