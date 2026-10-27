@@ -253,6 +253,45 @@ def test_optional_request_requires_fresh_parked_vehicle():
   assert not b.parked_state(monitor, 100.1)
 
 
+@pytest.mark.parametrize('fresh_gear,expected', [('park', True), ('drive', False), (None, False)])
+def test_cell_gate_refreshes_after_slow_ble_reads_without_relaxing_vehicle_age(monkeypatch, fresh_gear, expected):
+  clock = [100.]
+  monkeypatch.setattr(b, 'time', NS(monotonic=lambda: clock[0]))
+  class Monitor:
+    def __init__(self):
+      self.valid, self.alive = {'carState': True}, {'carState': True}
+      self.recv_time = {'carState': 100.}
+      self.state = NS(gearShifter='park', vEgo=0.)
+      self.updates = 0
+    def update(self, timeout):
+      assert timeout == 0
+      self.updates += 1
+      if fresh_gear is not None:
+        self.recv_time['carState'] = clock[0]
+        self.state.gearShifter = fresh_gear
+    def __getitem__(self, key):
+      return self.state
+  monitor, commands = Monitor(), []
+  class Link:
+    async def command(self, command):
+      commands.append(command)
+      clock[0] += .12  # Synthetic120ms/transaction; no live adapter claim.
+      data = {'220101': payload(), '220105': soc_payload(), '220106': coolant_payload()}
+      return response(data[command] if command in data else block(command))
+  async def check():
+    poller = b.MetricPoller(details=True)
+    for _ in range(4):
+      started = clock[0]
+      await poller.poll(Link(), parked=lambda: b.current_parked_state(monitor))
+      clock[0] = max(clock[0], started + .5)
+    assert ('cell_voltages_v' in poller.values) == expected
+    assert monitor.updates == 4
+    assert any(cmd in dict(b.CELL_BLOCKS) for cmd in commands) == expected
+    if not expected:
+      assert not poller.cell_blocks
+  asyncio.run(check())
+
+
 @pytest.mark.parametrize('mode,title', [('dc', 'DC CHARGING'), ('ac', 'AC CHARGING'),
                                        ('off', 'PARKED BATTERY OVERVIEW'), (None, 'PARKED BATTERY OVERVIEW')])
 def test_charging_layout_draws_108_voltage_15_temperature_slots_without_world(monkeypatch, mode, title):

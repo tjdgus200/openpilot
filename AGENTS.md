@@ -1,5 +1,13 @@
 # Repository memory
 
+- 2026-10-27 owner confirms108 PV5 voltage channels; do not equate channel-count
+  confirmation with independent validation of every voltage/scale. Keep the
+  already enabled108-slot display and bounded32/32/32/12 decoding. Read carState
+  with update(0) immediately before cell admission, after BLE requests, so a slow
+  response does not repeatedly discard scans using a pre-request P snapshot.
+  Preserve300ms Park/zero. This collector fix needs comma update only; existing
+  battery-hold Jetson package supports the unchanged wire fields.
+
 - 2026-10-27 owner requests last-good battery display during BLE outages:
   pack_power_kw expires5s, all other battery fields60s from their own actual
   observations. Keep one bounded value per metric in the comma HUD worker;

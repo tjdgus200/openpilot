@@ -99,6 +99,34 @@ After selecting this exact public package, 337 combined Linux PC checks passed, 
 
 ## Charging detail and bounded heatmaps (follow-up)
 
+The owner subsequently confirmed108 voltage channels on the PV5. The108-slot
+display was already enabled; this confirms the channel count, not every voltage
+value/scale. A separate collection starvation was reproduced with synthetic
+120ms transactions: the pre-poll vehicle snapshot aged beyond300ms during the
+three standard reads, so slow polls discarded incomplete cell scans even in P.
+The collector now performs its existing nonblocking carState update immediately
+before cell admission, after those BLE reads, rather than before the poll. The
+300ms limit, Park/zero conditions, four-block scan bounds and onroad lifetime
+are unchanged. PC399 focused checks passed, including fresh-P completion,
+fresh-D refusal and genuinely stale-P refusal. This is a comma collector fix;
+the already published battery-hold Jetson package supports the same wire data.
+No actual vehicle voltage reception or Bluetooth fault diagnosis is claimed.
+
+Connection analysis also reproduced a complete`NO DATA` coolant response and a
+transaction timeout causing StopNotify/Disconnect, without injecting a radio
+failure: the present outer error handler resets the entire link on either.
+Requests are sequential; an idealized20ms mock produces40 standard requests per
+10s, plus12 cell-block requests while parked. These counts are scheduling
+examples, not actual adapter performance or evidence of bus overload. Single
+polls can contain3/4 back-to-back sequential requests without an inter-command
+gap. GATT writes have a2s deadline; the ELM prompt uses a3s transaction deadline.
+Runtime exceptions currently collapse to an unavailable snapshot with no saved
+cause, so physical radio/driver loss cannot be distinguished from application
+initiated teardown using the existing status alone. Future diagnostics should
+separate those cases using bounded error categories and the BlueZ disconnect
+reason ([upstream management protocol](https://github.com/bluez/bluez/blob/master/doc/mgmt-protocol.rst)).
+No change to the Bluetooth reset/retry policy was made in this collector fix.
+
 Latest BLE retention follow-up: total pack draw/regeneration expires five seconds
 after its own last valid observation; other battery fields, including heatmaps,
 expire after60seconds. The comma HUD worker keeps one last-good value and original

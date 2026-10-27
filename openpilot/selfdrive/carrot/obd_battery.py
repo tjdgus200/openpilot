@@ -482,9 +482,8 @@ async def run():
             while configuration(read_json(CONFIG)) == (address, confirmed):
               started = loop.time()
               if monitor is not None:
-                monitor.update(0)
                 observed_at, candidates, field_times = await poller.poll(
-                  link, parked=lambda monitor=monitor: parked_state(monitor, loop.time()))
+                  link, parked=lambda monitor=monitor: current_parked_state(monitor))
               else:
                 observed_at, candidates, field_times = await poller.poll(link)
               if configuration(read_json(CONFIG)) != (address, confirmed):
@@ -512,6 +511,17 @@ async def run():
 def vehicle_monitor():
   from openpilot.cereal import messaging
   return messaging.SubMaster(['carState'])
+
+
+def current_parked_state(monitor):
+  # BLE requests may outlast the vehicle freshness window. Consume the latest
+  # carState only when the optional request is about to be admitted; never
+  # extend the freshness limit or treat an old P indication as current.
+  try:
+    monitor.update(0)
+  except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+    return False
+  return parked_state(monitor, time.monotonic())
 
 
 def parked_state(monitor, now):
