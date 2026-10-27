@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-battery-hold-20261027-20dc029e",
-  "source_commit": "20dc029e1d0fdb0be4e19d8371c4cbe3cef3598b",
+  "profile": "pv5-hud-quality-20261027-9210de4b",
+  "source_commit": "9210de4bd430c323336b9b1a26851f393713a749",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-battery-hold-20261027-20dc029e/host.tar.gz",
-    "sha256": "5149db6e68c77a3fef24126c0d710b3a5fc9766600d92ebf88b155cc5ed87a3e",
-    "size": 64807590
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-quality-20261027-9210de4b/host.tar.gz",
+    "sha256": "94fb65c532619734bce80ab1e7c3b9c3854d22f2e766baa65ac92121c993642e",
+    "size": 65020650
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

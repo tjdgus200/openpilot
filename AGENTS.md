@@ -1,5 +1,14 @@
 # Repository memory
 
+- HUD-quality delivery2026-10-27: source9210de4b is pushed; selected public
+  prerelease jetson-pv5-hud-quality-20261027-9210de4b contains65020650bytes,
+  SHA94fb65c532619734bce80ab1e7c3b9c3854d22f2e766baa65ac92121c993642e.
+  Four anonymous downloads match; isolated exports/HUD help/overlays pass.
+  GitHub rejects dispatch with Actions disabled for this repository; no remote
+  CI pass claimed. Linux448pass/6skip, Windows40pass, Web28pass; no device
+  installation or measured candidate winner. Keep default0 and all existing
+  runtime/model/auth/rollback identities and Park/zero update permission.
+
 - 2026-10-27 owner requests eight Jetson HUD codec candidates selectable in
   Carrot Web with inference comparisons. JetsonHudQuality0 preserves CPU
   libx26410fps/auto2333k;1-3 are4/8/12Mbps,4-6 pinned CPU TurboJPEG68/85/92,

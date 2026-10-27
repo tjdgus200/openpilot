@@ -136,3 +136,12 @@ Pillow output is also decoded. ARM64 ELF identity/hash and native wrapper
 arguments are checked on PC, but loading that ARM library on Jetson, optical
 quality, delivered 10fps, total CPU/memory/USB load and loaded model P99 are
 not yet measured. No measured winner is supplied with the software.
+
+Published source: `9210de4bd430c323336b9b1a26851f393713a749`. The selected
+[PC-tested Jetson prerelease](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-quality-20261027-9210de4b)
+contains a 65,020,650-byte host bundle, SHA256
+`94fb65c532619734bce80ab1e7c3b9c3854d22f2e766baa65ac92121c993642e`.
+All four public assets were anonymously downloaded and matched local bytes.
+Independent exported server imports, HUD help and retained overlays pass.
+GitHub rejected workflow dispatch because repository Actions is disabled;
+remote CI did not run. Publication is distinct from device installation.
