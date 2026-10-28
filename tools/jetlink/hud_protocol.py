@@ -213,7 +213,10 @@ class SnapshotBuilder:
         self.requested_fps = 10
     fps = getattr(self, 'requested_fps', 10) if getattr(self, 'rate_control', False) else 10
     current = getattr(self, 'target_fps', 10)
-    if fps == 10 or fps == current or self.rate_increase_allowed(now):
+    # SubMaster timestamps arrivals inside update(), after the cadence clock
+    # above. Check age after sampling/Params reads: a pre-update clock rejects
+    # fresh Park as future-dated and can admit data just beyond the 300ms limit.
+    if fps == 10 or fps == current or self.rate_increase_allowed(time.monotonic()):
       self.target_fps = fps
     # Forward the admitted rate, so a pending onroad increase cannot silently
     # increase host rendering before the comma publisher's fresh-P check.

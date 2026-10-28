@@ -1,5 +1,15 @@
 # Repository memory
 
+- 2026-10-28 FPS admission fix: SnapshotBuilder used a pre-SubMaster.update
+  clock against receive timestamps recorded during update. Fresh onroad Park
+  looked future-dated;15/20/25/30 stayed10, and a just-stale sample could pass.
+  Sample monotonic again for admission after update/Params reads; do not widen
+  the300ms gate. New2ms receive-clock replay:6fail/7pass before,13pass after;
+  related147 PC checks pass. Real producer/framing/host receiver/DisplayParams
+  and host CLI selection tested at all rates, not physical USB/rendered FPS.
+  Comma-only; current Q92/FPS Jetson package unchanged. Keep model-first idle
+  admission/backoff, one snapshot, expiry, P/zero/valid/alive and10fps recovery.
+
 - 2026-10-28 OBD transport follows supplied Car Scanner log/protocol guidance,
   not its private implementation. Explicit ATAT1 restores normal adaptive mode
   (ELM defaults to1; no prior disabled-mode claim). Same enrolled BLE address:

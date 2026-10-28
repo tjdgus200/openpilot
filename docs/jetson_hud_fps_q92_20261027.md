@@ -65,3 +65,34 @@ fresh installed-server telemetry imports. No physical device was available for
 this change. Actual USB30fps, CPU/RAM headroom, model20Hz/P99 and panel quality
 are unverified; PC checks do not establish driving safety or zero inference
 impact. Host update/model/authentication/activation/rollback checks are retained.
+
+## 2026-10-28: live FPS admission regression
+
+The owner reported that changing FPS left the display at10fps. Reproduced on
+PC when a fresh onroad Park carState arrives during `SubMaster.update(0)`:
+`SnapshotBuilder.packet()` sampled its cadence clock before update, but
+SubMaster stamps receive times inside update. The freshness test therefore
+compared an older clock with the newer arrival and rejected it as future-dated.
+The earlier zero-time fake assigned both timestamps the same value and missed
+this ordering. The same skew could also admit a sample just beyond300ms.
+
+Use a new monotonic timestamp after sampling and reading Params for rate
+admission. Cadence scheduling, the300ms limit, Park/zero/valid/alive checks,
+immediate10fps recovery and model-first USB admission are unchanged. No queue,
+worker, allocation or additional vehicle subscription is introduced.
+
+The new replay advances reception time by2ms per update and passes real cereal
+events through the production SnapshotBuilder, private publisher framing,
+CarrotSession HUD receive handler and DisplayParams. Three-second virtual
+trials produce30/45/60/75/90 snapshots for10/15/20/25/30fps. The actual host
+restart-loop code selects the corresponding Q92 renderer arguments. Drive to
+Park transitions, return to10fps, stale/future/invalid/dead data, codec fallback
+and existing USB/update gates are checked. These are virtual cadence and
+configuration tests, not physical USB throughput or rendered/optical FPS tests.
+
+Before the fix, six of the13 new tests failed, including all four above10fps
+and the freshness boundary. After the fix, all13 and the related regressions
+pass:147 PC tests total, plus Ruff and diff checks. This is a comma-only fix;
+the already selected Q92/FPS Jetson package and its wire contract are unchanged.
+Actual installed version, radio/USB behavior, panel frame rate and inference
+P99 still require a matching device test.
