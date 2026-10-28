@@ -1,5 +1,16 @@
 # Repository memory
 
+- Onroad Q92/FPS delivery2026-10-28: source34aec0aa, public tag
+  jetson-pv5-hud-onroad-q92-20261028-34aec0aa,65032538bytes,
+  SHA f40953a620938cab5db88b0dceca64e3a8301291109a1b0959d7462e973f8acf.
+  Four anonymous downloads and isolated package telemetry/optional-import,
+  overlays/N16/native-cast defaults pass. Linux203/1skip, Windows156/48platform
+  skips, Web18, Wiki generator25 and three staged localized pages pass. Not
+  installed or physically measured. Owner photo20fps:4984samples,GPU P99 26.8
+  vs10fps26.7;25fps280samples insufficient, current source/USB/output22.7/17.9/
+  24.8fps. Prefer provisional20fps; no automatic preference/default change or
+  no-inference-impact conclusion from server-only samples.
+
 - 2026-10-28 owner supersedes display-FPS Park admission: use saved Q92/FPS
   onroad at startup/reconnect and on change, including Drive. Comma forwards
   normalized selection; host reopens only HUD resources. Remove the redundant
