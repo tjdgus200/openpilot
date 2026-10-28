@@ -16,7 +16,17 @@ def lines(status):
   failed = [name for name, value in units.items() if value.get('ActiveState') == 'failed']
   stage = status.get('stage', {})
   storage = status.get('storage', {}).get('state', 'waiting')
-  error = bool(failed or stage.get('error') or storage == 'base-recovery')
+  update = status.get('update', {})
+  phase = update.get('state', 'waiting')
+  phases = {'checking': '콤마 확인 대기', 'checking_usb': 'USB 패키지 확인', 'transferring': 'USB 전송 중',
+            'downloading': '다운로드 중', 'verifying': '설치 / 실행 검증 중',
+            'waiting_internet': '인터넷 연결 대기', 'ready': 'USB 승인 완료 · 모델 준비 대기',
+            'failed': '업데이트 실패 · 이전 버전 보존', 'waiting': '상태 수신 대기'}
+  progress = update.get('fraction')
+  phase_text = phases.get(phase, phases['waiting'])
+  if type(progress) in (int, float) and 0 <= progress <= 1:
+    phase_text += f' {progress:.0%}'
+  error = bool(failed or stage.get('error') or storage == 'base-recovery' or phase == 'failed')
   title = ('부팅 상태를 확인해 주세요', 'BOOT NEEDS ATTENTION') if error else ('젯슨 연결 준비 중', 'JETSON STARTING / WAITING')
   rows = [
     ('시스템 보호', 'SYSTEM STORAGE', storage),
@@ -25,14 +35,20 @@ def lines(status):
     ('접속 주소', 'IP ADDRESS', ' / '.join(status.get('addresses', [])) or 'Waiting for network'),
     ('원격 접속', 'SSH', units.get('ssh', {}).get('ActiveState', 'waiting')),
     ('콤마 USB 서비스', 'COMMA USB SERVICE', units.get('carrot-jetlink', {}).get('ActiveState', 'waiting')),
+    ('업데이트 단계', 'UPDATE PHASE', phase_text),
+    ('선택된 호스트 모델', 'HOST MODEL', status.get('model', '--')),
+    ('DATA 여유 / 전체', 'STORAGE FREE / TOTAL', status.get('storage_free', '--')),
   ]
-  detail = ', '.join(failed[:3]) or stage.get('error', '')
+  reasons = {'validation_failed': '설치 / 실행 검사 실패 · 이전 버전 보존',
+             'authentication': '업데이트 인증 확인 실패', 'storage': '저장 공간 / 보호 상태 확인 필요',
+             'network': '다운로드 연결 대기', 'update_failed': '업데이트 오류 · 이전 버전 보존'}
+  detail = reasons.get(update.get('reason'), '') or ', '.join(failed[:3]) or stage.get('error', '')
   return title, rows, detail, error
 
 
 def render(status, root=ROOT, size=(1920, 462)):
   from PIL import Image, ImageDraw, ImageFont
-  image = Image.new('RGB', size, '#101821')
+  image = Image.new('RGB', size, '#102952')
   draw = ImageDraw.Draw(image)
   font_path = root / 'openpilot/selfdrive/assets/fonts/KaiGenGothicKR-Bold.ttf'
   font = lambda n: ImageFont.truetype(str(font_path), n)
@@ -45,14 +61,14 @@ def render(status, root=ROOT, size=(1920, 462)):
   if status.get('temp_c') is not None:
     draw.text((1750, 34), f"{status['temp_c']:.1f} C", font=font(22), fill=accent)
   for index, (ko, en, value) in enumerate(rows):
-    x, y = 40 + (index % 3) * 625, 116 + (index // 3) * 122
-    draw.text((x, y), ko, font=font(26), fill='#dce7f1')
-    draw.text((x, y+34), en, font=font(15), fill='#8198ae')
-    value_font = font(23)
+    x, y = 40 + (index % 3) * 625, 103 + (index // 3) * 88
+    draw.text((x, y), ko, font=font(23), fill='#dce7f1')
+    draw.text((x, y+27), en, font=font(13), fill='#8198ae')
+    value_font = font(21)
     value = str(value)
     while value and draw.textlength(value, font=value_font) > 585:
       value = value[:-4] + '...' if len(value) > 4 else ''
-    draw.text((x, y+61), value, font=value_font, fill=accent)
+    draw.text((x, y+47), value, font=value_font, fill=accent)
   footer = detail or '콤마 연결과 계기판 화면 준비를 기다립니다'
   draw.text((40, 373), footer[:105], font=font(22), fill=accent)
   draw.text((40, 410), 'Waiting for comma / dashboard. This is a status screen, not driving guidance.',

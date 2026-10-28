@@ -1,5 +1,14 @@
 # Repository memory
 
+- 2026-10-29 owner authorizes PV5 per-model Jetson packages and restores blue
+  boot diagnostics, superseding the preceding N16-only selection restriction.
+  Preserve all PV5 features and existing model boot freeze/probe/rollback/P
+  permission. Model USB manifests must match hash/size and use distinct source
+  commits for legacy bootstrap compatibility. Never select official non-PV5 HUD
+  packages as substitutes. Restore update/progress/model/storage/failure rows;
+  refresh only diagnostic service on runtime-version change, not USB reconnect.
+  Initial immutable recovery screen remains until writable runtime migration.
+
 - 2026-10-29 owner changes daily upstream to ajouatom/carrot-wip and preserves
   ALL current PV5 behavior, including later BLE100ms/Q92-FPS/retention/heatmaps/
   stationary-view/brightness/USB-cleanup improvements, not only the original6.

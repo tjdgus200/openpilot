@@ -28,7 +28,63 @@ def test_offline_diagnosis_without_comma_model_or_xorg(tmp_path):
 def test_active_service_does_not_claim_model_ready():
   title, rows, _, _ = lines({'units': {'carrot-jetlink': {'ActiveState': 'active'}}})
   assert 'WAITING' in title[1]
-  assert rows[-1] == ('콤마 USB 서비스', 'COMMA USB SERVICE', 'active')
+  assert rows[5] == ('콤마 USB 서비스', 'COMMA USB SERVICE', 'active')
+
+
+@pytest.mark.parametrize('state', ['checking', 'transferring', 'verifying', 'ready', 'failed'])
+def test_boot_update_phase_progress_and_previous_release_visible(state):
+  title, rows, detail, error = lines({'update': {'state': state, 'fraction': .5,
+      'reason': 'validation_failed' if state == 'failed' else ''}, 'model': 'Flip Flop',
+      'storage_free': '150 / 200 GiB'})
+  assert len(rows) == 9 and '50%' in rows[6][2]
+  assert rows[7][2] == 'Flip Flop' and rows[8][2] == '150 / 200 GiB'
+  assert error == (state == 'failed')
+  if state == 'failed':
+    assert '이전 버전 보존' in detail
+  if state == 'ready':
+    assert '모델 준비 대기' in rows[6][2]  # USB gate readiness is not inference readiness.
+  assert render({'update': {'state': state, 'fraction': .5}, 'model': 'Flip Flop'}).size == (1920, 462)
+
+
+@pytest.mark.parametrize('stamp,expected', [(99., True), (90., False), (101., False), ('now', False)])
+def test_boot_update_status_freshness_and_private_error_filter(monkeypatch, stamp, expected):
+  monkeypatch.setattr(boot_status, 'read_json', lambda _: {'updated': stamp, 'state': 'failed',
+      'fraction': .4, 'error': 'Candidate validation failed; private-value-must-not-pass'})
+  value = boot_status.update_status(100.)
+  assert bool(value) == expected
+  if expected:
+    assert value == {'state': 'failed', 'fraction': .4, 'reason': 'validation_failed'}
+    assert 'private' not in json.dumps(value)
+
+
+def test_runtime_diagnostic_refreshes_on_release_change_once(tmp_path, monkeypatch):
+  import install_updates as install
+  current = tmp_path / 'current'
+  current.mkdir()
+  (current / 'SOURCE_COMMIT').write_text('a' * 40)
+  target = tmp_path / 'run/runtime.conf'
+  monkeypatch.setattr(install, 'BOOT_DISPLAY_DROPIN', target)
+  calls = []
+  monkeypatch.setattr(install.subprocess, 'run', lambda args, **kw: calls.append(args))
+  install.configure_runtime_boot_display(tmp_path)
+  assert 'CARROT_BOOT_DISPLAY_SOURCE=' + 'a' * 40 in target.read_text()
+  calls.clear()
+  install.migrate_boot_display(tmp_path)
+  assert calls == []
+  (current / 'SOURCE_COMMIT').write_text('b' * 40)
+  install.migrate_boot_display(tmp_path)
+  assert len(calls) == 1 and calls[0][-1] == '--boot-display-runtime'
+
+
+def test_optional_diagnostic_failure_never_blocks_runtime_migration(tmp_path, monkeypatch):
+  import install_updates as install
+  original = Path.is_file
+  monkeypatch.setattr(Path, 'is_file', lambda p:
+      p.name in ('carrot-jetlink-boot-display.service', 'boot_update.py', 'boot-update-required') or original(p))
+  def reject(_):
+    raise subprocess.CalledProcessError(1, 'systemctl')
+  monkeypatch.setattr(install, 'migrate_boot_display', reject)
+  install.migrate_running_release(tmp_path)  # No exception; model server may continue.
 
 
 def test_unreadable_thermal_sensor_does_not_hide_boot_diagnosis(monkeypatch):
@@ -139,7 +195,7 @@ def test_runtime_display_override_preserves_immutable_recovery(tmp_path, monkeyp
   install_updates.configure_runtime_boot_display()
   assert target.read_text() == install_updates.BOOT_DISPLAY_OVERRIDE
   assert not (tmp_path / 'etc').exists()
-  assert calls == [['systemctl', 'daemon-reload'], ['systemctl', 'try-restart', 'carrot-jetlink-boot-display']]
+  assert calls == [['systemctl', 'daemon-reload'], ['systemctl', 'restart', 'carrot-jetlink-boot-display']]
   calls.clear()
   install_updates.migrate_boot_display(tmp_path)
   assert calls == []  # Never restart a healthy panel at every server reconnect.

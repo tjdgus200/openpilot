@@ -15,11 +15,21 @@ def official_or_pv5_package(monkeypatch, tmp_path):
   # Official two-model behavior has no PV5 USB pin. Paired-package cases below
   # supply one explicitly; all original official selection assertions remain.
   monkeypatch.setattr(C, 'USB_PIN', tmp_path / 'usb-pv5.json')
+  monkeypatch.setattr(C, 'USB_DIRECTORY', tmp_path)
+
+
+def pv5_manifest(key='n16'):
+  path = C.ROOT / 'openpilot/selfdrive/modeld/jetlink/usb_host_sha256_release.json'
+  value = json.loads(path.read_text())
+  spec = C.model_spec(key)
+  value['model'].update(sha256=spec['sha256'], size=spec['nbytes'])
+  value['profile'] = 'test-' + key
+  value['source_commit'] = ('a' if key == 'n16' else 'b') * 40
+  return value
 
 
 def test_pv5_usb_package_exposes_only_matching_models(store):
-  spec = C.model_spec('n16')
-  C.USB_PIN.write_text(json.dumps({'model': {'sha256': spec['sha256'], 'size': spec['nbytes']}}))
+  C.USB_PIN.write_text(json.dumps(pv5_manifest()))
   assert set(C.available()) == {'n16'}
   assert C.freeze_boot() == 'n16'
   with pytest.raises(ValueError, match='not available'):
@@ -30,15 +40,55 @@ def test_pv5_usb_package_exposes_only_matching_models(store):
 @pytest.mark.parametrize('value', [{}, {'model': {}}, {'model': {'sha256': 'wrong', 'size': 1}}])
 def test_unknown_pv5_package_never_guesses_a_model(value):
   C.USB_PIN.write_text(json.dumps(value))
-  with pytest.raises(ValueError, match='default model'):
+  with pytest.raises(ValueError, match='USB'):
     C.available()
 
 
 @pytest.mark.parametrize('model', [None, [], 'n16'])
 def test_malformed_pv5_package_model_fails_closed(model):
-  C.USB_PIN.write_text(json.dumps({'model': model}))
-  with pytest.raises(ValueError, match='invalid PV5'):
+  value = pv5_manifest()
+  value['model'] = model
+  C.USB_PIN.write_text(json.dumps(value))
+  with pytest.raises(ValueError, match='USB'):
     C.available()
+
+
+def test_per_model_pv5_packages_preserve_reboot_selection(store, monkeypatch):
+  C.USB_PIN.write_text(json.dumps(pv5_manifest()))
+  for key in ('n16', 'flip-flop'):
+    (C.USB_DIRECTORY / ('pv5-usb-' + key + '.json')).write_text(json.dumps(pv5_manifest(key)))
+  assert set(C.available()) == {'n16', 'flip-flop'}
+  assert C.freeze_boot() == 'n16'
+  C.select('flip-flop')
+  assert C.effective_id() == C.freeze_boot() == 'n16'
+  assert C.usb_release(C.effective_id())['profile'] == 'test-n16'
+  monkeypatch.setattr(C, 'boot_id', lambda: 'boot-two')
+  assert C.freeze_boot() == 'flip-flop'
+  assert C.usb_release(C.effective_id())['model']['sha256'] == C.model_spec('flip-flop')['sha256']
+  C.select('n16')
+  assert C.effective_id() == 'flip-flop'
+
+
+@pytest.mark.parametrize('fault', ['model', 'commit', 'invalid'])
+def test_bad_per_model_package_is_never_offered(store, fault):
+  C.USB_PIN.write_text(json.dumps(pv5_manifest()))
+  value = pv5_manifest('flip-flop')
+  if fault == 'model':
+    value['model']['sha256'] = 'c' * 64
+  elif fault == 'commit':
+    value['source_commit'] = pv5_manifest()['source_commit']
+  else:
+    value['integrity'] = 'none'
+  (C.USB_DIRECTORY / 'pv5-usb-flip-flop.json').write_text(json.dumps(value))
+  with pytest.raises(ValueError, match='USB|source commits'):
+    C.available()
+
+
+def test_model_choice_does_not_use_retired_or_arbitrary_paths(store):
+  C.USB_PIN.write_text(json.dumps(pv5_manifest()))
+  for key in ('md-v3', '../n16', 'unknown'):
+    with pytest.raises(ValueError, match='unknown or retired'):
+      C.usb_release(key)
 
 
 @pytest.fixture
@@ -230,7 +280,7 @@ def test_fresh_pv5_runtime_matches_preserved_usb_package(store):
   code = '''
 from pathlib import Path
 from openpilot.common import big_model_catalog as C
-assert set(C.available()) == {'n16'}
+assert 'n16' in C.available()
 assert C.freeze_boot() == 'n16'
 original = Path.is_file
 Path.is_file = lambda path: path.as_posix() == '/TICI' or original(path)

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DIRECTORY = ROOT / 'openpilot/selfdrive/modeld/model_catalog'
 DEFAULT = 'n16'
 USB_PIN = ROOT / 'openpilot/selfdrive/modeld/jetlink/usb_host_sha256_release.json'
+USB_DIRECTORY = DIRECTORY
 
 
 _LOCK = threading.RLock()
@@ -47,17 +48,37 @@ def available():
   """Curator-owned choices; retired metadata stays for safe cache cleanup."""
   models = {key: entry for key, entry in catalog().items() if entry.get('retired') is not True}
   if USB_PIN.exists():
-    # This PV5 runtime is deliberately pinned to its own HUD-capable package.
-    # Do not offer a reboot selection that its paired USB manifest cannot load.
-    pin = read_json(USB_PIN).get('model', {})
-    if not isinstance(pin, dict):
-      raise ValueError('invalid PV5 USB package model')
-    models = {key: entry for key, entry in models.items()
-              if pin.get('sha256') == model_spec(key).get('sha256')
-              and pin.get('size') == model_spec(key).get('nbytes')}
+    # Only a separately pinned PV5 package may expose another model. Its HUD
+    # extensions must not be replaced by the official non-PV5 host bundle.
+    releases = {key: usb_release(key) for key in models}
+    releases = {key: value for key, value in releases.items() if value is not None}
+    # Existing bootstraps key installed directories and readiness by source
+    # commit. Same-commit model variants would be mistaken for the active model.
+    if len({value['source_commit'] for value in releases.values()}) != len(releases):
+      raise ValueError('PV5 model packages require distinct source commits')
+    models = {key: entry for key, entry in models.items() if key in releases}
   if DEFAULT not in models:
     raise ValueError('catalog must retain an available default model')
   return models
+
+
+def usb_release(key):
+  """Repository-owned per-model USB releases, retaining the old N16 pin fallback."""
+  if key not in catalog() or catalog()[key].get('retired') is True:
+    raise ValueError('unknown or retired PV5 USB model')
+  if not USB_PIN.is_file():
+    return None
+  path = USB_DIRECTORY / ('pv5-usb-' + key + '.json')
+  if not path.is_file():
+    if key != DEFAULT:
+      return None
+    path = USB_PIN
+  from tools.jetlink.usb_release import validate, identity  # noqa: TID251 -- standalone shared contract
+  value = validate(read_json(path))
+  spec = model_spec(key)
+  if identity(value['model']) != {'sha256': spec['sha256'], 'size': spec['nbytes']}:
+    raise ValueError('PV5 USB package does not match selected model')
+  return value
 
 
 def storage():

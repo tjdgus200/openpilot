@@ -101,6 +101,52 @@ def test_keyless_upload_registration_activation_and_cached_reuse(installed, monk
   assert (installed.root / 'updater/release-signing-public.pem').read_bytes() == installed.official_key
 
 
+@pytest.mark.parametrize('reject_second', [False, True])
+def test_distinct_model_sources_switch_back_or_retain_prior_release(installed, monkeypatch, reject_second):
+  import hashlib
+  env = installed
+  upload(env)
+  assert select_and_activate(env.value).done
+  first_value, first_package = env.value, env.package
+  first_loaded = (env.root / 'cache/last-loaded.json').read_text()
+  second = env.temporary / 'second-model'
+  second.mkdir()
+  model = second / 'model.onnx'
+  model.write_bytes(b'second-distinct-model')
+  identity = {'sha256': hashlib.sha256(model.read_bytes()).hexdigest(), 'size': model.stat().st_size}
+  local = {'format': 1, 'delivery': 'local', 'profile': 'test-usb-second', 'model': identity}
+  archive(second / 'host.tar.gz', 'c' * 40, model.read_bytes(), local)
+  env.value = prepare.prepare(second / 'host.tar.gz', model, 'test-usb-second',
+      'https://example.invalid/second-host.tar.gz', 'https://example.invalid/second-model.onnx', second)
+  env.package = second
+  assert env.value['source_commit'] != first_value['source_commit']
+  assert env.value['model'] != first_value['model']
+  boot.BOOT_ID.write_text('boot-2')
+  assert not boot.runtime_ready()
+  upload(env)
+  probe = update.probe_release
+  if reject_second:
+    def reject(_):
+      (env.root / 'cache/last-loaded.json').write_text('rejected-second-model')
+      raise RuntimeError('Synthetic second-model inference failure')
+    monkeypatch.setattr(update, 'probe_release', reject)
+  gate = select_and_activate(env.value)
+  if reject_second:
+    assert not gate.done and gate.state == 'failed' and not boot.runtime_ready()
+    assert (env.root / 'current/SOURCE_COMMIT').read_text() == first_value['source_commit']
+    assert (env.root / 'cache/last-loaded.json').read_text() == first_loaded
+  else:
+    assert gate.done and boot.runtime_ready()
+    assert (env.root / 'current/SOURCE_COMMIT').read_text() == 'c' * 40
+  monkeypatch.setattr(update, 'probe_release', probe)
+  env.value, env.package = first_value, first_package
+  boot.BOOT_ID.write_text('boot-3')
+  assert upload(env).kinds == [usb.BEGIN]  # Reuse verified first-model assets.
+  assert select_and_activate(env.value).done
+  assert (env.root / 'current/SOURCE_COMMIT').read_text() == first_value['source_commit']
+  assert (env.root / 'updater/release-signing-public.pem').read_bytes() == env.official_key
+
+
 def test_prepare_both_assets_before_sending_any_file_bytes(installed, monkeypatch):
   wire, prepared = Wire(), []
   original = sender.asset

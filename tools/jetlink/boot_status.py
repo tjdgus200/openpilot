@@ -1,7 +1,9 @@
 """Small, allowlisted boot diagnostics. Never include profiles, keys or journals."""
 import ipaddress
 import json
+import math
 from pathlib import Path
+import shutil
 import subprocess
 import time
 
@@ -9,6 +11,28 @@ STAGE = Path('/run/carrot-boot-stage.json')
 UNITS = ('carrot-protected-storage', 'carrot-image-setup', 'carrot-jetlink-usbc-host',
          'nv', 'nvpmodel', 'carrot-jetlink-performance', 'NetworkManager', 'ssh',
          'carrot-jetlink-wifi', 'carrot-jetlink', 'carrot-jetlink-xorg', 'carrot-jetlink-hud')
+
+
+def update_status(now):
+  value = read_json('/run/carrot-jetlink-boot-update.json')
+  stamp = value.get('updated')
+  if type(stamp) not in (int, float) or not 0 <= now - stamp < 10:
+    return {}
+  states = {'checking', 'checking_usb', 'transferring', 'downloading', 'verifying',
+            'waiting_internet', 'ready', 'failed'}
+  state = value.get('state')
+  if state not in states:
+    return {}
+  error = str(value.get('error') or '').lower()
+  # Categories only: neither the diagnostic screen nor its status object
+  # receives arbitrary exception text, credentials or update URLs.
+  reason = ('validation_failed' if 'validation' in error or 'probe' in error else
+            'authentication' if any(x in error for x in ('signature', 'permission', 'auth')) else
+            'storage' if any(x in error for x in ('space', 'storage')) else
+            'network' if state == 'waiting_internet' else 'update_failed' if error else '')
+  fraction = value.get('fraction')
+  fraction = fraction if type(fraction) in (int, float) and math.isfinite(fraction) and 0 <= fraction <= 1 else None
+  return {'state': state, 'fraction': fraction, 'reason': reason}
 
 
 def read_json(path):
@@ -54,7 +78,8 @@ def collect():
   except (OSError, ValueError, subprocess.SubprocessError):
     pass
   network = read_json('/dev/shm/carrot-jetlink-network-status.json')
-  if not 0 <= time.monotonic() - network.get('updated', -100) < 6:
+  stamp = network.get('updated')
+  if type(stamp) not in (int, float) or not 0 <= time.monotonic() - stamp < 6:
     network = {}
   temperatures = []
   for path in Path('/sys/class/thermal').glob('thermal_zone*/temp'):
@@ -64,8 +89,18 @@ def collect():
         temperatures.append(temperature)
     except (OSError, ValueError, TypeError):
       pass
+  try:
+    disk = shutil.disk_usage('/opt/carrot-jetlink')
+    storage_free = f'{disk.free / (1 << 30):.1f} / {disk.total / (1 << 30):.1f} GiB'
+  except OSError:
+    storage_free = '--'
+  spec = read_json('/opt/carrot-jetlink/current/openpilot/selfdrive/modeld/jetlink/jetson_model.json')
+  sha = spec.get('sha256', '')
+  model = ('N16 Nav' if sha == '01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a' else
+           'Flip Flop' if sha == '35976b11be3904eb78e32f7dc55a6abf8e9433ac5aa391a1998f1e9ce001b199' else '--')
   return {'stage': read_json(STAGE), 'storage': read_json('/run/carrot-storage.json'),
           'units': units, 'addresses': addresses[:4], 'wifi': network.get('state', 'waiting'),
+          'update': update_status(time.monotonic()), 'model': model, 'storage_free': storage_free,
           'uptime': int(time.monotonic()), 'temp_c': max(temperatures, default=None)}
 
 

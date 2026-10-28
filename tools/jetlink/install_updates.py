@@ -2,6 +2,7 @@
 from pathlib import Path
 import os
 import argparse
+import re
 import subprocess
 import sys
 
@@ -13,7 +14,11 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
   Enable only next boot so installing never interrupts the current session.
   """
   if Path('/etc/systemd/system/carrot-jetlink-boot-display.service').is_file():
-    migrate_boot_display(runtime)
+    try:
+      migrate_boot_display(runtime)
+    except (OSError, subprocess.SubprocessError):
+      # Optional diagnosis must not withhold the model/control USB service.
+      print('Boot display refresh deferred; retaining existing diagnostics', flush=True)
   if not (runtime / 'current/tools/jetlink/boot_update.py').is_file():
     return
   if (runtime / 'boot-update-required').is_file():
@@ -33,7 +38,7 @@ def migrate_boot_display(runtime):
   # Keep the immutable recovery screen for early boot/storage failures. Once
   # the signed runtime is available, both screens must use its stable /run lock.
   try:
-    if BOOT_DISPLAY_DROPIN.read_text() == BOOT_DISPLAY_OVERRIDE:
+    if BOOT_DISPLAY_DROPIN.read_text() == boot_display_override(runtime):
       return
   except OSError:
     pass
@@ -41,13 +46,23 @@ def migrate_boot_display(runtime):
                   '--boot-display-runtime'], check=True, timeout=30)
 
 
-def configure_runtime_boot_display():
+def boot_display_override(runtime=Path('/opt/carrot-jetlink')):
+  try:
+    commit = (runtime / 'current/SOURCE_COMMIT').read_text().strip()
+  except OSError:
+    commit = ''
+  # Refresh only when the selected runtime changes, not on every USB reconnect.
+  return BOOT_DISPLAY_OVERRIDE + (f'Environment=CARROT_BOOT_DISPLAY_SOURCE={commit}\n'
+                                 if re.fullmatch('[0-9a-f]{40}', commit) else '')
+
+
+def configure_runtime_boot_display(runtime=Path('/opt/carrot-jetlink')):
   BOOT_DISPLAY_DROPIN.parent.mkdir(parents=True, exist_ok=True)
   temporary = BOOT_DISPLAY_DROPIN.with_suffix('.new')
-  temporary.write_text(BOOT_DISPLAY_OVERRIDE)
+  temporary.write_text(boot_display_override(runtime))
   temporary.replace(BOOT_DISPLAY_DROPIN)
   subprocess.run(['systemctl', 'daemon-reload'], check=True, timeout=10)
-  subprocess.run(['systemctl', 'try-restart', 'carrot-jetlink-boot-display'], check=True, timeout=15)
+  subprocess.run(['systemctl', 'restart', 'carrot-jetlink-boot-display'], check=True, timeout=15)
 
 
 def bootstrap(root, source, defer_this_boot=False):
