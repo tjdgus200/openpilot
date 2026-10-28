@@ -23,7 +23,7 @@ window.CarrotTranslations.register("en", {
     egpu_model_quality_measuring: "Measuring: each candidate needs at least 60s and 1000 samples.",
     egpu_model_quality_ready: "● Current output · ★ Lowest observed GPU P99 after at least two candidates qualify.",
     egpu_model_quality_fallback: "CPU JPEG failed: baseline H264 is active. This is not a JPEG result.",
-    egpu_model_quality_scope: "Select Settings > External HUD > Screen & Camera > Jetson HUD Frame Rate. CPU TurboJPEG Q92 is fixed. Actual rates may be lower than the target: model requests take priority and late HUD frames are skipped. Onroad changes wait for stationary Park; 10fps recovery is immediate. GPU/server times are not the complete comma/USB round trip. Compare matching workloads; results reset on model/runtime changes. No automatic selection or zero-impact guarantee.",
+    egpu_model_quality_scope: "Select Settings > External HUD > Screen & Camera > Jetson HUD Frame Rate. CPU TurboJPEG Q92 is fixed. Actual rates may be lower than the target: model requests take priority and late HUD frames are skipped. Saved Q92/FPS applies onroad at startup and reconnect without waiting for Park; FPS changes reopen only the HUD. GPU/server times are not the complete comma/USB round trip. Compare matching workloads; results reset on model/runtime changes. No automatic selection or zero-impact guarantee.",
     egpu_model_host_warning: "High temperature",
     egpu_model_host_error: "Host error / connection lost",
     egpu_model_host_unknown: "Waiting for current host health",

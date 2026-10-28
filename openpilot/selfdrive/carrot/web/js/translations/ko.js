@@ -23,7 +23,7 @@ window.CarrotTranslations.register("ko", {
     egpu_model_quality_measuring: "측정 중: 각 후보는 최소 60초·1,000개 표본이 필요합니다.",
     egpu_model_quality_ready: "● 현재 출력 · ★ 두 후보 이상 측정된 뒤 관측 GPU P99가 가장 낮은 후보",
     egpu_model_quality_fallback: "CPU JPEG 실패: 기본 H264로 출력 중입니다. JPEG 측정 결과가 아닙니다.",
-    egpu_model_quality_scope: "설정 > 외부 HUD > 화면·카메라 > Jetson HUD 프레임에서 선택하세요. CPU TurboJPEG Q92로 고정합니다. 모델 요청 우선·밀린 HUD 건너뛰기로 실제 FPS가 목표보다 낮을 수 있습니다. 온로드 변경은 정차 P단에서, 10fps 복귀는 즉시 가능합니다. GPU·서버 시간은 콤마·USB 전체 왕복 시간이 아닙니다. 동일 부하에서 비교하며 모델·실행 세션 변경 시 초기화합니다. 자동 선택이나 추론 무영향을 보장하지 않습니다.",
+    egpu_model_quality_scope: "설정 > 외부 HUD > 화면·카메라 > Jetson HUD 프레임에서 선택하세요. CPU TurboJPEG Q92로 고정합니다. 모델 요청 우선·밀린 HUD 건너뛰기로 실제 FPS가 목표보다 낮을 수 있습니다. 온로드 부팅·재접속에도 저장한 Q92/FPS를 P단 대기 없이 적용하며, FPS 변경은 HUD만 다시 엽니다. GPU·서버 시간은 콤마·USB 전체 왕복 시간이 아닙니다. 동일 부하에서 비교하며 모델·실행 세션 변경 시 초기화합니다. 자동 선택이나 추론 무영향을 보장하지 않습니다.",
     egpu_model_host_warning: "온도 높음",
     egpu_model_host_error: "호스트 오류 / 연결 끊김",
     egpu_model_host_unknown: "최신 호스트 상태 수신 대기",

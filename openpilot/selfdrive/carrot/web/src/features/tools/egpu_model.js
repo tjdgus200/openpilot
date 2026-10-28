@@ -17,7 +17,7 @@ const FALLBACK_STRINGS = {
   quality_measuring: "Measuring: each candidate needs at least 60s and 1000 samples.",
   quality_ready: "● Current output · ★ Lowest observed GPU P99, shown after at least two candidates qualify.",
   quality_fallback: "CPU JPEG failed: baseline H264 is active. This is not a JPEG result.",
-  quality_scope: "Select Settings > External HUD > Screen & Camera > Jetson HUD Frame Rate. CPU TurboJPEG Q92 is fixed. Actual rates may be lower than the target: model requests take priority and late HUD frames are skipped. Onroad changes wait for stationary Park; 10fps recovery is immediate. GPU/server times are not the complete comma/USB round trip. Compare matching workloads; results reset on model/runtime changes. No automatic selection or zero-impact guarantee.",
+  quality_scope: "Select Settings > External HUD > Screen & Camera > Jetson HUD Frame Rate. CPU TurboJPEG Q92 is fixed. Actual rates may be lower than the target: model requests take priority and late HUD frames are skipped. Saved Q92/FPS applies onroad at startup and reconnect without waiting for Park; FPS changes reopen only the HUD. GPU/server times are not the complete comma/USB round trip. Compare matching workloads; results reset on model/runtime changes. No automatic selection or zero-impact guarantee.",
   recovering: "eGPU reconnecting",
   recovering_detail: "The internal model remains in use while eGPU recovery is attempted, up to three times.",
   recovery_ready: "eGPU READY",
