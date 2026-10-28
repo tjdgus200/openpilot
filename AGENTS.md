@@ -1,5 +1,16 @@
 # Repository memory
 
+- 2026-10-28 USB cleanup recovery: owner photo showed blocked state followed
+  later by only the main daemon thread. Recheck explicit ownership proofs every
+  5s without an attempt cap; keep status fresh every1s. Retain original reader,
+  watchdog and endpoint-close workers across duplicate closes; require them all
+  ended, native contexts gone, descriptors retired and UDC unbound before a new
+  owner/HELLO/prepare/reset. Poll never closes, unbinds, kills or opens anything.
+  Unknown/mixed cleanup failures remain blocked; no unsafe forced rebind or
+  automatic reboot. Recheck USB input-power policy before any new owner.
+  Old second-close regression reproduced1fail/45pass; PC fault injection only,
+  not physical USB recovery or a road-safety certification.
+
 - 2026-10-28 owner reports worse BLE stability and requests the prior optimized
   collector. Restore obd_battery.py exactly to pre9e5061f7/latest collector
   e387b811; withdraw all scanner-style session changes, including dual-UART

@@ -256,12 +256,26 @@ def test_native_owner_cleanup_is_verified_not_silently_retried(tmp_path, monkeyp
   (tmp_path / 'UDC').write_text(bound)
   owner = daemon.CarrotTransport.__new__(daemon.CarrotTransport)
   owner.gadget, owner.bound_udc = str(tmp_path), remembered_udc
+  owner._closing = True
   owner._reader = SimpleNamespace(is_alive=lambda: reader_alive)
   monkeypatch.setattr(FfsTransport, 'close', lambda self: None)
   if unsafe:
     with pytest.raises(LinkError, match='refusing to rebind'):
       owner.close()
   else:
+    owner.close()
+
+
+def test_second_close_cannot_forget_a_reader_that_missed_its_join(tmp_path, monkeypatch):
+  (tmp_path / 'UDC').write_text('')
+  owner = daemon.CarrotTransport.__new__(daemon.CarrotTransport)
+  owner.gadget, owner._closing = str(tmp_path), True
+  owner._reader = SimpleNamespace(is_alive=lambda: True)
+  # The real base close moves this reference out before its bounded join.
+  monkeypatch.setattr(FfsTransport, 'close', lambda self: setattr(self, '_reader', None))
+  with pytest.raises(LinkError, match='refusing to rebind'):
+    owner.close()
+  with pytest.raises(LinkError, match='refusing to rebind'):
     owner.close()
 
 

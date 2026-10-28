@@ -223,6 +223,7 @@ class FfsTransport(StreamTransport):
     self._open_lock = threading.Lock()
     self._write_aborted = False
     self._reader: threading.Thread | None = None
+    self._close_threads: list[threading.Thread] = []
     self._write_guard = WriteWatchdog(self._abort_write)
 
   def _udc_state(self) -> str | None:
@@ -737,8 +738,8 @@ class FfsTransport(StreamTransport):
       # every descriptor write after it answered ESRCH. unbind() is
       # idempotent, so a late abort finds nothing left to let go of; the leak
       # was the worse half by far.
-      log.warning("jetlink: gadget watchdog teardown did not finish in %.0f s, "
-                  "closing the endpoints anyway", READER_JOIN_TIMEOUT)
+      log.warning("jetlink: gadget watchdog teardown did not finish in %.0f s, closing the endpoints anyway",
+                  READER_JOIN_TIMEOUT)
     # Unbinding disables the endpoints, which completes the reader's pending
     # request with ESHUTDOWN and lets the thread exit before its fd goes away.
     self.unbind()
@@ -775,7 +776,13 @@ class FfsTransport(StreamTransport):
       if fd is None or fd < 0:
         continue
       if name == 'ep_out' and reader is not None and reader.is_alive():
-        threading.Thread(target=_close_quietly, args=(fd,), daemon=True).start()
+        worker = threading.Thread(target=_close_quietly, args=(fd,), name='jetlink-ffs-close', daemon=True)
+        try:
+          worker.start()
+        except BaseException:
+          setattr(self, name, fd)  # Preserve ownership if no closer was started.
+          raise
+        self._close_threads.append(worker)
         continue
       _close_quietly(fd)
 

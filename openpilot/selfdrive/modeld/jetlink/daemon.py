@@ -17,6 +17,7 @@ from openpilot.selfdrive.modeld.jetlink.link import (SOCKET, STATUS, REQUEST, RE
 from openpilot.selfdrive.modeld.jetlink.phase import Publisher as PhasePublisher
 from openpilot.selfdrive.modeld.jetlink.mac import prepare, PreparationDeferred
 from openpilot.selfdrive.modeld.jetlink.compat import ProtocolChoice
+from openpilot.selfdrive.modeld.jetlink.cleanup import CleanupFailure, UnsafeCleanupError
 from openpilot.selfdrive.modeld.jetlink.mobile import transport_mode, setup_gadget, MobileCable, AutoTransport, MobileLinkError
 from openpilot.selfdrive.modeld.jetlink.power import UsbInputPower
 from openpilot.selfdrive.modeld.jetlink.scheduling import UsbCompletionPriority
@@ -43,10 +44,6 @@ from hud_wifi import publisher as display_publisher, USB_CAPABILITY as HUD_USB_C
 from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE
 from hud_navi import send_ready_after_reply, send_ready_during_inference, PUMP_CAPABILITY
 from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, Publisher as WifiPublisher
-
-
-class UnsafeCleanupError(LinkError):
-  pass
 
 
 def update_affinity():
@@ -206,21 +203,47 @@ class CarrotTransport(FfsTransport):
     return super()._wait_for_host_ready()
 
   def close(self):
-    reader = getattr(self, '_reader', None)
-    watchdog = getattr(getattr(self, '_write_guard', None), 'thread', None)
-    gadget = getattr(self, 'gadget', None)
-    super().close()
+    # FfsTransport.close clears _reader even if its bounded join times out.
+    # Retain the original objects across repeated close calls and recovery.
+    threads = getattr(self, '_cleanup_threads', [])
+    for thread in (getattr(self, '_reader', None), getattr(getattr(self, '_write_guard', None), 'thread', None)):
+      if thread is not None and thread not in threads:
+        threads.append(thread)
+    self._cleanup_threads = threads
+    self._cleanup_started = True
+    try:
+      super().close()
+    except Exception as exc:
+      raise UnsafeCleanupError(f'FunctionFS cleanup incomplete: {exc}', check=self.cleanup_complete) from exc
+    problem = self._cleanup_problem()
+    if problem:
+      raise UnsafeCleanupError(problem, check=self.cleanup_complete)
+
+  def cleanup_complete(self):
+    """Observe only; no USB writes, joins, new workers, or native teardown."""
+    return self._cleanup_problem() is None
+
+  def _cleanup_problem(self):
+    if not getattr(self, '_cleanup_started', False) or not getattr(self, '_closing', False):
+      return 'FunctionFS cleanup has not completed; refusing to rebind'
+    threads = (*getattr(self, '_cleanup_threads', ()), *getattr(self, '_close_threads', ()))
+    if any(thread.is_alive() for thread in threads):
+      return 'FunctionFS cleanup left an active reader/watchdog/endpoint closer; refusing to rebind'
     if getattr(getattr(self, '_aio_reader', None), 'context', None) is not None:
-      raise UnsafeCleanupError('FunctionFS AIO cleanup incomplete; refusing to rebind')
-    if any(thread is not None and thread.is_alive() for thread in (reader, watchdog)):
-      raise UnsafeCleanupError('FunctionFS cleanup left an active reader/watchdog; refusing to rebind')
+      return 'FunctionFS AIO cleanup incomplete; refusing to rebind'
+    if getattr(self, '_request_writer', None) is not None:
+      return 'FunctionFS native writer cleanup incomplete; refusing to rebind'
+    if any(getattr(self, name, -1) not in (-1, None) for name in ('_state_fd', 'ep_in', 'ep_out', 'ep0')):
+      return 'FunctionFS endpoint cleanup incomplete; refusing to rebind'
+    gadget = getattr(self, 'gadget', None)
     if gadget is not None:
       try:
         bound = (Path(gadget) / 'UDC').read_text().strip()
-      except OSError as exc:
-        raise UnsafeCleanupError(f'Cannot verify FunctionFS controller cleanup: {exc}') from exc
+      except OSError:
+        return 'Cannot verify FunctionFS controller cleanup; refusing to rebind'
       if bound:
-        raise UnsafeCleanupError(f'FunctionFS controller remains bound to {bound}; refusing to rebind')
+        return 'FunctionFS controller remains bound; refusing to rebind'
+    return None
 
   def _widen_affinity(self):
     os.sched_setaffinity(0, set(range(min(4, os.cpu_count() or 1))))
@@ -521,8 +544,19 @@ def main():
         continue
       update_affinity()
       if cleanup_error:
+        if isinstance(cleanup_error, CleanupFailure) and cleanup_error.poll(time.monotonic()):
+          # All old workers, native buffers, endpoint closers and UDC ownership
+          # are gone. A new owner still performs HELLO, prepare and reset warmup.
+          log.info('Jetlink cleanup verified complete; retrying a fresh session')
+          cleanup_error = None
+          owner = cable = peer = None
+          usb_probes, usb_mode, tcp_seen = 0, None, False
+          ACTIVE_UDC, SESSION_DETACHED = None, False
+          SESSION_MODE = TRANSPORT_MODE
+          publish('retrying', peer=None, preparation={'stage': 'cleanup-complete'})
+          continue  # Recheck the USB input-power policy before opening anything.
         publish('blocked', peer=None, error=cleanup_error)
-        time.sleep(1)
+        time.sleep(1)  # Keep status fresh while ownership is rechecked every 5s.
         continue
       if SESSION_DETACHED or not host_attached():
         from openpilot.common.params import Params
@@ -691,7 +725,7 @@ def main():
         publish('loading', peer=peer, preparation={'stage': 'waiting', 'message': str(exc)})
       except UnsafeCleanupError as exc:
         log.exception('Jetlink constructor cleanup was unsafe')
-        cleanup_error = f'Unsafe Jetlink cleanup; restart/reboot offroad before retrying: {exc}'[:300]
+        cleanup_error = CleanupFailure(f'Unsafe Jetlink cleanup; waiting for verified release: {exc}', (exc.check,))
         publish('blocked', peer=None, error=cleanup_error)
       except MobileLinkError as exc:
         log.exception('Jetlink cable setup failed')
@@ -715,17 +749,17 @@ def main():
             Params().put_bool_nonblocking('ClusterHudConnected', False)
           except Exception:
             log.exception('Jetlink HUD cleanup failed')
-        cleanup_error = close_resources(usb_priority, wifi, client) or cleanup_error
+        cleanup_error = CleanupFailure.combine(close_resources(usb_priority, wifi, client), cleanup_error)
         if client is None and transport is not owner:
-          cleanup_error = close_resources(transport) or cleanup_error
+          cleanup_error = CleanupFailure.combine(close_resources(transport), cleanup_error)
         if TRANSPORT_MODE not in ('auto', 'ios'):
           if client is None:
-            cleanup_error = close_resources(owner) or cleanup_error
+            cleanup_error = CleanupFailure.combine(close_resources(owner), cleanup_error)
           owner = None
         elif transport is owner or cable is None or getattr(cable, 'listener', None) is None:
           # Failed startup is not a valid persistent listener. Do not retry a
           # gadget whose cleanup could not prove the previous owner is gone.
-          cleanup_error = close_resources(cable, owner) or cleanup_error
+          cleanup_error = CleanupFailure.combine(close_resources(cable, owner), cleanup_error)
           cable = owner = None
         peer = None
         SESSION_MODE = TRANSPORT_MODE
@@ -737,8 +771,9 @@ def main():
 
 
 def close_resources(*resources):
-  """Log every cleanup failure; caller must block rather than reclaim unsafely."""
+  """Keep every failed ownership proof; unknown failures require manual repair."""
   failures = []
+  checks = []
   for resource in resources:
     if resource is not None:
       try:
@@ -746,7 +781,11 @@ def close_resources(*resources):
       except Exception as exc:
         log.exception('Jetlink %s cleanup failed', type(resource).__name__)
         failures.append(f'{type(resource).__name__}: {exc}')
-  return ('Unsafe Jetlink cleanup; restart/reboot offroad before retrying: ' + '; '.join(failures))[:300] if failures else None
+        checks.append(exc.check if isinstance(exc, UnsafeCleanupError) else None)
+  if not failures:
+    return None
+  action = 'waiting for verified release' if all(callable(check) for check in checks) else 'restart/reboot offroad before retrying'
+  return CleanupFailure(f'Unsafe Jetlink cleanup; {action}: ' + '; '.join(failures), checks)
 
 
 def session_mode():
