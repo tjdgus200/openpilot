@@ -1,5 +1,16 @@
 # Repository memory
 
+- 2026-10-28 owner reports worse BLE stability and requests the prior optimized
+  collector. Restore obd_battery.py exactly to pre9e5061f7/latest collector
+  e387b811; withdraw all scanner-style session changes, including dual-UART
+  fallback/AT setup/deadline/discovery changes. Preserve response-driven
+  priority,50-500ms adaptive pacing, NO DATA backoff,5s unlimited retries,
+  enrolled config/confirmed fields,108 cells, freshness/retention/P gates.
+  Do not reset pairing, keys or Params. Keep onroad Q92/FPS, model/USB and
+  current Jetson package.274 PC transport/scheduling/retention/HUD/FPS checks
+  pass; restored blob2b7542ef equals e387b811. Comma-only rollback; live
+  stability/cause unmeasured, no physical device installation this task.
+
 - Onroad Q92/FPS delivery2026-10-28: source34aec0aa, public tag
   jetson-pv5-hud-onroad-q92-20261028-34aec0aa,65032538bytes,
   SHA f40953a620938cab5db88b0dceca64e3a8301291109a1b0959d7462e973f8acf.

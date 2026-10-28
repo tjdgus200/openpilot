@@ -19,9 +19,6 @@ CONFIG = Path('/data/jetlink/obd-battery.json')
 SNAPSHOT = Path('/dev/shm/carrot-obd-battery.json')
 SERVICE = 'e7810a71-73ae-499d-8c15-faa9aef0c3f2'
 UART = 'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f'
-SERIAL_SERVICE = '0000ff12-0000-1000-8000-00805f9b34fb'
-SERIAL_RX = '0000ff14-0000-1000-8000-00805f9b34fb'
-SERIAL_TX = '0000ff15-0000-1000-8000-00805f9b34fb'
 DEVICE = 'org.bluez.Device1'
 GATT = 'org.bluez.GattCharacteristic1'
 ADAPTER = 'org.bluez.Adapter1'
@@ -43,7 +40,7 @@ REPLIES = {'220101': (62, b'\x62\x01\x01'), '220105': (46, b'\x62\x01\x05'), '22
 CELL_BLOCKS = (('220102', 32), ('220103', 32), ('220104', 32), ('22010A', 12))
 REPLIES.update({cmd: (39, bytes.fromhex('62' + cmd[2:])) for cmd, _ in CELL_BLOCKS})
 SETUP = ('ATE0', 'ATL0', 'ATM0', 'ATSP6', 'ATCAF1', 'ATCFC1', 'ATFCSM0',
-         'ATSH7E4', 'ATCRA7EC', 'ATH1', 'ATD0', 'ATS0', 'ATAT1', 'ATAL', 'ATST96')
+         'ATSH7E4', 'ATCRA7EC', 'ATH1', 'ATD0', 'ATS0', 'ATAL', 'ATST96')
 COMMANDS = frozenset((*SETUP, 'ATI', *REPLIES))
 
 
@@ -57,18 +54,6 @@ class QueryError(ValueError):
 def no_data(reply):
   return (isinstance(reply, bytes) and len(reply) <= 4096
           and re.fullmatch(rb'[ \r\n]*NO DATA[ \r\n]*>', reply) is not None)
-
-
-def ecu_rejected(reply):
-  """Only complete single-frame negative replies to the outstanding read22.
-
-  Response-pending78 is excluded: a delayed positive reply could still follow.
-  Never reinterpret malformed, wrong-source or mixed responses as harmless.
-  """
-  if not isinstance(reply, bytes) or len(reply) > 4096:
-    return False
-  compact = re.sub(rb'[ \r\n\t]', b'', reply).upper()
-  return re.fullmatch(rb'7EC037F22(?:10|11|12|13|21|22|31|33)[0-9A-F]{8}>', compact) is not None
 
 
 def read_json(path, limit=4096):
@@ -238,7 +223,6 @@ class MetricPoller:
     self.retry_at, self.failures = {}, {}
     self.last_command, self.last_result, self.no_data_count = None, None, 0
     self.last_no_data_command = None
-    self.ecu_rejections = 0
 
   def snapshot(self):
     now = time.monotonic()
@@ -254,17 +238,13 @@ class MetricPoller:
     self.last_command = command
     self.last_result = 'pending'
     raw = await link.command(command)
-    missing, rejected = no_data(raw), ecu_rejected(raw)
-    if missing or rejected:
+    if no_data(raw):
       failures = min(self.failures.get(command, 0) + 1, 5)
       self.failures[command] = failures
       self.retry_at[command] = time.monotonic() + min(30., 2. ** failures)
-      if missing:
-        self.no_data_count = min(65535, self.no_data_count + 1)
-        self.last_no_data_command = command
-      else:
-        self.ecu_rejections = min(65535, self.ecu_rejections + 1)
-      self.last_result = 'no_data' if missing else 'ecu_rejected'
+      self.no_data_count = min(65535, self.no_data_count + 1)
+      self.last_no_data_command = command
+      self.last_result = 'no_data'
       return True, None
     value = parse_reply(raw, command)
     self.retry_at.pop(command, None)
@@ -432,21 +412,13 @@ class NotificationQueue(asyncio.Queue):
   def __init__(self):
     super().__init__(maxsize=32)
     self.overflow = False
-    self.disconnected = False
 
   def put_nowait(self, item):
     # StartNotify/StopNotify also emit PropertiesChanged. Only UART bytes
     # belong to the bounded transaction queue, not Notifying/status changes.
-    if len(item.body) != 3:
+    if len(item.body) != 3 or item.body[0] != GATT or 'Value' not in item.body[1]:
       return
-    interface, changed, _ = item.body
-    lost = ((interface == DEVICE and changed.get('Connected') == ('b', False))
-            or (interface == GATT and changed.get('Notifying') == ('b', False)))
-    if lost:
-      self.disconnected = True
-    if not lost and (interface != GATT or 'Value' not in changed):
-      return
-    if 'Value' in changed and len(changed['Value'][1]) > 512:
+    if len(item.body[1]['Value'][1]) > 512:
       self.overflow = True
       return
     if self.full():
@@ -464,19 +436,10 @@ class Link:
     self.device = self.uart = self.scan = None
     self.queue = NotificationQueue()
     self.filter = None
-    self.device_filter = None
     self.notifying = False
     self.request_gap = REQUEST_GAP_MIN
     self.next_request = 0.
     self.last_latency_ms = 0.
-    self.write_uart = None
-    self.write_type = 'request'
-    self.route = 'vendor'
-    self.route_preference = 0
-    self.force_scan = False
-    self.padding_chunks = 0
-    self.response_timeout = 3.
-    self.command_active = False
 
   async def call(self, path, interface, method, signature=None, body=(), bus='org.bluez', timeout=5):  # noqa: ASYNC109
     from jeepney import DBusAddress, new_method_call
@@ -487,41 +450,16 @@ class Link:
   async def objects(self):
     return (await self.call('/', 'org.freedesktop.DBus.ObjectManager', 'GetManagedObjects'))[0]
 
-  async def discover(self, objects):
-    for path, interfaces in objects.items():
-      if ADAPTER in interfaces and props(interfaces[ADAPTER]).get('Powered'):
-        # LE only, no BR/EDR pairing, no broad auto-connect or address guessing.
-        await self.call(path, ADAPTER, 'SetDiscoveryFilter', 'a{sv}',
-                        ({'Transport': ('s', 'le'), 'DuplicateData': ('b', False)},))
-        await self.call(path, ADAPTER, 'StartDiscovery')
-        self.scan = path
-        return
-    raise QueryError('bluetooth_unavailable')
-
-  def uart_routes(self, objects):
-    services = {p: props(i['org.bluez.GattService1']).get('UUID') for p, i in objects.items()
-                if p.startswith(self.device + '/') and 'org.bluez.GattService1' in i}
-    chars = [(p, props(i[GATT])) for p, i in objects.items() if p.startswith(self.device + '/') and GATT in i]
-    routes = []
-    # Both services were observed on this exact model. Prefer the split ELM
-    # UART, retaining the verified vendor UART as a sequential fallback.
-    for label, service, rx, tx in (('elm_ff12', SERIAL_SERVICE, SERIAL_RX, SERIAL_TX),
-                                   ('vendor', SERVICE, UART, UART)):
-      receivers = [p for p, v in chars if services.get(v.get('Service')) == service
-                   and v.get('UUID') == rx and 'notify' in v.get('Flags', [])]
-      writers = [(p, 'request' if 'write' in v.get('Flags', []) else 'command') for p, v in chars
-                 if services.get(v.get('Service')) == service and v.get('UUID') == tx
-                 and {'write', 'write-without-response'} & set(v.get('Flags', []))]
-      if len(receivers) == len(writers) == 1:
-        routes.append((label, receivers[0], *writers[0]))
-    return chars, routes
-
   async def connect(self):
     from jeepney import MatchRule
     objects = await self.objects()
-    matches = [p for p, i in objects.items() if DEVICE in i and props(i[DEVICE]).get('Address', '').upper() == self.address]
-    if not matches or self.force_scan:
-      await self.discover(objects)
+    # Discovery is bounded and scoped to this D-Bus connection. Never pair/trust
+    # or connect any discovered address other than the local allowlisted target.
+    for path, interfaces in objects.items():
+      if ADAPTER in interfaces and props(interfaces[ADAPTER]).get('Powered'):
+        await self.call(path, ADAPTER, 'StartDiscovery')
+        self.scan = path
+        break
     for _ in range(10):
       objects = await self.objects()
       matches = [p for p, i in objects.items() if DEVICE in i and props(i[DEVICE]).get('Address', '').upper() == self.address]
@@ -531,11 +469,6 @@ class Link:
       await asyncio.sleep(1)
     if self.device is None:
       raise ValueError('device unavailable')
-    # Stop our scan lease before connecting/transferring, not after service
-    # resolution. Other Bluetooth clients' discovery sessions are untouched.
-    if self.scan:
-      await self.call(self.scan, ADAPTER, 'StopDiscovery')
-      self.scan = None
     await self.call(self.device, DEVICE, 'Connect', timeout=15)
     for _ in range(10):
       objects = await self.objects()
@@ -545,8 +478,15 @@ class Link:
       await asyncio.sleep(1)
     else:
       raise ValueError('services unavailable')
-    chars, routes = self.uart_routes(objects)
-    if not routes:
+    if self.scan:
+      await self.call(self.scan, ADAPTER, 'StopDiscovery')
+      self.scan = None
+    services = {p for p, i in objects.items() if p.startswith(self.device + '/') and
+                props(i.get('org.bluez.GattService1', {})).get('UUID') == SERVICE}
+    chars = [(p, props(i[GATT])) for p, i in objects.items() if p.startswith(self.device + '/') and GATT in i]
+    matches = [p for p, v in chars if v.get('UUID') == UART and v.get('Service') in services
+               and {'write', 'notify'} <= set(v.get('Flags', []))]
+    if len(matches) != 1:
       raise ValueError('unsupported GATT')
     # Device information checks reduce accidental wrong-device selection; a BLE
     # address or these strings are not cryptographic authentication.
@@ -554,7 +494,7 @@ class Link:
       paths = [p for p, v in chars if v.get('UUID') == f'0000{uuid}-0000-1000-8000-00805f9b34fb']
       if len(paths) != 1 or bytes((await self.call(paths[0], GATT, 'ReadValue', 'a{sv}', ({},)))[0]).rstrip(b'\0') != expected:
         raise ValueError('device identity')
-    self.route, self.uart, self.write_uart, self.write_type = routes[self.route_preference % len(routes)]
+    self.uart = matches[0]
     owner = (await self.call('/org/freedesktop/DBus', 'org.freedesktop.DBus', 'GetNameOwner', 's', ('org.bluez',),
                              bus='org.freedesktop.DBus'))[0]
     rule = MatchRule(type='signal', sender=owner, path=self.uart,
@@ -563,12 +503,6 @@ class Link:
                     bus='org.freedesktop.DBus')
     self.filter = self.router.filter(rule, queue=self.queue)
     self.filter.__enter__()
-    device_rule = MatchRule(type='signal', sender=owner, path=self.device,
-                           interface='org.freedesktop.DBus.Properties', member='PropertiesChanged')
-    await self.call('/org/freedesktop/DBus', 'org.freedesktop.DBus', 'AddMatch', 's', (device_rule.serialise(),),
-                    bus='org.freedesktop.DBus')
-    self.device_filter = self.router.filter(device_rule, queue=self.queue)
-    self.device_filter.__enter__()
     await self.call(self.uart, GATT, 'StartNotify')
     self.notifying = True
     # Require a distinct adapter identity reply before configuring a new
@@ -585,56 +519,25 @@ class Link:
   async def command(self, command):
     if command not in COMMANDS:
       raise ValueError('command not allowed')
-    if self.command_active:
-      raise QueryError('overlapping_command')
-    self.command_active = True
-    try:
-      return await self.transaction(command)
-    finally:
-      self.command_active = False
-
-  def consume_padding(self):
-    if self.queue.disconnected:
-      raise QueryError('ble_disconnected')
-    if self.queue.overflow:
-      raise QueryError('notification overflow')
-    for _ in range(32):
-      if self.queue.empty():
-        return
-      message = self.queue.get_nowait()
-      value = bytes(message.body[1].get('Value', ('ay', b''))[1])
-      # Delayed CR/LF padding is not a late response. Any non-padding payload
-      # is still fatal; never discard CAN data to make the next request fit.
-      if value.strip(b' \t\r\n'):
-        raise QueryError('unsolicited ELM data')
-      self.padding_chunks = min(65535, self.padding_chunks + 1)
-    if not self.queue.empty():
-      raise QueryError('notification overflow')
-
-  async def transaction(self, command):
     delay = max(0., self.next_request - time.monotonic())
     if delay:
       await asyncio.sleep(delay)
-    self.consume_padding()
+    if self.queue.overflow or not self.queue.empty():
+      raise QueryError('unsolicited ELM data')
     started = time.monotonic()
+    deadline = started + 3
     try:
-      await self.call(self.write_uart or self.uart, GATT, 'WriteValue', 'aya{sv}',
-                      ((command + '\r').encode(), {'type': ('s', self.write_type)}), timeout=2)
+      await self.call(self.uart, GATT, 'WriteValue', 'aya{sv}', ((command + '\r').encode(), {'type': ('s', 'request')}), timeout=2)
     except TimeoutError:
       raise QueryError('gatt_write_timeout') from None
     except Exception:
       raise QueryError('gatt_write_failed') from None
-    # ATT write acknowledgement must not consume the ECU response budget.
-    # A write-without-response route still waits for the ELM terminal prompt.
-    deadline = time.monotonic() + self.response_timeout
     buffer = bytearray()
     for _ in range(64):
       try:
         message = await asyncio.wait_for(self.queue.get(), max(0, deadline - time.monotonic()))
       except TimeoutError:
         raise QueryError('elm_prompt_timeout') from None
-      if self.queue.disconnected:
-        raise QueryError('ble_disconnected')
       if self.queue.overflow:
         raise QueryError('notification overflow')
       interface, changed, _invalidated = message.body
@@ -645,13 +548,11 @@ class Link:
         raise QueryError('ELM overflow')
       buffer.extend(value)
       if b'>' in buffer:
-        end = buffer.index(b'>')
-        if buffer.count(b'>') != 1 or buffer[end+1:].strip(b' \r\n\t'):
+        if buffer.count(b'>') != 1 or not buffer.endswith(b'>'):
           raise QueryError('ELM trailing data')
-        reply = bytes(buffer[:end+1])
+        reply = bytes(buffer)
         finished = time.monotonic()
         self.last_latency_ms = round((finished - started) * 1000., 1)
-        self.response_timeout = max(3., min(6., max((finished - started) * 2., self.response_timeout * .9)))
         target = max(REQUEST_GAP_MIN, min(REQUEST_GAP_MAX, (finished - started) * .25))
         self.request_gap = min(REQUEST_GAP_MAX, max(target, self.request_gap * .9))
         if command in REPLIES and no_data(reply):
@@ -666,8 +567,6 @@ class Link:
         await self.call(self.uart, GATT, 'StopNotify', timeout=0.5)
     if self.filter:
       self.filter.__exit__(None, None, None)
-    if self.device_filter:
-      self.device_filter.__exit__(None, None, None)
     if self.scan:
       with suppress(Exception):
         await self.call(self.scan, ADAPTER, 'StopDiscovery', timeout=0.5)
@@ -679,7 +578,6 @@ class Link:
 
 async def run():
   from jeepney.io.asyncio import open_dbus_router
-  preference, failures, reply_budget = 0, 0, 3.
   while True:
     link = poller = None
     try:
@@ -691,7 +589,6 @@ async def run():
       async with asyncio.timeout(ATTEMPT_TIMEOUT) as startup_timeout:
         async with open_dbus_router('SYSTEM') as router:
           link = Link(router, address)
-          link.route_preference, link.force_scan, link.response_timeout = preference, failures > 0, reply_budget
           try:
             await link.connect()
             poller = MetricPoller()
@@ -730,11 +627,6 @@ async def run():
     except Exception as exc:
       # No credentials, raw frames, or unbounded exception/log loop.
       code = exc.code if isinstance(exc, QueryError) else 'timeout' if isinstance(exc, TimeoutError) else 'response_or_setup_failed'
-      failures = min(65535, failures + 1)
-      if code in ('gatt_write_failed', 'gatt_write_timeout', 'elm_prompt_timeout', 'ble_disconnected', 'response_or_setup_failed'):
-        preference = (preference + 1) % 2
-      if code == 'elm_prompt_timeout':
-        reply_budget = min(6., reply_budget * 2.)
       write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {'failure': code})
       # Five seconds after failure/cleanup, never overlapping attempts.
       await asyncio.sleep(RETRY_INTERVAL)
@@ -745,11 +637,7 @@ def collection_info(link, poller):
           'no_data_count': getattr(poller, 'no_data_count', 0),
           'no_data_request': getattr(poller, 'last_no_data_command', None),
           'request_gap_ms': round(getattr(link, 'request_gap', REQUEST_GAP_MIN) * 1000., 1),
-          'response_ms': getattr(link, 'last_latency_ms', 0.),
-          'ecu_rejections': getattr(poller, 'ecu_rejections', 0),
-          'ble_route': getattr(link, 'route', 'unknown'),
-          'padding_chunks': getattr(link, 'padding_chunks', 0),
-          'reply_timeout_s': getattr(link, 'response_timeout', 3.)}
+          'response_ms': getattr(link, 'last_latency_ms', 0.)}
 
 
 def vehicle_monitor():

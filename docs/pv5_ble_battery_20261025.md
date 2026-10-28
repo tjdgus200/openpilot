@@ -1,6 +1,8 @@
 # PV5 battery display through a dedicated BLE adapter
 
-> Current transport: [2026-10-28 BLE stream/session update](pv5_obd_stream_20261028.md).
+> Current transport: the owner requested restoration of the response-driven
+> optimized collector from `e387b811` after reporting increased instability.
+> See [the rollback record](pv5_obd_stream_20261028.md#rollback-to-the-optimized-collector).
 
 > Updated 2026-10-27: retry limits, polling cadence, temperature history and thermal-mode output below are historical. Current behavior and remaining mapping limits are documented in [the OBD/HUD follow-up](pv5_obd_followup_20261027.md).
 

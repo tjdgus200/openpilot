@@ -1,5 +1,9 @@
 # PV5 BLE OBD stream and session changes
 
+> Historical, withdrawn: the stream/session changes below are no longer active.
+> The owner requested restoration of the previous optimized collector after
+> reporting more frequent connection loss. See the rollback record below.
+
 The owner reports that phone Car Scanner remains connected while the comma
 reader reconnects frequently. There is no new time-aligned BlueZ/HCI capture,
 so a radio/driver failure or the dominant real-world cause is not established.
@@ -69,3 +73,33 @@ References: [Car Scanner connection guidance](https://www.carscanner.info/blueto
 [Car Scanner polling guidance](https://www.carscanner.info/optimizing-connection-speed/),
 [ELM327 datasheet, communication/adaptive timing](https://www.elmelectronics.com/wp-content/uploads/2016/07/ELM327DS.pdf),
 [BlueZ GATT write/notification API](https://bluez.readthedocs.io/en/latest/gatt-api/).
+
+## Rollback to the optimized collector
+
+On2026-10-28 the owner reported worse physical connection stability after the
+scanner-style update and asked to return to the optimized version. Restore
+`openpilot/selfdrive/carrot/obd_battery.py` byte-for-byte to the pre-change
+implementation, whose latest collector change is `e387b811`. The restore
+includes the original single vendor UART with GATT request writes, original
+ELM setup and response timeout, discovery and reconnect behavior. Remove the
+scanner-style dual-UART preference/fallback and its implementation-specific
+tests; do not mix selected parts of that experiment into the restored policy.
+
+Retain the optimized one-request/one-response priority scheduler, adaptive
+50–500ms quiet interval, NO DATA per-DID backoff, five-second unlimited retries,
+allowlisted enrolled target, confirmed fields,108 voltage channels, field ages,
+power5s/other60s retention and fresh-P cell gates. No configuration/key reset,
+pairing change or Bluetooth-service restart is involved. HUD Q92, saved onroad
+FPS, model/USB scheduling and the selected Jetson package are unchanged.
+
+The observed instability is a user report, not a time-aligned HCI diagnosis.
+Neither the cause nor post-rollback physical reliability is established by PC
+tests. The collector runs on comma; the unchanged HUD wire contract remains
+compatible with the current Jetson package, so this rollback needs only a
+comma software update and normal parked reboot.
+
+The restored collector's Git blob is identical to `e387b811`:
+`2b7542efc366bfe97f61635d37fe3284381e3f9d`. Existing transport, priority,
+retry, retention, cell admission, badge, battery HUD and latest FPS regressions
+pass274 PC tests. Ruff and diff checks pass. No physical device was changed
+or tested by this rollback task.
