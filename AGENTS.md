@@ -1,15 +1,16 @@
 # Repository memory
 
-- 2026-10-28 BLE reconnect: keep the restored e387b811 UART/AT/framing/discovery
-  path. After a validated positive response, a target whose Connected property
-  is explicitly false after cleanup may retry after1s,2s,then5s indefinitely.
-  Cold start/unknown release stay5s. Only30s of valid reception with <=3s gaps
-  rearms the two short retries; connect success/NO DATA alone cannot rearm them.
-  Keep old target/router cleanup before new attempts,2s cleanup bound, request
-  serialization, all TTL/P/enrollment gates and no BlueZ restart or pairing
-  changes. Bounded diagnostic delay/proof fields only.363 Windows PC checks
-  pass; actual RF cause/recovery, CPU and road performance remain unmeasured.
-  Comma-only update; selected Jetson package c86bf069 remains current.
+- 2026-10-28 BLE reconnect owner update supersedes1/2/5s and30s rearming:
+  unlimited sequential attempts,100ms async wait after completed/verified
+  teardown. Require Disconnect success or BlueZ NotConnected plus explicit
+  Connected=false; unknown/timeouts keep5s. Completed pre-Connect discovery
+  failures qualify too. No RSSI disconnect threshold; weak responsive sessions
+  stay connected. Keep e387b811 UART/AT/framing/discovery,2s cleanup bound,
+  old router exit, serialized requests, all TTL/P/enrollment and no BlueZ
+  restart/pairing changes.372 Windows PC checks pass, including teardown
+  faults/ordering and simulated -120dBm; real RF/CPU/recovery/road performance
+  unmeasured.100ms is post-cleanup wait, not total recovery. Comma-only;
+  selected Jetson package c86bf069 remains current.
 
 - Delivery2026-10-28: USB recovery9740676b, stationary battery8 3b7eba12.
   Public prerelease jetson-pv5-recovery-stop-20261028-3b7eba12,65031610bytes,

@@ -24,7 +24,8 @@ GATT = 'org.bluez.GattCharacteristic1'
 ADAPTER = 'org.bluez.Adapter1'
 PERIOD = 1.0
 POWER_PERIOD = 0.5
-RETRY_INTERVAL = 5.0
+RETRY_INTERVAL = 0.1
+CLEANUP_RETRY_INTERVAL = 5.0
 ATTEMPT_TIMEOUT = 60.0
 REQUEST_GAP_MIN = 0.05
 REQUEST_GAP_MAX = 0.5
@@ -51,37 +52,10 @@ class QueryError(ValueError):
     super().__init__(code)
 
 
-class ReconnectDelay:
-  """Bounded fast recovery for a previously responsive, fully released target."""
-  def __init__(self):
-    self.identity = self.healthy_since = self.last_received = None
-    self.qualified, self.failures = False, 0
-
-  def select(self, identity):
-    if identity != self.identity:
-      self.identity, self.healthy_since, self.last_received = identity, None, None
-      self.qualified, self.failures = False, 0
-
-  def received(self, now):
-    if not finite_number(now):
-      return
-    self.qualified = True
-    if self.last_received is None or not 0 <= now - self.last_received <= 3.:
-      self.healthy_since = now
-    self.last_received = now
-    if now - self.healthy_since >= 30.:
-      self.failures = 0
-
-  def failed(self, cleanup_complete):
-    self.healthy_since = self.last_received = None
-    if not self.qualified:
-      return RETRY_INTERVAL
-    if cleanup_complete is not True:
-      self.failures = 2  # Uncertain teardown does not qualify for short retries.
-      return RETRY_INTERVAL
-    delay = (1., 2., RETRY_INTERVAL)[self.failures]
-    self.failures = min(2, self.failures + 1)
-    return delay
+def reconnect_delay(cleanup_complete):
+  # No attempt cap, stability timer, or RSSI threshold. Never overlap an old
+  # unconfirmed connection attempt just to achieve a short retry interval.
+  return RETRY_INTERVAL if cleanup_complete is True else CLEANUP_RETRY_INTERVAL
 
 
 def no_data(reply):
@@ -470,6 +444,7 @@ class Link:
     self.queue = NotificationQueue()
     self.filter = None
     self.notifying = False
+    self.connect_started = False
     self.request_gap = REQUEST_GAP_MIN
     self.next_request = 0.
     self.last_latency_ms = 0.
@@ -502,6 +477,7 @@ class Link:
       await asyncio.sleep(1)
     if self.device is None:
       raise ValueError('device unavailable')
+    self.connect_started = True
     await self.call(self.device, DEVICE, 'Connect', timeout=15)
     for _ in range(10):
       objects = await self.objects()
@@ -605,14 +581,18 @@ class Link:
         await self.call(self.scan, ADAPTER, 'StopDiscovery', timeout=0.5)
     # Only our dedicated OBD target, never other Bluetooth devices or BlueZ.
     if self.device:
-      with suppress(Exception):
+      disconnected = False
+      try:
         await self.call(self.device, DEVICE, 'Disconnect', timeout=0.5)
+        disconnected = True
+      except Exception as exc:
+        disconnected = getattr(exc, 'name', None) == 'org.bluez.Error.NotConnected'
       # Disconnect may report NotConnected after a radio loss. Verify the
       # actual target property rather than treating the exception as proof.
       try:
         value = (await self.call(self.device, 'org.freedesktop.DBus.Properties', 'Get', 'ss',
                                  (DEVICE, 'Connected'), timeout=0.5))[0]
-        return value == ('b', False) and type(value[1]) is bool
+        return disconnected and value == ('b', False) and type(value[1]) is bool
       except Exception:
         pass
     return False
@@ -620,14 +600,12 @@ class Link:
 
 async def run():
   from jeepney.io.asyncio import open_dbus_router
-  retries = ReconnectDelay()
   while True:
     link = poller = None
     identity, cleanup_complete = None, False
     try:
       address, confirmed = configuration(read_json(CONFIG))
       identity = config_id((address, confirmed))
-      retries.select(identity)
       write_snapshot('connecting', identity=identity)
       # Each attempt is bounded, but failures never exhaust the onroad retry
       # allowance. Manager still stops this display-only reader offroad.
@@ -649,8 +627,6 @@ async def run():
                 raise ValueError('configuration changed')
               write_snapshot('receiving' if candidates else 'waiting_data', candidates, fields, identity=source_id,
                              observed_at=observed_at, field_times=field_times, diagnostics=collection_info(transport, reader))
-              if getattr(reader, 'last_result', None) == 'ok':
-                retries.received(time.monotonic())
               # Even a complete NO DATA prompt proves that this ELM session is
               # responsive; it does not make an absent battery field valid.
               timeout.reschedule(None)
@@ -669,14 +645,15 @@ async def run():
             # up this target; no further connection or polling starts here.
             with suppress(TimeoutError):
               cleanup_complete = await asyncio.wait_for(link.close(), 2.0) is True
+              # Discovery can fail before any Connect was issued; such a
+              # completed attempt owns no radio connection to release.
+              cleanup_complete |= getattr(link, 'connect_started', True) is False
     except asyncio.CancelledError:
       raise
     except Exception as exc:
       # No credentials, raw frames, or unbounded exception/log loop.
       code = exc.code if isinstance(exc, QueryError) else 'timeout' if isinstance(exc, TimeoutError) else 'response_or_setup_failed'
-      if identity is None:
-        retries.select(None)
-      delay = retries.failed(cleanup_complete)
+      delay = reconnect_delay(cleanup_complete)
       write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {
         'failure': code, 'retry_delay_s': delay, 'cleanup_verified': cleanup_complete})
       # Previous target/router cleanup always finishes before a new attempt.

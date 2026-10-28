@@ -342,7 +342,7 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
       self.closed = False
       sessions.append(self)
     async def connect(self):
-      pass
+      self.connect_started = True
     async def command(self, command):
       if self.index == 0:
         raise TimeoutError('synthetic partial response')

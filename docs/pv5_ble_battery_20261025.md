@@ -4,27 +4,35 @@
 > optimized collector from `e387b811` after reporting increased instability.
 > See [the rollback record](pv5_obd_stream_20261028.md#rollback-to-the-optimized-collector).
 
-## 2026-10-28: bounded fast reconnection
+## 2026-10-28: unlimited sequential reconnection
 
 The restored UART, AT setup, prompt framing and discovery path stay unchanged.
-After a validated battery response, completed cleanup can qualify the next
-reconnect delays for 1s, 2s, then 5s indefinitely. These are delays before the
-next attempt, not end-to-end radio recovery times. Initial startup and cleanup
-whose release cannot be confirmed retain the 5s interval.
+After a completed attempt and verified target release, wait 100ms before the
+next attempt, with no attempt limit. This includes initial connection failures;
+no prior battery reply or 30s rearming period is required. The 100ms is an async
+wait after cleanup, not a busy loop, fixed attempt-start cadence or end-to-end
+radio recovery time. Detection, discovery, connection and setup take additional
+time. Cleanup whose release cannot be confirmed retains the 5s interval.
 
-Cleanup reads `org.bluez.Device1.Connected` for the enrolled target and requires
-an explicit boolean false for the short delays. A failed `Disconnect` call
-alone proves neither connection nor release. The old router exits before the
-next attempt. See the [BlueZ Device API](https://github.com/bluez/bluez/blob/master/doc/org.bluez.Device.rst).
+Cleanup requires a completed `Disconnect` call (or the specific BlueZ
+`NotConnected` result), followed by an explicit boolean false from the enrolled
+target's `org.bluez.Device1.Connected` property. An unknown failure or timeout
+cannot qualify for the short delay merely because the property is false. A
+completed discovery attempt that never issued `Connect` also qualifies. The old
+router exits before the next attempt, and cleanup retains its 2s bound. See the
+[BlueZ Device API](https://github.com/bluez/bluez/blob/master/doc/org.bluez.Device.rst).
 
-Repeated brief reconnects do not continually reset the fast-retry budget.
-Rearming requires 30s of validated positive responses with no gap over 3s.
-`NO DATA` alone cannot qualify it. This adds a few scalar state values, no
-history buffer, parallel queries, alternate adapter route or Bluetooth restart.
-Existing enrollment, per-field expiry and Park restrictions remain in place.
-The `collection` diagnostic reports only the chosen delay and whether cleanup
-was verified. 363 PC checks pass; RF disconnection cause, physical recovery
-time, CPU load and vehicle behavior have not been measured.
+The collector has no RSSI-based disconnect threshold. A weak but responsive
+session remains connected; prompt deadlines, malformed/overflow protection and
+per-field expiry remain active. This does not prevent actual radio link loss.
+There is one outstanding request and one connection attempt, with no retry
+history buffer, parallel route, Bluetooth restart or pairing change. Existing
+enrollment and Park restrictions remain in place. The `collection` diagnostic
+reports the chosen delay and whether cleanup was verified. 372 PC checks pass,
+including repeated cold/flapping failures, unknown/timeout teardown, cleanup
+ordering and responsive -120dBm input. These are synthetic D-Bus tests, not
+RF measurements. Physical recovery time, additional CPU load and vehicle
+behavior have not been measured.
 
 > Updated 2026-10-27: retry limits, polling cadence, temperature history and thermal-mode output below are historical. Current behavior and remaining mapping limits are documented in [the OBD/HUD follow-up](pv5_obd_followup_20261027.md).
 
