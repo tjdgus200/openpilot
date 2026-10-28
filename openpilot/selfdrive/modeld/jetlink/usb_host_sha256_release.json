@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-hud-onroad-q92-20261028-34aec0aa",
-  "source_commit": "34aec0aa41aeb6d92e68fabe72405cf806decea0",
+  "profile": "pv5-recovery-stop-20261028-3b7eba12",
+  "source_commit": "3b7eba12fe950363444a8604a582224f35be0091",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-onroad-q92-20261028-34aec0aa/host.tar.gz",
-    "sha256": "f40953a620938cab5db88b0dceca64e3a8301291109a1b0959d7462e973f8acf",
-    "size": 65032538
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-recovery-stop-20261028-3b7eba12/host.tar.gz",
+    "sha256": "b51c78a60a1b6f4e95df91289c5fd7e21df631f9ae2fa73de655b02dd2347678",
+    "size": 65031610
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

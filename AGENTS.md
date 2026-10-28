@@ -1,5 +1,13 @@
 # Repository memory
 
+- Delivery2026-10-28: USB recovery9740676b, stationary battery8 3b7eba12.
+  Public prerelease jetson-pv5-recovery-stop-20261028-3b7eba12,65031610bytes,
+  SHA b51c78a60a1b6f4e95df91289c5fd7e21df631f9ae2fa73de655b02dd2347678.
+  Four anonymous assets/exported fresh telemetry/optional-import isolation,
+  stationary timer/overlays/native cast/direct map/N16 defaults pass. Selected
+  package update/boot/rollback regressions79pass. Linux567 and Windows346
+  earlier checks are PC-only; no physical install/recovery/P99/road result.
+
 - 2026-10-28 battery8 layout: preserve immediate fresh P view; any other gear
   also selects details after exactly-zero speed is observed continuously for1s.
   Two timestamps on Jetson only; motion, invalid/stale data, >300ms render gaps,
