@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from host_health import STATUS
 from openpilot.common.jetlink_status import _fresh
-from cluster_battery import remote_panel, charging_view
+from cluster_battery import remote_panel, StationaryBatteryView
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
                               WIFI_STATUS_CENTER_X, WIFI_STATUS_ICON_SIZE, TOP_CLOCK_CENTER_X, TOP_STATUS_CENTER_Y,
@@ -180,10 +180,12 @@ class HealthRenderer(ClusterUiRenderer):
     self.host_badge_drawn = False
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
       state = replace(state, battery=remote_panel(snapshot, time.monotonic()))
-    self._charging_dashboard_active = (
-      getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY
-      and charging_view(state.battery, state.gear_text, state.speed_kph,
-                        self._vehicle_data_current and vehicle_motion_fresh(snapshot, now)))
+    if not hasattr(self, '_battery_view'):
+      self._battery_view = StationaryBatteryView()
+    battery_screen = getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY
+    self._charging_dashboard_active = self._battery_view.update(
+      getattr(state, 'battery', None), getattr(state, 'gear_text', ''), getattr(state, 'speed_kph', None),
+      battery_screen and self._vehicle_data_current and vehicle_motion_fresh(snapshot, now), now)
     super().render(state, signal_lights)
 
   def _draw_speed_block(self, state, *, tpms_offset_x=0.):

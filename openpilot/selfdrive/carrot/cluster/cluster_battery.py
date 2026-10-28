@@ -151,11 +151,32 @@ def heat_color(value, reference, name):
     return colors[-1]
 
 
-def charging_view(data, gear, speed, fresh_vehicle):
-    # The same detail view is available in P without charging. Empty/expired
-    # battery fields stay unavailable; only fresh vehicle state selects the view.
-    return (fresh_vehicle is True and gear == 'P' and finite_number(speed) and 0 <= speed <= 0.1
-            and isinstance(data, BatteryPanelData))
+def charging_view(data, gear, speed, fresh_vehicle, stopped_for_s=0.0):
+    # Preserve the existing P view; other gears require an observed full second
+    # at exactly zero. This selects a layout, never authorizes extra OBD reads.
+    return (fresh_vehicle is True and finite_number(speed) and isinstance(data, BatteryPanelData)
+            and ((gear == 'P' and 0 <= speed <= 0.1)
+                 or (speed == 0 and finite_number(stopped_for_s) and stopped_for_s >= 1.0)))
+
+
+class StationaryBatteryView:
+    """Two timestamps, no history buffer; gaps/invalid motion cancel the dwell."""
+    def __init__(self):
+        self.since = self.last = None
+
+    def update(self, data, gear, speed, fresh_vehicle, now):
+        if not finite_number(now):
+            self.since = self.last = None
+            return False
+        stationary = fresh_vehicle is True and finite_number(speed) and speed == 0
+        if not stationary:
+            self.since = self.last = None
+        else:
+            if self.last is None or not 0 <= now - self.last <= 0.3:
+                self.since = now
+            self.last = now
+        elapsed = now - self.since if self.since is not None else 0.0
+        return charging_view(data, gear, speed, fresh_vehicle, elapsed)
 
 
 def panel_labels(data, language='en'):

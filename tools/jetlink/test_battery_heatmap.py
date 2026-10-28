@@ -298,7 +298,7 @@ def test_cell_gate_refreshes_after_slow_ble_reads_without_relaxing_vehicle_age(m
 
 
 @pytest.mark.parametrize('mode,title', [('dc', 'DC CHARGING'), ('ac', 'AC CHARGING'),
-                                       ('off', 'PARKED BATTERY OVERVIEW'), (None, 'PARKED BATTERY OVERVIEW')])
+                                       ('off', 'STATIONARY BATTERY OVERVIEW'), (None, 'STATIONARY BATTERY OVERVIEW')])
 def test_charging_layout_draws_108_voltage_15_temperature_slots_without_world(monkeypatch, mode, title):
   import cluster_renderer as r
   from cluster_live import standby_state

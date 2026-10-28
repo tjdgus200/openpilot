@@ -1,5 +1,14 @@
 # Repository memory
 
+- 2026-10-28 battery8 layout: preserve immediate fresh P view; any other gear
+  also selects details after exactly-zero speed is observed continuously for1s.
+  Two timestamps on Jetson only; motion, invalid/stale data, >300ms render gaps,
+  clock regression or leaving battery8 cancel the dwell. Keep underlying OBD
+  scans and USB updates gated by fresh P/zero, plus all per-field expiry, BSD,
+  W/temp and Q92/FPS policies. Title is stationary rather than P-specific.
+  Paired USB/display checks567 Linux and346 Windows pass; PC-only, no device
+  installation or physical latency/road-safety claim. Paired host package needed.
+
 - 2026-10-28 USB cleanup recovery: owner photo showed blocked state followed
   later by only the main daemon thread. Recheck explicit ownership proofs every
   5s without an attempt cap; keep status fresh every1s. Retain original reader,
