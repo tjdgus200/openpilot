@@ -13,8 +13,8 @@ codec choices remain private bench tools; they are removed from Carrot Web.
   No queue, additional worker, Wi-Fi path or asynchronous inference USB writer
   is added. Existing camera-preview sampling and model inference stay unchanged;
   increasing HUD rate does not create new model/camera observations.
-- Fresh stationary Park permits an onroad increase. Lowering to10fps is always
-  possible. The admitted index is forwarded to the host. An older USB host
+- The saved selection applies onroad at startup, reconnect and preference
+  changes, without waiting for Park. The selected index is forwarded to the host. An older USB host
   without `carrot_hud_fps_v1` continues receiving10fps snapshots.
 - Existing GPU-execution windows carry snapshots as before. To exceed the20Hz
   model cadence, the same USB owner also checks for the latest snapshot while
@@ -96,3 +96,28 @@ pass:147 PC tests total, plus Ruff and diff checks. This is a comma-only fix;
 the already selected Q92/FPS Jetson package and its wire contract are unchanged.
 Actual installed version, radio/USB behavior, panel frame rate and inference
 P99 still require a matching device test.
+
+## 2026-10-28: saved settings onroad
+
+The owner subsequently requests the saved JPEG/FPS preferences onroad too.
+This supersedes the earlier display-only Park admission policy, including the
+historical clock-order regression above. Comma production always forwards its
+saved FPS selection when the peer supports it; Jetson production starts/reopens
+Q92 at that rate, even in Drive. An initial absent snapshot can temporarily use
+10fps, then the fresh saved preference takes effect without a vehicle-state gate.
+Malformed setting values and unnegotiated old peers still use10fps.
+
+Only HUD resources reopen. No new thread, queue or vehicle subscription is
+added; the redundant rate-watch carState decoder is removed. The model IPC
+read/deadline, single USB owner, model-first idle budget, stalled-write backoff
+and snapshot expiry remain. Vehicle data validity/ages are forwarded unchanged;
+this does not make missing/stale observations valid. Battery cell scans and
+USB package installation retain their separate fresh-P/zero permission checks.
+Q92 encoder failures still visibly recover to H26410fps. A corresponding new
+Jetson package is needed to remove the old host-side Park wait.
+
+PC validation for this policy:203 Linux checks pass with one native FFmpeg
+skip;156 Windows checks pass with48 platform-only skips;25 Wiki generator
+tests and three staged localized setting explanations pass. All five saved
+rates survive producer restart in onroad Drive and select Q92 host output
+arguments. Physical frame rate and inference impact remain unmeasured.

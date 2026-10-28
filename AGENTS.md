@@ -1,5 +1,13 @@
 # Repository memory
 
+- 2026-10-28 owner supersedes display-FPS Park admission: use saved Q92/FPS
+  onroad at startup/reconnect and on change, including Drive. Comma forwards
+  normalized selection; host reopens only HUD resources. Remove the redundant
+  host rate-watch carState decoder. Do not remove separate fresh-P/zero gates
+  for cell scans or USB package updates, alter vehicle-data freshness, model
+  IPC/deadlines, one USB owner, idle budget/backoff or Q92 failure fallback.
+  Old hosts still need the new package; malformed settings/legacy peers stay10.
+
 - 2026-10-28 FPS admission fix: SnapshotBuilder used a pre-SubMaster.update
   clock against receive timestamps recorded during update. Fresh onroad Park
   looked future-dated;15/20/25/30 stayed10, and a just-stale sample could pass.

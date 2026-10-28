@@ -233,15 +233,13 @@ class TestNativeH264:
 
 
 class TestProfileGate:
-  def test_profile_watcher_exits_only_for_an_allowed_new_choice(self):
+  def test_profile_watcher_exits_for_new_fps_even_onroad(self):
     source = quality.ROOT / 'tools/jetlink/hud.py'
     selected, allowed = [3], [False]
     namespace = {'selection': __import__('hud_rate').selection, 'PARAM': 'JetsonHudFps', 'override': None,
                  'requested': 0, 'settings': NS(get_int=lambda _: selected[0]),
                  'profile_allowed': lambda _: allowed[0]}
     watcher = extract_class(source, 'QualityWatch', namespace)()
-    assert watcher.read() == 0
-    allowed[0] = True
     assert watcher.read() == 1
     namespace['requested'] = 3
     assert watcher.read() == 0
@@ -289,39 +287,13 @@ class TestProfileGate:
     assert len(entered) == len(closed) == 2
     assert runtime.QUALITY_STATUS == {}
 
-  def test_new_onroad_candidates_wait_for_fresh_park_and_zero_speed(self, monkeypatch):
+  def test_fps_watcher_does_not_poll_vehicle_or_write_model_settings(self):
     source = quality.ROOT / 'tools/jetlink/hud.py'
     tree = ast.parse(source.read_text(encoding='utf-8'))
-    method = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'profile_allowed')
-    state = NS(gearShifter='park', vEgo=0.0)
-
-    class Vehicle:
-      def update(self, _):
-        pass
-
-      def __getitem__(self, _):
-        return state
-
-    fresh = [True]
-    namespace = {
-      'settings': NS(get_bool=lambda _: True),
-      'override': None,
-      'read_snapshot': lambda: object(),
-      'time': NS(monotonic=lambda: 10.0),
-      'quality_vehicle': Vehicle(),
-    }
-    exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), 'exec'), namespace)
-    monkeypatch.setitem(sys.modules, 'hud_health', NS(vehicle_motion_fresh=lambda *_: fresh[0]))
-    allowed = namespace['profile_allowed']
-    assert allowed(5)
-    state.gearShifter = 'drive'
-    assert not allowed(5)
-    assert allowed(0)
-    state.gearShifter, state.vEgo = ('park', 0.01)
-    assert not allowed(5)
-    state.vEgo = 0.0
-    fresh[0] = False
-    assert not allowed(5)
+    watcher = next(n for n in ast.walk(tree) if isinstance(n,ast.ClassDef) and n.name=='QualityWatch')
+    calls=[n for n in ast.walk(watcher) if isinstance(n,ast.Call)]
+    assert {n.func.attr for n in calls if isinstance(n.func,ast.Attribute)} == {'get_int'}
+    assert not any(isinstance(n,ast.Name) and n.id=='quality_vehicle' for n in ast.walk(tree))
 
   def test_bundled_library_hash_and_arm64_elf(self):
     from hud_cpu_jpeg import LIBRARY, LIBRARY_SHA256

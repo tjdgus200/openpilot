@@ -211,15 +211,10 @@ class SnapshotBuilder:
         self.requested_fps = RATES[selection(base64.b64decode(self.settings.get(FPS_PARAM, 'MA==')))]
       except (ValueError, TypeError):
         self.requested_fps = 10
-    fps = getattr(self, 'requested_fps', 10) if getattr(self, 'rate_control', False) else 10
-    current = getattr(self, 'target_fps', 10)
-    # SubMaster timestamps arrivals inside update(), after the cadence clock
-    # above. Check age after sampling/Params reads: a pre-update clock rejects
-    # fresh Park as future-dated and can admit data just beyond the 300ms limit.
-    if fps == 10 or fps == current or self.rate_increase_allowed(time.monotonic()):
-      self.target_fps = fps
-    # Forward the admitted rate, so a pending onroad increase cannot silently
-    # increase host rendering before the comma publisher's fresh-P check.
+    # Display cadence follows the saved selection onroad too, including
+    # startup/reconnect in Drive. It does not require or validate vehicle data;
+    # the USB owner's model-first idle budget still limits actual transmissions.
+    self.target_fps = getattr(self, 'requested_fps', 10) if getattr(self, 'rate_control', False) else 10
     self.settings[FPS_PARAM] = base64.b64encode(str(RATES.index(self.target_fps)).encode()).decode()
     period = 1. / self.target_fps
     self.next_send = now + period
@@ -248,15 +243,6 @@ class SnapshotBuilder:
     # look future-dated, and slow optional work still counts toward their age.
     record['sent'] = time.monotonic()
     return encode_snapshot(record)
-
-  def rate_increase_allowed(self, now):
-    if self.settings.get('IsOnroad') == 'MA==':
-      return True
-    car = self.sm['carState']
-    return (self.sm.valid['carState'] and self.sm.alive['carState']
-            and 0 <= now - self.sm.recv_time['carState'] <= .3
-            and str(car.gearShifter) == 'park' and car.vEgo == 0.)
-
 
 def encode_snapshot(record):
   data = json.dumps(record, separators=(',', ':')).encode()

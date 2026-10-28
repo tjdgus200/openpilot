@@ -85,25 +85,37 @@ def test_web_request_crosses_real_receive_clock_and_reaches_host(tmp_path,monkey
 
 @pytest.mark.parametrize('field,value', [('gear','drive'),('speed',.01),('age',.301),
                                        ('age',-.001),('valid',False),('alive',False)])
-def test_fresh_park_gate_remains_closed_for_motion_stale_future_or_invalid_data(monkeypatch,field,value):
+def test_display_preference_does_not_reclassify_motion_or_invalid_vehicle_data(monkeypatch,field,value):
   builder,_,selected,state=builder_at_realistic_receive_time(monkeypatch)
   selected[0]=4
   setattr(state,field,value)
   packet=json.loads(builder.packet())
-  assert packet['params'][PARAM] == 'MA=='
-  assert builder.target_fps == 10
+  assert packet['params'][PARAM] == 'NA=='
+  assert builder.target_fps == 30
+  assert packet['valid']['carState'] == state.valid
+  assert packet['alive']['carState'] == state.alive
+  assert packet['received']['carState'] == builder.sm.recv_time['carState']
 
 
-def test_live_selection_is_rechecked_when_drive_changes_to_park(monkeypatch):
+def test_saved_selection_applies_onroad_in_drive_and_returns_to_ten(monkeypatch):
   builder,clock,selected,state=builder_at_realistic_receive_time(monkeypatch)
   selected[0],state.gear=4,'drive'
-  assert json.loads(builder.packet())['params'][PARAM] == 'MA=='
+  assert json.loads(builder.packet())['params'][PARAM] == 'NA=='
   clock[0]=builder.next_send
   state.gear='park'
   assert json.loads(builder.packet())['params'][PARAM] == 'NA=='
   clock[0]+=1.
   selected[0],state.gear=0,'drive'
   assert json.loads(builder.packet())['params'][PARAM] == 'MA=='
+
+
+@pytest.mark.parametrize('fps', RATES)
+def test_publisher_restart_onroad_keeps_saved_choice_without_waiting_for_park(monkeypatch,fps):
+  for _ in range(2):
+    builder,_,selected,state=builder_at_realistic_receive_time(monkeypatch)
+    selected[0],state.gear,state.speed=RATES.index(fps),'drive',15.
+    assert json.loads(builder.packet())['params'][PARAM] == base64.b64encode(str(selected[0]).encode()).decode()
+    assert builder.target_fps == fps
 
 
 def test_actual_host_restart_loop_applies_each_admitted_fps():

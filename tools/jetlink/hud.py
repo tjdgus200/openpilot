@@ -281,23 +281,10 @@ def main():
   # Live production uses pinned CPU TurboJPEG Q92. Legacy codec overrides are
   # confined to the explicit, separately gated private bench entry point.
   settings, extra_args = DisplayParams(), sys.argv[1:]
-  quality_vehicle = RemoteSubMaster(['carState'])
-  def profile_allowed(target):
-    # Baseline recovery is always available. New experiments wait for a fresh
-    # stationary Park record onroad; offroad/explicit bench overrides can apply.
-    if target == 0 or override is not None or not settings.get_bool('IsOnroad'):
-      return True
-    from hud_health import vehicle_motion_fresh
-    snapshot = read_snapshot()
-    if not vehicle_motion_fresh(snapshot, time.monotonic()):
-      return False
-    quality_vehicle.update(0)
-    car = quality_vehicle['carState']
-    return str(car.gearShifter) == 'park' and car.vEgo == 0.
   class QualityWatch:
     def read(self):
       target = selection(settings.get_int(PARAM))
-      return int(override is None and target != requested and profile_allowed(target))
+      return int(override is None and target != requested)
   # Reuse the renderer's clean, main-loop exit instead of throwing from a USB
   # sender thread. This adapter is private to the host and does not change the
   # comma's ClusterHudEncoder behavior. A zero sentinel means unchanged.
@@ -311,8 +298,9 @@ def main():
   requested = 0
   while True:
     target = selection(settings.get_int(PARAM)) if override is None else override
-    if profile_allowed(target):
-      requested = target
+    # Q92/FPS are display preferences, applied onroad at startup and on change.
+    # Reopen only HUD resources; no model session or update permission changes.
+    requested = target
     effective, error = requested, ''
     codec = 6 if override is None else requested
     while True:

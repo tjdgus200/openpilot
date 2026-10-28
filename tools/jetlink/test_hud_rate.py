@@ -79,7 +79,7 @@ def test_real_snapshot_builder_cadence_is_not_limited_to_model_twenty_hz(monkeyp
   car.gearShifter = 'drive'
   builder.target_fps = 10
   clock[0] = builder.next_send
-  assert json.loads(builder.packet())['params']['JetsonHudFps'] == 'MA=='
+  assert json.loads(builder.packet())['params']['JetsonHudFps'] == 'NA=='
 
 
 def test_rate_metadata_is_private_and_reconnect_drops_old_or_oversized_packets(tmp_path, monkeypatch):
