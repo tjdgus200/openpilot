@@ -1,7 +1,7 @@
 name: eGPU model compatibility
 on:
   push:
-    branches: [carrot-nav]
+    branches: [carrot-wip]
   workflow_dispatch:
 permissions:
   contents: read

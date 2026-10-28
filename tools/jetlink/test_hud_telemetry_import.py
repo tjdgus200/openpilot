@@ -45,6 +45,7 @@ builtins.__import__ = controlled_import
 telemetry = object.__new__(server.DisplayTelemetry)
 telemetry.original = NS(read=lambda: {'original': 'kept'})
 telemetry.health = NS(read=lambda: {'severity': 'ok'})
+telemetry.blinker = None
 for _ in range(3):
   value = telemetry.read()
   assert value['original'] == 'kept'

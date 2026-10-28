@@ -1,5 +1,47 @@
 # PV5 daily source sync, 2026-10-27
 
+## Superseding source: carrot-wip, 2026-10-29
+
+Owner requested the maintained `carrot-wip` after retirement of `carrot-nav`.
+This integration fixes upstream `604bc0a22733e648ec05b268da1ffaae7db52a69`
+against PV5 `6a64f1f2d14658be71ecc3158f3b2a09a5f9aa22`. Existing Windows
+07:00 scheduling is retained; the runner reads the expanded `policy-wip.txt`
+and requires both the Linux preservation gate and Python3.12 OBD/FPS gate.
+
+All current PV5 behaviors remain: BSD brackets/gradient/2.5Hz conditional pulse
+and brightness restoration; W/temperature/resources; battery8/108 voltage and
+15 temperature sensors; Park or one-second-zero-speed overview; individual
+5s power/60s other-value expiry; enrolled sequential adaptive BLE with 100ms
+unlimited post-cleanup retries; onroad Q92/selectable10..30fps and model-first
+admission; early USB input cutoff; fresh Park/zero update permission; verified
+USB cleanup recovery and optional telemetry import isolation.
+
+WIP contributes curated model/catalog handling, monitoring stationary pause,
+reviewed Hyundai/Tesla indicator support and CAN/radar corrections. Existing
+settings and experimental defaults are not rewritten. The preserved PV5 USB
+manifest remains N16-only: this fork filters selectable catalog entries by its
+exact paired model hash/size, so an incompatible Flip Flop choice is not offered.
+This is a deliberate model-selection compatibility difference. Signed releases,
+keys and selected model/package pins remain unchanged. New optional Jetson
+capabilities require a matching future PV5 package to operate on a device;
+source integration is not a claim of installation or activation of those features.
+
+The earlier six-feature list and test/package records below are historical.
+Current preservation includes the later owner changes listed above.
+
+PC validation of this integration:
+- Linux preservation:480 passed before adding the model/cleanup/import gates;
+  the expanded gate is required for this push and future daily syncs.
+- Python3.12 OBD/FPS/retention preservation:368 passed, no skips.
+- Additional model/cache/TRT-constructor/USB-cleanup/import/LPM:115 passed.
+- Production CAN Cython and safety C libraries build successfully. Signal and
+  native safety fixtures:1275 passed,362 subtests passed;40 generic/unsupported
+  safety cases are skipped by the upstream suite, not counted as validation.
+- Driver monitoring stationary pause/DM2/reset:232 passed; Wiki generator:25
+  passed; focused Web checks:12 passed. Runner failure-path checks:7 passed.
+- Selected release/key/model pins are unchanged. No physical deployment,
+  connection/P99 measurement or road-safety certification is implied.
+
 Fixed upstream: `c1a28aff4bc0fc9ec7299ab01a0fb4f5c4a4cf43`.
 Starting target: `cb94b635d400d9d43f9d4ddddb1da01b74227e99`.
 

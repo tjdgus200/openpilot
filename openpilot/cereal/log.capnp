@@ -825,6 +825,10 @@ struct SelfdriveState {
   personality @11 :LongitudinalPersonality;
   distanceTraveled @13 :Float32;
 
+  # Latched cue from the audioTurn event, not the priority-selected alert sound.
+  atcTurnStartMonoTime @14 :UInt64;
+  atcTurnDirection @15 :LaneChangeDirection;
+
   enum OpenpilotState @0xdbe58b96d2d1ac61 {
     disabled @0;
     preEnabled @1;
@@ -1100,6 +1104,11 @@ struct ModelDataV2 {
     laneChangeAvailableRight @19 :Bool;
     laneChangeBlinkerHold @20 :LaneChangeDirection;  # carrot: hold this turn signal while a lever-requested change waits or is queued
     leverTurn @21 :Bool;  # carrot: the turn desire comes from a latched lever (BlinkerLatchedTurn)
+    autoTurnSignal @22 :LaneChangeDirection;  # ATC-originated maneuver only; no steering request
+    autoTurnSignalLaneChange @23 :Bool;
+    autoTurnSignalDirection @24 :LaneChangeDirection;
+    autoTurnSignalRequestId @25 :UInt64;
+
 
     deprecated :group {
       brakeDisengageProb @2 :Float32;

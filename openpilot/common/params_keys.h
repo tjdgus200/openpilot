@@ -326,6 +326,8 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"FingerPrints", {PERSISTENT | CLEAR_ON_MANAGER_START, STRING}},
     {"IsLdwsCar", {PERSISTENT, INT, "0"}},
     {"CanfdHDA2", {PERSISTENT, INT, "0"}},
+    {"CanfdBlinkerControl", {PERSISTENT, BOOL, "0"}},
+    {"CanfdBlinkerTest", {CLEAR_ON_MANAGER_START, INT, "0"}},
     {"CanfdDebug", {PERSISTENT, INT, "0"}},
 
     {"SoundVolumeAdjust", {PERSISTENT, INT, "100"}},
@@ -358,6 +360,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LaneChangeDelay", {PERSISTENT, INT, "0"}},
     {"LaneChangeBsd", {PERSISTENT, INT, "0"}},
     {"LaneLineCheck", {PERSISTENT, INT, "0"}},
+    {"AutoBlinkerControl", {PERSISTENT, INT, "0"}},
     {"BlinkerLatchedTurn", {PERSISTENT, INT, "0"}},
     {"LaneChangeLeverWait", {PERSISTENT, BOOL, "0"}},
     {"MaxAngleFrames", {PERSISTENT, INT, "89"}},
@@ -389,6 +392,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SpeedFromPCM", {PERSISTENT, INT, "2"}},
     {"MaxTimeOffroadMin", {PERSISTENT, INT, "60"}},
     {"TeslaWakeOnCAN", {PERSISTENT, BOOL, "1"}},
+    {"TeslaAutoTurnSignals", {PERSISTENT, BOOL, "0"}},
 
     {"DisableDM", {PERSISTENT, INT, "0"}},  // retired; read only for one-time streaming migration
     {"DriverMonitoringEnabled", {PERSISTENT, BOOL, "1"}},

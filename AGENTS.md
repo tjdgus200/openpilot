@@ -1,5 +1,15 @@
 # Repository memory
 
+- 2026-10-29 owner changes daily upstream to ajouatom/carrot-wip and preserves
+  ALL current PV5 behavior, including later BLE100ms/Q92-FPS/retention/heatmaps/
+  stationary-view/brightness/USB-cleanup improvements, not only the original6.
+  Existing Windows07:00 task/action stays; runner uses policy-wip.txt and adds
+  Python3.12 preservation gate alongside Linux. Baseline WIP604bc0a2, target
+  6a64f1f2. Preserve all selected package/key/model pins. WIP model catalog may
+  offer only models matching the selected PV5 USB package; current package is
+  N16-only, so do not offer Flip Flop and break reboot/model identity. No live
+  engine change, automatic SPAS/Tesla trial enablement or actual deployment.
+
 - 2026-10-28 owner removes BLE5s fallback too: ALL failures retry after100ms
   async wait, unlimited, including unknown release/cleanup timeout and router/
   config failure. Keep bounded cleanup and old local router exit before the next

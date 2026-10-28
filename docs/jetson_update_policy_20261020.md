@@ -1,5 +1,10 @@
 # Jetson updates through Git Pull and reboot
 
+October 27 consolidation: carrot-wip now includes the NAV/model catalog runtime.
+N16 Nav and Flip Flop are selected in Carrot Web and activated at reboot for both
+eGPU and Jetson; internal CD210 remains fixed. Earlier branch-specific statements
+below describe historical deployments, not the consolidated branch.
+
 The owner's delivery requirement, effective 2026-10-20, is that routine work
 must reach users through comma Git Pull and restart/reboot. A per-device SSH
 copy, parameter edit, service restart, or manually prefilled cache is not an

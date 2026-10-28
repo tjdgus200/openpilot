@@ -105,30 +105,31 @@ Ignoring `x0.01`, `x0.001`, `cm`, `km/h`, or `%` can make a value appear one hun
 
 ## Settings map
 
-The current `carrot_settings.json` contains **189 parameters**. The driver-monitoring exception and `NNFF` are search only; the remaining entries appear in these menus:
+The current `carrot_settings.json` contains **201 parameters**. The driver-monitoring exception and `NNFF` are search only; the remaining entries appear in these menus:
 
 | Category | Count | Groups |
 |---|---:|---|
-| Driving control | 123 | Startup and auto, buttons and presets, steering, speed and deceleration, cruise and following gap |
+| Driving control | 124 | Startup and auto, buttons and presets, steering, speed and deceleration, cruise and following gap |
 | Vehicle and hardware | 17 | Hyundai/Kia, CAN FD/HDA, radar, driver monitoring, vehicle assistance, device hardware |
 | Display | 34 | Information, path, brightness/on-road view, external HUD |
 | System | 12 | Recording/power, network/map, sound, software |
 
 ## Driving control
 
-These 123 settings can affect vehicle motion. Change one item at a time.
+These 124 settings can affect driving behavior. Change one item at a time.
 
 <a id="start-auto"></a>
-### Startup and auto — 9 settings
+### Startup and auto — 10 settings
 
 | Section | Parameters | Purpose |
 |---|---|---|
-| Startup | `AlwaysLateral`, `AutoEngage`, `DisableMinSteerSpeed` | Always-on lateral control, automatic engagement, and low-speed steering limits |
+| Startup | `AlwaysLateral`, `TeslaAutoTurnSignals`, `AutoEngage`, `DisableMinSteerSpeed` | Always-on lateral control, Tesla lamps, automatic engagement, and low-speed steering limits |
 | Auto cruise | `AutoCruiseControl`, `AutoGasTokSpeed`, `AutoGasCancelSpeed`, `AutoGasSyncSpeed`, `CruiseOnDist` | Automatic cruise activation and accelerator-pedal behavior |
 
 - `AlwaysLateral` permits lateral control even when cruise is not engaged. On supported Tesla vehicles it can also steer at true standstill in a forward-driving gear; moving below the minimum steering speed remains restricted. See [Tesla engagement](tesla.md#engagement-and-standstill).
 - Always Lateral waits for the first confirmation of valid model, vehicle-parameter, pose, and other required inputs after system startup. Once confirmed, this startup check ends; later input interruptions or disengagement/reengagement do not rearm it. Existing runtime safety handling remains unchanged. Expiry of the startup waiting period alone does not pass this check.
 - `AutoEngage`: `0` off, `1` lateral on, `2` lateral on with cruise ready.
+- `TeslaAutoTurnSignals`: default OFF, reboot required. Uses existing ATC requests on supported Model 3/Y with vehicle CAN and valid physical stalk input. It does not authorize steering or departure. See [Tesla automatic turn signals](tesla.md#automatic-turn-signals) for prerequisites and closed-course validation.
 - `AutoCruiseControl` covers Hyundai/Kia auto-cruise and soft-hold behavior.
 - `DisableMinSteerSpeed` is vehicle-specific and relates to low-speed steering restrictions on SMDPS-equipped cars.
 
@@ -283,6 +284,8 @@ For dPath RadarD, `EnableRadarTracks=-2` is the vision-only experiment; `-1` alw
 
 `RadarTrackFlip` offers `0: Normal` (default) and `1: Invert left/right`. It inverts both lateral position and lateral velocity of front radar tracks for lead selection and display, preserving SCC, corner radar and vision. There is no automatic inversion by vehicle model; use it only after confirming a left/right mismatch. Restart the vehicle or reboot the device to apply it at the next OnRoad start. See [radar left/right inversion](radar.md#radar-track-flip).
 
+In versions supporting Bosch MRRevo14F reception, detecting the Bosch message group on a Bosch MRRevo14F candidate platform (vehicle-validated only on the Elantra AD) with `EnableRadarTracks=1`–`3` enables passive reception of tracks already being transmitted, skipping startup radar-activation UDS writes and SCC ECU communication disabling. `EnableRadarTracksResult` is not updated; check actual reception, CAN validity and radar errors. Passive reception does not mean all vehicle control is disabled. See the [Bosch passive reception exception](radar.md#bosch-passive-reception).
+
 In modes `EnableRadarTracks=1`–`3`, a confirmed departing front lead can receive bounded future headway relief in ACC when outward radar motion and a visual switch to a farther vehicle agree. See [predicted CUT-OUT behavior](radar.md).
 
 `CarrotRadarMode` continuously tracks vehicles with the front and corner radars to detect cut-ins, then matches camera and radar information in a new way to select the vehicle ahead. On vehicles with neither corner-radar nor radar-track support, it behaves the same as the existing mode. It can change acceleration and braking, so enable it only on the same vehicle after completing validation. The value is latched when the next OnRoad session starts, so end the current drive and restart the vehicle or reboot the device after changing it. The previous `RadarMotionMode` value is migrated to the new name once on the first startup after updating.
@@ -306,7 +309,8 @@ The Tools Jetlink card lists each candidate’s GPU inference mean/P99, >50ms co
 
 ESP32-S3 Wi-Fi display support has been removed. Connect the USB display to Jetson. Comma sends HUD and navigation data over the dedicated Wi-Fi connection, without falling back to USB display transport. The comma-to-Jetson USB link carries model inference and connection provisioning. Both ends require the updated software.
 
-The [NAS installer and setup guide](https://upload.shind0.synology.me/models/carrot-s3/index.html) provides the N16R8 board checklist, wiring, browser firmware installation, phone/C4 registration and firmware ZIP. Update an existing S3 once to 1.2.0 through the installer to enable H.264. Wi-Fi/C4 registration, shutdown retries and LED status are preserved.
+ESP32-S3 Wi-Fi display support has been removed. Connect the USB display to Jetson. Supported receivers accept HUD, navigation and signal information over bounded USB transfers during inference; older receivers keep Wi-Fi until updated. Update through Git Pull and reboot both devices when the Jetson runtime changes.
+
 
 
 The Jetson HUD shows the highest internal sensor temperature below `jetSON`, or in the upper-right corner in full-screen navigation/graph modes. If temperature data has not refreshed for three seconds, it shows `--°C`. A top-strip temperature warning starts 5°C below each sensor's configured thermal limit; reaching that limit shows an overheating warning. For example, a device configured to throttle at 99°C warns from 94°C. Check the fan and ventilation when warned. Vehicle driving alerts take precedence, and Jetson temperature remains separate from device temperature/memory statistics. This feature requires updated Jetson HUD software.
@@ -423,11 +427,11 @@ Preparation releases when red evidence disappears or conflicts with green. The e
 
 See the Wiki [Tuning introduction](https://github.com/ajouatom/openpilot/wiki/Guide-Tuning) for the recommended steering and longitudinal adjustment order.
 
-### Nav map and destinations on carrot-nav
+### Nav map and destinations on carrot-wip
 
 Open **Tools ? Nav Map / ?? ??** in Carrot Web to view the map, search/select a destination, or clear it. Register a Public key under **Settings ? Network ? Mapbox** first; this feature does not need a Secret key. Destinations survive restart. A connected external navigator owns both TBT and route; a missing external route is never replaced with saved Mapbox geometry.
 
-The map is generated onroad with usable position and guidance. USB screen mode `ClusterHudScreenMode=7` displays the same image beside the driving view, on the right. Model navigation inputs are used by this branch's matching eGPU model; internal, DM, and Jetson models remain unchanged. Mapbox search, directions and tiles require network access and a suitable account/key. Search requests use Permanent Geocoding so selected destinations can be saved. See [design and validation limits](../../nav_model_integration_20261012.md).
+The map is generated onroad with usable position and guidance. USB screen mode `ClusterHudScreenMode=7` displays the same image beside the driving view, on the right. N16 Nav uses navigation inputs on both eGPU and Jetson. Flip Flop does not support NOO; the internal CD210 and driver-monitoring model are independent. Mapbox search, directions and tiles require network access and a suitable account/key. Search requests use Permanent Geocoding so selected destinations can be saved. See [design and validation limits](../../nav_model_integration_20261012.md).
 # Lead brake lamp observation (trial)
 
 **Lead Brake Lamp Observation** (`LeadBrakeLights`) in Traffic Light settings
@@ -444,7 +448,7 @@ camera supplies 20fps. Reduced processing overhead does not establish sustained
 
 ## Retained carrot-nav-pv5 features (2026-10-24)
 
-The runtime follows official carrot-nav `24c1ba5e` with these exceptions.
+The runtime follows consolidated carrot-wip `604bc0a2` while retaining these PV5 features. The selected PV5 Jetson USB package is N16-only, so the catalog offers only the matching N16 model.
 
 - HUD mode 8 remains the PV5 battery overview and the initial default; saved selections are preserved. Passive reception requires a validated PV5 profile and sends no diagnostic CAN requests. A separately configured opt-in BLE collector requests only fixed read-only DIDs `0101`/`0105`/`0106` from one adapter while a real PV5 is onroad, targets power every 0.5 seconds and other sensors every second, sequentially. Each complete reply updates RAM, then the next due request is reselected with power priority. Capacity-limited power reads cannot indefinitely starve SOC/coolant. Cell reads use spare time before power; after a complete scan, the next scan starts at least four seconds after its first block. An adaptive 50–500 ms gap separates requests; an exact complete NO DATA reply backs off only that item for 2–30 seconds. Slow requests reduce the actual update rate; missed polls are never replayed in a burst. Timeouts, ambiguous response boundaries and buffer overflow still require reconnection to avoid mixing values. It waits five seconds after failure and retries without a count limit while onroad. Existing scalar fields require independent comparison and confirmation on the PV5 before display; a successful connection does not validate it. Missing or unconfirmed values show `--`. Total battery draw/regeneration expires five seconds after its own last valid sample; other battery fields remain for up to 60 seconds, then become unavailable/gray. Reconnects and failures never renew observation ages, and retained values are labeled. Adapter configuration, vehicle and page changes clear the one-value-per-field cache. The BLE badge retains its five-second live-receiving requirement. See [BLE configuration and validation requirements](../../pv5_ble_battery_20261025.md).
 - Mode 8 also supports a parked/charging battery detail view. An existing OBD enrollment enables charging/heatmap/pack-V/A observations by default. Valid Park/stationary data within 300ms, regardless of charging status, replaces the road/3D area with battery details; gear/motion/stale vehicle state restores the road view. Charge-off/unknown titles say parked battery overview; power sign alone never identifies charging. Heatmaps show the owner-confirmed 108 voltage channels and 15 temperature sensors in observation order, not physical pack geometry or per-cell temperatures. Fixed diagnostic median-deviation scales (20/40/80/120mV and 1/3/5/8°C) run green/yellow/orange/red; these are not manufacturer fault thresholds. Missing/expired readings are gray; 0°C remains a valid temperature. Observed metadata after voltage channel108 and the sixteenth temperature padding slot are excluded. Park/stationary state is refreshed after BLE responses before admitting optional cell requests, one block after an existing power poll at a time, with a maximum 2.5-second complete scan. Additional fields display before comparison with an explicit vehicle-unverified label; saved confirmed_fields are never rewritten. Real charging comparison and ignition-off charging support are pending, so existing onroad/power gates remain.
@@ -454,3 +458,33 @@ The runtime follows official carrot-nav `24c1ba5e` with these exceptions.
 - Updates require offroad or fresh valid CAN indicating Park and zero speed. Onroad Park is supported, but cannot replace an already running inference engine. Permission loss suspends transfer/activation. Existing SHA-256 USB enrollment, file/model/runtime validation and previous-release retention remain required.
 
 Apart from the BSD warning brightness override, Wi-Fi, HUD brightness/offroad gating and USB behavior follows upstream. The old always-visible/minimum-10% override is removed. The official bounded writer splits one logical request into small frames; it does not pipeline multiple inference frames. Lane/BSD ONNX stays on comma and HUD uses the existing USB cadence. These displays require the selected PV5 Jetson package. The BSD brightness override and battery display changes require a new PV5 Jetson package containing them. Regeneration retains its negative sign and uses green text. The five-minute trend is removed. DC-to-80% estimates require validated calculation inputs; the current BLE thermal mode/power mapping and charging-time calculation remain unverified, so these values stay unavailable. See [integration scope and validation limits](../../pv5_nav_sync_20261024.md).
+
+## Automatic turn signals (supported vehicles)
+
+`AutoBlinkerControl` — Settings > Driving > Steering > Lane Change (Auto Turn). Default: 0. Currently limited to the Ioniq 5 PE, Jetson and PEAK USB-CAN/B1 profile on carrot-wip.
+
+An acknowledged ATC turn is not completed by an approach bend while navigation still places the same turn ahead. With the original hold still valid and no driver cancellation or communication failure, both lamps remaining off for 1.5 seconds allows one recovery attempt for that turn. Unconfirmed initial starts, manual/Bluetooth cancellation, opposite indicators and navigation cancellation do not trigger recovery. Physical lamp recovery still needs vehicle acceptance.
+
+### Behavior
+
+Controls physical lamps on supported Jetson USB-CAN/B1 vehicles. Operating the stock lever ends the owned request.
+
+- **0:** Disables automatic control; Bluetooth one-touch remains available.
+- **1:** Holds signals started by Bluetooth at or below 5 km/h until turn completion, and indicates from the ATC audioTurn cue through intersection stops until the vehicle turns and the steering returns near center.
+- **2:** Also indicates from actual ATC lane-change start through completion. Waiting does not activate the lamps.
+
+### Usage
+
+Map remote buttons to Turn on left/right indicator. During a hold, the same button cancels and the opposite button switches direction.
+
+Check illumination and cancellation while parked first. Basic one-touch remains available while driving; this setting does not change steering or lane-change admission.
+
+### Reference
+
+Bluetooth turn completion requires steering at least 30 degrees toward the selected turn, then returning within 10 degrees for 0.4 seconds while moving. Departure alone does not cancel; the maximum hold is five minutes. ATC turns also require at least 20 degrees of measured heading change toward the turn while moving. Stopping or losing turn desire alone does not cancel. Waiting requires continued lateral permission; driver cancellation, navigation cancellation before physical entry, and stale inputs still release the request.
+
+USB-CAN requests the initial blink; the existing vehicle indicator-hold function maintains it. Input, vehicle-state or communication loss expires the hold request. A rapid opposite input waits for the current OEM sequence to end, keeping only the latest request for at most 3.2 seconds. Cancelling a hold may still allow the remaining OEM flashes to finish. Existing lane-change settings may react to the actual lamp input.
+
+A hold-start request without confirmed lamp activation expires after four seconds, allowing the next button press to start a new request.
+
+ATC mode 4 optionally triggers the physical right indicator before a TBT right turn, at an eligible lane-change speed and within 250 m, until turning starts. It requires the supported USB2CAN indicator setup, right lane, BSD and fresh rear-gap checks; existing manual/Bluetooth lane-change behavior is unchanged. See [lane changes](lane-change.md).
