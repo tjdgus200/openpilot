@@ -1,14 +1,14 @@
 # Repository memory
 
-- 2026-10-28 BLE reconnect owner update supersedes1/2/5s and30s rearming:
-  unlimited sequential attempts,100ms async wait after completed/verified
-  teardown. Require Disconnect success or BlueZ NotConnected plus explicit
-  Connected=false; unknown/timeouts keep5s. Completed pre-Connect discovery
-  failures qualify too. No RSSI disconnect threshold; weak responsive sessions
-  stay connected. Keep e387b811 UART/AT/framing/discovery,2s cleanup bound,
-  old router exit, serialized requests, all TTL/P/enrollment and no BlueZ
-  restart/pairing changes.372 Windows PC checks pass, including teardown
-  faults/ordering and simulated -120dBm; real RF/CPU/recovery/road performance
+- 2026-10-28 owner removes BLE5s fallback too: ALL failures retry after100ms
+  async wait, unlimited, including unknown release/cleanup timeout and router/
+  config failure. Keep bounded cleanup and old local router exit before the next
+  attempt. Release verification remains diagnostic, never claim an unknown
+  controller disconnect completed. No RSSI disconnect threshold; weak responsive
+  sessions stay connected. Preserve e387b811 UART/AT/framing/discovery,2s cleanup
+  bound, serialized queries, TTL/P/enrollment and no BlueZ restart/pairing change.
+  368 Windows PC checks pass incl100 consecutive retries per teardown scenario,
+  setup faults/order and simulated -120dBm. Actual RF/CPU/recovery/road behavior
   unmeasured.100ms is post-cleanup wait, not total recovery. Comma-only;
   selected Jetson package c86bf069 remains current.
 

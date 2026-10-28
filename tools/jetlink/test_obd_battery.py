@@ -350,9 +350,9 @@ def test_run_reconnect_clears_snapshot_and_does_not_mix_sessions(monkeypatch):
     async def close(self):
       self.closed = True
   async def sleep(delay):
-    if 0 <= delay <= b.POWER_PERIOD:
+    if snapshots[-1][0] != 'unavailable':
       raise asyncio.CancelledError
-    assert delay == 5.0
+    assert delay == .1
     assert len(sessions) <= 2, 'unexpected retry loop in synthetic transport'
   monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
   monkeypatch.setattr(b, 'Link', Session)

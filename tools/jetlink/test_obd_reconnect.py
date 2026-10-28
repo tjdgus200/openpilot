@@ -8,20 +8,6 @@ import pytest
 from openpilot.selfdrive.carrot import obd_battery as b
 
 
-def test_released_attempts_have_no_retry_cap_or_rearm_timer():
-  # Cold start and repeated flapping use the same delay without a prior reply.
-  assert [b.reconnect_delay(True) for _ in range(1000)] == [.1] * 1000
-
-
-@pytest.mark.parametrize('proof', [False, None, 0, 1, 'true'])
-def test_unknown_release_keeps_five_second_delay(proof):
-  assert b.reconnect_delay(proof) == 5.
-
-
-def test_new_release_proof_resumes_fast_retry_immediately():
-  assert [b.reconnect_delay(proof) for proof in (True, False, None, True, True)] == [.1, 5., 5., .1, .1]
-
-
 def test_weak_signal_does_not_disconnect_a_responsive_target():
   from test_obd_battery import DiscoveryLink
   class WeakLink(DiscoveryLink):
@@ -75,7 +61,7 @@ def test_close_requires_disconnect_completion_and_explicit_false(connected, disc
 
 
 @pytest.mark.parametrize('fault', ['missing', 'timeout', 'filter'])
-def test_failed_release_confirmation_never_qualifies_for_fast_retry(fault):
+def test_failed_release_confirmation_still_reports_failure(fault):
   link = b.Link(NS(), '00:11:22:33:44:55')
   link.device = '/org/bluez/hci0/dev_00_11_22_33_44_55'
   async def call(path, interface, method, *args, **kwargs):
@@ -91,11 +77,12 @@ def test_failed_release_confirmation_never_qualifies_for_fast_retry(fault):
     assert asyncio.run(link.close()) is False
 
 
-@pytest.mark.parametrize('cleanup_verified,connect_started,expected', [
-  (True, True, .1), (False, True, 5.), (None, True, 5.),
-  (False, False, .1), (TimeoutError, False, 5.), (TimeoutError, True, 5.),
+@pytest.mark.parametrize('cleanup_verified,connect_started,proof', [
+  (True, True, True), (False, True, False), (None, True, False),
+  (False, False, True), (TimeoutError, False, False), (TimeoutError, True, False),
+  (ValueError, True, False),
 ])
-def test_real_run_waits_for_old_router_and_target_before_each_attempt(monkeypatch, cleanup_verified, connect_started, expected):
+def test_real_run_retries_at_100ms_after_each_old_local_attempt_exits(monkeypatch, cleanup_verified, connect_started, proof):
   import jeepney.io.asyncio
   clock, sessions, events, delays, reports = [100.], [], [], [], []
   @asynccontextmanager
@@ -117,8 +104,8 @@ def test_real_run_waits_for_old_router_and_target_before_each_attempt(monkeypatc
     async def close(self):
       self.closed = True
       events.append('close')
-      if cleanup_verified is TimeoutError:
-        raise TimeoutError('synthetic cleanup timeout')
+      if cleanup_verified in (TimeoutError, ValueError):
+        raise cleanup_verified('synthetic cleanup failure')
       return cleanup_verified
   class Poller:
     last_result = 'ok'
@@ -136,7 +123,7 @@ def test_real_run_waits_for_old_router_and_target_before_each_attempt(monkeypatc
     assert events[-2:] == ['close', 'router-exit']
     assert all(session.closed for session in sessions)
     delays.append(delay)
-    if len(delays) == 5:
+    if len(delays) == 100:
       raise asyncio.CancelledError
   cfg = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
   monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
@@ -149,7 +136,36 @@ def test_real_run_waits_for_old_router_and_target_before_each_attempt(monkeypatc
   monkeypatch.setattr(b.asyncio, 'sleep', sleep)
   with pytest.raises(asyncio.CancelledError):
     asyncio.run(b.run())
-  assert delays == [expected] * 5 and len(sessions) == 5
+  assert delays == [.1] * 100 and len(sessions) == 100
   failures = [report['diagnostics'] for state, report in reports if state == 'unavailable']
-  assert [report['retry_delay_s'] for report in failures] == [expected] * 5
-  assert all(report['cleanup_verified'] is (expected == .1) for report in failures)
+  assert [report['retry_delay_s'] for report in failures] == [.1] * 100
+  assert all(report['cleanup_verified'] is proof for report in failures)
+
+
+@pytest.mark.parametrize('fault', ['configuration', 'router'])
+def test_failures_before_link_creation_also_retry_at_100ms(monkeypatch, fault):
+  import jeepney.io.asyncio
+  delays, reports = [], []
+  @asynccontextmanager
+  async def router(*args):
+    raise ConnectionError('synthetic router unavailable')
+    yield  # pragma: no cover
+  def read_config(_):
+    if fault == 'configuration':
+      raise FileNotFoundError('synthetic configuration missing')
+    return {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
+  async def sleep(delay):
+    delays.append(delay)
+    assert delay == .1
+    if len(delays) == 5:
+      raise asyncio.CancelledError
+  monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
+  monkeypatch.setattr(b, 'read_json', read_config)
+  monkeypatch.setattr(b, 'write_snapshot', lambda state, **kw: reports.append((state, kw)))
+  monkeypatch.setattr(b.asyncio, 'sleep', sleep)
+  with pytest.raises(asyncio.CancelledError):
+    asyncio.run(b.run())
+  assert delays == [.1] * 5
+  failures = [kw['diagnostics'] for state, kw in reports if state == 'unavailable']
+  assert len(failures) == 5
+  assert all(report['cleanup_verified'] is False for report in failures)

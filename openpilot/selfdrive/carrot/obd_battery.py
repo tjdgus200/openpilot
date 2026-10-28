@@ -25,7 +25,6 @@ ADAPTER = 'org.bluez.Adapter1'
 PERIOD = 1.0
 POWER_PERIOD = 0.5
 RETRY_INTERVAL = 0.1
-CLEANUP_RETRY_INTERVAL = 5.0
 ATTEMPT_TIMEOUT = 60.0
 REQUEST_GAP_MIN = 0.05
 REQUEST_GAP_MAX = 0.5
@@ -50,12 +49,6 @@ class QueryError(ValueError):
   def __init__(self, code):
     self.code = code
     super().__init__(code)
-
-
-def reconnect_delay(cleanup_complete):
-  # No attempt cap, stability timer, or RSSI threshold. Never overlap an old
-  # unconfirmed connection attempt just to achieve a short retry interval.
-  return RETRY_INTERVAL if cleanup_complete is True else CLEANUP_RETRY_INTERVAL
 
 
 def no_data(reply):
@@ -653,10 +646,11 @@ async def run():
     except Exception as exc:
       # No credentials, raw frames, or unbounded exception/log loop.
       code = exc.code if isinstance(exc, QueryError) else 'timeout' if isinstance(exc, TimeoutError) else 'response_or_setup_failed'
-      delay = reconnect_delay(cleanup_complete)
+      delay = RETRY_INTERVAL
       write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {
         'failure': code, 'retry_delay_s': delay, 'cleanup_verified': cleanup_complete})
-      # Previous target/router cleanup always finishes before a new attempt.
+      # The old local attempt and bounded cleanup have ended and its router
+      # has exited. Unknown radio release stays visible; it adds no backoff.
       await asyncio.sleep(delay)
 
 

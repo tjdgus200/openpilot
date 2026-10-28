@@ -72,7 +72,7 @@ def test_unlimited_retries_keep_attempt_deadlines_cleanup_and_cancellation(monke
   delays = []
   async def sleep(delay):
     delays.append(delay)
-    assert delay == 5.0
+    assert delay == .1
     assert all(s.closed for s in sessions)
     if len(delays) == 4:
       raise asyncio.CancelledError

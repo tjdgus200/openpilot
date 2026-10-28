@@ -7,19 +7,22 @@
 ## 2026-10-28: unlimited sequential reconnection
 
 The restored UART, AT setup, prompt framing and discovery path stay unchanged.
-After a completed attempt and verified target release, wait 100ms before the
-next attempt, with no attempt limit. This includes initial connection failures;
-no prior battery reply or 30s rearming period is required. The 100ms is an async
+After the previous local attempt and bounded cleanup end, wait 100ms before the
+next attempt, with no attempt limit. This includes initial connection failures,
+unknown release, cleanup timeout and router/configuration failures. There is no
+5s fallback, prior battery reply requirement or 30s rearming period. The 100ms is an async
 wait after cleanup, not a busy loop, fixed attempt-start cadence or end-to-end
 radio recovery time. Detection, discovery, connection and setup take additional
-time. Cleanup whose release cannot be confirmed retains the 5s interval.
+time.
 
-Cleanup requires a completed `Disconnect` call (or the specific BlueZ
+Cleanup still checks for a completed `Disconnect` call (or the specific BlueZ
 `NotConnected` result), followed by an explicit boolean false from the enrolled
-target's `org.bluez.Device1.Connected` property. An unknown failure or timeout
-cannot qualify for the short delay merely because the property is false. A
-completed discovery attempt that never issued `Connect` also qualifies. The old
-router exits before the next attempt, and cleanup retains its 2s bound. See the
+target's `org.bluez.Device1.Connected` property. Unknown release stays false in
+diagnostics rather than being reported as successful; it no longer adds delay.
+A completed discovery attempt that never issued `Connect` has no connection to
+release. The old local router exits before the next attempt, and cleanup retains
+its 2s bound. This serializes application tasks without claiming that a failed
+disconnect completed inside the Bluetooth controller. See the
 [BlueZ Device API](https://github.com/bluez/bluez/blob/master/doc/org.bluez.Device.rst).
 
 The collector has no RSSI-based disconnect threshold. A weak but responsive
@@ -28,9 +31,10 @@ per-field expiry remain active. This does not prevent actual radio link loss.
 There is one outstanding request and one connection attempt, with no retry
 history buffer, parallel route, Bluetooth restart or pairing change. Existing
 enrollment and Park restrictions remain in place. The `collection` diagnostic
-reports the chosen delay and whether cleanup was verified. 372 PC checks pass,
-including repeated cold/flapping failures, unknown/timeout teardown, cleanup
-ordering and responsive -120dBm input. These are synthetic D-Bus tests, not
+reports the chosen delay and whether cleanup was verified. 368 PC checks pass,
+including 100 consecutive attempts per teardown scenario, unknown/timeout
+teardown, router/configuration failure, cleanup ordering and responsive -120dBm
+input. These are synthetic D-Bus tests, not
 RF measurements. Physical recovery time, additional CPU load and vehicle
 behavior have not been measured.
 
