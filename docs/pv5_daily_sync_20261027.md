@@ -1,5 +1,10 @@
 # PV5 daily source sync, 2026-10-27
 
+2026-10-29 follow-up supersedes the N16-only restriction below: preserve both
+verified per-model PV5 USB manifests and reboot-frozen model selection, plus
+restored blue boot diagnostics. See [paired package delivery](pv5_model_packages_20261029.md).
+The two packages use distinct source IDs and retain all existing PV5 features.
+
 ## Superseding source: carrot-wip, 2026-10-29
 
 Owner requested the maintained `carrot-wip` after retirement of `carrot-nav`.

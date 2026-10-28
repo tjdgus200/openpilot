@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-recovery-stop-20261028-3b7eba12",
-  "source_commit": "3b7eba12fe950363444a8604a582224f35be0091",
+  "profile": "pv5-n16-20261029-88aa2548",
+  "source_commit": "88aa2548282b8338dec5bb574e6f4f0097804f6d",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-recovery-stop-20261028-3b7eba12/host.tar.gz",
-    "sha256": "b51c78a60a1b6f4e95df91289c5fd7e21df631f9ae2fa73de655b02dd2347678",
-    "size": 65031610
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-model-n16-20261029-88aa2548/host.tar.gz",
+    "sha256": "38820816ad90d6100da4074fb3eba61b0aa705feceb38dab36ded4e39edda767",
+    "size": 65115881
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

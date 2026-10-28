@@ -14,7 +14,9 @@ bootstrap pin filenames resolve to that package's selected model. The catalog
 rejects different model packages sharing a source commit. Retired MD v3 is not
 exposed. These packages do not imply that Flip Flop gains navigation inputs.
 
-After selection, normal boot transfer/check/probe/activation remains in place.
+After selection, reboot both comma and Jetson while parked with ignition off;
+the Jetson boot gate must run, not only the comma's selection freeze. Normal
+boot transfer/check/probe/activation remains in place.
 The previous release and model state survive failed probes; no automatic reboot
 or weakened validation is added. Park/zero initial update permission and the
 prohibition on replacing an active onroad inference engine remain unchanged.
@@ -36,3 +38,20 @@ boot-screen freshness/redaction/rendering and diagnostic migration. Additional
 existing BSD, W/temperature, battery8, BLE100ms, Q92/FPS, power, permission and
 cleanup regressions remain required. PC fixtures and ONNX contract checks do
 not establish physical TensorRT output, P99 or driving safety on the new model.
+
+Published PC-tested runtimes:
+
+- [N16 Nav package](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-model-n16-20261029-88aa2548),
+  source `88aa2548282b8338dec5bb574e6f4f0097804f6d`.
+- [Flip Flop package](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-model-flip-flop-20261029-c0ebdfaa),
+  source `c0ebdfaaaff5236837074420d7e7d48ae39e2551`.
+
+All four public assets per release were anonymously downloaded and hashed.
+Shared-source Linux regression569 and Windows preservation368 checks pass.
+Both exported archives independently import the server/HUD and exercise boot
+rendering, overlays and model input-queue contracts without checkout imports.
+N16-only staging optimizations remain restricted to its exact tensor contract;
+Flip Flop retains the default non-N16 input path. Model endpoints return the
+pinned byte lengths; device installation still verifies full model hashes and
+executes the existing TensorRT probe before activation. No device was installed
+or rebooted during this publication.

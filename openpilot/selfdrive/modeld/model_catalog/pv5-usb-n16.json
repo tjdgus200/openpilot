@@ -1,0 +1,23 @@
+{
+  "format": 2,
+  "delivery": "usb",
+  "integrity": "sha256",
+  "profile": "pv5-n16-20261029-88aa2548",
+  "source_commit": "88aa2548282b8338dec5bb574e6f4f0097804f6d",
+  "runtime": {
+    "arch": "aarch64",
+    "l4t": "36.4.7",
+    "tensorrt": "10.3.0"
+  },
+  "storage_format": 1,
+  "bundle": {
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-model-n16-20261029-88aa2548/host.tar.gz",
+    "sha256": "38820816ad90d6100da4074fb3eba61b0aa705feceb38dab36ded4e39edda767",
+    "size": 65115881
+  },
+  "model": {
+    "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",
+    "sha256": "01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a",
+    "size": 814591107
+  }
+}

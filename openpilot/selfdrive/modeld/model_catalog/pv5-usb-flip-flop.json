@@ -1,0 +1,23 @@
+{
+  "format": 2,
+  "delivery": "usb",
+  "integrity": "sha256",
+  "profile": "pv5-flip-flop-20261029-c0ebdfaa",
+  "source_commit": "c0ebdfaaaff5236837074420d7e7d48ae39e2551",
+  "runtime": {
+    "arch": "aarch64",
+    "l4t": "36.4.7",
+    "tensorrt": "10.3.0"
+  },
+  "storage_format": 1,
+  "bundle": {
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-model-flip-flop-20261029-c0ebdfaa/host.tar.gz",
+    "sha256": "bb4d95e95189bcc7351572dfc54bf3f47210519ddc84116a95de35d6c660355e",
+    "size": 65115719
+  },
+  "model": {
+    "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",
+    "sha256": "35976b11be3904eb78e32f7dc55a6abf8e9433ac5aa391a1998f1e9ce001b199",
+    "size": 768750198
+  }
+}

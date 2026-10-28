@@ -295,6 +295,33 @@ assert C.effective_id() == 'n16'
   subprocess.run([sys.executable, '-P', '-c', code], env=dict(os.environ, PYTHONPATH=str(C.ROOT)), check=True)
 
 
+@pytest.mark.parametrize('key', ['n16', 'flip-flop'])
+def test_published_pv5_selection_uses_frozen_models_own_usb_release(store, key):
+  import os
+  import subprocess
+  code = '''
+import sys
+from pathlib import Path
+from openpilot.common import big_model_catalog as C
+key=sys.argv[1]
+assert set(C.available()) == {'n16','flip-flop'}
+C.select(key)
+assert C.freeze_boot() == key
+original=Path.is_file
+Path.is_file=lambda path: path.as_posix() == '/TICI' or original(path)
+from openpilot.common.jetson_model import read_spec,selected_release
+release=selected_release(C.USB_PIN.with_name('host_release.json'),required=True)
+assert release == C.usb_release(key)
+assert release['model']['sha256'] == read_spec()['sha256'] == C.model_spec(key)['sha256']
+assert release['model']['size'] == read_spec()['nbytes']
+C.select('flip-flop' if key=='n16' else 'n16')
+assert C.effective_id() == key
+assert selected_release(C.USB_PIN.with_name('host_release.json'),required=True)==release
+'''
+  subprocess.run([sys.executable, '-P', '-c', code, key],
+                 env=dict(os.environ, PYTHONPATH=str(C.ROOT)), check=True)
+
+
 def retire(monkeypatch, *keys):
   models = C.catalog()
   for key in keys:

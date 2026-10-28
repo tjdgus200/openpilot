@@ -1,5 +1,16 @@
 # Repository memory
 
+- PV5 paired model package delivery2026-10-29: N16 source88aa2548, Flip Flop
+  c0ebdfaa (only pin differs from shared source); public prereleases
+  jetson-pv5-model-n16-20261029-88aa2548 and
+  jetson-pv5-model-flip-flop-20261029-c0ebdfaa. Four anonymous assets each
+  verified.569 Linux and368 Windows preservation checks pass; both exported
+  server/HUD/overlay/boot/model-queue checks pass. Models require BOTH comma
+  and Jetson reboot while parked/ignition off; not live engine switching.
+  N16 exact-contract fast staging remains gated; do not force it onto Flip Flop.
+  No physical installation, TRT output/P99 or road result claimed. Protect
+  model_catalog/pv5-usb-n16.json and pv5-usb-flip-flop.json in daily WIP sync.
+
 - 2026-10-29 owner authorizes PV5 per-model Jetson packages and restores blue
   boot diagnostics, superseding the preceding N16-only selection restriction.
   Preserve all PV5 features and existing model boot freeze/probe/rollback/P
