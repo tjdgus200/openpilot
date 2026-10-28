@@ -51,6 +51,39 @@ class QueryError(ValueError):
     super().__init__(code)
 
 
+class ReconnectDelay:
+  """Bounded fast recovery for a previously responsive, fully released target."""
+  def __init__(self):
+    self.identity = self.healthy_since = self.last_received = None
+    self.qualified, self.failures = False, 0
+
+  def select(self, identity):
+    if identity != self.identity:
+      self.identity, self.healthy_since, self.last_received = identity, None, None
+      self.qualified, self.failures = False, 0
+
+  def received(self, now):
+    if not finite_number(now):
+      return
+    self.qualified = True
+    if self.last_received is None or not 0 <= now - self.last_received <= 3.:
+      self.healthy_since = now
+    self.last_received = now
+    if now - self.healthy_since >= 30.:
+      self.failures = 0
+
+  def failed(self, cleanup_complete):
+    self.healthy_since = self.last_received = None
+    if not self.qualified:
+      return RETRY_INTERVAL
+    if cleanup_complete is not True:
+      self.failures = 2  # Uncertain teardown does not qualify for short retries.
+      return RETRY_INTERVAL
+    delay = (1., 2., RETRY_INTERVAL)[self.failures]
+    self.failures = min(2, self.failures + 1)
+    return delay
+
+
 def no_data(reply):
   return (isinstance(reply, bytes) and len(reply) <= 4096
           and re.fullmatch(rb'[ \r\n]*NO DATA[ \r\n]*>', reply) is not None)
@@ -574,15 +607,27 @@ class Link:
     if self.device:
       with suppress(Exception):
         await self.call(self.device, DEVICE, 'Disconnect', timeout=0.5)
+      # Disconnect may report NotConnected after a radio loss. Verify the
+      # actual target property rather than treating the exception as proof.
+      try:
+        value = (await self.call(self.device, 'org.freedesktop.DBus.Properties', 'Get', 'ss',
+                                 (DEVICE, 'Connected'), timeout=0.5))[0]
+        return value == ('b', False) and type(value[1]) is bool
+      except Exception:
+        pass
+    return False
 
 
 async def run():
   from jeepney.io.asyncio import open_dbus_router
+  retries = ReconnectDelay()
   while True:
     link = poller = None
+    identity, cleanup_complete = None, False
     try:
       address, confirmed = configuration(read_json(CONFIG))
       identity = config_id((address, confirmed))
+      retries.select(identity)
       write_snapshot('connecting', identity=identity)
       # Each attempt is bounded, but failures never exhaust the onroad retry
       # allowance. Manager still stops this display-only reader offroad.
@@ -604,6 +649,8 @@ async def run():
                 raise ValueError('configuration changed')
               write_snapshot('receiving' if candidates else 'waiting_data', candidates, fields, identity=source_id,
                              observed_at=observed_at, field_times=field_times, diagnostics=collection_info(transport, reader))
+              if getattr(reader, 'last_result', None) == 'ok':
+                retries.received(time.monotonic())
               # Even a complete NO DATA prompt proves that this ELM session is
               # responsive; it does not make an absent battery field valid.
               timeout.reschedule(None)
@@ -621,15 +668,19 @@ async def run():
             # Deadline/cancellation may require up to two more seconds to clean
             # up this target; no further connection or polling starts here.
             with suppress(TimeoutError):
-              await asyncio.wait_for(link.close(), 2.0)
+              cleanup_complete = await asyncio.wait_for(link.close(), 2.0) is True
     except asyncio.CancelledError:
       raise
     except Exception as exc:
       # No credentials, raw frames, or unbounded exception/log loop.
       code = exc.code if isinstance(exc, QueryError) else 'timeout' if isinstance(exc, TimeoutError) else 'response_or_setup_failed'
-      write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {'failure': code})
-      # Five seconds after failure/cleanup, never overlapping attempts.
-      await asyncio.sleep(RETRY_INTERVAL)
+      if identity is None:
+        retries.select(None)
+      delay = retries.failed(cleanup_complete)
+      write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {
+        'failure': code, 'retry_delay_s': delay, 'cleanup_verified': cleanup_complete})
+      # Previous target/router cleanup always finishes before a new attempt.
+      await asyncio.sleep(delay)
 
 
 def collection_info(link, poller):

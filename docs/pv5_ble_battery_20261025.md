@@ -4,6 +4,28 @@
 > optimized collector from `e387b811` after reporting increased instability.
 > See [the rollback record](pv5_obd_stream_20261028.md#rollback-to-the-optimized-collector).
 
+## 2026-10-28: bounded fast reconnection
+
+The restored UART, AT setup, prompt framing and discovery path stay unchanged.
+After a validated battery response, completed cleanup can qualify the next
+reconnect delays for 1s, 2s, then 5s indefinitely. These are delays before the
+next attempt, not end-to-end radio recovery times. Initial startup and cleanup
+whose release cannot be confirmed retain the 5s interval.
+
+Cleanup reads `org.bluez.Device1.Connected` for the enrolled target and requires
+an explicit boolean false for the short delays. A failed `Disconnect` call
+alone proves neither connection nor release. The old router exits before the
+next attempt. See the [BlueZ Device API](https://github.com/bluez/bluez/blob/master/doc/org.bluez.Device.rst).
+
+Repeated brief reconnects do not continually reset the fast-retry budget.
+Rearming requires 30s of validated positive responses with no gap over 3s.
+`NO DATA` alone cannot qualify it. This adds a few scalar state values, no
+history buffer, parallel queries, alternate adapter route or Bluetooth restart.
+Existing enrollment, per-field expiry and Park restrictions remain in place.
+The `collection` diagnostic reports only the chosen delay and whether cleanup
+was verified. 363 PC checks pass; RF disconnection cause, physical recovery
+time, CPU load and vehicle behavior have not been measured.
+
 > Updated 2026-10-27: retry limits, polling cadence, temperature history and thermal-mode output below are historical. Current behavior and remaining mapping limits are documented in [the OBD/HUD follow-up](pv5_obd_followup_20261027.md).
 
 ## Scope and evidence
