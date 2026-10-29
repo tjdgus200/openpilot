@@ -12,6 +12,16 @@ from boot_display import lines, render, panel_frame
 import boot_status
 
 
+@pytest.mark.parametrize(('sha', 'label'), [
+  ('404a18cfd86d29637d20c697dfde245bb47c666ae016730ab674c65f4d1e1aa4', 'CTV3M'),
+  ('35976b11be3904eb78e32f7dc55a6abf8e9433ac5aa391a1998f1e9ce001b199', 'Flip Flop'),
+  ('01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a', 'N16 Nav'),
+  ('404a18cf', '--'), (None, '--'), ({}, '--'),
+])
+def test_boot_model_names_require_exact_known_sha(sha, label):
+  assert boot_status.model_name(sha) == label
+
+
 def test_offline_diagnosis_without_comma_model_or_xorg(tmp_path):
   title, rows, detail, error = lines({'stage': {'stage': 'root-readonly-check', 'error': 'RuntimeError'},
                                     'units': {'carrot-protected-storage': {'ActiveState': 'failed'}}})

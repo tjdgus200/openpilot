@@ -45,7 +45,10 @@ def selected_release(path, required=False):
   if Path('/TICI').is_file() and not any(Path(path).with_name(name).exists() for name in
       ('usb_host_sha256_release.json', 'local_host_release.json')):
     from openpilot.common.big_model_catalog import DIRECTORY, selected
-    path = DIRECTORY / selected()['jetson_release']
+    entry = selected()
+    if entry.get('requires_pv5_usb'):
+      raise ValueError('Selected model requires its matching PV5 USB package')
+    path = DIRECTORY / entry['jetson_release']
   usb = Path(path).with_name('usb_host_sha256_release.json')
   if usb.is_file():
     from tools.jetlink.usb_release import validate, identity  # noqa: TID251 -- shared standalone updater

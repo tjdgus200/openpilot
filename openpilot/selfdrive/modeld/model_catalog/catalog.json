@@ -1,6 +1,7 @@
 {
   "n16": {
     "name": "N16 Nav",
+    "display_name": "N16 Nav (96244b1f)",
     "manifest_url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/manifest.json",
     "egpu": {
       "model_id": "comma-nav-n16-afbf2e54-52205044",
@@ -28,6 +29,7 @@
   },
   "flip-flop": {
     "name": "Flip Flop",
+    "display_name": "Flip Flop (1365126a)",
     "manifest_url": "https://upload.shind0.synology.me/models/comma4-big-flip-flop-f0667cf6/manifest.json",
     "egpu": {
       "model_id": "comma-flip-flop-85476c4b-f0667cf6",
@@ -38,5 +40,20 @@
     },
     "jetson_spec": "md-v3.json",
     "jetson_release": "md-v3-release.json"
+  },
+  "ctv3m": {
+    "name": "CTV3M",
+    "display_name": "CTV3M (bf3e3631b3)",
+    "requires_pv5_usb": true,
+    "source_ref": "bf3e3631b3f91d92a1020a5e0dd4298b93ff4244",
+    "manifest_url": "https://raw.githubusercontent.com/tjdgus200/openpilot/carrot-nav-pv5/openpilot/selfdrive/modeld/model_catalog/ctv3m-egpu.json",
+    "egpu": {
+      "model_id": "comma-ctv3m-bf3e3631-4937fc6f",
+      "filename": "big_driving_tinygrad.pkl",
+      "size": 773082315,
+      "sha256": "4937fc6f04367b28328fe3bc0d1463a245725d039ddaab29406cc565fd5c8ed4",
+      "url": "https://huggingface.co/buckets/commaai/openpilot-lfs/resolve/sha256/4937fc6f04367b28328fe3bc0d1463a245725d039ddaab29406cc565fd5c8ed4"
+    },
+    "jetson_spec": "ctv3m.json"
   }
 }

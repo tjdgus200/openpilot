@@ -96,12 +96,20 @@ def collect():
     storage_free = '--'
   spec = read_json('/opt/carrot-jetlink/current/openpilot/selfdrive/modeld/jetlink/jetson_model.json')
   sha = spec.get('sha256', '')
-  model = ('N16 Nav' if sha == '01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a' else
-           'Flip Flop' if sha == '35976b11be3904eb78e32f7dc55a6abf8e9433ac5aa391a1998f1e9ce001b199' else '--')
+  model = model_name(sha)
   return {'stage': read_json(STAGE), 'storage': read_json('/run/carrot-storage.json'),
           'units': units, 'addresses': addresses[:4], 'wifi': network.get('state', 'waiting'),
           'update': update_status(time.monotonic()), 'model': model, 'storage_free': storage_free,
           'uptime': int(time.monotonic()), 'temp_c': max(temperatures, default=None)}
+
+
+def model_name(sha):
+  # Independent of the optional checkout/import environment on the boot display.
+  return {
+    '01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a': 'N16 Nav',
+    '35976b11be3904eb78e32f7dc55a6abf8e9433ac5aa391a1998f1e9ce001b199': 'Flip Flop',
+    '404a18cfd86d29637d20c697dfde245bb47c666ae016730ab674c65f4d1e1aa4': 'CTV3M',
+  }.get(sha, '--') if isinstance(sha, str) else '--'
 
 
 def persist_result(directory, value):

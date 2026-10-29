@@ -1,5 +1,15 @@
 # Repository memory
 
+- 2026-10-29 owner adds CTV3M bf3e3631b3 and explicitly requests official comma.ai
+  Hugging Face sources, overriding NAS-only provisioning for this model. ONNX
+  f78ed37d/12864 at HF revision84c72ed5, SHA404a18cf,766354845bytes fully hashed
+  and ONNX checked before/after existing TRT patch. Contract equals current
+  Flip Flop; no NOO and no forced N16 staging/projection. Preserve N16 default,
+  existing selected packages/keys and all PV5 HUD/BLE/USB input-power protections.
+  CTV3M requires its own verified PV5 USB package/distinct source commit; no
+  fabricated signed host fallback. Both devices reboot parked/ignition off;
+  no physical TRT, thermal/P99 or driving validation claimed by PC checks.
+
 - PV5 paired model package delivery2026-10-29: N16 source88aa2548, Flip Flop
   c0ebdfaa (only pin differs from shared source); public prereleases
   jetson-pv5-model-n16-20261029-88aa2548 and

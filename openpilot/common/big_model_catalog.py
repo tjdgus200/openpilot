@@ -46,7 +46,8 @@ def catalog():
 
 def available():
   """Curator-owned choices; retired metadata stays for safe cache cleanup."""
-  models = {key: entry for key, entry in catalog().items() if entry.get('retired') is not True}
+  models = {key: entry for key, entry in catalog().items() if entry.get('retired') is not True and
+            (not entry.get('requires_pv5_usb') or USB_PIN.is_file())}
   if USB_PIN.exists():
     # Only a separately pinned PV5 package may expose another model. Its HUD
     # extensions must not be replaced by the official non-PV5 host bundle.

@@ -1,0 +1,7 @@
+{
+  "model_id": "comma-ctv3m-bf3e3631-4937fc6f",
+  "filename": "big_driving_tinygrad.pkl",
+  "size": 773082315,
+  "sha256": "4937fc6f04367b28328fe3bc0d1463a245725d039ddaab29406cc565fd5c8ed4",
+  "url": "https://huggingface.co/buckets/commaai/openpilot-lfs/resolve/sha256/4937fc6f04367b28328fe3bc0d1463a245725d039ddaab29406cc565fd5c8ed4"
+}

@@ -91,10 +91,10 @@ def validate_model_spec(spec):
 
 
 def model_name(spec):
-  from openpilot.common.big_model_catalog import available, model_spec
-  for key, entry in available().items():
-    if spec.sha256 == model_spec(key)['sha256']:
-      return 'N16 Nav (96244b1f)' if key == 'n16' else entry['name'] + ' (1365126a)'
+  from openpilot.common.big_model_catalog import catalog, model_spec
+  for key, entry in catalog().items():
+    if entry.get('retired') is not True and spec.sha256 == model_spec(key)['sha256']:
+      return entry.get('display_name', entry['name'])
   return 'Cinque v2' if spec.sha256 == DEFAULT_SPEC.sha256 else f'App model {spec.sha256[:12]}'
 
 
