@@ -1,5 +1,16 @@
 # Repository memory
 
+- 2026-10-30 daily WIP integration: reviewed final tree604bc0a2..f5e4f8b8,
+  retaining all current PV5 behavior and protected files. Upstream TBT helper
+  becomes default-OFF AutoTurnControlRightLaneChange for ATC1/2; legacy4
+  migrates to1 plus the prior helper selection before defaults, without new
+  speed control. Existing ATC cues preempt TBT; vehicle/manual/freshness guards
+  remain. Live CenterToFrontRatio defaults0 (vehicle baseline), accepts31..69,
+  ramps at bounded rate and publishes additive liveParameters field21 to the
+  learner/controller/planner. CP/model/Jetlink contracts stay unchanged.
+  This records imported implementation, not additional owner authorization.
+  No settings written, device access, package replacement or direct push.
+
 - 2026-10-29 OBD audit: preserve status-IO-independent bounded teardown and
   cancellation propagation; partial notification/filter/discovery cleanup must
   not skip target Disconnect/Get or claim verified success. Production badge

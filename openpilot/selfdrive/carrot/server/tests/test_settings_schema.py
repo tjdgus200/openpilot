@@ -443,10 +443,12 @@ def test_external_hud_brightness_and_orientation_use_catalog_controls(settings, 
     "Info left / driving right",
   ]
   screen_mode = by_name["ClusterHudScreenMode"]
-  assert (screen_mode["min"], screen_mode["max"], screen_mode["default"]) == (-1, 7, 0)
-  assert screen_mode["descr"].startswith("-1: 3D 전체화면\n0: 기본(내비/주행 리포트)")
-  assert screen_mode["edescr"].startswith("-1: 3D fullscreen\n0: Default (navigation/driving report)")
-  assert screen_mode["cdescr"].startswith("-1: 3D全屏\n0: 默认(导航/驾驶报告)")
+  assert (screen_mode["min"], screen_mode["max"], screen_mode["default"]) == (-1, 8, 8)
+  assert screen_mode["descr"].startswith('-1: 3D 전체화면\n0: 내비/주행 리포트 자동')
+  assert "8:" in screen_mode["edescr"]
+  assert (by_name["JetsonHudFps"]["min"], by_name["JetsonHudFps"]["max"], by_name["JetsonHudFps"]["default"]) == (0, 4, 0)
+  assert screen_mode["edescr"].startswith('-1: 3D fullscreen\n0: Automatic navigation/driving report')
+  assert screen_mode["cdescr"].startswith('-1: 3D全屏\n0: 自动导航/驾驶报告')
 
   display = next(category for category in settings["menu"] if category["id"] == "DISPLAY")
   hud = next(group for group in display["groups"] if group["id"] == "DISP_HUD")
@@ -459,6 +461,7 @@ def test_external_hud_brightness_and_orientation_use_catalog_controls(settings, 
   ]
   assert screen["params"] == [
     "ClusterHudEncoder",
+    "JetsonHudFps",
     "ClusterHudScreenMode",
     "ClusterHudPanelLayout",
     "ClusterHudCameraViewMode",
@@ -601,3 +604,35 @@ def test_declared_numeric_bounds_stay_intact(params):
   assert (by_name["ApplyModelSpeed"]["min"], by_name["ApplyModelSpeed"]["max"]) == (-120, 120)
   assert by_name["ApplyModelSpeed"]["default"] == 0
   assert by_name["TFollowDecelBoost"]["unit"] == 10
+
+
+def test_live_geometry_has_zero_default_and_no_enable_switch(settings, params):
+  from openpilot.selfdrive.carrot.server.services.params import clamp_numeric
+  by_name = {p['name']: p for p in params}
+  assert 'CenterToFrontRatioEnabled' not in by_name
+  ratio = by_name['CenterToFrontRatio']
+  assert (ratio['min'], ratio['nonzero_min'], ratio['max'], ratio['default'], ratio['unit']) == (0, 31, 69, 0, 1)
+  assert ratio['display_unit'] == 'percent'
+  assert not ratio.get('detail_parent') and not ratio.get('hidden_brands')
+  assert ratio['risk'] == 'high'
+  keys = PARAMS_KEYS_PATH.read_text(encoding='utf-8')
+  assert '{"CenterToFrontRatio", {PERSISTENT, INT, "0"}}' in keys
+  assert '{"CenterToFrontRatioEnabled", {PERSISTENT, BOOL}}' in keys  # Migration only, no recreated default.
+  categories = build_menu_categories(settings, by_name)
+  section = next(section for category in categories for group in category['groups'] for section in group['sections']
+                 if 'SteerActuatorDelay' in section['items'])
+  assert section['items'].index(ratio['name']) == section['items'].index('SteerActuatorDelay') + 1
+  for raw, expected in ((0, 0), (1, 31), (30, 31), (40, 40), (60, 60), (99, 69)):
+    assert clamp_numeric(raw, ratio) == expected
+  assert clamp_numeric(1, by_name['SteerActuatorDelay']) == 1
+  assert '재시작 없이' in ratio['descr']
+  assert 'without restarting' in ratio['edescr']
+  assert set(ratio['zero_label']) == {'ko', 'en', 'zh'}
+
+
+def test_declared_nonzero_min_and_zero_labels_are_well_formed(params):
+  for item in params:
+    if 'nonzero_min' in item:
+      assert item['min'] == item['default'] == 0
+      assert 0 < item['nonzero_min'] <= item['max']
+      assert set(item['zero_label']) == {'ko', 'en', 'zh'}
