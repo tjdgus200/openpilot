@@ -1,8 +1,8 @@
 {
-  "sha256": "01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a",
-  "nbytes": 814591107,
+  "sha256": "404a18cfd86d29637d20c697dfde245bb47c666ae016730ab674c65f4d1e1aa4",
+  "nbytes": 766354845,
   "frame_skip": 4,
-  "checkpoint": "2931d3d9-7c90-4988-a6af-654ed71e0af5/56320/96244b1f-6c4e-4adc-848d-eccd0b44b182",
+  "checkpoint": "b9facbcc-4d47-410e-b3ce-dfcbad12ba92/56320/f78ed37d-afad-4dbc-8050-40ea885eedde/12864",
   "input_shapes": {
     "new_img": [
       2,
@@ -21,16 +21,6 @@
       1,
       2
     ],
-    "nav_map": [
-      1,
-      1,
-      256,
-      256
-    ],
-    "navigation": [
-      1,
-      47
-    ],
     "state_img_q": [
       2,
       5,
@@ -47,22 +37,12 @@
       128,
       1,
       16384
-    ],
-    "state_map_features_q": [
-      128,
-      1,
-      64
-    ],
-    "state_navigation_features_q": [
-      128,
-      1,
-      64
     ]
   },
   "output_shapes": {
     "outputs": [
       1,
-      18580
+      18452
     ],
     "next_state_img_q": [
       2,
@@ -80,16 +60,6 @@
       128,
       1,
       16384
-    ],
-    "next_state_map_features_q": [
-      128,
-      1,
-      64
-    ],
-    "next_state_navigation_features_q": [
-      128,
-      1,
-      64
     ]
   },
   "output_slices": {
@@ -149,17 +119,9 @@
       2066,
       18450
     ],
-    "map_features": [
-      18450,
-      18514
-    ],
-    "navigation_features": [
-      18514,
-      18578
-    ],
     "pad": [
-      18578,
-      18580
+      18450,
+      18452
     ]
   }
 }
