@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-10-29 live boundary capture confirms0105 tails before FIRST: CF6,FIRST,
+  CF1..5 and CF5,CF6,FIRST,CF1..4. Do not rotate/reuse them as data. Preserve
+  exact-count requests and strict parser. Only this bounded fixed-source/DID/
+  length/count cyclic-order rejection may retire late fragments:32 chunks,
+  4KiB,512B/chunk,500ms silence within2s, then strict existing local ATI identity
+  check before another ECU query. Normal command queue guards remain; no radio
+  reset, pairing, extra CAN query or history. Failed/busy/overflow/unknown sync
+  falls back to bounded cleanup and100ms unlimited reconnects. At most2 syncs
+  without a fully valid data reply; discard failed data and never refresh its
+  field age. Existing TTL/P gates and all PV5/model/HUD behavior remain. Details:
+  docs/pv5_obd_boundary_recovery_20261029.md, test_obd_resync.py.361 Windows PC
+  checks including33 focused resync cases and Ruff/diff pass. Physical
+  reliability and the original transport-side cause remain unverified.
+
 - 2026-10-29 passive BLE evidence twice shows220101: valid9-frame/62-byte
   response then7 frames of a second response before the prompt,322 bytes total.
   Strict parser rejection triggers collector cleanup; extra frames differ,

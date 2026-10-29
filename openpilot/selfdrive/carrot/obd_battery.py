@@ -135,6 +135,33 @@ def parse_reply(reply, command='220101'):
   return bytes(payload)
 
 
+def rotated_reply(reply, command):
+  """Recognize a rejected transaction for recovery only; never extract values.
+
+  The owner observed CF6,FIRST,CF1..CF5 and CF5,CF6,FIRST,CF1..CF4 for
+  0105. Leading continuations may belong to an older response, so even a
+  complete cyclic frame order must be discarded, never rotated into a value.
+  """
+  if (command not in REPLIES or not isinstance(reply, bytes) or len(reply) > 4096
+      or reply.count(b'>') != 1 or not reply.endswith(b'>')):
+    return False
+  length, prefix = REPLIES[command]
+  try:
+    lines = [line.strip().replace(' ', '').upper()
+             for line in reply[:-1].decode('ascii').replace('\n', '\r').split('\r') if line.strip()]
+  except UnicodeDecodeError:
+    return False
+  count = (length + 7) // 7
+  if len(lines) != count or any(not re.fullmatch(r'7EC[0-9A-F]{16}', line) for line in lines):
+    return False
+  frames = [bytes.fromhex(line[3:]) for line in lines]
+  first = next((i for i, frame in enumerate(frames) if frame[0] == 0x10), 0)
+  if not first or frames[first][:5] != bytes((0x10, length)) + prefix:
+    return False
+  return all(frame[0] == (0x10 if (i - first) % count == 0 else 0x20 | ((i - first) % count))
+             for i, frame in enumerate(frames))
+
+
 def candidate_metrics(payload):
   """0101 data offsets exclude 62 01 01. Never substitute coolant/SOC meanings.
 
@@ -240,6 +267,7 @@ class MetricPoller:
     self.retry_at, self.failures = {}, {}
     self.last_command, self.last_result, self.no_data_count = None, None, 0
     self.last_no_data_command = None
+    self.resync_count, self.resync_streak = 0, 0
 
   def snapshot(self):
     now = time.monotonic()
@@ -263,7 +291,23 @@ class MetricPoller:
       self.last_no_data_command = command
       self.last_result = 'no_data'
       return True, None
-    value = parse_reply(raw, command)
+    try:
+      value = parse_reply(raw, command)
+    except ValueError:
+      if not rotated_reply(raw, command):
+        raise
+      if self.resync_streak >= 2:
+        raise QueryError('elm_resync_limit') from None
+      self.resync_streak += 1
+      # The completed but malformed reply supplies no metric or timestamp.
+      # Verify a new local ELM boundary before the scheduler can send another
+      # ECU query. Late bytes/failed identity still take the fatal close path.
+      await link.resynchronize()
+      self.resync_count = min(65535, self.resync_count + 1)
+      self.retry_at[command] = time.monotonic() + (POWER_PERIOD if command == '220101' else PERIOD)
+      self.last_result = 'resynchronized'
+      return True, None
+    self.resync_streak = 0
     self.retry_at.pop(command, None)
     self.failures.pop(command, None)
     self.last_result = 'ok'
@@ -579,6 +623,35 @@ class Link:
         return reply
     raise QueryError('notification limit')
 
+  async def resynchronize(self):
+    # Retire late fragments only after the entire malformed transaction has
+    # been rejected. No new request is outstanding and no discarded byte is
+    # parsed or reused. Require 500ms UART silence within a 2s/32-chunk/4KiB
+    # quarantine, then verify the existing local ATI identity. Normal command
+    # queue guards, prompt/size limits and radio cleanup remain unchanged.
+    deadline = asyncio.get_running_loop().time() + 2.
+    retired = 0
+    for _ in range(32):
+      if self.queue.overflow:
+        raise QueryError('notification overflow')
+      if deadline - asyncio.get_running_loop().time() < REQUEST_GAP_MAX:
+        raise QueryError('elm_resync_busy')
+      try:
+        message = await asyncio.wait_for(self.queue.get(), REQUEST_GAP_MAX)
+      except TimeoutError:
+        break
+      value = bytes(message.body[1]['Value'][1])
+      retired += len(value)
+      if self.queue.overflow or len(value) > 512 or retired > 4096:
+        raise QueryError('elm_resync_overflow')
+    else:
+      raise QueryError('elm_resync_busy')
+    self.request_gap = REQUEST_GAP_MAX
+    self.next_request = time.monotonic()
+    reply = await self.command('ATI')
+    if not re.fullmatch(rb'(?:ATI\r\n?)?\s*ELM327 v[0-9.]+\s*>', reply):
+      raise QueryError('elm_resync_identity')
+
   async def close(self):
     if self.notifying:
       with suppress(Exception):
@@ -675,7 +748,8 @@ def collection_info(link, poller):
           'no_data_count': getattr(poller, 'no_data_count', 0),
           'no_data_request': getattr(poller, 'last_no_data_command', None),
           'request_gap_ms': round(getattr(link, 'request_gap', REQUEST_GAP_MIN) * 1000., 1),
-          'response_ms': getattr(link, 'last_latency_ms', 0.)}
+          'response_ms': getattr(link, 'last_latency_ms', 0.),
+          'resync_count': getattr(poller, 'resync_count', 0), 'resync_streak': getattr(poller, 'resync_streak', 0)}
 
 
 def vehicle_monitor():
