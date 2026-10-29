@@ -220,7 +220,7 @@ def test_arbitrary_fragment_boundaries():
     for size in (7, 20, 31, 64, 512):
       link = FakeLink([raw[i:i + size] for i in range(0, len(raw), size)])
       assert b.parse_reply(await link.command('220101')) == payload()
-      assert link.writes == [b'220101\r']
+      assert link.writes == [b'2201019\r']
   asyncio.run(check())
 
 

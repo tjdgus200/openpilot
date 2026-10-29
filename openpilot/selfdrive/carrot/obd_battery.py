@@ -44,6 +44,23 @@ SETUP = ('ATE0', 'ATL0', 'ATM0', 'ATSP6', 'ATCAF1', 'ATCFC1', 'ATFCSM0',
 COMMANDS = frozenset((*SETUP, 'ATI', *REPLIES))
 
 
+def request_bytes(command):
+  """Bound each fixed DID transaction at the ELM, not by truncating replies."""
+  if command not in COMMANDS:
+    raise ValueError('command not allowed')
+  suffix = ''
+  if command in REPLIES:
+    length = REPLIES[command][0]
+    # ISO-TP first frame carries 6 bytes, consecutive frames carry 7.
+    # 1 + ceil((length - 6) / 7) == (length + 7) // 7.
+    # ELM327's optional single-hex response count counts CAN frames/lines.
+    # Never underestimate it: stopping early can leave ECU retransmissions.
+    if type(length) is not int or not 7 <= length <= 104:
+      raise ValueError('unsupported response count')
+    suffix = format((length + 7) // 7, 'X')
+  return (command + suffix + '\r').encode('ascii')
+
+
 class QueryError(ValueError):
   """Bounded local failure category; never contains replies or credentials."""
   def __init__(self, code):
@@ -519,8 +536,7 @@ class Link:
         raise ValueError('ELM setup')
 
   async def command(self, command):
-    if command not in COMMANDS:
-      raise ValueError('command not allowed')
+    request = request_bytes(command)
     delay = max(0., self.next_request - time.monotonic())
     if delay:
       await asyncio.sleep(delay)
@@ -529,7 +545,7 @@ class Link:
     started = time.monotonic()
     deadline = started + 3
     try:
-      await self.call(self.uart, GATT, 'WriteValue', 'aya{sv}', ((command + '\r').encode(), {'type': ('s', 'request')}), timeout=2)
+      await self.call(self.uart, GATT, 'WriteValue', 'aya{sv}', (request, {'type': ('s', 'request')}), timeout=2)
     except TimeoutError:
       raise QueryError('gatt_write_timeout') from None
     except Exception:

@@ -1,5 +1,20 @@
 # Repository memory
 
+- 2026-10-29 passive BLE evidence twice shows220101: valid9-frame/62-byte
+  response then7 frames of a second response before the prompt,322 bytes total.
+  Strict parser rejection triggers collector cleanup; extra frames differ,
+  not byte-identical duplicates. Add ELM exact response-count suffixes9/7/6
+  for0101/0105/0106 and6 for the four39-byte cell DIDs, matching owner scanner
+  wire requests and official ELM frame-count semantics. This narrow change
+  supersedes byte-for-byte rollback only for fixed-DID wire formatting.
+  Preserve strict parser, queue/timeout/gap/identity/AT setup,100ms unlimited
+  retries, enrollment/confirmation, TTL/P gates and all PV5/model/HUD behavior.
+  Never trim a mixed reply or fall back to bare polling on an invalid result.
+  See docs/pv5_obd_response_count_20261029.md and test_obd_response_count.py.
+  328 Windows PC checks plus Ruff/diff pass. PC emulation is not physical
+  reliability/RF/CPU or driving validation;
+  original source of the second response remains unknown. Comma-only change.
+
 - 2026-10-29 owner explicitly retains optimized defaults across reboot, model
   selection and every daily carrot-wip integration: GPU recurrence/CUDA graph,
   uint8-to-FP16 lookup, same-frame CPU preparation overlap and negotiated bounded
