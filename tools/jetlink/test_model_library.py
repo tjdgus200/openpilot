@@ -399,7 +399,7 @@ assert C.effective_id() == 'n16'
   subprocess.run([sys.executable, '-P', '-c', code], env=dict(os.environ, PYTHONPATH=str(C.ROOT)), check=True)
 
 
-@pytest.mark.parametrize('key', ['n16', 'flip-flop'])
+@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m'])
 def test_published_pv5_selection_uses_frozen_models_own_usb_release(store, key):
   import os
   import subprocess
@@ -408,7 +408,7 @@ import sys
 from pathlib import Path
 from openpilot.common import big_model_catalog as C
 key=sys.argv[1]
-assert set(C.available()) == {'n16','flip-flop'}
+assert set(C.available()) == {'n16','flip-flop','ctv3m'}
 C.select(key)
 assert C.freeze_boot() == key
 original=Path.is_file

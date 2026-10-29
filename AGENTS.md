@@ -1,5 +1,13 @@
 # Repository memory
 
+- CTV3M published2026-10-29: source6b4c7885, public prerelease
+  jetson-pv5-ctv3m-20261029-6b4c7885; bundle65118633bytes,
+  SHA7422c87ce6dc9772de1ad5cebfc2e03916d1003ba3e394373e9f8f5d4e23d9e9.
+  Four anonymous assets and isolated server/HUD/boot/queues/overlays verified.
+  Linux source583 and Windows368 pass; no physical install/TRT/road result.
+  Protect pv5-usb-ctv3m.json plus CTV3M metadata and exact HF source revision
+  in daily WIP integration. Existing N16/Flip Flop packages and default unchanged.
+
 - 2026-10-29 owner adds CTV3M bf3e3631b3 and explicitly requests official comma.ai
   Hugging Face sources, overriding NAS-only provisioning for this model. ONNX
   f78ed37d/12864 at HF revision84c72ed5, SHA404a18cf,766354845bytes fully hashed
