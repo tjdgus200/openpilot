@@ -653,14 +653,22 @@ class Link:
       raise QueryError('elm_resync_identity')
 
   async def close(self):
+    released = True
     if self.notifying:
-      with suppress(Exception):
+      try:
         await self.call(self.uart, GATT, 'StopNotify', timeout=0.5)
+      except Exception:
+        released = False
     if self.filter:
-      self.filter.__exit__(None, None, None)
+      try:
+        self.filter.__exit__(None, None, None)
+      except Exception:
+        released = False
     if self.scan:
-      with suppress(Exception):
+      try:
         await self.call(self.scan, ADAPTER, 'StopDiscovery', timeout=0.5)
+      except Exception:
+        released = False
     # Only our dedicated OBD target, never other Bluetooth devices or BlueZ.
     if self.device:
       disconnected = False
@@ -674,7 +682,7 @@ class Link:
       try:
         value = (await self.call(self.device, 'org.freedesktop.DBus.Properties', 'Get', 'ss',
                                  (DEVICE, 'Connected'), timeout=0.5))[0]
-        return disconnected and value == ('b', False) and type(value[1]) is bool
+        return released and disconnected and value == ('b', False) and type(value[1]) is bool
       except Exception:
         pass
     return False
@@ -722,25 +730,59 @@ async def run():
               # No overlapping requests and no catch-up burst after a slow poll.
               await asyncio.sleep(poller.delay(link))
           finally:
-            write_snapshot('disconnected', identity=identity)
-            # Deadline/cancellation may require up to two more seconds to clean
-            # up this target; no further connection or polling starts here.
-            with suppress(TimeoutError):
-              cleanup_complete = await asyncio.wait_for(link.close(), 2.0) is True
-              # Discovery can fail before any Connect was issued; such a
-              # completed attempt owns no radio connection to release.
-              cleanup_complete |= getattr(link, 'connect_started', True) is False
+            try:
+              # A full/unwritable status filesystem must not skip teardown or
+              # replace a manager cancellation with a new reconnect attempt.
+              with suppress(OSError):
+                write_snapshot('disconnected', identity=identity)
+            finally:
+              # Even an unexpected diagnostic failure still attempts teardown.
+              # No new owner starts before this bounded close/router exit.
+              with suppress(TimeoutError):
+                cleanup_complete = await asyncio.wait_for(link.close(), 2.0) is True
+                # Discovery can fail before any Connect was issued; such a
+                # completed attempt owns no radio connection to release.
+                cleanup_complete |= getattr(link, 'connect_started', True) is False
     except asyncio.CancelledError:
       raise
     except Exception as exc:
       # No credentials, raw frames, or unbounded exception/log loop.
       code = exc.code if isinstance(exc, QueryError) else 'timeout' if isinstance(exc, TimeoutError) else 'response_or_setup_failed'
       delay = RETRY_INTERVAL
-      write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {
-        'failure': code, 'retry_delay_s': delay, 'cleanup_verified': cleanup_complete})
+      with suppress(OSError):
+        write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {
+          'failure': code, 'failure_detail': failure_detail(exc),
+          'retry_delay_s': delay, 'cleanup_verified': cleanup_complete})
       # The old local attempt and bounded cleanup have ended and its router
       # has exited. Unknown radio release stays visible; it adds no backoff.
       await asyncio.sleep(delay)
+
+
+def failure_detail(exc):
+  """Fixed diagnostic labels only; never render exception text or payloads."""
+  if isinstance(exc, QueryError):
+    return 'transport_or_recovery'
+  if isinstance(exc, TimeoutError):
+    return 'deadline'
+  if isinstance(exc, OSError):
+    return 'local_io'
+  if isinstance(exc, MemoryError):
+    return 'memory'
+  if isinstance(exc, ImportError):
+    return 'dependency'
+  if isinstance(exc, UnicodeDecodeError):
+    return 'non_ascii'
+  if isinstance(exc, json.JSONDecodeError):
+    return 'local_json'
+  if type(exc) is ValueError and len(exc.args) == 1 and type(exc.args[0]) is str and len(exc.args[0]) <= 64:
+    return {'ELM framing': 'reply_framing', 'ELM response source/status': 'reply_source_or_status',
+            'unexpected DID length': 'reply_start_or_length', 'ISO-TP sequence': 'reply_sequence',
+            'incomplete or wrong DID': 'reply_incomplete_or_did', 'unsupported DID': 'reply_unsupported',
+            'device unavailable': 'device_unavailable', 'services unavailable': 'services_unavailable',
+            'unsupported GATT': 'gatt_layout', 'device identity': 'device_identity',
+            'ELM identity': 'elm_identity', 'ELM setup': 'elm_setup',
+            'configuration changed': 'configuration_changed', 'snapshot size': 'snapshot_size'}.get(exc.args[0], 'other')
+  return 'other'
 
 
 def collection_info(link, poller):
@@ -799,7 +841,8 @@ def main():
       try:
         await run()
       finally:
-        write_snapshot('stopped')
+        with suppress(OSError):
+          write_snapshot('stopped')
     with suppress(asyncio.CancelledError):
       asyncio.run(managed())
 

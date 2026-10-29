@@ -367,7 +367,8 @@ def test_publisher_matches_default_and_saved_page_selection(stored_mode, enabled
     builder.battery, builder.battery_retry_at = None, 0
     calls = []
     class Source:
-        def update(self, *args):
+        def update(self, *args, **kwargs):
+            assert kwargs['clock'] is hud_protocol.time.monotonic
             calls.append(args)
             return {'status': 'profile_required', 'fields': {}}
     monkeypatch.setattr(b, 'BatteryPublisher', Source)

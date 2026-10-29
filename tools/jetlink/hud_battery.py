@@ -260,7 +260,7 @@ class BatteryPublisher:
         self.ble_unverified.intersection_update(self.ble_metrics)
         return packet_from_metrics(self.ble_metrics, now, packet['status'], unverified=self.ble_unverified)
 
-    def update(self, vehicle, enabled, now):
+    def update(self, vehicle, enabled, now, *, clock=None):
         if not enabled:
             self.close()
             return None
@@ -282,6 +282,10 @@ class BatteryPublisher:
                 except (OSError, ValueError, TypeError):
                     pass
         if self.ble_enabled:
+            # Compare against the post-read clock. Neither a newly published
+            # snapshot nor a just-expired field may use the earlier IO time.
+            if clock is not None:
+                now = clock()
             self.socket = self.decoder = None
             self.report = None
             self.slow_metrics.clear()

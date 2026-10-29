@@ -172,7 +172,7 @@ class SnapshotBuilder:
         from hud_battery import BatteryPublisher
         self.battery = BatteryPublisher()
       vehicle = self.sm['carParams'].carFingerprint
-      return self.battery.update(vehicle, True, now)
+      return self.battery.update(vehicle, True, now, clock=time.monotonic)
     except Exception:
       # Optional battery telemetry must not expire the other HUD services.
       # Retry slowly without forwarding exception text or CAN payloads.

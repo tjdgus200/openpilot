@@ -149,7 +149,8 @@ class UIState:
     self._update_state()
     self._update_status()
     self.bleobd_receiving = self._obd_status.update(
-      time.monotonic(), self.started and self.CP is not None and not self.CP.notCar and self.CP.carFingerprint == 'KIA_PV5')
+      time.monotonic(), self.started and self.CP is not None and not self.CP.notCar and self.CP.carFingerprint == 'KIA_PV5',
+      clock=time.monotonic)
     if time.monotonic() - self._param_update_time > 5.0:
       self.update_params()
     device.update()

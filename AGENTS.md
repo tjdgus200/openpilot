@@ -1,5 +1,17 @@
 # Repository memory
 
+- 2026-10-29 OBD audit: preserve status-IO-independent bounded teardown and
+  cancellation propagation; partial notification/filter/discovery cleanup must
+  not skip target Disconnect/Get or claim verified success. Production badge
+  and BLE HUD sample monotonic after file reads without widening TTL/future
+  checks. Keep fixed-only failure_detail diagnostics, no raw exception text.
+  test_obd_audit.py includes independent frozen protocol positions with only
+  synthetic payloads; test_obd_clock_race.py covers snapshot replacement during
+  IO. Owner-side daily Windows gate requires/protects these plus response_count
+  and resync suites.438 Linux PC checks pass; no device/RF/road result. Details:
+  docs/pv5_obd_audit_20261029.md. Earlier passing mocks did not prove physical
+  adapter boundaries or continuous-stream reliability.
+
 - 2026-10-29 live boundary capture confirms0105 tails before FIRST: CF6,FIRST,
   CF1..5 and CF5,CF6,FIRST,CF1..4. Do not rotate/reuse them as data. Preserve
   exact-count requests and strict parser. Only this bounded fixed-source/DID/

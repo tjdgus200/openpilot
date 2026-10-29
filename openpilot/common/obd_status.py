@@ -11,7 +11,7 @@ class ObdBadgeStatus:
     self.next_read = 0.0
     self.received_at = None
 
-  def update(self, now, enabled):
+  def update(self, now, enabled, *, clock=None):
     if not enabled:
       self.received_at = None
       self.next_read = 0.0
@@ -22,6 +22,10 @@ class ObdBadgeStatus:
       try:
         identity = config_id(configuration(read_json(self.config_path)))
         record = read_json(self.snapshot_path)
+        # The writer may replace the file during these reads. Production
+        # samples after IO; the explicit-now API remains available for replay.
+        if clock is not None:
+          now = clock()
         updated = record['updated']
         if (type(record.get('version')) is int and record['version'] == 1
             and record.get('config_id') == identity and record.get('state') == 'receiving'

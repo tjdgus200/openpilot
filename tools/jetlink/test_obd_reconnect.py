@@ -71,10 +71,7 @@ def test_failed_release_confirmation_still_reports_failure(fault):
   link.call = call
   if fault == 'filter':
     link.filter = NS(__exit__=lambda *args: (_ for _ in ()).throw(ValueError('filter cleanup failed')))
-    with pytest.raises(ValueError):
-      asyncio.run(link.close())
-  else:
-    assert asyncio.run(link.close()) is False
+  assert asyncio.run(link.close()) is False
 
 
 @pytest.mark.parametrize('cleanup_verified,connect_started,proof', [
