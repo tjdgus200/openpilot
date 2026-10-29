@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-10-29 owner explicitly retains optimized defaults across reboot, model
+  selection and every daily carrot-wip integration: GPU recurrence/CUDA graph,
+  uint8-to-FP16 lookup, same-frame CPU preparation overlap and negotiated bounded
+  shared RAM remain default-on for N16/Flip Flop/CTV3M. Keep exact N16 gates for
+  native C image conversion, direct/deferred map and compact response; do not
+  force them onto other model layouts. Preserve diagnostic opt-outs, capability
+  negotiation, freshness/reset/ownership checks and existing failure handling.
+  tools/jetlink/test_optimization_defaults.py is an owner-protected merge gate;
+  missing/failing checks block automatic publication. All three full ONNX files
+  matched selected specs; four-frame CPU original/patched outputs were exact and
+  174 focused PC checks passed. Actual TensorRT/P99/thermal/road checks remain
+  unperformed without devices. Existing public packages already carry defaults;
+  preserving policy/tests alone does not require repackaging or device changes.
+
 - CTV3M published2026-10-29: source6b4c7885, public prerelease
   jetson-pv5-ctv3m-20261029-6b4c7885; bundle65118633bytes,
   SHA7422c87ce6dc9772de1ad5cebfc2e03916d1003ba3e394373e9f8f5d4e23d9e9.
