@@ -106,4 +106,3 @@ def test_restarted_worker_resumes_only_empty_gate_without_reusing_old_permission
   host.enter()
   assert calls[0] == ['systemctl', 'stop', 'carrot-jetlink', 'carrot-jetlink-hud']
   assert calls[-1] == 'empty-gate'
-

@@ -261,5 +261,3 @@ def test_parked_gate_revokes_even_when_selected_package_is_already_registered(mo
         lambda *a, **k: states.append(k['host_update']['state']), sleep=lambda _: None)
   assert sent == [{'pause': True}, {'pause': True}, value]
   assert states == ['waiting_park', 'waiting_park', 'ready']
-
-

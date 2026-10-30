@@ -123,13 +123,22 @@ def test_actual_host_restart_loop_applies_each_admitted_fps():
   source=Path(__file__).with_name('hud.py')
   tree=ast.parse(source.read_text(encoding='utf-8'))
   main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+  dashboard_ready=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='dashboard_ready')
   loop=next(n for n in reversed(main.body) if isinstance(n,ast.While))
   class Owner:
     def __enter__(self):
+      assert waited[0] >= 2  # Boot diagnosis owns the panel before valid data.
       return self
     def __exit__(self,*args):
       pass
   choices,commands,position=[0,1,2,3,4,0],[],[0]
+  waited=[0]
+  def sleep(seconds):
+    assert seconds == .2
+    waited[0]+=1
+  def snapshot():
+    return None if waited[0] < 2 else (1., {'alive': {'carState': True},
+        'valid': {'carState': True}, 'events': {'carState': 'valid event'}})
   def render(**kwargs):
     commands.append(list(env['sys'].argv))
     position[0]+=1
@@ -139,10 +148,12 @@ def test_actual_host_restart_loop_applies_each_admitted_fps():
        'sys':NS(argv=[]),'base':['hud.py'],'codec_options':quality.codec_options,
        'NAMES':quality.NAMES,'RATES':RATES,'extra_args':[],'cluster':NS(main=render),
        'panel_owner':lambda **kwargs:Owner(),'CpuJpegError':quality.CpuJpegError,
-       'QualityWatch':lambda:NS(read=lambda:int(position[0]<len(choices)))}
+       'QualityWatch':lambda:NS(read=lambda:int(position[0]<len(choices))),
+       'read_snapshot':snapshot,'time':NS(sleep=sleep)}
   runner=ast.FunctionDef(name='run',args=ast.arguments(posonlyargs=[],args=[],kwonlyargs=[],
     kw_defaults=[],defaults=[]),body=[loop],decorator_list=[])
-  exec(compile(ast.fix_missing_locations(ast.Module(body=[runner],type_ignores=[])),str(source),'exec'),env)
+  exec(compile(ast.fix_missing_locations(ast.Module(body=[dashboard_ready,runner],type_ignores=[])),str(source),'exec'),env)
   env['run']()
   assert [args[-1] for args in commands] == ['10','15','20','25','30','10']
   assert all(args[args.index('--usb-jpeg-quality')+1]=='92' for args in commands)
+  assert waited == [2]
