@@ -175,3 +175,151 @@ def test_unrecognized_bad_reply_remains_fatal_without_sync_command(monkeypatch):
       await poller.read(link, '220105')
     assert link.writes == [b'2201057\r']
   asyncio.run(check())
+
+
+TAIL_DIDS = ('220102', '220103', '220104', '220106', '22010A')
+
+
+def prefixed_tail(command, marker=127):
+  # Frozen protocol positions from the owner's captures, independent of the
+  # production count/length table. All payload bytes here are synthetic.
+  length = 38 if command == '220106' else 39
+  first = bytes((0x10, length, 0x62, 0x01, int(command[4:], 16)))
+  frames = [bytes((0x26,)), first, bytes((0x21,)), bytes((0x22,)), bytes((0x23,)), bytes((0x24,))]
+  return b'\r' + b'\r'.join(b'7EC' + f.ljust(8, bytes((marker,))).hex().upper().encode() for f in frames) + b'\r>'
+
+
+@pytest.mark.parametrize('command', TAIL_DIDS)
+def test_observed_missing_final_frame_is_discard_only(command):
+  raw = prefixed_tail(command)
+  assert len(raw) == 122
+  assert not b.rotated_reply(raw, command)
+  with pytest.raises(ValueError):
+    b.parse_reply(raw, command)
+  assert b.prefixed_tail_reply(raw, command)
+  assert not b.prefixed_tail_reply(response(sample(command)), command)
+
+
+@pytest.mark.parametrize('command', TAIL_DIDS)
+def test_observed_tail_recovers_same_link_without_reusing_failed_payload(monkeypatch, command):
+  async def check():
+    link = ClockLink([prefixed_tail(command), b'ELM327 v2.3\r>', response(sample(command, 126))], monkeypatch)
+    poller = b.MetricPoller()
+    poller.values, poller.observed = {'pack_power_kw': 8.}, {'pack_power_kw': 99.}
+    # Unpublished multi-page assemblies must not cross a lost boundary.
+    poller.first_temperature_page = (99., sample('220101'))
+    poller.cell_blocks, poller.cell_started = {'220102': sample('220102')}, 99.
+    assert await poller.read(link, command) == (True, None)
+    assert link.writes == [b.request_bytes(command), b'ATI\r']
+    assert poller.values == {'pack_power_kw': 8.} and poller.observed == {'pack_power_kw': 99.}
+    assert poller.first_temperature_page is None and not poller.cell_blocks
+    assert poller.resync_count == poller.resync_streak == 1
+    assert poller.next_cells >= link.clock[0] + 1.
+    link.clock[0] = poller.retry_at[command]
+    assert await poller.read(link, command) == (True, sample(command, 126))
+    assert poller.last_result == 'ok' and poller.resync_streak == 0
+    assert link.writes == [b.request_bytes(command), b'ATI\r', b.request_bytes(command)]
+  asyncio.run(check())
+
+
+@pytest.mark.parametrize('mutate', [
+  lambda raw: raw[:-1], lambda raw: raw + b'>', lambda raw: raw + b'X',
+  lambda raw: raw.replace(b'7EC', b'7ED', 1),
+  lambda raw: raw.replace(b'1027620102', b'1026620102', 1),
+  lambda raw: raw.replace(b'620102', b'620103', 1),
+  lambda raw: raw.replace(b'7EC26', b'7EC27', 1),
+  lambda raw: raw.replace(b'7EC21', b'7EC22', 1),
+  lambda raw: raw.replace(b'7EC22', b'7EC10', 1),
+  lambda raw: raw.replace(b'7EC24', b'7EC25', 1),
+  lambda raw: raw.replace(b'\r7EC22', b'\rSTOPPED\r7EC22', 1),
+  lambda raw: raw[:-1] + b'7EC2500000000000000\r>',
+  lambda raw: raw[:-22] + b'>', lambda raw: raw[:-1] + raw,
+  lambda raw: b'x' * 4097 + raw, lambda raw: b'\xff' + raw,
+])
+def test_incomplete_tail_recognition_does_not_relax_other_guards(mutate):
+  assert not b.prefixed_tail_reply(mutate(prefixed_tail('220102')), '220102')
+
+
+@pytest.mark.parametrize('command', ['ATI', '220101', '220105', '220114'])
+def test_incomplete_tail_does_not_broaden_other_contracts(command):
+  assert not b.prefixed_tail_reply(prefixed_tail('220102'), command)
+
+
+@pytest.mark.parametrize('identity', [b'OK\r>', b'?\r>', prefixed_tail('220102'),
+                                      b'ELM327 v2.3\r>extra', TimeoutError(), OSError()])
+def test_incomplete_tail_failed_identity_retains_fatal_path(monkeypatch, identity):
+  async def check():
+    link, poller = ClockLink([prefixed_tail('220102'), identity], monkeypatch), b.MetricPoller()
+    with pytest.raises(b.QueryError):
+      await poller.read(link, '220102')
+    assert link.writes == [b'2201026\r', b'ATI\r'] and not poller.values
+    assert poller.resync_count == 0
+  asyncio.run(check())
+
+
+def test_mixed_boundary_faults_share_two_recovery_limit(monkeypatch):
+  async def check():
+    link = ClockLink([prefixed_tail('220102'), b'ELM327 v2.3\r>', rotated('220105'),
+                      b'ELM327 v2.3\r>', prefixed_tail('220106')], monkeypatch)
+    poller = b.MetricPoller()
+    for command in ('220102', '220105'):
+      assert await poller.read(link, command) == (True, None)
+    with pytest.raises(b.QueryError, match='elm_resync_limit'):
+      await poller.read(link, '220106')
+    assert link.writes == [b'2201026\r', b'ATI\r', b'2201057\r', b'ATI\r', b'2201066\r']
+    assert poller.resync_count == poller.resync_streak == 2 and not poller.values
+  asyncio.run(check())
+
+
+def test_cancellation_during_incomplete_tail_recovery_sends_no_further_command(monkeypatch):
+  async def check():
+    link, poller = ClockLink([prefixed_tail('220102')], monkeypatch), b.MetricPoller()
+    task = asyncio.create_task(poller.read(link, '220102'))
+    await original_sleep(.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+      await task
+    assert link.writes == [b'2201026\r'] and poller.resync_count == 0
+    assert not poller.values and not poller.observed
+  original_sleep = asyncio.sleep
+  asyncio.run(check())
+
+
+def test_repeated_good_and_retired_transactions_preserve_exact_payloads(monkeypatch):
+  async def check():
+    commands = TAIL_DIDS * 10
+    script, expected = [], []
+    for i, command in enumerate(commands):
+      failed = i % 10 == 0
+      script.extend([prefixed_tail(command), b'ELM327 v2.3\r>'] if failed else [response(sample(command, i))])
+      expected.append(None if failed else sample(command, i))
+    link, poller = ClockLink(script, monkeypatch), b.MetricPoller()
+    for command, payload in zip(commands, expected, strict=True):
+      link.clock[0] = max(link.clock[0], poller.retry_at.get(command, 0.))
+      assert await poller.read(link, command) == (True, payload)
+    assert not link.script and link.queue.empty() and not link.queue.overflow
+    assert poller.resync_count == 5 and poller.resync_streak == 0
+    assert len(link.writes) == 55 and link.writes.count(b'ATI\r') == 5
+    assert not poller.values and not poller.observed
+  asyncio.run(check())
+
+
+def test_cell_poll_keeps_retired_generation_backoff_and_previous_complete_array(monkeypatch):
+  async def check():
+    link = ClockLink([prefixed_tail('220103'), b'ELM327 v2.3\r>'], monkeypatch)
+    poller = b.MetricPoller(details=True)
+    poller.due = dict.fromkeys(poller.due, 103.)
+    poller.cell_blocks, poller.cell_started = {'220102': sample('220102')}, 99.
+    cells = [3.96] * 108
+    poller.values, poller.observed = {'cell_voltages_v': cells}, {'cell_voltages_v': 99.}
+    publications = []
+    await poller.poll(link, parked=True, publish=lambda *args: publications.append(args))
+    assert link.writes == [b'2201036\r', b'ATI\r']
+    assert not poller.cell_blocks and poller.next_cells >= 102.
+    assert publications[-1][1] == {'cell_voltages_v': cells}
+    assert publications[-1][2] == {'cell_voltages_v': 99.}
+    # Recovery cannot create or renew a heatmap. The prior generation expires
+    # at the same collector age, even if no subsequent good response arrives.
+    link.clock[0] = 104.1
+    assert poller.snapshot()[1:] == ({}, {})
+  asyncio.run(check())

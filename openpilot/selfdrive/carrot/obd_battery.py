@@ -162,6 +162,31 @@ def rotated_reply(reply, command):
              for i, frame in enumerate(frames))
 
 
+def prefixed_tail_reply(reply, command):
+  """Recognize the observed incomplete six-frame boundary for discard only.
+
+  A leading CF6 followed by FIRST,CF1..CF4 is not a valid rotation of a
+  38/39-byte reply: CF5 is missing. Never trim, reorder or extract its data.
+  Only this fixed-source/length/DID/count pattern may try the bounded local
+  resynchronization; an unknown malformed transaction still closes the link.
+  """
+  if (command not in REPLIES or REPLIES[command][0] not in (38, 39)
+      or not isinstance(reply, bytes) or len(reply) > 4096
+      or reply.count(b'>') != 1 or not reply.endswith(b'>')):
+    return False
+  length, prefix = REPLIES[command]
+  try:
+    lines = [line.strip().replace(' ', '').upper()
+             for line in reply[:-1].decode('ascii').replace('\n', '\r').split('\r') if line.strip()]
+  except UnicodeDecodeError:
+    return False
+  if len(lines) != 6 or any(not re.fullmatch(r'7EC[0-9A-F]{16}', line) for line in lines):
+    return False
+  frames = [bytes.fromhex(line[3:]) for line in lines]
+  return (frames[1][:5] == bytes((0x10, length)) + prefix
+          and tuple(frame[0] for frame in frames) == (0x26, 0x10, 0x21, 0x22, 0x23, 0x24))
+
+
 def candidate_metrics(payload):
   """0101 data offsets exclude 62 01 01. Never substitute coolant/SOC meanings.
 
@@ -294,11 +319,17 @@ class MetricPoller:
     try:
       value = parse_reply(raw, command)
     except ValueError:
-      if not rotated_reply(raw, command):
+      if not (rotated_reply(raw, command) or prefixed_tail_reply(raw, command)):
         raise
       if self.resync_streak >= 2:
         raise QueryError('elm_resync_limit') from None
       self.resync_streak += 1
+      # Retire incomplete multi-page assemblies too. Previously published
+      # good fields keep their original timestamps and normal expiry.
+      self.first_temperature_page = None
+      if self.cell_blocks:
+        self.cell_blocks.clear()
+        self.next_cells = max(self.next_cells, time.monotonic() + 2.)
       # The completed but malformed reply supplies no metric or timestamp.
       # Verify a new local ELM boundary before the scheduler can send another
       # ECU query. Late bytes/failed identity still take the fatal close path.
@@ -405,7 +436,7 @@ class MetricPoller:
       safe_parked = self.park_allowed(parked)
       if safe_parked and reply is None:
         self.cell_blocks.clear()
-        self.next_cells = self.retry_at.get(command, time.monotonic() + 2.)
+        self.next_cells = max(self.next_cells, self.retry_at.get(command, time.monotonic() + 2.))
       elif safe_parked:
         self.cell_blocks[command] = reply
         if len(self.cell_blocks) == len(CELL_BLOCKS):

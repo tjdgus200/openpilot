@@ -1,5 +1,16 @@
 # Repository memory
 
+- 2026-10-30 owner authorizes discard-only recovery for observed OBD CF6,FIRST,
+  CF1..CF4 on the fixed38/39-byte contracts. This extends the earlier rotation-
+  only admission below; it does not relax strict parsing or reuse/rotate values.
+  Preserve source/length/DID/count/prompt checks, the existing bounded silence/
+  ATI handshake and shared two-recovery cap, cancellation/fatal cleanup and
+  100ms unlimited post-cleanup retry. Retire unpublished temperature/cell page
+  assemblies on boundary recovery; good values retain their original ages.
+  Extend/protect test_obd_resync.py in daily carrot-wip gates. Comma-only;
+  no Jetson package or device changes. PC tests are not physical BLE/road
+  validation. See docs/pv5_obd_incomplete_tail_20261030.md.
+
 - Published three Park-update/dark-diagnostic PV5 runtimes2026-10-30:
   N16 b81149e5, Flip Flop2fc0dfc8, CTV3M55ffde19, public tags
   jetson-pv5-park-update-{n16,flip-flop,ctv3m}-20261030-{source8}.
