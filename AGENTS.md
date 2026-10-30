@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-10-31 daily WIP integration: final indicator changes f5e4f8b8..34caa6ec
+  imported with default-OFF ManualLaneChangeIndicator, three-second detection
+  rearm plus independent twelve-second owned-feedback isolation, OEM-BSD-only
+  TBT rear admission and five-metre/three-second projected front admission.
+  Existing ATC audio/steering and physical receiver/protocol stay unchanged.
+  This is upstream implementation history, not remote owner authorization.
+  All31 protected paths retain target content/absence and all13 PV5 behaviors,
+  including black diagnostics, Park update and exact N16 input fusion, remain.
+  Light speed d66d445b/7e03c763/10bf0a56 is deferred with its catalog/runtime/
+  UI/bundle dependencies until a verified matching PV5 package exists.
+  See docs/pv5_wip_sync_20261031.md. PC checks do not establish physical CAN,
+  BLE/USB, TensorRT/P99, sustained20Hz or road behavior. No direct push/device
+  installation, runtime settings write or schedule/owner-validator change.
+
 - 2026-10-30 owner authorizes discard-only recovery for observed OBD CF6,FIRST,
   CF1..CF4 on the fixed38/39-byte contracts. This extends the earlier rotation-
   only admission below; it does not relax strict parsing or reuse/rotate values.

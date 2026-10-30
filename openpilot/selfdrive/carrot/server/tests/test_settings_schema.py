@@ -447,6 +447,9 @@ def test_external_hud_brightness_and_orientation_use_catalog_controls(settings, 
   assert screen_mode["descr"].startswith('-1: 3D 전체화면\n0: 내비/주행 리포트 자동')
   assert "8:" in screen_mode["edescr"]
   assert (by_name["JetsonHudFps"]["min"], by_name["JetsonHudFps"]["max"], by_name["JetsonHudFps"]["default"]) == (0, 4, 0)
+  fusion = by_name["JetsonInputFusion"]
+  assert (fusion["min"], fusion["max"], fusion["default"]) == (0, 1, 1)
+  assert fusion["options"]["en"] == ["CPU baseline", "GPU fusion (default)"]
   assert screen_mode["edescr"].startswith('-1: 3D fullscreen\n0: Automatic navigation/driving report')
   assert screen_mode["cdescr"].startswith('-1: 3D全屏\n0: 自动导航/驾驶报告')
 
@@ -462,6 +465,7 @@ def test_external_hud_brightness_and_orientation_use_catalog_controls(settings, 
   assert screen["params"] == [
     "ClusterHudEncoder",
     "JetsonHudFps",
+    "JetsonInputFusion",
     "ClusterHudScreenMode",
     "ClusterHudPanelLayout",
     "ClusterHudCameraViewMode",
