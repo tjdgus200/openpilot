@@ -6,6 +6,17 @@ class NonFiniteModelOutput(ValueError):
   """A completed inference with invalid numbers, not a device/protocol failure."""
 
 
+def validate_parsed_outputs(outputs):
+  """Check every parsed array without reductions that can overflow finite data."""
+  for name, value in outputs.items():
+    if not isinstance(value, np.ndarray) or value.dtype.kind not in 'biuf':
+      raise ValueError('invalid parsed model output type')
+    if not np.isfinite(value).all():
+      # Names only; never dump model values or repair an invalid prediction.
+      raise NonFiniteModelOutput(f'invalid parsed model output: {str(name)[:48]}')
+  return outputs
+
+
 def validate_compiled_output(result, expected_count):
   if result.size != expected_count:
     raise ValueError(f'invalid precompiled model output: count={result.size}, expected={expected_count}, shape={result.shape}')

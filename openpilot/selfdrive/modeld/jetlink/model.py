@@ -35,6 +35,7 @@ class Warp:
     self.transforms, self.inputs = input_buffers if input_buffers is not None else make_warp_inputs()
     self.blobs = {}
     self.timings = (0., 0., 0.)
+    self.coherent_output = False
     if prepared is not None:
       inputs_ready = time.monotonic()
       from openpilot.selfdrive.modeld.helpers import load_oob
@@ -42,6 +43,17 @@ class Warp:
       if value['identity'] != (width, height, self.size, SPEC.sha256):
         raise ValueError('prepared Jetlink warp contract mismatch')
       self.run_warp = value['warp']
+      from openpilot.selfdrive.modeld.jetlink import coherent
+      if value.get('coherent_output') is True and coherent.enabled():
+        try:
+          coherent.install(self.run_warp, SPEC.warped_shape)
+          self.coherent_output = True
+        except Exception:
+          from openpilot.common.swaglog import cloudlog
+          cloudlog.exception('Jetlink coherent restore unavailable; retaining original allocation')
+          # A failed install may already have retired its candidate allocation.
+          # Reload an untouched unlinked capture, never reuse a partial install.
+          self.run_warp = load_oob(io.BytesIO(prepared))['warp']
       self.init_timings = (inputs_ready - started, time.monotonic() - inputs_ready, time.thread_time() - cpu_started)
       return
     from tinygrad import Tensor, TinyJit
@@ -56,12 +68,16 @@ class Warp:
     from openpilot.selfdrive.modeld.jetlink.warp import validated_warp
     self.run_warp = validated_warp(self.run_warp, NV12Frame(width, height, *get_nv12_info(width, height)),
                                    self.transforms, self.inputs, SPEC.frame_skip, HARDWARE.get_device_type())
+    from openpilot.selfdrive.modeld.jetlink.coherent import candidate
+    self.run_warp, self.coherent_output = candidate(self.run_warp, NV12Frame(width, height, *get_nv12_info(width, height)),
+                                                  self.transforms, self.inputs)
 
   def save_prepared(self, path, width, height):
     from tinygrad import Tensor
     from openpilot.selfdrive.modeld.helpers import dump_oob
     with path.open('wb') as output:
-      dump_oob({'identity': (width, height, self.size, SPEC.sha256), 'warp': self.run_warp}, output)
+      dump_oob({'identity': (width, height, self.size, SPEC.sha256), 'warp': self.run_warp,
+                'coherent_output': self.coherent_output}, output)
     # Verify serialization before handing the executable to modeld. The existing
     # 27-probe exact GPU validation has already selected the implementation.
     restored = Warp(width, height, path.read_bytes())
@@ -174,6 +190,7 @@ class JoiningModel:
                 'nav_model': 'nav_map' in self.spec.input_shapes,
                 'error': self.error, 'updated': now,
                 'execution': {'cpu_overlap': os.getenv('JETLINK_CPU_OVERLAP', '1') != '0',
+                              'coherent_warp': bool(getattr(self.warp, 'coherent_output', False)),
                               'shared_input': getattr(self.client, 'shared', None) is not None,
                               'compact_reply': bool(getattr(self.client, 'project_output', False))}}
       tmp = MODEL_STATUS.with_suffix('.tmp')
@@ -247,7 +264,8 @@ class JoiningModel:
         started = time.monotonic()
         # Same-frame CPU context only; Warp drains this submission even if
         # preparation fails, before the existing local-model fallback runs.
-        prepare = lambda: fill_inputs(self.views, inputs, self.prev_desire)
+        def prepare():
+          return fill_inputs(self.views, inputs, self.prev_desire)
         if os.getenv('JETLINK_CPU_OVERLAP', '1') == '0':
           prepare()
           prepare = None
@@ -274,7 +292,7 @@ class JoiningModel:
         if finished - started > .05 and finished - self.last_slow_log >= 1:
           self.last_slow_log = finished
           cloudlog.warning('Jetlink slow frame %d: warp %.2f (prepare/submit/read %.2f/%.2f/%.2f), '
-                           'roundtrip %.2f, parse %.2f ms; server gpu/queue/total %.2f/%.2f/%.2f ms',
+                           + 'roundtrip %.2f, parse %.2f ms; server gpu/queue/total %.2f/%.2f/%.2f ms',
                            self.frame, (warped-started)*1000, *(v*1000 for v in self.warp.timings),
                            (replied-warped)*1000, (finished-replied)*1000, *(v/1000 for v in self.client.timings))
         return parsed

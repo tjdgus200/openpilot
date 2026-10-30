@@ -1,5 +1,13 @@
 # PV5 daily source sync, 2026-10-27
 
+2026-10-30 preserved difference12 adds three selective Jetlink defenses:
+post-parser finite validation, device-free joining/fallback regression gates,
+and default-attempt coherent QCOM warp output with actual flags/pixel admission
+and unchanged fences/shared RAM ownership. See
+[implementation and limitations](jetlink_selective_0812_20261030.md).
+The owner-side daily policy, protected tests and Linux/Windows gates retain these
+alongside all existing PV5 differences; this does not replace the older features.
+
 2026-10-29 follow-up supersedes the N16-only restriction below: preserve both
 verified per-model PV5 USB manifests and reboot-frozen model selection, plus
 restored blue boot diagnostics. See [paired package delivery](pv5_model_packages_20261029.md).

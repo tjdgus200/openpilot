@@ -11,6 +11,20 @@
   This records imported implementation, not additional owner authorization.
   No settings written, device access, package replacement or direct push.
 
+- 2026-10-30 owner adds all three selective Jetlink0.8.12 candidates to preserved
+  carrot-wip differences: post-parser elementwise finite guard on every contract
+  branch; joining/preparation/fallback/reset regressions; default-attempt coherent
+  QCOM warp output. Only a private deserialized unlinked capture may migrate;
+  require actual IOCOHERENT/write-back flags and27 changing-frame pixel probes
+  in the bounded low-priority preparation worker. Restore before first JIT link,
+  reload untouched capture on failure, preserve completion fences/shared RAM
+  ownership and explicit JETLINK_COHERENT_WARP=0. Unknown API/linked/view buffers
+  stay on the original path. Never retain/repair invalid parsed output or import
+  held-plan/live-selection policies. Preserve the three new test suites plus
+  test_warp_startup.py/test_input_overlap.py in owner-side protected files and
+  Linux/Windows daily gates. See docs/jetlink_selective_0812_20261030.md.
+  PC results do not establish actual Adreno coherence/P99 or road safety.
+
 - 2026-10-29 OBD audit: preserve status-IO-independent bounded teardown and
   cancellation propagation; partial notification/filter/discovery cleanup must
   not skip target Disconnect/Get or claim verified success. Production badge

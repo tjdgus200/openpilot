@@ -7,6 +7,7 @@ import re
 from jetlink.spec import ModelSpec
 from jetlink import output_projection as projection
 from openpilot.common.jetson_model import read_spec
+from openpilot.selfdrive.modeld.output_validation import validate_parsed_outputs
 
 DEFAULT_SPEC = ModelSpec.from_dict(json.loads(Path(__file__).with_name('cinque_v2.json').read_text()))
 JETSON_SPEC = ModelSpec.from_dict(read_spec())
@@ -105,8 +106,8 @@ def parse_outputs(parser, spec, result):
     # Do not fabricate zero hidden/map/navigation outputs for old consumers.
     if not projection.eligible(spec) or result.shape != (projection.COUNT,):
       raise ValueError('Invalid projected Jetlink output contract')
-    return parser.parse_outputs({name: result[None, at] for name, at in spec.output_slices.items()
-                                 if name not in projection.OMITTED})
+    return validate_parsed_outputs(parser.parse_outputs({name: result[None, at] for name, at in spec.output_slices.items()
+                                                        if name not in projection.OMITTED}))
   outputs = {name: result[None, at] for name, at in spec.output_slices.items()}
   # Older queued exports use five plan hypotheses; publishing still consumes
   # the selected 33 x 15 plan, as it does for the direct-plan exports.
@@ -116,5 +117,5 @@ def parse_outputs(parser, spec, result):
     outputs = parser.parse_vision_outputs(outputs)
     parser.parse_categorical_crossentropy('desire_state', outputs, out_shape=(8,))
     outputs.update(plan=plan, plan_stds=stds)
-    return outputs
-  return parser.parse_outputs(outputs)
+    return validate_parsed_outputs(outputs)
+  return validate_parsed_outputs(parser.parse_outputs(outputs))
