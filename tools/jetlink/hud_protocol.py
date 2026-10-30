@@ -21,7 +21,7 @@ SERVICES = ('carState', 'carParams', 'modelV2', 'radarState', 'liveTracks', 'lon
             'roadCameraState', 'cameraOdometry', 'liveCalibration', 'livePose', 'drivingModelData',
             'liveDelay', 'liveParameters', 'liveTorqueParameters', 'navInstruction', 'navInstructionCarrot',
             'navRoute', 'carrotMan', 'carrotNavi', 'wideRoadCameraState')
-PARAMS = ('ClusterHud', 'ClusterHudDebug', 'JetsonHudFps', 'ClusterHudBrightness', 'ClusterHudOrientation',
+PARAMS = ('ClusterHud', 'ClusterHudDebug', 'JetsonHudFps', 'JetsonInputFusion', 'ClusterHudBrightness', 'ClusterHudOrientation',
           'ClusterHudMirror', 'ClusterHudTheme', 'ClusterHudRadarInfo', 'ClusterHudRadarDisplay',
           'ClusterHudRadarSourceColor', 'ClusterHudCameraViewMode', 'ClusterHudPanelLayout',
           'ClusterHudScreenMode', 'ShowPlotMode', 'LanguageSetting', 'IsMetric', 'ShowDateTime',
@@ -242,6 +242,13 @@ class SnapshotBuilder:
     # above. Seal the snapshot after sampling/building so fresh services never
     # look future-dated, and slow optional work still counts toward their age.
     record['sent'] = time.monotonic()
+    from input_fusion import gate, selection as fusion_selection, PARAM as FUSION_PARAM
+    try:
+      requested = base64.b64decode(self.settings.get(FUSION_PARAM, 'MQ=='))
+    except (ValueError, TypeError):
+      requested = None
+    record['input_fusion'] = {'mode': fusion_selection(requested), 'parked': gate(self.sm, record['sent']),
+                              'hud_fps': self.target_fps}
     return encode_snapshot(record)
 
 def encode_snapshot(record):

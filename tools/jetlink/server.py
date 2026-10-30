@@ -41,6 +41,7 @@ class DisplayTelemetry:
   def __init__(self, original):
     self.original = original
     self.blinker = None
+    self.input_comparison = None
     self.health = health_worker() if Path('/etc/nv_tegra_release').is_file() else None
 
   def read(self):
@@ -55,7 +56,9 @@ class DisplayTelemetry:
     except (OSError, ValueError, KeyError, TypeError, ImportError):
       # Optional HUD diagnostics must never tear down the inference session.
       pass
+    comparison = getattr(self, 'input_comparison', None)
     return {**self.original.read(), 'carrot_hud_connected': connected,
+            **({'carrot_input_fusion': comparison.value} if comparison is not None else {}),
             **({'carrot_hud_quality': quality} if quality else {}),
             **({'carrot_blinker': self.blinker.telemetry()} if self.blinker is not None and self.blinker.worker is not None else {}),
             **({'carrot_health': self.health.read()} if self.health else {})}
@@ -67,7 +70,18 @@ class CarrotSession(Session):
       status = P.unpack_infer_resp(parts[0])[1]
       if status != P.Status.OK:
         self.telemetry.health.record_error('Inference', f'result status {status}')
-    return super()._send(msg_type, seq, parts, flags)
+    result = super()._send(msg_type, seq, parts, flags)
+    measurement = getattr(self, '_input_measurement', None)
+    if msg_type == P.Msg.INFER_RESP and measurement is not None:
+      raw = self.t.transport if isinstance(self.t, ReadAheadTransport) else self.t
+      ready = getattr(raw, 'last_send_ready', None)
+      comparison = getattr(self, 'input_comparison', None)
+      if comparison is not None:
+        if P.unpack_infer_resp(parts[0])[1] != P.Status.OK:
+          comparison.failed = min(comparison.failed + 1, 1_000_000)
+        elif ready is not None and ready[:2] == (msg_type, seq):
+          comparison.record(measurement, ready[2])
+    return result
 
   def _error(self, seq, error, detail=''):
     if self.telemetry.health is not None:
@@ -86,6 +100,9 @@ class CarrotSession(Session):
     if sys.platform == 'linux':
       self.t = ReadAheadTransport(self.t)
     self.telemetry = DisplayTelemetry(self.telemetry)
+    from input_fusion import Comparison
+    self.input_comparison = Comparison()
+    self.telemetry.input_comparison = self.input_comparison
     self.blinker = BlinkerHost()
     self.telemetry.blinker = self.blinker
     self.navi = HostForwarder() if sys.platform == 'linux' and self.usb_display else None
@@ -115,6 +132,8 @@ class CarrotSession(Session):
     return super()._send_json(msg_type, seq, obj, flags)
 
   def handle(self, msg):
+    if not getattr(msg, 'received_ns', 0):
+      msg.received_ns = time.monotonic_ns()
     if msg.msg_type == LIBRARY_REQUEST:
       if msg.seq <= self.last_seq:
         return
@@ -148,6 +167,7 @@ class CarrotSession(Session):
       msg = self.request_chunks.accept(msg, self.last_seq)
       if msg is None:
         return
+      msg.received_ns = time.monotonic_ns()
     elif getattr(self, 'request_chunks', None) is not None and self.request_chunks.key is not None:
       if msg.seq <= self.last_seq:
         return
@@ -228,6 +248,9 @@ class CarrotSession(Session):
       return  # Display data must never change or invalidate a model result.
     temporary = HUD_PACKET.with_suffix('.tmp')
     try:
+      comparison = getattr(self, 'input_comparison', None)
+      if comparison is not None:
+        comparison.observe(msg.payload, msg.received_ns / 1e9)
       with temporary.open('wb') as f:
         f.write(HEADER.pack(time.monotonic()))
         f.write(msg.payload)
@@ -247,6 +270,10 @@ class CarrotSession(Session):
       pass  # An unavailable display does not stop inference.
 
   def _infer(self, loaded, msg):
+    comparison = getattr(self, 'input_comparison', None)
+    if comparison is not None:
+      comparison.before(loaded)
+    self._input_measurement = getattr(msg, 'received_ns', None)
     try:
       if msg.payload.nbytes < P.INFER_REQ_SIZE:
         raise ValueError('incomplete frame')
@@ -263,9 +290,17 @@ class CarrotSession(Session):
         self.deferred_maps.clear()
     except ValueError:
       self.deferred_maps.clear()
+      self._input_measurement = None
       self._send(P.Msg.INFER_RESP, msg.seq, (P.pack_infer_resp(0, P.Status.BAD_SHAPE, 0, 0, 0),))
       return
-    return super()._infer(loaded, msg)
+    try:
+      return super()._infer(loaded, msg)
+    except Exception:
+      if comparison is not None:
+        comparison.failed = min(comparison.failed + 1, 1_000_000)
+      raise
+    finally:
+      self._input_measurement = None
 
   def _resolve_context(self, spec, flags, context):
     if flags & deferred_map.FLAG:
@@ -278,6 +313,8 @@ class CarrotSession(Session):
 
   def close(self):
     try:
+      if getattr(self, 'input_comparison', None) is not None:
+        self.input_comparison.close()
       if getattr(self, 'blinker', None) is not None:
         self.blinker.close()
       if self.hud_wifi is not None:

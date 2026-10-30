@@ -551,6 +551,7 @@
               "params": [
                 "ClusterHudEncoder",
                 "JetsonHudFps",
+                "JetsonInputFusion",
                 "ClusterHudScreenMode",
                 "ClusterHudPanelLayout",
                 "ClusterHudCameraViewMode"
@@ -4282,6 +4283,24 @@
           "30 fps"
         ]
       }
+    },
+    {
+      "group": "외부 HUD",
+      "name": "JetsonInputFusion",
+      "title": "Jetson 입력 변환 통합(1)",
+      "descr": "기본 1: 공유 uint8 입력을 GPU에서 FP16으로 변환합니다. N16·Orin에서만 입력 비트와 4프레임 모델 출력·반복 상태의 시작 검사를 통과하면 활성화하며, 미지원·검사 실패는 기존 CPU 경로를 유지합니다.\n0: 기존 CPU 변환, 1: GPU 통합. 변경은 최신 P단·속도 0·제어 해제 상태에서만 적용합니다. 도구 Jetson 카드에서 수신 완료→응답 송신 준비 완료의 평균/P99/50ms 초과를 비교합니다. USB 전송 시간은 제외합니다. 변경 후 15초를 제외하고 각 경로 최소 60초·1,000개 표본으로 비교하세요. 새 Jetson 패키지가 필요하며 성능 향상을 보장하지 않습니다.",
+      "egroup": "CLUSTER HUD",
+      "etitle": "Jetson Input Fusion(1)",
+      "edescr": "Default1 casts shared uint8 to device FP16 on the GPU. Only N16 on Orin may activate after startup input-bit and four-frame output/recurrent-state parity checks; unsupported or failed qualification retains CPU staging.\n0: CPU baseline;1: GPU fusion. Changes apply only with fresh Park/zero-speed/inactive control. Tools compares receive-complete to reply-TX-ready mean/P99/>50ms, excluding USB transmission. Excludes15s after changes; collect at least60s and1000 samples per path. Requires the updated Jetson package; no performance improvement is guaranteed.",
+      "cgroup": "外部 HUD",
+      "ctitle": "Jetson 输入融合(1)",
+      "cdescr": "默认1：Orin上N16模型在输入位和4帧输出/递归状态一致性检查通过后使用GPU转换；不支持或检查失败时保留CPU路径。0为CPU，1为GPU。仅在最新P挡、车速0且控制关闭时切换。工具比较接收完成至发送准备完成的平均/P99及超过50ms次数，不含USB发送。切换后排除15秒，每种路径至少60秒、1000样本。需要新Jetson包，不保证性能提升。",
+      "min": 0,
+      "max": 1,
+      "default": 1,
+      "unit": 1,
+      "control": "select",
+      "options": {"ko": ["기존 CPU", "GPU 통합 (기본)"], "en": ["CPU baseline", "GPU fusion (default)"], "zh": ["CPU基线", "GPU融合（默认）"]}
     },
     {
       "group": "외부 HUD",

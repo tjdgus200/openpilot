@@ -1,5 +1,23 @@
 # Repository memory
 
+- 2026-10-30 owner explicitly authorizes default-attempt mapped-u8 GPU image
+  fusion plus Park-only baseline comparison and push. This supersedes the
+  earlier off-production fusion restriction below only for the exact N16
+  spec/FP16 binding and Orin SM87 with mapped-host support and GPU recurrence.
+  Compile native cubin during preparation, verify all256 byte-to-half values
+  on GPU, then compare four changing-image full output/state hashes against
+  the captured CPU path before activation. Preserve opt-out and CPU fallback;
+  synchronization failure remains fatal rather than claiming a safe fallback.
+  Keep both fixed graphs and384KiB pinned staging alive until stream retirement.
+  JetsonInputFusion defaults1; a fresh Park/zero-speed/inactive-control HUD
+  control may switch the graph without resetting recurrence. Other models
+  retain their prior path. Measure validated receive-complete to framed reply
+  ready BEFORE USB write, including queue/prep/GPU/validation/serialization.
+  Two bounded6000-sample windows, low-priority1Hz statistics,15s warm-up,
+  at least60s/1000 frames per arm; no extra live inference or auto winner.
+  Preserve test_input_fusion.py and receive timestamps in daily merge gates.
+  PC tests are not actual Orin TensorRT/P99, thermal or driving validation.
+
 - 2026-10-30 input/output memory review: completed request-chunk assemblies
   already own their allocation. Transfer a read-only view to host read-ahead
   without a second payload snapshot; ordinary reusable transport views still

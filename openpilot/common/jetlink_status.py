@@ -122,6 +122,10 @@ def diagnostics():
   quality = quality_status((link.get('telemetry') or {}).get('carrot_hud_quality'))
   if quality:
     result['hud_quality'] = quality
+  from openpilot.common.input_fusion_status import status as input_status
+  comparison = input_status(telemetry.get('carrot_input_fusion'))
+  if comparison:
+    result['input_fusion'] = comparison
   if result['severity'] not in ('ok', 'warning', 'error', 'unknown'):
     result['severity'] = 'unknown'
   temperature = health.get('temp_c')

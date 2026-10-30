@@ -2,6 +2,7 @@
 import { renderLibrary } from "./model_library.js";
 
 import {renderQualityComparison} from "./hud_quality.js";
+import {renderInputFusion} from "./input_fusion.js";
 
 const POLL_INTERVAL_MS = 2000;
 let pollTimer = null;
@@ -9,6 +10,18 @@ let lastStatus = null;
 let restartPending = false;
 
 const FALLBACK_STRINGS = {
+  fusion_title: "Jetson input-path comparison",
+  fusion_unavailable: "Waiting for the updated Jetson package / current observations.",
+  fusion_waiting: "Measurements require fresh Park, zero speed and inactive control.",
+  fusion_unsupported: "CPU staging retained: unsupported model/device, disabled, or startup qualification unavailable/failed.",
+  fusion_warmup: "Warm-up: first15 seconds after changing paths are excluded.",
+  fusion_measuring: "Measuring actual frames: at least60s and1000 samples per path.",
+  fusion_ready: "Current path has at least60s and1000 samples. Compare matching workloads.",
+  fusion_cpu: "CPU baseline",
+  fusion_gpu: "GPU fusion",
+  fusion_failures: "Inference failures (excluded from timing samples)",
+  fusion_change_failed: "Could not save the input-path selection.",
+  fusion_scope: "Complete request received and validated → reply buffers/framing ready before the first USB write. Includes host queue wait, input preparation, GPU work, validation and reply preparation; excludes incoming/outgoing USB transmission. Default GPU fusion attempts N16/Orin only after startup input-bit and four-frame output/state parity checks; otherwise CPU. Switch only in fresh Park/zero-speed/inactive control. Model/connection/HUD FPS changes clear results. No extra inference or automatic winner selection. Updated Jetson package required.",
   quality_title: "Jetson HUD frame-rate comparison",
   quality_rates: "Source / USB receive / output",
   quality_candidate: "Candidate",
@@ -165,6 +178,15 @@ function render(status = lastStatus) {
   }
   qualityEl.hidden = !host;
   renderQualityComparison(qualityEl, host?.hud_quality, t);
+  let fusionEl = document.getElementById("jetlinkInputFusion");
+  if (!fusionEl) {
+    fusionEl = document.createElement("div");
+    fusionEl.id = "jetlinkInputFusion";
+    fusionEl.className = "egpu-model-card__detail";
+    qualityEl.after(fusionEl);
+  }
+  fusionEl.hidden = !host;
+  renderInputFusion(fusionEl, host?.input_fusion, t);
   hostEl.hidden = !host;
   if (host) {
     const severity = ["ok", "warning", "error", "unknown"].includes(host.severity) ? host.severity : "unknown";

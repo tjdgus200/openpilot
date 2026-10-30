@@ -112,6 +112,7 @@ class TrtEngine:
       self.graph_exec = None
       self._state_host_sources = {}
       self.device_state = None
+      self.image_fusion = None
       # 정상 반환 뒤의 소유권과 close 계약은 원형 그대로다.
       cleanup.pop_all()
 
@@ -158,7 +159,11 @@ class TrtEngine:
       # overwrites the host outputs only afterwards. Reuse the previous state
       # output's pinned staging memory; keep distinct GPU input/output buffers.
       source = self._state_host_sources.get(b.name, b)
-      cudart.memcpy_h2d_async(b.device_ptr, source.host_ptr, b.nbytes, self.stream)
+      fusion = getattr(self, 'image_fusion', None)
+      if b.name == 'new_img' and fusion is not None and fusion.active:
+        fusion.enqueue()
+      else:
+        cudart.memcpy_h2d_async(b.device_ptr, source.host_ptr, b.nbytes, self.stream)
     if not self.context.execute_async_v3(self.stream):
       raise RuntimeError("execute_async_v3 failed")
     for b in self.outputs.values():
@@ -245,6 +250,10 @@ class TrtEngine:
   # reference back here, so a GC-driven close would free pages someone is still
   # writing into. Whoever swaps an engine out closes it.
   def close(self) -> None:
+    fusion = getattr(self, 'image_fusion', None)
+    if fusion is not None:
+      fusion.close()
+      self.image_fusion = None
     # A reply event can finish before the trailing GPU feedback copy.
     if self.device_state is not None:
       cudart.stream_sync(self.stream)

@@ -1,6 +1,7 @@
 """Bounded host read-ahead so USB display input overlaps synchronous GPU inference."""
 import queue
 import threading
+import time
 
 from jetlink.transport.base import LinkError, LinkTimeout, Message
 from jetlink import protocol as P, request_chunks
@@ -68,8 +69,11 @@ class ReadAheadTransport:
         # Ordinary upstream views still expire at the next recv. Preserve that
         # copy; only a completed assembly has independent ownership. No pooled
         # slot can wrap underneath a queued/current inference.
+        received_ns = time.monotonic_ns()
         payload = msg.payload.toreadonly() if assembled else memoryview(bytes(msg.payload))
-        self._put(Message(msg.msg_type, msg.seq, msg.flags, payload))
+        owned = Message(msg.msg_type, msg.seq, msg.flags, payload)
+        owned.received_ns = received_ns
+        self._put(owned)
     except Exception as exc:
       self._put(LinkError(f'host USB reader failed: {exc}'))
     finally:

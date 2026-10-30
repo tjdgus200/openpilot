@@ -517,6 +517,22 @@ class EngineHost:
     packed = np.zeros(spec.packed_nelem, np.float32)
     queues.step_into(warped, packed, host_inputs)
     log.info("%s", engine.warm())
+    if hasattr(engine, 'image_fusion'):
+      from jetlink.server.backends.trt.image_fusion import configure
+      fusion = configure(engine, spec)
+      if fusion is not None:
+        try:
+          fusion.qualify(queues, host_inputs)
+        except (ValueError, RuntimeError, FloatingPointError):
+          # Keep the captured baseline only after all queued work retires.
+          from jetlink.server.backends.trt import cudart
+          cudart.stream_sync(engine.stream)
+          baseline = fusion.graphs.pop(0, None)
+          fusion.close(keep_graph=baseline)
+          engine.image_fusion = None
+          engine.graph_exec = baseline
+          queues.input_cast = fusion.cpu_cast
+          engine.image_fusion_reason = 'probe_failed'
     queues.reset()
     return Loaded(spec.sha256, spec, engine, queues, host_inputs)
 

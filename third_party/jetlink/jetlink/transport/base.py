@@ -262,6 +262,9 @@ class StreamTransport(Transport):
     else:
       header = P.pack_header(msg_type, seq, length, flags, version=self.protocol_version)
     bufs.insert(0, memoryview(header))
+    # Host-only observation: framing is complete, no USB/TCP write started.
+    # Does not alter either protocol version or the response timing fields.
+    self.last_send_ready = (msg_type, seq, time.monotonic_ns())
     self._send_deadline = None if timeout is None else time.monotonic() + timeout
     try:
       while bufs:

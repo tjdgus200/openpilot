@@ -299,11 +299,13 @@ In modes `EnableRadarTracks=1`–`3`, a confirmed departing front lead can recei
 <a id="display"></a>
 ## Display
 
-Display contains 35 settings. External-HUD settings control the layout and output of separate display hardware.
+Display contains 36 settings. External-HUD settings control the layout and output of separate display hardware.
 
 `ClusterHud` (External HUD Display) switches a **direct USB HUD** on or off. A HUD connected to Jetson starts automatically even when this value is `0`, and normally turns its display off with ignition. Use the existing always-on `ClusterHudDebug` modes to keep it visible offroad. Brightness and layout settings also apply to the Jetson HUD.
 
 `JetsonHudFps` (Jetson HUD Frame Rate) selects **10/15/20/25/30fps with CPU TurboJPEG Q92 fixed**. The target ceiling applies to comma snapshots, USB delivery and Jetson output. Default is 10fps; saved Q92/FPS applies onroad at startup and reconnect without waiting for Park. FPS changes clean up and reopen only HUD resources. Model requests take priority and late HUD frames are dropped, so actual FPS may be lower. Tools shows source/USB receive/output rates and inference P99. JPEG failure falls back to H264 at 10fps; the corresponding new Jetson package is required. Zero inference impact is not guaranteed.
+
+`JetsonInputFusion` (Jetson Input Conversion Comparison) selects CPU baseline or GPU fusion. The default GPU path activates only for the exact N16 contract on supported Orin hardware after GPU input-bit and four-frame full-output/recurrent-state parity checks; otherwise CPU remains active. Path changes require fresh Park, zero speed and inactive control. The Jetson Tools card measures complete request reception to response transmission readiness: mean/P99/max/>50ms count, including host queue wait, input preparation, GPU work, validation and serialization, excluding USB transfer. Exclude the first15s and collect at least60s/1000 frames per path with matching workloads. Model, connection and HUD FPS changes reset comparisons. There is no extra live inference or automatic winner selection. An updated Jetson package is required; actual vehicle gains still need measurement.
 
 Battery heatmaps show the lowest available value in green and distinguish higher values toward yellow, orange and red. Differences of1°C or20mV are visible; these colors are diagnostic cues. BSD warning blinking stays at the existing2.5Hz when FPS increases.
 

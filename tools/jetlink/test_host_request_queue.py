@@ -50,6 +50,7 @@ def test_gpu_busy_reader_queues_two_complete_requests_not_fragments(replay, coun
     assert gate.wait(.5), 'fragment queue blocked while GPU consumer is busy'
     assert reader.queue.maxsize == 2 and reader.queue.qsize() == 2
     a, b = reader.recv(.1), reader.recv(.1)
+    assert 0 < a.received_ns <= b.received_ns
     assert (a.msg_type, a.seq, bytes(a.payload)) == (0x4000, 8, first)
     assert (b.msg_type, b.seq, bytes(b.payload)) == (0x4001, 9, second)
     if count == 3:
@@ -128,6 +129,7 @@ def test_completed_assembly_is_handed_off_without_another_payload_copy(monkeypat
   reader = ReadAheadTransport(source)
   try:
     result = reader.recv(.5)
+    assert result.received_ns > 0
     assert len(allocations) == 1 and result.payload.obj is allocations[0]
     assert result.payload.readonly and bytes(result.payload) == raw
     with pytest.raises(TypeError):
