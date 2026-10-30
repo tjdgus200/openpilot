@@ -1,5 +1,12 @@
 # Repository memory
 
+- Published N16 input-fusion runtime2026-10-30: source44f17757,
+  prerelease jetson-pv5-n16-input-fusion-20261030-44f17757. Four public
+  assets were re-downloaded and hashed. Linux757/Windows607 PC
+  preservation, Web262, Wiki25 and isolated bundle imports pass;
+  native SM87 compilation passes. Physical Orin/TRT/P99/road results
+  remain unmeasured. N16 USB pins only; other model packages unchanged.
+
 - 2026-10-30 owner explicitly authorizes default-attempt mapped-u8 GPU image
   fusion plus Park-only baseline comparison and push. This supersedes the
   earlier off-production fusion restriction below only for the exact N16
