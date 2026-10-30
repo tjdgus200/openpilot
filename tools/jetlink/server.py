@@ -127,8 +127,8 @@ class CarrotSession(Session):
       if self.deferred_negotiated:
         obj[deferred_map.CAPABILITY] = deferred_map.descriptor()
       if host == 'jetson':
-        from park_update import supported, CAPABILITY as PARK_UPDATE_CAPABILITY
-        obj[PARK_UPDATE_CAPABILITY] = supported()
+        from park_update import supported, usb_connection, CAPABILITY as PARK_UPDATE_CAPABILITY
+        obj[PARK_UPDATE_CAPABILITY] = usb_connection(self.t) and supported()
         obj[request_chunks.CAPABILITY] = request_chunks.descriptor()
         obj['carrot_source_commit'] = (ROOT / 'SOURCE_COMMIT').read_text().strip()
         obj['carrot_boot_update_installed'] = Path('/opt/carrot-jetlink/boot-update-required').is_file()
@@ -142,9 +142,11 @@ class CarrotSession(Session):
       if msg.seq <= self.last_seq:
         return
       self.last_seq = msg.seq
-      from park_update import prepare as park_prepare, launch as park_launch
+      from park_update import prepare as park_prepare, launch as park_launch, usb_connection
       accepted = False
       try:
+        if not usb_connection(self.t):
+          raise ValueError('Park handoff requires the physical protocol2 USB connection')
         park_prepare(msg.payload, msg.received_ns / 1e9, Path('/opt/carrot-jetlink'))
         accepted = True
       except (OSError, ValueError, TypeError, KeyError, ImportError):

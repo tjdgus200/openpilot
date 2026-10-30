@@ -21,6 +21,13 @@ MAX_BYTES = 65536
 LEASE_SECONDS = 1.
 
 
+def usb_connection(transport):
+  from host_reader import ReadAheadTransport
+  from jetlink.transport.usbbulk import UsbBulkTransport
+  raw = transport.transport if isinstance(transport, ReadAheadTransport) else transport
+  return isinstance(raw, UsbBulkTransport) and raw.protocol_version == 2
+
+
 def supported():
   import boot_update
   import usb_release

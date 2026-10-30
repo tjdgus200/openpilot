@@ -175,7 +175,9 @@ def test_running_server_acknowledges_before_scheduling_retirement(monkeypatch):
   calls = []
   monkeypatch.setattr(host, 'prepare', lambda *a: calls.append('validate'))
   monkeypatch.setattr(host, 'launch', lambda *a: calls.append('launch'))
+  monkeypatch.setattr(host, 'usb_connection', lambda _: True)
   session = server.CarrotSession.__new__(server.CarrotSession)
+  session.t = NS()
   session.last_seq = 0
   session._send_json = lambda kind, seq, value: calls.append(('ack', kind, value))
   session.handle(NS(msg_type=host.REQUEST, seq=1, payload=b'{}', received_ns=100))
@@ -190,7 +192,9 @@ def test_rejected_handoff_does_not_stop_server(monkeypatch, failure):
   def reject(*a): raise failure
   monkeypatch.setattr(host, 'prepare', reject)
   monkeypatch.setattr(host, 'launch', lambda *a: pytest.fail('Invalid request scheduled'))
+  monkeypatch.setattr(host, 'usb_connection', lambda _: True)
   session = server.CarrotSession.__new__(server.CarrotSession)
+  session.t = NS()
   session.last_seq = 0
   replies = []
   session._send_json = lambda kind, seq, value: replies.append(value)
@@ -261,3 +265,29 @@ def test_parked_gate_revokes_even_when_selected_package_is_already_registered(mo
         lambda *a, **k: states.append(k['host_update']['state']), sleep=lambda _: None)
   assert sent == [{'pause': True}, {'pause': True}, value]
   assert states == ['waiting_park', 'waiting_park', 'ready']
+
+
+@pytest.mark.parametrize('version,wrapped', [(1, False), (2, False), (1, True), (2, True)])
+def test_capability_requires_physical_protocol2_usb_not_tcp_or_app(version, wrapped):
+  from host_reader import ReadAheadTransport
+  from jetlink.transport.usbbulk import UsbBulkTransport
+  transport = UsbBulkTransport.__new__(UsbBulkTransport)
+  transport._protocol_version = version
+  if wrapped:
+    wrapper = ReadAheadTransport.__new__(ReadAheadTransport)
+    wrapper.transport = transport
+    transport = wrapper
+  assert host.usb_connection(transport) == (version == 2)
+  assert not host.usb_connection(NS(protocol_version=2))
+
+
+def test_tcp_request_cannot_schedule_root_action(monkeypatch):
+  import server
+  monkeypatch.setattr(host, 'prepare', lambda *a: pytest.fail('Non-USB request accepted'))
+  monkeypatch.setattr(host, 'launch', lambda *a: pytest.fail('Non-USB request scheduled'))
+  session = server.CarrotSession.__new__(server.CarrotSession)
+  session.t, session.last_seq = NS(protocol_version=2), 0
+  replies = []
+  session._send_json = lambda kind, seq, value: replies.append(value)
+  session.handle(NS(msg_type=host.REQUEST, seq=1, payload=b'{}', received_ns=100))
+  assert replies == [{'accepted': False}]
