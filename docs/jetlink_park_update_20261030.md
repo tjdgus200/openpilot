@@ -13,7 +13,9 @@ the selected runtime. A newly built image includes the black recovery screen too
 ## Running connection to update mode
 
 Only a host advertising `carrot_park_update_v1`, with its existing locally enabled
-SHA-256 USB receiver and boot-update policy, supports this handoff. Older hosts
+SHA-256 USB receiver and boot-update policy, supports this handoff. Both the
+capability and request handler require the actual protocol2 USB transport;
+TCP, application peers and older protocols cannot schedule this action. Older hosts
 retain the ordinary reboot update procedure until this package is installed.
 
 1. Between model requests, the comma checks admission at most5Hz. It requires

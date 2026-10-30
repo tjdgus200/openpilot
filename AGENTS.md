@@ -1,5 +1,16 @@
 # Repository memory
 
+- Published three Park-update/dark-diagnostic PV5 runtimes2026-10-30:
+  N16 b81149e5, Flip Flop2fc0dfc8, CTV3M55ffde19, public tags
+  jetson-pv5-park-update-{n16,flip-flop,ctv3m}-20261030-{source8}.
+  All12 anonymous assets re-downloaded and hashed. Source preservation:
+  Linux823/Windows663; all3 isolated server/HUD, selected model/input queues,
+  black screen rendering and retained overlays pass. N16 stays the default;
+  exact-model GPU fusion/defaults retained. Protect all3 matching USB pins.
+  Previously installed hosts need one ordinary parked reboot update before
+  supporting the running-connection handoff. Physical USB/TRT/P99/road behavior
+  remains unmeasured; no device installation performed in this task.
+
 - 2026-10-30 owner requests dark unified connection diagnostics and Park
   re-entry for changed Jetson packages even with an existing live connection.
   This supersedes blue-screen styling, not the immutable recovery/storage lock.

@@ -2,22 +2,22 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-n16-input-fusion-20261030-44f17757",
-  "source_commit": "44f17757e64e825823b4c610724830ba80ec8e5d",
+  "profile": "pv5-park-n16-20261030-b81149e5",
+  "source_commit": "b81149e5fc99baf54740d7c2a9814c06eada8bf4",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
     "tensorrt": "10.3.0"
   },
   "storage_format": 1,
+  "bundle": {
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-park-update-n16-20261030-b81149e5/host.tar.gz",
+    "sha256": "d22de20e66593b4dfcd207d7d482726c4bd653be12f0f036c4fcfa1d51766a60",
+    "size": 65153648
+  },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",
     "sha256": "01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a",
     "size": 814591107
-  },
-  "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-n16-input-fusion-20261030-44f17757/host.tar.gz",
-    "sha256": "b2869dfde7628692d72e7c14440e5a96830f4d771cc1fc265d71b8260dd04bff",
-    "size": 65144741
   }
 }

@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-flip-flop-20261029-c0ebdfaa",
-  "source_commit": "c0ebdfaaaff5236837074420d7e7d48ae39e2551",
+  "profile": "pv5-park-flip-flop-20261030-2fc0dfc8",
+  "source_commit": "2fc0dfc81f5433cd32b0bc8d6cfa7ab3e9ecc7f2",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-model-flip-flop-20261029-c0ebdfaa/host.tar.gz",
-    "sha256": "bb4d95e95189bcc7351572dfc54bf3f47210519ddc84116a95de35d6c660355e",
-    "size": 65115719
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-park-update-flip-flop-20261030-2fc0dfc8/host.tar.gz",
+    "sha256": "a970c2a809733c798f371e08e7bafb08bf9ae8c2b386e0f44a0f66aea928d878",
+    "size": 65153924
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",
