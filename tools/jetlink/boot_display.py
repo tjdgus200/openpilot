@@ -20,7 +20,8 @@ def lines(status):
   phase = update.get('state', 'waiting')
   phases = {'checking': '콤마 확인 대기', 'checking_usb': 'USB 패키지 확인', 'transferring': 'USB 전송 중',
             'downloading': '다운로드 중', 'verifying': '설치 / 실행 검증 중',
-            'waiting_internet': '인터넷 연결 대기', 'ready': 'USB 승인 완료 · 모델 준비 대기',
+            'waiting_internet': '인터넷 연결 대기', 'waiting_park': 'P단 · 속도 0 승인 대기',
+            'ready': 'USB 승인 완료 · 모델 준비 대기',
             'failed': '업데이트 실패 · 이전 버전 보존', 'waiting': '상태 수신 대기'}
   progress = update.get('fraction')
   phase_text = phases.get(phase, phases['waiting'])
@@ -48,7 +49,7 @@ def lines(status):
 
 def render(status, root=ROOT, size=(1920, 462)):
   from PIL import Image, ImageDraw, ImageFont
-  image = Image.new('RGB', size, '#102952')
+  image = Image.new('RGB', size, '#000000')
   draw = ImageDraw.Draw(image)
   font_path = root / 'openpilot/selfdrive/assets/fonts/KaiGenGothicKR-Bold.ttf'
   font = lambda n: ImageFont.truetype(str(font_path), n)

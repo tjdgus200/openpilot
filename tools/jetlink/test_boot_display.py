@@ -41,6 +41,20 @@ def test_active_service_does_not_claim_model_ready():
   assert rows[5] == ('콤마 USB 서비스', 'COMMA USB SERVICE', 'active')
 
 
+def test_black_detailed_screen_and_telemetry_panel_handoff(monkeypatch):
+  import hud
+  frame = render({'update': {'state': 'waiting_park'}, 'model': 'N16 Nav'})
+  assert frame.getpixel((1919, 461)) == (0, 0, 0)
+  assert 'P단' in lines({'update': {'state': 'waiting_park'}})[1][6][2]
+  for snapshot in (None, (1., {'params': {'IsOnroad': 'MQ=='}}),
+                   (1., {'alive': {'carState': True}, 'valid': {'carState': False}})):
+    monkeypatch.setattr(hud, 'read_snapshot', lambda snapshot=snapshot: snapshot)
+    assert not hud.dashboard_ready()
+  monkeypatch.setattr(hud, 'read_snapshot', lambda: (1., {'alive': {'carState': True},
+      'valid': {'carState': True}, 'events': {'carState': 'a valid event'}}))
+  assert hud.dashboard_ready()
+
+
 @pytest.mark.parametrize('state', ['checking', 'transferring', 'verifying', 'ready', 'failed'])
 def test_boot_update_phase_progress_and_previous_release_visible(state):
   title, rows, detail, error = lines({'update': {'state': state, 'fraction': .5,

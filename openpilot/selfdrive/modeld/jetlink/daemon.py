@@ -279,6 +279,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
   diagnostics = RuntimeDiagnostics('jetlinkd', cloudlog.event, peak_metric='usb_exchange_ms')
   from tools.jetlink.model_library import Client as ModelLibrary  # noqa: TID251 -- shared standalone host protocol
   library = ModelLibrary(peer)
+  from openpilot.selfdrive.modeld.jetlink.park_update import Watcher as ParkUpdateWatcher
+  park_update = ParkUpdateWatcher(peer, params)
   last_status = 0.
   last_ping = time.monotonic()
   telemetry_updated = 0.
@@ -289,6 +291,7 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
   follows_app = peer.get('protocol') == 3 and may_provision(peer, session_mode())
   idle_budget = IdleBudget()
   while host_attached():
+    park_update.tick(client)
     if follows_app and requested and params.get_bool('IsOffroad') and not params.get_bool('IsOnroad'):
       # The App's Use Model must not compete with our old ENGINE_REQ.
       # HELLO clears that request without dropping the physical cable.
@@ -341,6 +344,7 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
           hello[deferred_map.IPC_CAPABILITY] = deferred_map.descriptor()
         send(connection, json.dumps(hello).encode())
         while host_attached():
+          park_update.tick(client)
           loop_started, cpu_started = time.monotonic(), time.thread_time()
           if time.monotonic() - last_status >= 1:
             update_affinity()
@@ -502,6 +506,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
             **display_metrics,
             **receive_metrics,
           )
+      except RuntimeHandoff:
+        raise
       except (ConnectionError, BrokenPipeError, ValueError) as exc:
         log.info('local client ended: %s', exc)
       finally:

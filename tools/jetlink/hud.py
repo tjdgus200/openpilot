@@ -29,6 +29,15 @@ def wait_for_usb_display(scan, expected, sleep=time.sleep):
     sleep(1.)
 
 
+def dashboard_ready():
+  # Leave panel ownership with the independent detailed boot diagnostic until
+  # actual vehicle telemetry arrives. Cached preferences never prove a link.
+  snapshot = read_snapshot()
+  return bool(snapshot and snapshot[1].get('alive', {}).get('carState')
+              and snapshot[1].get('valid', {}).get('carState')
+              and snapshot[1].get('events', {}).get('carState'))
+
+
 class DisplayParams:
   """Only this renderer sees this adapter; no vehicle Params can be written."""
   def __init__(self, *args, **kwargs):
@@ -284,7 +293,7 @@ def main():
   class QualityWatch:
     def read(self):
       target = selection(settings.get_int(PARAM))
-      return int(override is None and target != requested)
+      return int(not dashboard_ready() or (override is None and target != requested))
   # Reuse the renderer's clean, main-loop exit instead of throwing from a USB
   # sender thread. This adapter is private to the host and does not change the
   # comma's ClusterHudEncoder behavior. A zero sentinel means unchanged.
@@ -297,6 +306,9 @@ def main():
           '--cluster-hud-encoder', '0']
   requested = 0
   while True:
+    if '--help' not in sys.argv:
+      while not dashboard_ready():
+        time.sleep(.2)
     target = selection(settings.get_int(PARAM)) if override is None else override
     # Q92/FPS are display preferences, applied onroad at startup and on change.
     # Reopen only HUD resources; no model session or update permission changes.

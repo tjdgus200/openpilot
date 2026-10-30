@@ -104,12 +104,25 @@ def validate_storage_compatibility(manifest):
     raise ValueError('Selected release does not support protected storage; keeping current runtime')
 
 
-def probe_release(release):
+def probe_release(release, allowed=None):
   command = ['runuser', '-u', 'jetlink', '--', str(ROOT / 'venv/bin/python'),
              str(release / 'tools/jetlink/probe_release.py'), str(ROOT / 'cache')]
   process = subprocess.Popen(command, start_new_session=True)
   try:
-    code = process.wait(timeout=960)
+    if allowed is None:
+      code = process.wait(timeout=960)
+    else:
+      deadline = time.monotonic() + 960
+      while True:
+        if not allowed():
+          raise ActivationDeferred('Park permission expired during validation')
+        if time.monotonic() >= deadline:
+          raise subprocess.TimeoutExpired(command, 960)
+        try:
+          code = process.wait(timeout=.2)
+          break
+        except subprocess.TimeoutExpired:
+          pass
   except BaseException:
     # Killing only runuser can leave its GPU-building Python child alive.
     # Reap the entire isolated probe group before the old server may start.
@@ -220,13 +233,17 @@ def stage_manifest(manifest, progress=None):
   os.sync()
 
 
-def activate():
+class ActivationDeferred(RuntimeError):
+  """Keep the verified pending release until fresh Park permission returns."""
+
+
+def activate(allowed=None):
   pending = ROOT / 'updates/pending.json'
   transaction = ROOT / 'updates/transaction.json'
   if not pending.exists() and not transaction.exists():
     return
   for name in ('carrot-jetlink', 'carrot-jetlink-hud'):
-    if subprocess.run(['systemctl', 'is-active', '--quiet', name]).returncode == 0:
+    if subprocess.run(['systemctl', 'is-active', '--quiet', name], timeout=5).returncode not in (3, 4):
       raise RuntimeError('Activation requires stopped inference and HUD services; use the next boot')
   if transaction.exists():
     saved = json.loads(transaction.read_text())
@@ -264,13 +281,22 @@ def activate():
   atomic_json(transaction, saved)
   os.sync()
   try:
+    if allowed is not None and not allowed():
+      raise ActivationDeferred('Fresh Park permission required')
     # No USB/control connection: load/build and execute synthetic tensors in a
     # separate process before the new sources are reachable by the vehicle.
-    probe_release(release)
+    if allowed is None:
+      probe_release(release)
+    else:
+      probe_release(release, allowed=allowed)
+    if allowed is not None and not allowed():
+      raise ActivationDeferred('Park permission expired during validation')
     link = ROOT / 'current.next'
     link.unlink(missing_ok=True)
     link.symlink_to(release)
     atomic_json(ROOT / 'updates/previous.json', saved)
+    if allowed is not None and not allowed():
+      raise ActivationDeferred('Park permission expired before activation')
     os.replace(link, ROOT / 'current')
     atomic_json(ROOT / 'updates/status.json', {'state': 'applied', 'source_commit': manifest['source_commit'], 'updated': time.time()})
     pending.unlink()
@@ -288,6 +314,7 @@ def activate():
       except (OSError, subprocess.SubprocessError):
         print('Network helper refresh deferred; existing worker retained', flush=True)
   except Exception as error:
+    (ROOT / 'current.next').unlink(missing_ok=True)
     if (ROOT / 'current').resolve() != previous:
       link = ROOT / 'current.rollback'
       link.unlink(missing_ok=True)
@@ -295,12 +322,16 @@ def activate():
       os.replace(link, ROOT / 'current')
     if previous_model is not None:
       remembered.write_bytes(previous_model)
-    atomic_json(ROOT / 'updates/status.json', {'state': 'rejected', 'error': str(error)[:240], 'updated': time.time()})
-    if pending.exists():
+    deferred = isinstance(error, ActivationDeferred)
+    atomic_json(ROOT / 'updates/status.json', {'state': 'waiting_park' if deferred else 'rejected',
+                                            'error': str(error)[:240], 'updated': time.time()})
+    if pending.exists() and not deferred:
       os.replace(pending, pending.with_name('rejected.json'))
     os.sync()
     transaction.unlink(missing_ok=True)
     os.sync()
+    if deferred:
+      raise
     print('Candidate rejected; retaining previous release:', error, flush=True)
 
 
@@ -335,7 +366,7 @@ def automatic_stage():
 def main():
   import fcntl
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument('action', choices=['stage', 'activate', 'automatic', 'boot'])
+  parser.add_argument('action', choices=['stage', 'activate', 'automatic', 'boot', 'parked-boot'])
   parser.add_argument('--manifest', default=DEFAULT_MANIFEST)
   args = parser.parse_args()
   if os.geteuid() != 0:
@@ -361,7 +392,10 @@ def main():
       # Leave the services blocked and expose the storage failure over USB.
   with Path('/run/carrot-jetlink-update.lock').open('w') as lock:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    if args.action == 'boot':
+    if args.action == 'parked-boot':
+      from park_update import enter
+      enter()
+    elif args.action == 'boot':
       if not boot_gate:
         raise RuntimeError('Boot gate policy is not enabled for this boot')
       boot()

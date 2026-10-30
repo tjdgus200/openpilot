@@ -53,7 +53,8 @@ def receive_wifi(payload):
 
 
 class Gate:
-  def __init__(self):
+  def __init__(self, require_permission=False):
+    self.require_permission = require_permission
     self.state = 'checking'
     self.fraction = None
     self.selected = None
@@ -82,6 +83,10 @@ class Gate:
     self.source_commit = commit
     self.received = time.monotonic()
 
+  def allowed(self):
+    return (self.selected is not None and 0 <= time.monotonic() - self.received <
+            (1. if self.require_permission else 5.))
+
   def _install(self, manifest):
     try:
       stage = 'verifying' if manifest.get('delivery') in ('local', 'usb') else 'downloading'
@@ -91,10 +96,16 @@ class Gate:
       # These services are still in wait_for_runtime(), but stop them before
       # swapping files so their next process imports the complete new release.
       subprocess.run(['systemctl', 'stop', 'carrot-jetlink', 'carrot-jetlink-hud'], check=True, timeout=45)
-      update.activate()
+      if self.require_permission:
+        update.activate(allowed=self.allowed)
+      else:
+        update.activate()
       if (update.ROOT / 'current/SOURCE_COMMIT').read_text().strip() != update.selected_commit(manifest):
         raise RuntimeError('Candidate validation failed; previous release retained')
       self.report('checking')
+      self.error = ''
+    except update.ActivationDeferred:
+      self.report('waiting_park')
       self.error = ''
     except (urllib.error.URLError, TimeoutError, ConnectionError):
       self.report('waiting_internet')
@@ -103,14 +114,14 @@ class Gate:
       self.report('failed')
       self.error = str(exc)[:160]
     finally:
-      self.next_try = time.monotonic() + 30
+      self.next_try = time.monotonic() + (1 if self.state == 'waiting_park' else 30)
 
   def tick(self):
     if self.worker is not None and self.worker.is_alive():
       return
-    if self.selected is None or not 0 <= time.monotonic() - self.received < 5:
+    if not self.allowed():
       if self.state != 'failed':
-        self.report('checking')
+        self.report('waiting_park' if self.require_permission else 'checking')
       return
     manifest = self.selected
     if (update.ROOT / 'current/SOURCE_COMMIT').read_text().strip() == self.source_commit:
@@ -154,6 +165,7 @@ class BootstrapSession:
         wifi_capability: True, 'engine_state': 'none', 'loaded': None, 'sleep_after': 0,
         'carrot_usb_sha256_v1': sha256_usb, 'carrot_usb_sha256_check_v1': sha256_usb,
         'usb_source_commit': current,
+        'carrot_park_update_gate_v1': self.gate.require_permission,
       })
       return
     if msg.seq <= self.last_seq:
@@ -194,7 +206,11 @@ class BootstrapSession:
       try:
         if not 0 < len(msg.payload) <= 65536:
           raise ValueError('Release manifest size invalid')
-        self.gate.select(json.loads(bytes(msg.payload)))
+        value = json.loads(bytes(msg.payload))
+        if self.gate.require_permission and value == {'pause': True}:
+          self.gate.received = 0.
+        else:
+          self.gate.select(value)
       except Exception:
         # Do not report incoming data: provisioning credentials must never leak.
         self.gate.selected = None
@@ -209,8 +225,8 @@ class BootstrapSession:
       self.transport.send_json(p.Msg.ERROR, msg.seq, {'error': 'update_required', 'detail': 'Boot release check pending'})
 
 
-def boot():
-  if runtime_ready():
+def boot(parked=False):
+  if not parked and runtime_ready():
     subprocess.run(['systemctl', 'start', 'carrot-jetlink', 'carrot-jetlink-hud'], check=True, timeout=45)
     return
   # Recover an interrupted transaction before making any release comparison.
@@ -222,7 +238,7 @@ def boot():
   sys.path.insert(0, str(update.ROOT / 'current/third_party/jetlink'))
   from jetlink.transport.usbbulk import UsbBulkTransport
   from jetlink.transport.base import LinkTimeout
-  gate = Gate()
+  gate = Gate(require_permission=parked)
   transport = session = None
   while not gate.done:
     try:
@@ -235,6 +251,7 @@ def boot():
         pass
       gate.tick()
       update.atomic_json(STATUS, dict(gate.telemetry(), updated=time.monotonic()))
+      STATUS.chmod(0o644)  # Park worker's private umask must not hide diagnostics.
     except Exception:
       if session is not None:
         session.close()

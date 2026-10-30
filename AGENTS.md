@@ -1,5 +1,23 @@
 # Repository memory
 
+- 2026-10-30 owner requests dark unified connection diagnostics and Park
+  re-entry for changed Jetson packages even with an existing live connection.
+  This supersedes blue-screen styling, not the immutable recovery/storage lock.
+  Preserve all9 diagnostic rows, CPU-only1fps black background and valid fresh
+  telemetry admission before ordinary HUD panel ownership; return diagnosis on
+  telemetry loss. Negotiated same-boot-model USB packages only: fresh CAN Park,
+  raw-speed zero and inactive carControl/selfdriveState on comma AND host before
+  retiring services. Confirm retirement, then empty boot gate; never swap a live
+  engine. Root-only per-boot recovery marker, private bounded request, fixed
+  service command, local receiver opt-in and existing probe/hash/rollback remain.
+  Renew Park/offroad approval200ms, revoke on loss, expire1s; check through probe
+  and immediately before activation. Kill/reap probe group and retain staged
+  package/prior cache on lost approval. Keep old peers' reboot flow, model freeze,
+  all PV5 optimizations and USB input-power block. Protect park_update modules,
+  test_park_update.py/test_park_update_linux.py and black boot-display tests in
+  daily carrot-wip integration. See docs/jetlink_park_update_20261030.md.
+  PC mocks do not establish physical USB, TensorRT/P99 or driving safety.
+
 - Published N16 input-fusion runtime2026-10-30: source44f17757,
   prerelease jetson-pv5-n16-input-fusion-20261030-44f17757. Four public
   assets were re-downloaded and hashed. Linux757/Windows607 PC

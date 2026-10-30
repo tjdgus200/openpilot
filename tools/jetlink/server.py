@@ -3,6 +3,7 @@ import os
 import json
 from pathlib import Path
 import sys
+import subprocess
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -126,6 +127,8 @@ class CarrotSession(Session):
       if self.deferred_negotiated:
         obj[deferred_map.CAPABILITY] = deferred_map.descriptor()
       if host == 'jetson':
+        from park_update import supported, CAPABILITY as PARK_UPDATE_CAPABILITY
+        obj[PARK_UPDATE_CAPABILITY] = supported()
         obj[request_chunks.CAPABILITY] = request_chunks.descriptor()
         obj['carrot_source_commit'] = (ROOT / 'SOURCE_COMMIT').read_text().strip()
         obj['carrot_boot_update_installed'] = Path('/opt/carrot-jetlink/boot-update-required').is_file()
@@ -134,6 +137,27 @@ class CarrotSession(Session):
   def handle(self, msg):
     if not getattr(msg, 'received_ns', 0):
       msg.received_ns = time.monotonic_ns()
+    from park_update import REQUEST as PARK_UPDATE_REQUEST, RESPONSE as PARK_UPDATE_RESPONSE
+    if msg.msg_type == PARK_UPDATE_REQUEST:
+      if msg.seq <= self.last_seq:
+        return
+      self.last_seq = msg.seq
+      from park_update import prepare as park_prepare, launch as park_launch
+      accepted = False
+      try:
+        park_prepare(msg.payload, msg.received_ns / 1e9, Path('/opt/carrot-jetlink'))
+        accepted = True
+      except (OSError, ValueError, TypeError, KeyError, ImportError):
+        pass
+      self._send_json(PARK_UPDATE_RESPONSE, msg.seq, {'accepted': accepted})
+      if accepted:
+        try:
+          park_launch(Path('/opt/carrot-jetlink'))
+        except (OSError, subprocess.SubprocessError):
+          # Keep the live runtime if the fixed local worker cannot be started.
+          # The comma reconnects and may retry; no forced USB reset/reboot.
+          pass
+      return
     if msg.msg_type == LIBRARY_REQUEST:
       if msg.seq <= self.last_seq:
         return
