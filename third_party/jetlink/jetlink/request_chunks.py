@@ -99,7 +99,7 @@ class Receiver:
     if key != self.key or now - self.started > MAX_AGE or now < self.started:
       raise ValueError('interleaved or stale request')
     if offset < self.offset:
-      if self.data[offset:offset + len(body)] != body:
+      if memoryview(self.data)[offset:offset + len(body)] != body:
         raise ValueError('changed replay')
       return None
     if offset != self.offset:

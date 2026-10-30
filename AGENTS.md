@@ -1,5 +1,23 @@
 # Repository memory
 
+- 2026-10-30 input/output memory review: completed request-chunk assemblies
+  already own their allocation. Transfer a read-only view to host read-ahead
+  without a second payload snapshot; ordinary reusable transport views still
+  require a copy. Retain queue2/backpressure, CRC/length/replay/MAX_AGE and
+  HELLO/close ownership. Deferred N16 map resolution now replaces context only;
+  retain the original camera view and every normal input/reset/finite check.
+  test_host_request_queue.py and test_deferred_map.py cover retained buffers,
+  full queues, reconnect, direct/fallback map parity and malformed references.
+  PC synthetic device-state pipeline (2000/arm) deferred mean0.235->0.200ms,
+  P990.343->0.306ms, about1.64MB fewer logical copies/frame; compact P99 did
+  not improve. These are NOT Jetson GPU/USB/E2E or road measurements. Local
+  mapped-u8 GPU fusion candidate remains outside production and disabled:
+  host C++256-value bit parity/fake CUDA ordering do not validate actual TRT.
+  No shared-SRAM scratchpad is exposed by these CUDA/TensorRT input APIs;
+  GPU block-local shared memory is not persistent USB/engine input storage.
+  Do not restore image re-concatenation, remove ordinary ownership copies,
+  skip validation, add unbounded pools or activate unmeasured GPU fusion.
+
 - 2026-10-30 daily WIP integration: reviewed final tree604bc0a2..f5e4f8b8,
   retaining all current PV5 behavior and protected files. Upstream TBT helper
   becomes default-OFF AutoTurnControlRightLaneChange for ATC1/2; legacy4

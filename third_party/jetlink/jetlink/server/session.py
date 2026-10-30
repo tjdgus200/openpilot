@@ -803,6 +803,15 @@ class Session:
     from jetlink.block_codec import library
     return library() is not None
 
+  def _resolve_context(self, spec, flags, context):
+    """Resolve an optional context reference without copying the camera view.
+
+    The base protocol has no references. Extensions must validate their own
+    negotiated identity/lifetime and return the existing packed context format;
+    all normal size/type/reset/output validation still runs below.
+    """
+    return flags, context
+
   def _infer(self, loaded: Loaded, msg: Message) -> None:
     t0 = time.perf_counter()
     spec = loaded.spec
@@ -830,13 +839,13 @@ class Session:
       off = spec.warped_nbytes
       if len(frame) < off:
         raise ValueError('Incomplete image')
+      flags, context = self._resolve_context(spec, flags, frame[off:])
       direct_map = getattr(loaded.queues, 'direct_map', None) if flags & FLAG else None
       if flags & FLAG:
-        context = direct_map.validate_size(frame[off:]) if direct_map is not None else decode(frame[off:], spec)
+        context = direct_map.validate_size(context) if direct_map is not None else decode(context, spec)
       else:
-        if len(frame) != spec.warped_nbytes + spec.packed_nbytes:
+        if len(context) != spec.packed_nbytes:
           raise ValueError('Invalid frame size')
-        context = frame[off:]
     except ValueError:
       self._send(P.Msg.INFER_RESP, msg.seq,
                  (P.pack_infer_resp(0, P.Status.BAD_SHAPE, 0, 0, 0),))

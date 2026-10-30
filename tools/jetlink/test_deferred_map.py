@@ -160,6 +160,71 @@ def test_real_session_uses_old_map_current_camera_and_cancels(monkeypatch):
   assert session.deferred_maps.cached is None
 
 
+@pytest.mark.parametrize('direct', [False, True])
+def test_deferred_context_keeps_original_camera_storage_and_all_input_bits(monkeypatch, direct):
+  from jetlink.queues import make_queues
+  from jetlink.server.session import Session
+  client, session, loaded, outputs = pair()
+  session.__class__ = CarrotSession
+  session.deferred_maps = D.Receiver()
+  session.deferred_negotiated = True
+  session.telemetry.health = None
+  loaded.queues = make_queues(SPEC, loaded.host_inputs, direct_map=direct)
+  image = np.arange(SPEC.warped_nbytes, dtype=np.uint8).reshape(SPEC.warped_shape)
+  compact, encoded = C.encode(packed(17), SPEC)
+  assert encoded
+  pixels = compact[C._layout(SPEC):C._layout(SPEC) + 65536]
+  import zlib
+  session.deferred_maps.accept(100, D.UPDATE.pack(100, 77, 300, zlib.crc32(pixels)) + pixels)
+  reference = compact[:C._layout(SPEC)] + D.REF.pack(100, 77) + compact[C._layout(SPEC) + 65536:]
+  payload = memoryview(P.pack_infer_req(9, D.FLAG | C.FLAG) + image.tobytes() + reference)
+  seen = []
+  copy_image = loaded.queues._copy_image
+
+  def observe(warped, dest):
+    assert np.shares_memory(warped, np.frombuffer(payload, np.uint8))
+    assert warped.tobytes() == image.tobytes()
+    seen.append(True)
+    copy_image(warped, dest)
+
+  monkeypatch.setattr(loaded.queues, '_copy_image', observe)
+  session._infer(loaded, Message(P.Msg.INFER_REQ, 101, 0, payload))
+  assert seen == [True]
+  actual = {name: value.tobytes() for name, value in loaded.host_inputs.items()}
+  # Explicit old reconstruction feeds the unextended base path as the oracle.
+  old_payload = memoryview(P.pack_infer_req(9, C.FLAG) + image.tobytes() + session.deferred_maps.expand(reference, SPEC))
+  monkeypatch.setattr(loaded.queues, '_copy_image', copy_image)
+  Session._infer(session, loaded, Message(P.Msg.INFER_REQ, 101, 0, old_payload))
+  assert {name: value.tobytes() for name, value in loaded.host_inputs.items()} == actual
+
+
+@pytest.mark.parametrize('fault', ['short_image', 'short_reference', 'expired', 'wrong_model'])
+def test_failed_reference_never_runs_and_retires_cache(fault):
+  from dataclasses import replace
+  import zlib
+  client, session, loaded, outputs = pair()
+  session.__class__ = CarrotSession
+  clock = [1000000000]
+  session.deferred_maps = D.Receiver(clock=lambda: clock[0])
+  session.deferred_negotiated = True
+  session.telemetry.health = None
+  compact, _ = C.encode(packed(17), SPEC)
+  off = C._layout(SPEC)
+  pixels = compact[off:off + 65536]
+  session.deferred_maps.accept(100, D.UPDATE.pack(100, 77, 300, zlib.crc32(pixels)) + pixels)
+  ref = compact[:off] + D.REF.pack(100, 77) + compact[off + 65536:]
+  image = bytes(SPEC.warped_nbytes)
+  if fault == 'short_image': image = b''
+  if fault == 'short_reference': ref = ref[:-1]
+  if fault == 'expired': clock[0] += 300000000
+  if fault == 'wrong_model': loaded.spec = replace(SPEC, sha256='0' * 64)
+  loaded.engine.run = lambda: pytest.fail('invalid reference reached inference')
+  raw = P.pack_infer_req(9, D.FLAG | C.FLAG) + image + ref
+  session._infer(loaded, Message(P.Msg.INFER_REQ, 101, 0, memoryview(raw)))
+  assert session.deferred_maps.cached is None
+  assert P.unpack_infer_resp(client.t.replies[-1].payload)[1] == P.Status.BAD_SHAPE
+
+
 @pytest.mark.parametrize('bad', [None,{},True,{**D.descriptor(),'version':True},{**D.descriptor(),'pixels':65536.0}])
 def test_strict_negotiation(bad):assert not D.matches(bad)
 

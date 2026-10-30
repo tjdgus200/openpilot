@@ -108,3 +108,75 @@ def test_interrupted_or_wrong_protocol_fails_without_partial_input(version):
     with pytest.raises(LinkError): reader.recv(.5)
   finally: reader.close()
   assert reader.requests.data is None and not reader.thread.is_alive()
+
+
+@pytest.mark.parametrize('size', [1, C.DATA_BYTES, C.DATA_BYTES + 1, 458996, C.MAX_BYTES])
+def test_completed_assembly_is_handed_off_without_another_payload_copy(monkeypatch, size):
+  allocations = []
+  original = C.Receiver
+
+  class TrackedReceiver(original):
+    def accept(self, msg, last_seq):
+      result = super().accept(msg, last_seq)
+      if result is not None:
+        allocations.append(result.payload.obj)
+      return result
+
+  monkeypatch.setattr(C, 'Receiver', TrackedReceiver)
+  raw = bytes(i % 251 for i in range(size))
+  source = Input(envelopes(P.Msg.INFER_REQ, 7, raw))
+  reader = ReadAheadTransport(source)
+  try:
+    result = reader.recv(.5)
+    assert len(allocations) == 1 and result.payload.obj is allocations[0]
+    assert result.payload.readonly and bytes(result.payload) == raw
+    with pytest.raises(TypeError):
+      result.payload[0] = 0
+    assert source.drained.wait(.5)
+  finally:
+    reader.close()
+  assert bytes(result.payload) == raw  # teardown cannot retire a live owner
+
+
+def test_queue_full_hello_and_new_assemblies_cannot_overwrite_retained_frame():
+  first = bytes(i % 251 for i in range(458996))
+  messages = envelopes(P.Msg.INFER_REQ, 7, first)
+  messages += [Message(P.Msg.HELLO_REQ, 1, 0, memoryview(b'new session'))]
+  for seq in range(2, 12):
+    messages += envelopes(P.Msg.INFER_REQ, seq, bytes([seq]) * 100000)
+  source = Input(messages)
+  reader = ReadAheadTransport(source)
+  try:
+    retained = reader.recv(.5)
+    # The bounded queue applies backpressure without dropping/resetting inputs.
+    assert reader.recv(.5).msg_type == P.Msg.HELLO_REQ
+    for seq in range(2, 12):
+      result = reader.recv(.5)
+      assert result.seq == seq and bytes(result.payload) == bytes([seq]) * 100000
+      assert bytes(retained.payload) == first
+    assert reader.queue.maxsize == 2
+  finally:
+    reader.close()
+  assert bytes(retained.payload) == first
+
+
+def test_ordinary_reused_transport_buffer_still_requires_a_snapshot():
+  class Reused(Input):
+    def __init__(self):
+      super().__init__([b'first', b'other'])
+      self.buffer = bytearray(5)
+
+    def recv(self, timeout):
+      data = super().recv(timeout)
+      self.buffer[:] = data
+      return Message(P.Msg.STATE_REQ, self.received, 0, memoryview(self.buffer))
+
+  source = Reused()
+  reader = ReadAheadTransport(source)
+  try:
+    assert source.drained.wait(.5)
+    first, second = reader.recv(.1), reader.recv(.1)
+    assert bytes(first.payload) == b'first' and bytes(second.payload) == b'other'
+    assert first.payload.obj is not source.buffer
+  finally:
+    reader.close()

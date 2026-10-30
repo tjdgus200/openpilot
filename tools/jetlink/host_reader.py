@@ -44,6 +44,7 @@ class ReadAheadTransport:
           continue
         if self.bulk_input is not None:
           self.bulk_input.note_message(msg)
+        assembled = False
         # Keep the original two *logical* messages available while inference
         # runs. Counting small envelopes here would block the writer mid-HUD.
         if msg.msg_type == P.Msg.HELLO_REQ:
@@ -55,14 +56,20 @@ class ReadAheadTransport:
           msg = self.requests.accept(msg, self.last_received_seq)
           if msg is None:
             continue
+          # Receiver hands off its independently allocated, CRC-checked buffer
+          # and clears its own reference. The memoryview keeps that allocation
+          # alive; subsequent envelopes/HELLO/close never reuse or mutate it.
+          assembled = True
         elif self.requests.key is not None:
           if msg.seq <= self.last_received_seq:
             continue
           raise LinkError('interrupted chunked request')
         self.last_received_seq = max(self.last_received_seq, msg.seq)
-        # The upstream receive view is valid only until its next recv. Own
-        # queued data before reading again while the GPU uses the current input.
-        self._put(Message(msg.msg_type, msg.seq, msg.flags, memoryview(bytes(msg.payload))))
+        # Ordinary upstream views still expire at the next recv. Preserve that
+        # copy; only a completed assembly has independent ownership. No pooled
+        # slot can wrap underneath a queued/current inference.
+        payload = msg.payload.toreadonly() if assembled else memoryview(bytes(msg.payload))
+        self._put(Message(msg.msg_type, msg.seq, msg.flags, payload))
     except Exception as exc:
       self._put(LinkError(f'host USB reader failed: {exc}'))
     finally:

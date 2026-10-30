@@ -32,7 +32,7 @@ from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, MESSAGE as WIFI_MESSAGE
 from model_library import CAPABILITY as LIBRARY_CAPABILITY, REQUEST as LIBRARY_REQUEST, RESPONSE as LIBRARY_RESPONSE, host_request as library_request
 from jetlink import protocol as P
 from jetlink import request_chunks, deferred_map, packed_codec, output_projection
-from jetlink.transport.base import Message, LinkError
+from jetlink.transport.base import LinkError
 from jetlink.server.session import Session
 from jetlink.server import main as server
 
@@ -250,17 +250,14 @@ class CarrotSession(Session):
     try:
       if msg.payload.nbytes < P.INFER_REQ_SIZE:
         raise ValueError('incomplete frame')
-      frame, flags = P.unpack_infer_req(msg.payload)
+      _, flags = P.unpack_infer_req(msg.payload)
       if flags & deferred_map.FLAG:
         from jetlink.block_codec import FLAG as LZ4_FLAG
         if (not self.deferred_negotiated or self.t.protocol_version != 2 or
             not flags & packed_codec.FLAG or flags & (LZ4_FLAG | P.Flag.RESET_QUEUES)):
           raise ValueError('unnegotiated map reference')
-        offset = P.INFER_REQ_SIZE + loaded.spec.warped_nbytes
-        packed = self.deferred_maps.expand(msg.payload[offset:], loaded.spec)
-        payload = (P.pack_infer_req(frame, flags & ~deferred_map.FLAG) +
-                   bytes(msg.payload[P.INFER_REQ_SIZE:offset]) + packed)
-        msg = Message(msg.msg_type, msg.seq, msg.flags, memoryview(payload))
+        if msg.payload.nbytes < P.INFER_REQ_SIZE + loaded.spec.warped_nbytes:
+          raise ValueError('incomplete image')
       else:
         # Every inline request supersedes the old image, including cancellation.
         self.deferred_maps.clear()
@@ -269,6 +266,15 @@ class CarrotSession(Session):
       self._send(P.Msg.INFER_RESP, msg.seq, (P.pack_infer_resp(0, P.Status.BAD_SHAPE, 0, 0, 0),))
       return
     return super()._infer(loaded, msg)
+
+  def _resolve_context(self, spec, flags, context):
+    if flags & deferred_map.FLAG:
+      try:
+        return flags & ~deferred_map.FLAG, self.deferred_maps.expand(context, spec)
+      except ValueError:
+        self.deferred_maps.clear()
+        raise
+    return flags, context
 
   def close(self):
     try:
