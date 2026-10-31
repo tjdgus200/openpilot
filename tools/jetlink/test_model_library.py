@@ -24,7 +24,7 @@ def pv5_manifest(key='n16'):
   spec = C.model_spec(key)
   value['model'].update(sha256=spec['sha256'], size=spec['nbytes'])
   value['profile'] = 'test-' + key
-  value['source_commit'] = {'n16': 'a', 'flip-flop': 'b', 'ctv3m': 'c'}[key] * 40
+  value['source_commit'] = {'n16': 'a', 'flip-flop': 'b', 'ctv3m': 'c', 'light-speed': 'd'}[key] * 40
   return value
 
 
@@ -91,34 +91,36 @@ def test_model_choice_does_not_use_retired_or_arbitrary_paths(store):
       C.usb_release(key)
 
 
-def test_ctv3m_requires_pv5_package_and_stays_frozen_until_reboot(store, monkeypatch):
-  assert 'ctv3m' not in C.available()  # No official signed CTV3M host was published.
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed'])
+def test_pv5_model_requires_pv5_package_and_stays_frozen_until_reboot(store, monkeypatch, key):
+  assert key not in C.available()  # Require our matching PV5 package, not an official host.
   with pytest.raises(ValueError, match='not available'):
-    C.select('ctv3m')
+    C.select(key)
   C.USB_PIN.write_text(json.dumps(pv5_manifest()))
-  for key in ('n16', 'flip-flop', 'ctv3m'):
-    (C.USB_DIRECTORY / ('pv5-usb-' + key + '.json')).write_text(json.dumps(pv5_manifest(key)))
-  assert set(C.available()) == {'n16', 'flip-flop', 'ctv3m'}
+  for model in ('n16', 'flip-flop', 'ctv3m', 'light-speed'):
+    (C.USB_DIRECTORY / ('pv5-usb-' + model + '.json')).write_text(json.dumps(pv5_manifest(model)))
+  assert set(C.available()) == {'n16', 'flip-flop', 'ctv3m', 'light-speed'}
   assert C.freeze_boot() == 'n16'
-  C.select('ctv3m')
+  C.select(key)
   assert C.freeze_boot() == C.effective_id() == 'n16'
   monkeypatch.setattr(C, 'boot_id', lambda: 'ctv3m-boot')
-  assert C.freeze_boot() == 'ctv3m'
-  assert C.usb_release(C.effective_id())['source_commit'] == 'c' * 40
-  assert not C.noo('ctv3m')
+  assert C.freeze_boot() == key
+  assert C.usb_release(C.effective_id())['source_commit'] == pv5_manifest(key)['source_commit']
+  assert not C.noo(key)
   C.select('flip-flop')
-  assert C.effective_id() == 'ctv3m'
+  assert C.effective_id() == key
 
 
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed'])
 @pytest.mark.parametrize('fault', ['model', 'source'])
-def test_ctv3m_rejects_other_models_package_and_duplicate_runtime_id(store, fault):
+def test_pv5_model_rejects_other_models_package_and_duplicate_runtime_id(store, fault, key):
   C.USB_PIN.write_text(json.dumps(pv5_manifest()))
-  value = pv5_manifest('ctv3m')
+  value = pv5_manifest(key)
   if fault == 'model':
     value['model'] = pv5_manifest('flip-flop')['model']
   else:
     value['source_commit'] = pv5_manifest('n16')['source_commit']
-  (C.USB_DIRECTORY / 'pv5-usb-ctv3m.json').write_text(json.dumps(value))
+  (C.USB_DIRECTORY / ('pv5-usb-' + key + '.json')).write_text(json.dumps(value))
   with pytest.raises(ValueError, match='model|source commits'):
     C.available()
 
@@ -168,7 +170,7 @@ def test_official_inputs_and_retired_legacy_alias():
     assert model_name(spec) == C.catalog()[label]['display_name']
   from openpilot.selfdrive.modeld.generic_model_runtime import model_metadata
 
-  for key, fixture in [('md-v3', 'md_v3_metadata.json'), ('flip-flop', 'flip_flop_metadata.json')]:
+  for key, fixture in [('md-v3', 'md_v3_metadata.json'), ('flip-flop', 'flip_flop_metadata.json'), ('light-speed', 'light_speed_metadata.json')]:
     raw = json.loads((C.ROOT / 'openpilot/selfdrive/modeld/tests/fixtures' / fixture).read_text())
     checkpoint, slices, states, count = model_metadata(raw)
     expected = C.model_spec(key)
@@ -278,7 +280,7 @@ def test_catalog_releases_are_signed_and_match_exact_onnx_contracts():
   from update_host import validate_manifest, verify_signature
   for key, entry in C.catalog().items():
     if entry.get('requires_pv5_usb'):
-      assert key == 'ctv3m' and 'jetson_release' not in entry
+      assert key in ('ctv3m', 'light-speed') and 'jetson_release' not in entry
       continue  # USB owner policy is separate; never fabricate an official signature.
     release = json.loads((C.DIRECTORY / entry['jetson_release']).read_text())
     validate_manifest(release)
@@ -331,6 +333,26 @@ def test_ctv3m_precompiled_identity_is_pinned_without_network(monkeypatch):
   assert value.sha256 == '4937fc6f04367b28328fe3bc0d1463a245725d039ddaab29406cc565fd5c8ed4'
   assert value.size == 773082315
   assert value.url.startswith('https://huggingface.co/buckets/commaai/openpilot-lfs/resolve/sha256/')
+
+
+def test_light_speed_contract_and_parser_use_matching_metadata():
+  import numpy as np
+  from jetlink.spec import ModelSpec
+  from jetlink.output_projection import eligible
+  from openpilot.selfdrive.modeld.jetlink.contracts import validate_model_spec, parse_outputs
+  from openpilot.selfdrive.modeld.parse_model_outputs import Parser
+
+  spec = ModelSpec.from_dict(C.model_spec('light-speed'))
+  assert validate_model_spec(spec) is spec
+  assert spec.sha256 == '6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21'
+  assert spec.nbytes == 792305602 and not eligible(spec)
+  assert spec.checkpoint.endswith('f22b8b34-0983-4185-a453-a87b73798d61/16384')
+  assert not C.noo('light-speed')
+  reference = C.model_spec('flip-flop')
+  for field in ('input_shapes', 'output_shapes', 'output_slices', 'frame_skip'):
+    assert spec.to_dict()[field] == reference[field]
+  output = parse_outputs(Parser(), spec, np.zeros(spec.output_nelem, np.float32))
+  assert output['plan'].shape == (1, 33, 15)
 
 
 def test_ctv3m_missing_pv5_pin_does_not_fall_back_to_another_models_signed_host(store):

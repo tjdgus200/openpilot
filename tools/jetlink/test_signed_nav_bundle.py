@@ -34,6 +34,38 @@ def test_selected_pin_is_exported_under_both_bootstrap_filenames():
     assert archive.extractfile('tools/jetlink/server.py').read() == files['tools/jetlink/server.py']
 
 
+@pytest.mark.parametrize('key', ['n16', 'md-v3', 'ctv3m', 'light-speed'])
+def test_catalog_export_selects_both_pins_without_changing_checkout_default(key):
+  prefix = 'openpilot/selfdrive/modeld/'
+  path = prefix + 'model_catalog/' + key + '.json'
+  selected = (ROOT / path).read_bytes()
+  files = {path: selected, prefix + 'jetlink/cinque_v2.json': b'old',
+           prefix + 'jetlink/jetson_model.json': b'default', 'unchanged.txt': b'preserved'}
+  original, result = io.BytesIO(), io.BytesIO()
+  with tarfile.open(fileobj=original, mode='w') as archive:
+    for name, data in files.items():
+      member = tarfile.TarInfo(name)
+      member.size = len(data)
+      archive.addfile(member, io.BytesIO(data))
+  original.seek(0)
+  with tarfile.open(fileobj=original) as source, tarfile.open(fileobj=result, mode='w') as target:
+    export_members(source, target, path)
+  result.seek(0)
+  with tarfile.open(fileobj=result) as archive:
+    for name in ('cinque_v2.json', 'jetson_model.json'):
+      assert archive.extractfile(prefix + 'jetlink/' + name).read() == selected
+    assert archive.extractfile('unchanged.txt').read() == b'preserved'
+  assert json.loads((ROOT / (prefix + 'jetlink/jetson_model.json')).read_text())['sha256'] == (
+    json.loads((ROOT / (prefix + 'model_catalog/n16.json')).read_text())['sha256'])
+
+
+@pytest.mark.parametrize('path', ['outside.json', 'openpilot/selfdrive/modeld/model_catalog/../n16.json',
+                                  'openpilot/selfdrive/modeld/model_catalog/model.pem'])
+def test_export_rejects_non_catalog_spec_paths(path):
+  with pytest.raises(ValueError, match='committed catalog JSON'):
+    export_members(None, None, path)
+
+
 @pytest.mark.skipif(sys.platform != 'linux', reason='Host renderer uses Linux dependencies')
 def test_exported_hud_entrypoint_has_all_dependencies(tmp_path):
   # Run outside the checkout: missing bundled modules must not be supplied by

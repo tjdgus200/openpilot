@@ -231,7 +231,7 @@ If only video is missing, check whether another browser owns the stream, whether
 
 ### External driving model selection (`carrot-nav-blink` trial)
 
-In Tools, choose N16 Nav, Flip Flop or CTV3M under **External driving model**. The choice saves automatically.
+In Tools, choose N16 Nav, Flip Flop, CTV3M or Light speed under **External driving model**. The choice saves automatically.
 The choice applies to both eGPU and Jetson; the internal model stays fixed at CD210.
 Saving does not switch a running model. With ignition off and internet available, reboot
 both comma and Jetson to download, verify, and apply the choice. A new Jetson model also
@@ -239,13 +239,16 @@ needs engine preparation. The eGPU downloads the official precompiled PKL withou
 recompiling the driving model itself.
 
 `NOO supported` identifies models accepting route images and navigation inputs. Currently
-N16 supports these inputs; Flip Flop and CTV3M do not. This label does not establish current
+N16 supports these inputs; Flip Flop, CTV3M and Light speed do not. This label does not establish current
 route validity or driving performance. MD v3 has been retired from the list. Flip Flop uses
 the official ONNX replaced on 2026-10-24; its hash differs from the historical MD v3 ONNX.
 
 CTV3M `bf3e3631b3` is offered only with its matching PV5 USB package. Jetson uses
 the verified ONNX from a fixed official Hugging Face revision. N16 remains the
 default; running models do not change. See [sources and verification limits](../../pv5_ctv3m_20261029.md).
+
+Light speed `f22b8b34` also requires its matching PV5 USB package to appear. First preparation downloads an approximately 792 MB model and builds a Jetson engine. With ignition off and the vehicle parked, connect to the Internet and reboot both comma and Jetson. The N16 default and PV5 HUD, BLE and USB input-power block are preserved. PC input/output checks do not establish Orin TensorRT performance or driving behavior. See [sources and verification limits](../../pv5_light_speed_20261101.md).
+
 
 Choose a model in the dropdown to save it for the next reboot. The list is maintained by
 the developers; user hide, delete and restore controls are not available. Catalog updates

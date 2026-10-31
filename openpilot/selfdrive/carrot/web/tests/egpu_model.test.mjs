@@ -46,3 +46,7 @@ test("Cinque v3 has its own eGPU title", () => {
 test("retrained Mountain Dew uses the version-free family name", () => {
   assert.equal(modelDisplayName({ model_id: "comma-pr39047-mdm-retrained-6f4c0faf-256f2178" }), "Mountain Dew");
 });
+
+test("Light speed has its own model title", () => {
+  assert.equal(modelDisplayName({ model_id: "comma-light-speed-c7cbe5de-33ba0928" }), "Light speed");
+});

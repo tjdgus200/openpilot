@@ -1,5 +1,15 @@
 # Repository memory
 
+- 2026-11-01 owner authorizes Light speed f22b8b34 selection, matching PV5
+  package publication and push. Preserve its exact catalog/metadata/USB pin
+  and distinct bundle source identity; never substitute the official non-PV5
+  bundle. Keep N16 default and boot-frozen selection for both backends. Common
+  optimized defaults apply; N16-only native/direct-map/compact/fusion gates
+  remain exact-model gated. Preserve every existing PV5 behavior and package.
+  PC ONNX/queue/export checks do not establish Orin TRT timing or road safety.
+  See docs/pv5_light_speed_20261101.md. This authorization supersedes the
+  Light speed deferral below only for the reviewed PV5 integration.
+
 - 2026-10-31 daily WIP integration: final indicator changes f5e4f8b8..34caa6ec
   imported with default-OFF ManualLaneChangeIndicator, three-second detection
   rearm plus independent twelve-second owned-feedback isolation, OEM-BSD-only

@@ -20,7 +20,7 @@ from test_hotplug_resources import joining_model
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.fixture(params=['n16', 'md-v3', 'ctv3m'])
+@pytest.fixture(params=['n16', 'md-v3', 'ctv3m', 'light-speed'])
 def spec(request):
   path = ROOT / f'openpilot/selfdrive/modeld/model_catalog/{request.param}.json'
   return ModelSpec.from_dict(json.loads(path.read_text(encoding='utf-8')))
