@@ -1,0 +1,23 @@
+{
+  "format": 2,
+  "delivery": "usb",
+  "integrity": "sha256",
+  "profile": "pv5-light-speed-20261101-51b8b9f3",
+  "source_commit": "51b8b9f3c37770c62ea4263c94ecf3fa9a754c3a",
+  "runtime": {
+    "arch": "aarch64",
+    "l4t": "36.4.7",
+    "tensorrt": "10.3.0"
+  },
+  "storage_format": 1,
+  "bundle": {
+    "sha256": "03f38f7a0a703b0aa44c855ce75d30e66657391f3b0f9e7f5da8942b8785fb01",
+    "size": 65165870,
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-light-speed-20261101-51b8b9f3/host.tar.gz"
+  },
+  "model": {
+    "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
+    "size": 792305602,
+    "url": "https://upload.shind0.synology.me/models/comma4-big-light-speed-f22b8b34/big_driving_supercombo.onnx"
+  }
+}

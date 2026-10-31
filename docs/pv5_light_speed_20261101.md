@@ -43,3 +43,21 @@ It does not establish physical Orin TensorRT build success, FP16 output accuracy
 20 Hz timing/P99, USB reconnect behavior, thermal stability or driving safety. Those
 require separate device and vehicle validation. Upstream USB AMD eGPU timing incidents
 are a different execution backend and do not quantify Orin performance.
+
+## Published package and PC results
+
+- [PV5 Light speed package](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-light-speed-20261101-51b8b9f3) — source `51b8b9f3c37770c62ea4263c94ecf3fa9a754c3a`.
+- Bundle: 65,165,870 bytes, SHA-256 `03f38f7a0a703b0aa44c855ce75d30e66657391f3b0f9e7f5da8942b8785fb01`.
+- All four public release assets were downloaded anonymously and hashed against the local files.
+- The original and patched ONNX pass full graph checking; actual metadata equals the complete
+  reviewed pin. Four changing/recurrent/reset synthetic frames produce exactly equal finite
+  CPU outputs, including every recurrent-state output. This is not a TensorRT output test.
+- Source preservation gates: Linux 832 and Windows 708 passed with no failures or skips.
+  Additional Linux exporter/isolated entrypoint/eGPU containment checks: 18 passed.
+  Web model selection/title tests: 12 passed. The final selector/package pin also requires
+  a fresh final-commit preservation run; owner-side JSON records bind each run to its HEAD.
+- The existing N16, Flip Flop and CTV3M package pointers and the global N16 default are unchanged.
+
+First device use remains a validation step: inspect engine build and model identity, compare
+TensorRT outputs/reset, then measure sustained inference timing and temperatures before any
+driving evaluation. No device was installed, restarted or tested during this PC task.

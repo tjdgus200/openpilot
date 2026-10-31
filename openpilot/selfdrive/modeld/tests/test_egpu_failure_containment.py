@@ -94,7 +94,8 @@ def test_fallback_handler_discards_failed_camera_before_internal_inference():
   assert events == [('retry_stopped', {'reason': 'background recovery unavailable', 'retry': False, 'active_model': 'internal'})]
 
 
-def test_usb_wait_only_adapts_verified_runtime_and_yields(monkeypatch):
+@pytest.mark.parametrize('runtime', ['RUNTIME_SHA', 'MD_V3_RUNTIME_SHA', 'LIGHT_SPEED_RUNTIME_SHA'])
+def test_usb_wait_only_adapts_verified_runtime_and_yields(monkeypatch, runtime):
   import sys
   from openpilot.selfdrive.modeld import egpu_usb_wait as wait
   class AMD:
@@ -108,7 +109,7 @@ def test_usb_wait_only_adapts_verified_runtime_and_yields(monkeypatch):
   assert USB.sleep is old_sleep and AMD.sleep_timeout_ms == 200
   sleeps = []
   monkeypatch.setattr(wait.time, 'sleep', sleeps.append)
-  assert wait.configure_usb_wait({'runtime': {'sha256': wait.RUNTIME_SHA}})
+  assert wait.configure_usb_wait({'runtime': {'sha256': getattr(wait, runtime)}})
   USB().sleep(AMD.sleep_timeout_ms)
   assert sleeps == [.0002] and AMD.sleep_timeout_ms == 1
   assert AMD.wait_timeout_ms == 30000

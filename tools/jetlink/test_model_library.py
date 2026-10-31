@@ -355,14 +355,16 @@ def test_light_speed_contract_and_parser_use_matching_metadata():
   assert output['plan'].shape == (1, 33, 15)
 
 
-def test_ctv3m_missing_pv5_pin_does_not_fall_back_to_another_models_signed_host(store):
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed'])
+def test_missing_pv5_pin_does_not_fall_back_to_another_models_signed_host(store, key):
   import os
   import subprocess
   code = '''
+import sys
 from pathlib import Path
 from openpilot.common import big_model_catalog as C
 C.USB_PIN=C.storage()/'absent-usb-pin.json'
-C.atomic_json(C.storage()/'boot-selection.json',{'boot':C.boot_id(),'selected':'ctv3m'})
+C.atomic_json(C.storage()/'boot-selection.json',{'boot':C.boot_id(),'selected':sys.argv[1]})
 original=Path.is_file
 Path.is_file=lambda p:p.as_posix()=='/TICI' or original(p)
 from openpilot.common.jetson_model import selected_release
@@ -371,9 +373,9 @@ try:
 except ValueError as e:
   assert 'matching PV5 USB package' in str(e)
 else:
-  raise AssertionError('unpublished signed CTV3M host was selected')
+  raise AssertionError('another models signed host was selected')
 '''
-  subprocess.run([sys.executable, '-P', '-c', code],
+  subprocess.run([sys.executable, '-P', '-c', code, key],
                  env=dict(os.environ, PYTHONPATH=str(C.ROOT)), check=True)
 
 
@@ -421,7 +423,7 @@ assert C.effective_id() == 'n16'
   subprocess.run([sys.executable, '-P', '-c', code], env=dict(os.environ, PYTHONPATH=str(C.ROOT)), check=True)
 
 
-@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m'])
+@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m', 'light-speed'])
 def test_published_pv5_selection_uses_frozen_models_own_usb_release(store, key):
   import os
   import subprocess
@@ -430,12 +432,14 @@ import sys
 from pathlib import Path
 from openpilot.common import big_model_catalog as C
 key=sys.argv[1]
-assert set(C.available()) == {'n16','flip-flop','ctv3m'}
+assert set(C.available()) == {'n16','flip-flop','ctv3m','light-speed'}
 C.select(key)
 assert C.freeze_boot() == key
 original=Path.is_file
 Path.is_file=lambda path: path.as_posix() == '/TICI' or original(path)
 from openpilot.common.jetson_model import read_spec,selected_release
+from openpilot.selfdrive.modeld.big_model import DEFAULT_MANIFEST_URL,fetch_manifest
+assert fetch_manifest(DEFAULT_MANIFEST_URL).sha256 == C.catalog()[key]['egpu']['sha256']
 release=selected_release(C.USB_PIN.with_name('host_release.json'),required=True)
 assert release == C.usb_release(key)
 assert release['model']['sha256'] == read_spec()['sha256'] == C.model_spec(key)['sha256']
