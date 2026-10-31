@@ -1,5 +1,20 @@
 # Repository memory
 
+- 2026-11-01 daily WIP sync: reviewed incremental dcd5f9eb/f85599bd/71518339
+  and upstream investigation records8429f745/7e88bb72. Preserve default-OFF
+  manual indication, 3s rearm/dark1s/independent12s feedback isolation. Import
+  stopped-D fresh ATC cues, one acknowledged-unlit retry, bounded opposite cue
+  and optional raw-GPS/TBT passage; retain receiver/wire and physical guards.
+  Manual-only recent intent requires fresh OEM white marking and positive
+  adjacent-lane geometry; additive CarState112 is unknown on old peers. The
+  separate bounded observer cannot assign lamps/desire and isolates log errors.
+  Remote approvals, private-drive results and installations are upstream history,
+  not PV5 owner authorization. USB AMD Light speed incident reports do not prove
+  an Orin fault or cure; keep the approved model/runtime pair and all four PV5
+  packages. All36 protected paths and all13 PV5 behaviors remain. No direct push,
+  device/settings/schedule/owner-validator changes. PC checks are not CAN/BLE/USB,
+  TRT/P99, sustained20Hz or road validation. See docs/pv5_wip_sync_20261101.md.
+
 - 2026-11-01 owner authorizes Light speed f22b8b34 selection, matching PV5
   package publication and push. Preserve its exact catalog/metadata/USB pin
   and distinct bundle source identity; never substitute the official non-PV5
