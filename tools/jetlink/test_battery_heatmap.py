@@ -231,7 +231,10 @@ def test_slow_partial_scan_never_mixes_generations_and_park_is_rechecked(monkeyp
     assert set(poller.cell_blocks) == {'220102'}
     clock[0] = 103.
     await poll_round(poller, Link(), parked=lambda: allowed[0])
-    assert not poller.cell_blocks and 'cell_voltages_v' not in poller.values
+    assert not poller.cell_blocks
+    assert poller.values['cell_voltages_v'] == [3.88] * 32 + [None] * 76
+    assert poller.observed['cell_voltages_v'] == 100.
+    assert poller.cell_observed == (100., None, None, None)
     clock[0] = 105.
     await poll_round(poller, Link(), parked=lambda: allowed[0])
     assert set(poller.cell_blocks) == {'220102'} and commands[-1] == '220102'
@@ -240,6 +243,75 @@ def test_slow_partial_scan_never_mixes_generations_and_park_is_rechecked(monkeyp
     assert not poller.cell_blocks and 'cell_voltages_v' not in poller.values
     assert not b.MetricPoller(details=True).values  # A reconnect has no old owner/buffers.
   asyncio.run(check())
+
+
+def test_each_verified_voltage_page_reaches_legacy_hud_before_full_scan(tmp_path, monkeypatch):
+  from hud_battery import BatteryPublisher
+  clock = [100.]
+  monkeypatch.setattr(b, 'time', NS(monotonic=lambda: clock[0]))
+  path = tmp_path / 'snap'
+  publisher = BatteryPublisher(tmp_path / 'no_profile')
+  counts, commands = [], []
+  class Link:
+    async def command(self, command):
+      commands.append(command)
+      return response(block(command, 194 + len(commands)))
+  async def check():
+    poller = b.MetricPoller(details=True)
+    # Core power priority is covered separately. Isolate one optional reply per
+    # call here so the test observes every collector -> publisher -> HUD step.
+    poller.due = dict.fromkeys(poller.due, float('inf'))
+    def publish(stamp, values, field_times):
+      b.write_snapshot('receiving', values, path=path, identity='cfg', observed_at=stamp,
+                       field_times=field_times, cell_times=poller.cell_observed)
+      wire = publisher.ble_packet(b.read_json(path), 'cfg', clock[0])
+      cells = panel_from_wire(json.loads(json.dumps(wire))).value('cell_voltages_v')
+      counts.append(sum(v is not None for v in cells))
+      assert len(cells) == 108
+      assert 'page_ages_s' not in wire['fields']['cell_voltages_v']
+      assert path.stat().st_size <= 4096
+    for i in range(4):
+      clock[0] = 100. + i * .1
+      await poller.poll(Link(), parked=True, publish=publish)
+    assert counts == [32, 64, 96, 108]
+    assert commands == [c for c, _ in b.CELL_BLOCKS]
+    original = publisher.ble_metrics['cell_voltages_v'][0]
+    assert original[0] == 3.9 and original[32] == 3.92 and original[-1] == 3.96
+    clock[0] = 105.
+    await poller.poll(Link(), parked=True, publish=publish)
+    refreshed = publisher.ble_metrics['cell_voltages_v'][0]
+    assert refreshed[:32] == (3.98,) * 32 and refreshed[32:] == original[32:]
+    assert [publisher.ble_cells[i][1] for i in range(4)] == [105., 100., 100., 100.]
+    # Fixed four-page ownership, no per-channel transactions or growing history.
+    assert len(publisher.ble_cells) == 4 and len(commands) == 5
+  asyncio.run(check())
+
+
+def test_partial_voltage_pages_keep_invalid_slots_and_reject_wrong_layout():
+  page = bytearray(block('220103'))
+  page[7+9] = 0
+  values = b.cell_array({'220103': page}, partial=True)
+  assert values[:32] == [None] * 32
+  assert values[32:41] == [3.88] * 9 and values[41] is None and values[42] == 3.88
+  assert values[64:] == [None] * 44
+  assert len(values) == 108
+  for wrong in (page[:-1], block('220104')):
+    with pytest.raises(ValueError, match='cell array layout'):
+      b.cell_array({'220103': wrong}, partial=True)
+  with pytest.raises(ValueError):
+    b.parse_reply(response(bytes(page)).replace(b'7EC21', b'7EC22', 1), '220103')
+
+
+@pytest.mark.parametrize('times', [None, [], [100.]*5, [None]*4,
+                                  [True, None, None, None], [float('nan'), None, None, None],
+                                  [float('inf'), None, None, None], [101., None, None, None],
+                                  [94., None, None, None]])
+def test_invalid_page_timestamps_cannot_admit_voltage_but_keep_other_fields(times):
+  record = {'version': 1, 'state': 'receiving', 'updated': 100., 'config_id': 'cfg',
+            'metrics': {'cell_voltages_v': [3.88]*32 + [None]*76, 'soc_percent': 77.},
+            'cell_page_times': times}
+  packet = b.snapshot_packet(record, 100., 'cfg')
+  assert set(packet['fields']) == {'soc_percent'}
 
 
 def test_optional_request_requires_fresh_parked_vehicle():

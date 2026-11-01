@@ -219,6 +219,7 @@ class BatteryPublisher:
         self.next_ble_read = 0.0
         self.ble_cache_identity = None
         self.ble_metrics = {}
+        self.ble_cells = {}
         self.ble_unverified = set()
 
     def close(self):
@@ -233,19 +234,35 @@ class BatteryPublisher:
         self.next_ble_read = 0.0
         self.ble_cache_identity = None
         self.ble_metrics = {}
+        self.ble_cells = {}
         self.ble_unverified = set()
 
     def ble_packet(self, record, identity, now):
         """One bounded last-good value per field, scoped to the enrolled config."""
-        from openpilot.selfdrive.carrot.obd_battery import snapshot_packet
+        from openpilot.selfdrive.carrot.obd_battery import CELL_BLOCKS, snapshot_packet
         if identity is None or identity != self.ble_cache_identity:
             self.ble_metrics.clear()
+            self.ble_cells.clear()
             self.ble_unverified.clear()
             self.ble_cache_identity = identity
         packet = snapshot_packet(record, now, identity)
         pending = packet.get('unverified_fields', ())
         for name, item in packet['fields'].items():
             stamp = packet['sampled_at'] - item['age_s']
+            if name == 'cell_voltages_v':
+                ages = item.get('page_ages_s', [item['age_s']] * len(CELL_BLOCKS))
+                start = 0
+                for index, (_, count) in enumerate(CELL_BLOCKS):
+                    if ages[index] is not None:
+                        page_stamp = packet['sampled_at'] - ages[index]
+                        previous = self.ble_cells.get(index)
+                        if previous is None or page_stamp > previous[1]:
+                            self.ble_cells[index] = tuple(item['value'][start:start+count]), page_stamp
+                    start += count
+                self.ble_unverified.discard(name)
+                if name in pending:
+                    self.ble_unverified.add(name)
+                continue
             previous = self.ble_metrics.get(name)
             if previous is None or stamp > previous[1]:
                 value = tuple(item['value']) if name in ARRAYS else item['value']
@@ -253,6 +270,19 @@ class BatteryPublisher:
                 self.ble_unverified.discard(name)
                 if name in pending:
                     self.ble_unverified.add(name)
+        # Four fixed page caches, with independent original ages. A new page
+        # never revives an old page; all valid slots use the oldest retained age
+        # on the unchanged HUD wire, so older receivers also expire safely.
+        self.ble_cells = {index: page for index, page in self.ble_cells.items()
+                          if 0 <= now - page[1] <= field_max_age_s('cell_voltages_v')}
+        if self.ble_cells:
+            cells = []
+            for index, (_, count) in enumerate(CELL_BLOCKS):
+                page = self.ble_cells.get(index)
+                cells.extend(page[0] if page is not None else (None,) * count)
+            self.ble_metrics['cell_voltages_v'] = tuple(cells), min(page[1] for page in self.ble_cells.values())
+        else:
+            self.ble_metrics.pop('cell_voltages_v', None)
         # Reconnect/setup/status writes never renew an observation. No history,
         # disk persistence, BLE operations or additional thread in this worker.
         self.ble_metrics = {name: item for name, item in self.ble_metrics.items()
@@ -291,6 +321,7 @@ class BatteryPublisher:
             self.slow_metrics.clear()
             return self.ble_packet(self.ble_record, self.ble_identity, now)
         self.ble_metrics.clear()
+        self.ble_cells.clear()
         self.ble_unverified.clear()
         self.ble_cache_identity = None
         if now >= self.next_profile:

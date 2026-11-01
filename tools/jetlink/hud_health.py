@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from host_health import STATUS
 from openpilot.common.jetlink_status import _fresh
-from cluster_battery import remote_panel, StationaryBatteryView
+from cluster_battery import remote_panel, StationaryBatteryView, valid_value
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
                               WIFI_STATUS_CENTER_X, WIFI_STATUS_ICON_SIZE, TOP_CLOCK_CENTER_X, TOP_STATUS_CENTER_Y,
@@ -16,6 +16,28 @@ NORMAL = (100, 225, 170)
 WARNING = (255, 205, 70)
 ERROR = (255, 90, 90)
 UNKNOWN = (190, 190, 190)
+
+
+class TripSocUsage:
+  """One initial SOC per Jetson HUD session; no samples, timer or disk writes."""
+  def __init__(self):
+    self.initial = None
+
+  def update(self, data, fresh_vehicle):
+    value = data.value('soc_percent')
+    if not fresh_vehicle or not valid_value('soc_percent', value):
+      return None
+    if self.initial is None:
+      self.initial = value
+    return round(self.initial - value, 1)
+
+
+def trip_soc_label(used, language):
+  if used is None:
+    return '사용 --%' if language == 'ko' else 'Used --%'
+  if language == 'ko':
+    return f"{'사용' if used >= 0 else '증가'} {abs(used):.1f}%"
+  return f"{'Used' if used >= 0 else 'Gain'} {abs(used):.1f}%"
 
 
 def _bsd_corner_mesh(cx, cy, start, edge_width):
@@ -100,6 +122,9 @@ def health_banner(health, language):
 
 
 class HealthRenderer(ClusterUiRenderer):
+  # Renderer recreation for USB/FPS changes must not establish a new baseline.
+  # A process restart (including a host reboot/runtime update) starts a session.
+  _trip_soc = TripSocUsage()
   def usb_brightness_setting(self, state, setting):
     from hud_protocol import read_snapshot
     from hud_bsd import warning_sides, WarningBrightness
@@ -141,6 +166,12 @@ class HealthRenderer(ClusterUiRenderer):
 
   def _draw_battery_panel(self, state):
     super()._draw_battery_panel(state)
+    used = getattr(self, '_trip_soc_used', None)
+    right = self._information_panel_x(NAVI_LIVE_PANEL_X) + NAVI_LIVE_PANEL_W * .5 - 24
+    self._draw_text(self._ellipsize_text(trip_soc_label(used, self.language), 28,
+                                      NAVI_LIVE_PANEL_W * .5 - 48), right, 169, 28,
+                    NORMAL if used is not None and used < 0 else self._current_theme().muted,
+                    anchor='right')
     from hud_runtime_stats import inference_segments
     right = self._information_panel_x(NAVI_LIVE_PANEL_X) + NAVI_LIVE_PANEL_W - 20
     if right > DESIGN_WIDTH - 130:
@@ -178,14 +209,17 @@ class HealthRenderer(ClusterUiRenderer):
                                              getattr(state, 'right_signal', False)), now=now)
     self.host_health = _fresh(STATUS, time.monotonic())
     self.host_badge_drawn = False
+    battery = remote_panel(snapshot, time.monotonic())
+    vehicle_current = self._vehicle_data_current and vehicle_motion_fresh(snapshot, now)
+    self._trip_soc_used = self._trip_soc.update(battery, vehicle_current)
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
-      state = replace(state, battery=remote_panel(snapshot, time.monotonic()))
+      state = replace(state, battery=battery)
     if not hasattr(self, '_battery_view'):
       self._battery_view = StationaryBatteryView()
     battery_screen = getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY
     self._charging_dashboard_active = self._battery_view.update(
       getattr(state, 'battery', None), getattr(state, 'gear_text', ''), getattr(state, 'speed_kph', None),
-      battery_screen and self._vehicle_data_current and vehicle_motion_fresh(snapshot, now), now)
+      battery_screen and vehicle_current, now)
     super().render(state, signal_lights)
 
   def _draw_speed_block(self, state, *, tpms_offset_x=0.):

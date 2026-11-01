@@ -7,6 +7,89 @@ import pytest
 sys.path[:0] = [str(Path(__file__).parent), str(Path(__file__).resolve().parents[2] / 'openpilot/selfdrive/carrot/cluster')]
 import hud_health as hud
 from host_health import thermal_health, storage_health
+from cluster_battery import BatteryPanelData, packet_from_metrics, panel_from_wire
+
+
+def test_trip_soc_uses_first_valid_observation_and_survives_missing_data():
+  trip = hud.TripSocUsage()
+  def panel(value, now=100.):
+    return panel_from_wire(packet_from_metrics({'soc_percent': (value, 100.)}, now))
+  assert trip.update(panel(90.), False) is None and trip.initial is None
+  assert trip.update(BatteryPanelData(), True) is None and trip.initial is None
+  assert trip.update(panel(77.), True) == 0.
+  assert trip.update(panel(74.5), True) == 2.5
+  assert trip.update(panel(74.5, 160.01), True) is None
+  assert trip.update(BatteryPanelData(), False) is None
+  assert trip.initial == 77.
+  assert trip.update(panel(73.), True) == 4.
+  assert trip.update(panel(78.), True) == -1.  # Charging/regen is not clamped to consumption.
+  assert hud.trip_soc_label(2.5, 'ko') == '사용 2.5%'
+  assert hud.trip_soc_label(-1., 'ko') == '증가 1.0%'
+  assert hud.trip_soc_label(None, 'en') == 'Used --%'
+
+
+@pytest.mark.parametrize('value', [True, '77', -1., 101., float('nan'), float('inf')])
+def test_invalid_trip_soc_cannot_set_initial_value(value):
+  trip = hud.TripSocUsage()
+  assert trip.update(BatteryPanelData((('soc_percent', value, 0.),)), True) is None
+  assert trip.initial is None
+
+
+def test_trip_soc_zero_is_valid_and_renderer_recreation_preserves_session(monkeypatch):
+  trip = hud.TripSocUsage()
+  monkeypatch.setattr(hud.HealthRenderer, '_trip_soc', trip)
+  first, second = object.__new__(hud.HealthRenderer), object.__new__(hud.HealthRenderer)
+  assert first._trip_soc.update(BatteryPanelData((('soc_percent', 0., 0.),)), True) == 0.
+  assert second._trip_soc.update(BatteryPanelData((('soc_percent', 1., 0.),)), True) == -1.
+  assert trip.initial == 0.
+
+
+@pytest.mark.parametrize('language', ['ko', 'en'])
+def test_trip_soc_is_larger_diagonally_below_soc_and_preserves_base_panel(monkeypatch, language):
+  renderer = hud.HealthRenderer()
+  renderer.language, renderer._trip_soc_used = language, 2.5
+  texts, base = [], []
+  renderer._draw_text = lambda *args, **kw: texts.append((args, kw))
+  renderer._ellipsize_text = lambda text, *args: text
+  renderer._draw_runtime_line = lambda *args: None
+  renderer._host_metrics = dict
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_battery_panel', lambda *args: base.append(True))
+  renderer._draw_battery_panel(NS())
+  assert base == [True]
+  args, kw = texts[0]
+  assert args[0] == hud.trip_soc_label(2.5, language)
+  assert args[1] == renderer._information_panel_x(hud.NAVI_LIVE_PANEL_X) + hud.NAVI_LIVE_PANEL_W*.5 - 24
+  assert args[2:4] == (169, 28) and kw['anchor'] == 'right'
+
+
+def test_trip_soc_renderer_uses_only_valid_fresh_remote_data(monkeypatch):
+  from dataclasses import replace
+  import hud_protocol
+  from cluster_live import standby_state
+  trip, clock, connected = hud.TripSocUsage(), [100.], [True]
+  monkeypatch.setattr(hud.HealthRenderer, '_trip_soc', trip)
+  soc = [77.]
+  def snapshot():
+    if not connected[0]:
+      return None
+    return clock[0], {'sent': clock[0], 'received': {'carState': clock[0]-.01},
+                      'events': {'carState': 'present'}, 'alive': {'carState': True},
+                      'valid': {'carState': True},
+                      'battery_hud': packet_from_metrics({'soc_percent': (soc[0], clock[0])}, clock[0])}
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', snapshot)
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: clock[0])
+  monkeypatch.setattr(hud, '_fresh', lambda *args: {})
+  monkeypatch.setattr(hud.ClusterUiRenderer, 'render', lambda *args: None)
+  renderer = hud.HealthRenderer(screen_mode=8)
+  state = replace(standby_state(), gear_text='D', speed_kph=10.)
+  renderer.render(state)
+  assert renderer._trip_soc_used == 0.
+  connected[0], clock[0] = False, 101.
+  renderer.render(state)
+  assert renderer._trip_soc_used is None and trip.initial == 77.
+  connected[0], soc[0], clock[0] = True, 75., 102.
+  renderer.render(state)
+  assert renderer._trip_soc_used == 2.
 
 
 def sensor(root, index, temp, limit, cooling='cpu-balanced'):

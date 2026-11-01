@@ -131,3 +131,42 @@ def test_out_of_order_replay_or_clock_rollback_never_renews_last_good(source):
     packet = publisher.update('KIA_PV5', True, 111.)
     assert packet['fields']['soc_percent'] == {'value': 71., 'age_s': 1.}
     assert not publisher.update('KIA_PV5', True, 90.)['fields']
+
+
+def test_voltage_pages_expire_independently_without_refreshing_unreceived_slots(tmp_path):
+    publisher = BatteryPublisher(tmp_path / 'no_profile')
+    def page(index, stamp, value):
+        counts = [32, 32, 32, 12]
+        values = [None] * 108
+        start = sum(counts[:index])
+        values[start:start+counts[index]] = [value] * counts[index]
+        times = [None] * 4
+        times[index] = stamp
+        return {'version': 1, 'state': 'receiving', 'updated': stamp, 'config_id': 'cfg',
+                'metrics': {'cell_voltages_v': values}, 'cell_page_times': times}
+    publisher.ble_packet(page(0, 100., 3.88), 'cfg', 100.)
+    publisher.ble_packet(page(0, 99., 4.), 'cfg', 102.)  # A replay cannot replace page0.
+    assert publisher.ble_cells[0] == ((3.88,)*32, 100.)
+    packet = publisher.ble_packet(page(1, 130., 3.9), 'cfg', 130.)
+    assert packet['fields']['cell_voltages_v']['age_s'] == 30.
+    assert panel_from_wire(packet).value('cell_voltages_v') == (3.88,)*32 + (3.9,)*32 + (None,)*44
+    disconnected = {'version': 1, 'state': 'disconnected', 'updated': 160.01, 'config_id': 'cfg'}
+    packet = publisher.ble_packet(disconnected, 'cfg', 160.01)
+    assert panel_from_wire(packet).value('cell_voltages_v') == (None,)*32 + (3.9,)*32 + (None,)*44
+    assert packet['fields']['cell_voltages_v']['age_s'] == pytest.approx(30.01)
+    assert len(publisher.ble_cells) == 1
+    assert not publisher.ble_packet(None, 'cfg', 190.01)['fields']
+    assert not publisher.ble_cells and not publisher.ble_metrics
+
+
+def test_voltage_page_cache_never_crosses_identity_or_close(tmp_path):
+    publisher = BatteryPublisher(tmp_path / 'no_profile')
+    record = {'version': 1, 'state': 'receiving', 'updated': 100., 'config_id': 'cfg',
+              'metrics': {'cell_voltages_v': [3.88]*32+[None]*76},
+              'cell_page_times': [100., None, None, None]}
+    assert publisher.ble_packet(record, 'cfg', 100.)['fields']
+    assert not publisher.ble_packet(record, 'other', 101.)['fields']
+    assert not publisher.ble_cells
+    publisher.ble_packet(record, 'cfg', 102.)
+    publisher.close()
+    assert not publisher.ble_cells and not publisher.ble_metrics

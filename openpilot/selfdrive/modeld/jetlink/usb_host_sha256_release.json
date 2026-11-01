@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-park-n16-20261030-b81149e5",
-  "source_commit": "b81149e5fc99baf54740d7c2a9814c06eada8bf4",
+  "profile": "pv5-boot-resources-n16-20261101-39be6a14",
+  "source_commit": "39be6a140d5e1c5506f90d30746930caadfe3882",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-park-update-n16-20261030-b81149e5/host.tar.gz",
-    "sha256": "d22de20e66593b4dfcd207d7d482726c4bd653be12f0f036c4fcfa1d51766a60",
-    "size": 65153648
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-boot-resources-n16-20261101-39be6a14/host.tar.gz",
+    "sha256": "e616de8f0ff1ba6c4659f9290bd18a39c899a8b3352650799b95cce715ee2a5a",
+    "size": 65178790
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

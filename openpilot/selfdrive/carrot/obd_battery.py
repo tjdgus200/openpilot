@@ -264,9 +264,12 @@ def temperature_array(first, fifth):
   return [v if -40 <= v <= 90 else None for v in values]
 
 
-def cell_array(blocks):
+def cell_array(blocks, partial=False):
   values = []
   for command, count in CELL_BLOCKS:
+    if partial and command not in blocks:
+      values.extend([None] * count)
+      continue
     payload = blocks[command]
     if len(payload) != 39 or payload[:3] != REPLIES[command][1]:
       raise ValueError('cell array layout')
@@ -289,6 +292,7 @@ class MetricPoller:
     self.next_cells = 0.0
     self.details = details
     self.cell_blocks, self.cell_started = {}, 0.0
+    self.cell_observed = (None,) * len(CELL_BLOCKS)
     self.retry_at, self.failures = {}, {}
     self.last_command, self.last_result, self.no_data_count = None, None, 0
     self.last_no_data_command = None
@@ -300,6 +304,8 @@ class MetricPoller:
       if not 0 <= now - self.observed[name] <= 5:
         self.observed.pop(name, None)
         self.values.pop(name, None)
+        if name == 'cell_voltages_v':
+          self.cell_observed = (None,) * len(CELL_BLOCKS)
     return max(self.observed.values(), default=now), self.values.copy(), self.observed.copy()
 
   async def read(self, link, command):
@@ -377,6 +383,7 @@ class MetricPoller:
       self.values.pop('cell_voltages_v', None)
       self.observed.pop('cell_voltages_v', None)
       self.cell_blocks.clear()
+      self.cell_observed = (None,) * len(CELL_BLOCKS)
     return self.cells_allowed
 
   async def poll(self, link, parked=False, publish=None):
@@ -439,10 +446,13 @@ class MetricPoller:
         self.next_cells = max(self.next_cells, self.retry_at.get(command, time.monotonic() + 2.))
       elif safe_parked:
         self.cell_blocks[command] = reply
+        if time.monotonic() - self.cell_started <= 2.5:
+          # Only complete, strictly parsed DID pages are published. Keep fixed
+          # indices for missing/invalid channels; never assemble raw BLE chunks.
+          self.values['cell_voltages_v'] = cell_array(self.cell_blocks, partial=True)
+          self.observed['cell_voltages_v'] = self.cell_started
+          self.cell_observed = tuple(self.cell_started if cmd in self.cell_blocks else None for cmd, _ in CELL_BLOCKS)
         if len(self.cell_blocks) == len(CELL_BLOCKS):
-          if time.monotonic() - self.cell_started <= 2.5:
-            self.values['cell_voltages_v'] = cell_array(self.cell_blocks)
-            self.observed['cell_voltages_v'] = self.cell_started
           self.cell_blocks.clear()
           # Limit background scan starts even when replies become very fast.
           self.next_cells = max(self.cell_started + 4., time.monotonic() + 2.)
@@ -452,7 +462,7 @@ class MetricPoller:
 
 
 def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None, observed_at=None, field_times=None,
-                   diagnostics=None):
+                   diagnostics=None, cell_times=None):
   candidates = candidates or {}
   displayed = confirmed | CHARGING_PREVIEW_FIELDS
   record = {'version': 1, 'updated': time.monotonic() if observed_at is None else observed_at, 'state': state, 'config_id': identity,
@@ -462,6 +472,8 @@ def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT,
     record['field_times'] = field_times
   if diagnostics is not None:
     record['collection'] = diagnostics
+  if cell_times is not None and 'cell_voltages_v' in candidates:
+    record['cell_page_times'] = cell_times
   raw = json.dumps(record, allow_nan=False, separators=(',', ':')).encode()
   if len(raw) > 4096:
     raise ValueError('snapshot size')
@@ -496,7 +508,19 @@ def snapshot_packet(record, now, expected_identity=None):
   if (not isinstance(pending, list) or len(pending) > len(CHARGING_PREVIEW_FIELDS)
       or any(not isinstance(k, str) or k not in CHARGING_PREVIEW_FIELDS for k in pending)):
     return packet_from_metrics({}, now)
-  return packet_from_metrics(metrics, now, 'receiving' if metrics else 'profile_required', unverified=pending)
+  packet = packet_from_metrics(metrics, now, 'receiving' if metrics else 'profile_required', unverified=pending)
+  cells = packet['fields'].get('cell_voltages_v')
+  if cells is not None and 'cell_page_times' in record:
+    times = record['cell_page_times']
+    if (not isinstance(times, (list, tuple)) or len(times) != len(CELL_BLOCKS)
+        or not any(t is not None for t in times)
+        or any(t is not None and (not finite_number(t) or not 0 <= now - t <= 5) for t in times)):
+      packet['fields'].pop('cell_voltages_v')
+    else:
+      # Local collector -> publisher metadata only. The emitted HUD wire format
+      # remains the existing bounded108-slot array and conservative field age.
+      cells['page_ages_s'] = [None if t is None else now - t for t in times]
+  return packet
 
 
 class NotificationQueue(asyncio.Queue):
@@ -747,7 +771,8 @@ async def run():
               if configuration(read_json(CONFIG)) != (target, fields):
                 raise ValueError('configuration changed')
               write_snapshot('receiving' if candidates else 'waiting_data', candidates, fields, identity=source_id,
-                             observed_at=observed_at, field_times=field_times, diagnostics=collection_info(transport, reader))
+                             observed_at=observed_at, field_times=field_times, diagnostics=collection_info(transport, reader),
+                             cell_times=reader.cell_observed)
               # Even a complete NO DATA prompt proves that this ELM session is
               # responsive; it does not make an absent battery field valid.
               timeout.reschedule(None)

@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-light-speed-20261101-51b8b9f3",
-  "source_commit": "51b8b9f3c37770c62ea4263c94ecf3fa9a754c3a",
+  "profile": "pv5-boot-resources-light-speed-20261101-987dfea5",
+  "source_commit": "987dfea5aa329f1902fdb08793385993d57487ba",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "sha256": "03f38f7a0a703b0aa44c855ce75d30e66657391f3b0f9e7f5da8942b8785fb01",
-    "size": 65165870,
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-light-speed-20261101-51b8b9f3/host.tar.gz"
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-boot-resources-light-speed-20261101-987dfea5/host.tar.gz",
+    "sha256": "c0aa1bb4fbf4cf3ccaf33a0c4910e8feecc920b5f9970bb1221d79626cf91e46",
+    "size": 65178489
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",

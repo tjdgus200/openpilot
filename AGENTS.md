@@ -1,5 +1,27 @@
 # Repository memory
 
+- 2026-11-01 owner requests trip SOC use below the battery percentage. The
+  Jetson HUD uses its first valid remote SOC as a fixed session baseline;
+  display baseline-current in percentage points, gains labeled separately.
+  Owner styling: use only% suffix,28px right-aligned diagonally below SOC.
+  BLE loss/reconnect and USB/FPS renderer recreation never reset the baseline;
+  missing/stale data shows -- without inventing use. A HUD process restart
+  starts a new session. One scalar, no history/persistent write/OBD request.
+  Preserve existing SOC and all overlays; test_hud_health.py covers this path.
+  All4 model packages must include the display change before their pins move.
+
+- 2026-11-01 owner requests incremental108-voltage display. Publish verified
+  32/32/32/12 DID pages without waiting for a full scan; preserve fixed indices,
+  strict source/length/DID/ISO-TP/prompt validation and original scheduling.
+  Keep only four page caches, each with original60s expiry; a new page never
+  renews another. Local4096-byte snapshot metadata stays off the existing HUD
+  wire; older Jetson receivers retain None/-- support and conservative age.
+  Preserve Park admission, incomplete-assembly retirement,5s power expiry,
+  ownership clearing and BLEOBD freshness. test_battery_heatmap.py and
+  test_battery_retention.py protect this behavior. No extra radio request or
+  per-cell query; PC tests are not physical BLE/latency/road validation.
+  See docs/pv5_incremental_voltage_20261101.md.
+
 - 2026-11-01 daily WIP sync: reviewed incremental dcd5f9eb/f85599bd/71518339
   and upstream investigation records8429f745/7e88bb72. Preserve default-OFF
   manual indication, 3s rearm/dark1s/independent12s feedback isolation. Import
