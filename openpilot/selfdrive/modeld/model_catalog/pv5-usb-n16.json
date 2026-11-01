@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-boot-resources-n16-20261101-39be6a14",
-  "source_commit": "39be6a140d5e1c5506f90d30746930caadfe3882",
+  "profile": "pv5-hud-battery-progress-n16-20261101-c74dab24",
+  "source_commit": "c74dab24bf97e0642a277bcc85ebe9b344359757",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-boot-resources-n16-20261101-39be6a14/host.tar.gz",
-    "sha256": "e616de8f0ff1ba6c4659f9290bd18a39c899a8b3352650799b95cce715ee2a5a",
-    "size": 65178790
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-battery-progress-n16-20261101-c74dab24/host.tar.gz",
+    "sha256": "20285272c872c0419f65b5d098c00700ac15db152cf45c468b939c7fb2b5288b",
+    "size": 65182222
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

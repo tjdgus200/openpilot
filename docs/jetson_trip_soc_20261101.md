@@ -29,3 +29,12 @@ layout checks do not establish physical display readability or driving safety.
 - flip-flop: distinct battery-progress bundle source; export `model_catalog/md-v3.json`.
 - ctv3m: distinct battery-progress bundle source; export `model_catalog/ctv3m.json`.
 - light-speed: distinct battery-progress bundle source; export `model_catalog/light-speed.json`.
+
+## Publication and validation
+
+Linux PC preservation854/Windows732 and additional Linux BLE mocks205 pass, zero failures/skips. All four bundles pass isolated imports, boot/resource/SOC rendering and model queue checks. Sixteen public assets were downloaded anonymously and matched their published hashes. Model SHA/size, N16 default and the existing13 PV5 behaviors remain. Real Jetson/USB/TRT/P99/driving validation was not performed.
+
+- [n16](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-battery-progress-n16-20261101-c74dab24), source `c74dab24`.
+- [flip-flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-battery-progress-flip-flop-20261101-98b57642), source `98b57642`.
+- [ctv3m](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-battery-progress-ctv3m-20261101-73bc9d89), source `73bc9d89`.
+- [light-speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-battery-progress-light-speed-20261101-b00f1550), source `b00f1550`.
