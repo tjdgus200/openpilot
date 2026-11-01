@@ -33,3 +33,4 @@ actual Jetson display CPU usage, sensor availability or driving behavior.
 - N16: base boot-resource implementation; export `model_catalog/n16.json`.
 - flip-flop: distinct boot-resource bundle source; export `model_catalog/md-v3.json`.
 - ctv3m: distinct boot-resource bundle source; export `model_catalog/ctv3m.json`.
+- light-speed: distinct boot-resource bundle source; export `model_catalog/light-speed.json`.
