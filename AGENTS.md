@@ -15,6 +15,14 @@
   device/settings/schedule/owner-validator changes. PC checks are not CAN/BLE/USB,
   TRT/P99, sustained20Hz or road validation. See docs/pv5_wip_sync_20261101.md.
 
+- 2026-11-01 owner requests temperature | CPU | MEM | PWR on the black
+  Jetson connection diagnosis screen, same22px font/color/baseline as temperature.
+  Preserve all9 rows and panel handoff. Use one existing1Hz local /proc sampler
+  and VDD_IN module-power helper; unavailable/invalid readings show --. Keep
+  immutable diagnostic dependencies, exact Light speed name and all4 distinct
+  model packages. No comma/inference/GPU load or added telemetry service.
+  See docs/jetson_boot_resources_20261101.md; PC checks are not device validation.
+
 - 2026-11-01 owner authorizes Light speed f22b8b34 selection, matching PV5
   package publication and push. Preserve its exact catalog/metadata/USB pin
   and distinct bundle source identity; never substitute the official non-PV5

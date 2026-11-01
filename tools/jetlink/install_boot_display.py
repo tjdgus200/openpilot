@@ -8,6 +8,7 @@ def configure(root, source):
   repository = source.resolve().parents[1]
   target = root / 'usr/local/lib/carrot-jetlink/boot-display'
   relative = ['openpilot/__init__.py', 'tools/jetlink/boot_display.py', 'tools/jetlink/boot_status.py',
+              'tools/jetlink/host_health.py', 'openpilot/selfdrive/carrot/cluster/cluster_system_monitor.py',
               'tools/jetlink/display_owner.py', 'openpilot/common/usbgpu_bus_lock.py',
               'openpilot/selfdrive/carrot/cluster/cluster_usb_display.py',
               'openpilot/selfdrive/carrot/cluster/cluster_config.py',
@@ -53,5 +54,5 @@ WantedBy=multi-user.target
   link.symlink_to('../' + name)
   dropin = units / 'carrot-jetlink-hud.service.d/diagnostics.conf'
   dropin.parent.mkdir(parents=True, exist_ok=True)
-  dropin.write_text('[Service]\nRuntimeDirectory=carrot-jetlink-display\n'
+  dropin.write_text('[Service]\nRuntimeDirectory=carrot-jetlink-display\n' +
                    'RuntimeDirectoryMode=0700\nRuntimeDirectoryPreserve=yes\n')

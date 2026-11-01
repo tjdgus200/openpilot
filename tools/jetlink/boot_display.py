@@ -1,5 +1,6 @@
 """CPU-rendered USB diagnosis, independent of comma packets, model and Xorg."""
 from io import BytesIO
+import math
 from pathlib import Path
 import sys
 import time
@@ -9,6 +10,19 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'openpilot/selfdrive/carrot/cluster'))
 from boot_status import collect
 from display_owner import hud_requested, panel_owner
+from cluster_system_monitor import SystemStatsSampler
+
+
+def resource_text(status):
+  def metric(key, low, high, unit):
+    value = status.get(key)
+    if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
+      return '--' + unit
+    return f'{value:.1f}' + unit
+  return ' | '.join((metric('temp_c', -20, 150, ' C'),
+                     'CPU ' + metric('cpu_percent', 0, 100, '%'),
+                     'MEM ' + metric('memory_percent', 0, 100, '%'),
+                     'PWR ' + metric('power_w', 0, 200, ' W')))
 
 
 def lines(status):
@@ -52,15 +66,20 @@ def render(status, root=ROOT, size=(1920, 462)):
   image = Image.new('RGB', size, '#000000')
   draw = ImageDraw.Draw(image)
   font_path = root / 'openpilot/selfdrive/assets/fonts/KaiGenGothicKR-Bold.ttf'
-  font = lambda n: ImageFont.truetype(str(font_path), n)
+  def font(n):
+    return ImageFont.truetype(str(font_path), n)
   title, rows, detail, error = lines(status)
   accent = '#ff8876' if error else '#65d7bb'
   draw.rectangle((0, 0, 12, size[1]), fill=accent)
   draw.text((38, 20), title[0], font=font(36), fill='white')
   draw.text((40, 65), title[1], font=font(19), fill=accent)
-  draw.text((1550, 34), f"BOOT +{status.get('uptime', 0)}s", font=font(22), fill='#97a9bc')
-  if status.get('temp_c') is not None:
-    draw.text((1750, 34), f"{status['temp_c']:.1f} C", font=font(22), fill=accent)
+  status_font = font(22)
+  metrics = resource_text(status)
+  metrics_x = size[0] - 40 - draw.textlength(metrics, font=status_font)
+  uptime = f"BOOT +{status.get('uptime', 0)}s"
+  draw.text((metrics_x - 35 - draw.textlength(uptime, font=status_font), 34),
+            uptime, font=status_font, fill='#97a9bc')
+  draw.text((metrics_x, 34), metrics, font=status_font, fill=accent)
   for index, (ko, en, value) in enumerate(rows):
     x, y = 40 + (index % 3) * 625, 103 + (index // 3) * 88
     draw.text((x, y), ko, font=font(23), fill='#dce7f1')
@@ -95,6 +114,9 @@ def main():
       # Preserve the last diagnostic image until the HUD sends its first frame.
       self._disconnected = True
       super().close()
+  # One existing low-rate /proc sampler for this process, including USB retries.
+  # No model/GPU work or control socket requests are needed to show these values.
+  stats = SystemStatsSampler(refresh_interval_s=1.)
   while True:
     with panel_owner() as acquired:
       if acquired and usb.find_supported_usb_product(0x0092) is not None:
@@ -102,7 +124,7 @@ def main():
         try:
           panel.open()
           while not hud_requested():
-            frame = render(collect(), size=(panel.landscape_width, panel.landscape_height))
+            frame = render(collect(stats.sample()), size=(panel.landscape_width, panel.landscape_height))
             stream = BytesIO()
             panel_frame(frame).save(stream, format='JPEG', quality=82)
             panel.send_jpeg(stream.getvalue())

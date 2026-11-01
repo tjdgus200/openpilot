@@ -8,7 +8,7 @@ import time
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
-from boot_display import lines, render, panel_frame
+from boot_display import lines, render, panel_frame, resource_text
 import boot_status
 
 
@@ -16,6 +16,7 @@ import boot_status
   ('404a18cfd86d29637d20c697dfde245bb47c666ae016730ab674c65f4d1e1aa4', 'CTV3M'),
   ('35976b11be3904eb78e32f7dc55a6abf8e9433ac5aa391a1998f1e9ce001b199', 'Flip Flop'),
   ('01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a', 'N16 Nav'),
+  ('6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21', 'Light speed'),
   ('404a18cf', '--'), (None, '--'), ({}, '--'),
 ])
 def test_boot_model_names_require_exact_known_sha(sha, label):
@@ -39,6 +40,24 @@ def test_active_service_does_not_claim_model_ready():
   title, rows, _, _ = lines({'units': {'carrot-jetlink': {'ActiveState': 'active'}}})
   assert 'WAITING' in title[1]
   assert rows[5] == ('콤마 USB 서비스', 'COMMA USB SERVICE', 'active')
+
+
+@pytest.mark.parametrize('value', [None, True, '12', float('nan'), float('inf'), -1000, 1001])
+def test_unavailable_or_invalid_resource_metrics_do_not_claim_zero_or_break_diagnosis(value):
+  status = dict.fromkeys(('temp_c', 'cpu_percent', 'memory_percent', 'power_w'), value)
+  assert resource_text(status) == '-- C | CPU --% | MEM --% | PWR -- W'
+  assert render(status).size == (1920, 462)
+
+
+def test_boot_resources_use_local_sampler_and_power_without_model_worker(monkeypatch):
+  from types import SimpleNamespace
+  monkeypatch.setattr(boot_status.subprocess, 'run', lambda *a, **k:
+                      subprocess.CompletedProcess(a, 0, stdout='[]', stderr=''))
+  monkeypatch.setattr(boot_status, 'module_power', lambda: 14.7)
+  status = boot_status.collect(SimpleNamespace(cpu_used_percent=12.3, memory_used_percent=28.4))
+  assert status['cpu_percent'] == 12.3 and status['memory_percent'] == 28.4 and status['power_w'] == 14.7
+  status['temp_c'] = 65.
+  assert resource_text(status) == '65.0 C | CPU 12.3% | MEM 28.4% | PWR 14.7 W'
 
 
 def test_black_detailed_screen_and_telemetry_panel_handoff(monkeypatch):

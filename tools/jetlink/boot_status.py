@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import time
 
+from host_health import module_power
+
 STAGE = Path('/run/carrot-boot-stage.json')
 UNITS = ('carrot-protected-storage', 'carrot-image-setup', 'carrot-jetlink-usbc-host',
          'nv', 'nvpmodel', 'carrot-jetlink-performance', 'NetworkManager', 'ssh',
@@ -53,7 +55,7 @@ def stage(name, error=None):
   temporary.replace(STAGE)
 
 
-def collect():
+def collect(system_stats=None):
   units = {}
   try:
     result = subprocess.run(['systemctl', 'show', '--property=Id,ActiveState,SubState,Result',
@@ -100,7 +102,10 @@ def collect():
   return {'stage': read_json(STAGE), 'storage': read_json('/run/carrot-storage.json'),
           'units': units, 'addresses': addresses[:4], 'wifi': network.get('state', 'waiting'),
           'update': update_status(time.monotonic()), 'model': model, 'storage_free': storage_free,
-          'uptime': int(time.monotonic()), 'temp_c': max(temperatures, default=None)}
+          'uptime': int(time.monotonic()), 'temp_c': max(temperatures, default=None),
+          'cpu_percent': getattr(system_stats, 'cpu_used_percent', None),
+          'memory_percent': getattr(system_stats, 'memory_used_percent', None),
+          'power_w': module_power()}
 
 
 def model_name(sha):
@@ -109,6 +114,7 @@ def model_name(sha):
     '01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a': 'N16 Nav',
     '35976b11be3904eb78e32f7dc55a6abf8e9433ac5aa391a1998f1e9ce001b199': 'Flip Flop',
     '404a18cfd86d29637d20c697dfde245bb47c666ae016730ab674c65f4d1e1aa4': 'CTV3M',
+    '6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21': 'Light speed',
   }.get(sha, '--') if isinstance(sha, str) else '--'
 
 
