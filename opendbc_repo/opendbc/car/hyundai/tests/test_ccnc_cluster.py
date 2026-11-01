@@ -8,7 +8,7 @@ from opendbc.can.parser import get_raw_value
 from opendbc.car import structs
 from opendbc.car.hyundai import hyundaicanfd
 from opendbc.car.hyundai.hyundaicanfd import _select_cluster_background
-from opendbc.car.hyundai.values import HyundaiFlags
+from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
 
 @pytest.mark.parametrize(
@@ -34,9 +34,95 @@ def test_model_turn_background_requires_active_steering(cruise_enabled, lat_acti
   assert _select_cluster_background(cruise_enabled, lat_active, False, 0, turning=True) == (6 if lat_active else normal)
 
 
+@pytest.mark.parametrize('enabled,lat_active', ((False, False), (False, True), (True, False), (True, True)))
+@pytest.mark.parametrize('turning', (False, True))
+def test_pv5_turn_is_steady_orange_but_bsd_and_paddle_take_red_priority(enabled, lat_active, turning):
+  palette = CANDefine('hyundai_canfd_generated').dv['ADRV_0x161']['BACKGROUND']
+  assert palette[3] == 'ORANGE'
+  assert palette[6] == 'FLASHING_RED'
+  normal = 1 if enabled else 3 if lat_active else 7
+  args = (enabled, lat_active, False, 0, turning)
+  assert _select_cluster_background(*args, turn_background=3) == (3 if lat_active and turning else normal)
+  assert _select_cluster_background(*args, turn_background=3, bsd_warning=True) == 6
+  assert _select_cluster_background(enabled, lat_active, True, 1, turning, turn_background=3) == 6
+
+
+@pytest.mark.parametrize('signals', ((False, False), (True, False), (False, True), (True, True)))
+@pytest.mark.parametrize('warnings', ((False, False), (True, False), (False, True), (True, True)))
+@pytest.mark.parametrize('valid,timeout', ((True, False), (False, False), (True, True)))
+def test_bsd_background_requires_valid_same_side_request(signals, warnings, valid, timeout):
+  out = structs.CarState(canValid=valid, canTimeout=timeout,
+                         leftBlinker=signals[0], rightBlinker=signals[1],
+                         leftBlindspot=warnings[0], rightBlindspot=warnings[1])
+  expected = valid and not timeout and any(s and w for s, w in zip(signals, warnings, strict=True))
+  assert hyundaicanfd._cluster_bsd_warning(out) == expected
+
+
+@pytest.mark.parametrize('enabled,lat_active', ((False, False), (False, True), (True, True)))
+@pytest.mark.parametrize('pv5', (False, True))
+@pytest.mark.parametrize('desire', range(5))
+def test_bsd_background_can_frames_preserve_payload_and_restore_on_event_end(monkeypatch, enabled, lat_active, pv5, desire):
+  from openpilot.cereal import log
+  monkeypatch.setattr(hyundaicanfd, 'Params', lambda: SimpleNamespace(get_int=lambda key: 0, get=lambda key: '0'))
+  packer = CANPacker('hyundai_canfd_generated')
+  baseline_packer = CANPacker('hyundai_canfd_generated')
+  definition = packer.dbc.name_to_msg['ADRV_0x161']
+  stock = {key: 0 for key in definition.sigs}
+  stock.update(COUNTER=17, ALERTS_4=7, SOUNDS_4=2)
+  original = stock.copy()
+  out = structs.CarState(canValid=True, leftBlinker=True, leftBlindspot=True)
+  model = log.ModelDataV2.new_message()
+  model.meta.desire = desire
+  state = SimpleNamespace(
+    adrv_0x161=stock, out=out, modelV2=model, lfahda_cluster=None,
+    cruise_buttons_msg=None, adrv_0x200=None, adrv_0x1ea=None, ccnc_0x162=None,
+    is_metric=True, paddle_button_prev=0, softHoldActive=0, trailer_connected=False,
+  )
+  control = structs.CarControl(latActive=lat_active, enabled=enabled)
+  cp = SimpleNamespace(flags=HyundaiFlags.CAMERA_SCC, carFingerprint=CAR.KIA_PV5 if pv5 else 'OTHER')
+
+  def messages(frame, selected_packer=packer):
+    result = hyundaicanfd.create_ccnc_messages(
+      cp, selected_packer, SimpleNamespace(ECAN=0, CAM=2), frame, control, state, control.hudControl,
+      0, False, False, 0, False, 0, 0)
+    assert len(result) == 1
+    address, data, bus = result[0]
+    assert (address, bus) == (0x161, 0)
+    decoded = {key: get_raw_value(data, sig) for key, sig in definition.sigs.items()}
+    assert decoded['CHECKSUM'] == hyundaicanfd.hkg_can_fd_checksum(address, None, bytearray(data))
+    return decoded
+
+  normal = 1 if enabled else 3 if lat_active else 7
+  fallback = (3 if pv5 else 6) if lat_active and desire in (1, 2) else normal
+  selector = hyundaicanfd._select_cluster_background
+  previous_counter = None
+  # The same retained request spans both native flash phases. Compare the
+  # original selector at the identical frame/state, allowing existing icons
+  # to respond normally when the driver request or BSD state changes.
+  for frame, attr, value in ((5, 'leftBlindspot', True), (10, 'leftBlindspot', True),
+                             (15, 'leftBlindspot', False), (20, 'leftBlindspot', True),
+                             (25, 'canValid', False), (30, 'canValid', True),
+                             (35, 'leftBlinker', False)):
+    setattr(out, attr, value)
+    actual = messages(frame)
+    with monkeypatch.context() as patch:
+      patch.setattr(hyundaicanfd, '_select_cluster_background',
+                    lambda *args, **kwargs: selector(*args, **dict(kwargs, bsd_warning=False, turn_background=6)))
+      baseline = messages(frame, baseline_packer)
+    warning = pv5 and out.canValid and out.leftBlinker and out.leftBlindspot
+    assert actual['BACKGROUND'] == (6 if warning else fallback)
+    assert {k: v for k, v in actual.items() if k not in ('BACKGROUND', 'CHECKSUM')} == {
+      k: v for k, v in baseline.items() if k not in ('BACKGROUND', 'CHECKSUM')}
+    if previous_counter is not None:
+      assert actual['COUNTER'] == (previous_counter + 1) % 256
+    previous_counter = actual['COUNTER']
+  assert stock == original
+
+
 @pytest.mark.parametrize('desire', range(5))
 @pytest.mark.parametrize('lat_active', (False, True))
-def test_turn_changes_only_background_in_existing_cluster_frame(monkeypatch, desire, lat_active):
+@pytest.mark.parametrize('pv5', (False, True))
+def test_turn_changes_only_background_in_existing_cluster_frame(monkeypatch, desire, lat_active, pv5):
   from openpilot.cereal import log
   monkeypatch.setattr(hyundaicanfd, 'Params', lambda: SimpleNamespace(get_int=lambda key: 0, get=lambda key: '0'))
   packer = CANPacker('hyundai_canfd_generated')
@@ -55,7 +141,7 @@ def test_turn_changes_only_background_in_existing_cluster_frame(monkeypatch, des
 
   def messages():
     return hyundaicanfd.create_ccnc_messages(
-      SimpleNamespace(flags=HyundaiFlags.CAMERA_SCC), CANPacker('hyundai_canfd_generated'),
+      SimpleNamespace(flags=HyundaiFlags.CAMERA_SCC, carFingerprint=CAR.KIA_PV5 if pv5 else 'OTHER'), CANPacker('hyundai_canfd_generated'),
       SimpleNamespace(ECAN=0, CAM=2), 5, control, state, control.hudControl, 0, False, False, 0, False, 0, 0)
   actual = messages()
   monkeypatch.setattr(hyundaicanfd, '_select_cluster_background',
@@ -67,7 +153,7 @@ def test_turn_changes_only_background_in_existing_cluster_frame(monkeypatch, des
   def decode(message):
     return {key: get_raw_value(message[1], sig) for key, sig in definition.sigs.items()}
   values, old = decode(actual[0]), decode(baseline[0])
-  assert values['BACKGROUND'] == (6 if lat_active and desire in (1, 2) else 1)
+  assert values['BACKGROUND'] == ((3 if pv5 else 6) if lat_active and desire in (1, 2) else 1)
   assert {k: v for k, v in values.items() if k not in ('BACKGROUND', 'CHECKSUM')} == {
     k: v for k, v in old.items() if k not in ('BACKGROUND', 'CHECKSUM')}
   assert values['CHECKSUM'] == hyundaicanfd.hkg_can_fd_checksum(0x161, None, bytearray(actual[0][1]))

@@ -5,7 +5,7 @@ from opendbc.car.hyundai.scalar import clip_float
 from opendbc.car import CanBusBase, DT_CTRL
 from opendbc.car.carlog import carlog
 from opendbc.car.crc import CRC16_XMODEM
-from opendbc.car.hyundai.values import HyundaiFlags, HyundaiExtFlags
+from opendbc.car.hyundai.values import CAR, HyundaiFlags, HyundaiExtFlags
 from opendbc.car.hyundai.stopping import MOVING_SPEED, STOP_LOWER_BAND
 from openpilot.common.params import Params
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -870,10 +870,21 @@ def _hide_replaced_adas_service_warning(values):
     values["FAULT_DAS"] = 0
 
 
-def _select_cluster_background(cruise_enabled, lat_active, paddle_pressed, paddle_mode, turning=False):
-  # Reuse the existing flashing-red background to identify an active model turn.
-  if (lat_active and turning) or (paddle_mode > 0 and paddle_pressed):
+def _cluster_bsd_warning(out):
+  # Use the current retained turn request, never the blinking lamp's lit phase.
+  # Invalid vehicle input cannot keep this additional display warning active.
+  return out.canValid and not out.canTimeout and (
+    (out.leftBlinker and out.leftBlindspot) or (out.rightBlinker and out.rightBlindspot)
+  )
+
+
+def _select_cluster_background(cruise_enabled, lat_active, paddle_pressed, paddle_mode, turning=False, *,
+                               bsd_warning=False, turn_background=6):
+  # FLASHING RED is a cluster-native animation; no extra timer or CAN frame.
+  if bsd_warning or (paddle_mode > 0 and paddle_pressed):
     return 6
+  if lat_active and turning:
+    return turn_background
   return 1 if cruise_enabled else 3 if lat_active else 7
 
 
@@ -1052,8 +1063,10 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         values["TARGET"] = 1 if lead_visible and cruise_enabled else 0
         values["TARGET_DISTANCE"] = lead_distance
 
+        pv5_cluster = getattr(CP, "carFingerprint", None) == CAR.KIA_PV5
         values["BACKGROUND"] = _select_cluster_background(
           cruise_enabled, lat_active, CS.paddle_button_prev > 0, paddle_mode, turning=desire in (1, 2),
+          bsd_warning=pv5_cluster and _cluster_bsd_warning(CS.out), turn_background=3 if pv5_cluster else 6,
         )
         values["CENTERLINE"] = 1 if HDA_CntrlModSta > 0 else 0
         values["CAR_CIRCLE"] = 2 if hdp_active else 1 if cruise_enabled else 0

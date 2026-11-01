@@ -13,6 +13,21 @@
   device, schedule or owner-validator changes. PC tests do not prove physical
   CAN/BLE/USB/TRT/P99/20Hz or road behavior. See docs/pv5_wip_sync_20261102.md.
 
+- 2026-11-01 PV5 cluster BSD background: in the existing CAMERA_SCC 0x161
+  display path only, valid/non-timeout CarState plus a same-side retained turn
+  request and blindspot flag requests native BACKGROUND=6 (flashing red),
+  independently of engagement. Owner choice1 changes PV5 active model-turn
+  indication to steady orange BACKGROUND=3. BSD or the existing enabled paddle
+  warning takes flashing-red priority; clearing BSD restores orange if still
+  turning, otherwise the normal cruise/lateral background. Preserve other
+  cars' existing turn colors, cadence/counters/checksum and every
+  unrelated payload field. No new radio/CAN request or Jetson runtime needed.
+  test_ccnc_cluster.py covers all side combinations, invalid/timeout input and
+  same-frame packed-payload comparison and overlapping warning/turn priority.
+  The currently defined palette has no verified light-green background code;
+  undefined codes must not be inferred from enum gaps.
+  PC checks do not establish physical cluster appearance, flash rate or road
+  safety. See docs/pv5_cluster_bsd_background_20261101.md.
 
 - 2026-11-01 owner explicitly requests changing the base image's early boot
   screen too. The immutable R2 diagnostic copy must use the same CPU-only black
