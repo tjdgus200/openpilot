@@ -134,3 +134,14 @@ Orin Nano Super 기본 보드용입니다. 콤마는 Jetson 지원이 포함된 
 시간은 예상치이며 PC·카드 속도에 따라 더 걸릴 수 있습니다. **공개 시험판:** 카드 전체 검증 완료·사용자 정상 동작 확인. 자동 업데이트 전환·Wi-Fi 복구·전원 차단 시험은 별도 확인 전입니다.
 
 > Times depend on your hardware. **Public preview:** full card verification passed; owner reports normal operation. Update activation, Wi-Fi recovery and power-cut tests remain pending.
+
+### 초기 연결 화면 · Early connection screen
+
+검은 진단 화면으로 바꾼 새 기본 이미지는 기존 공개 이미지와 별도로 검증합니다.
+기존 SD의 파란 초기 화면은 일반 USB 업데이트로 교체되지 않습니다.
+새 이미지를 SD에 다시 기록하면 기존 카드 내용이 지워지므로 자동으로 재기록하지 않습니다.
+제작 범위와 검증 상태는 [기본 이미지 변경 기록](jetson_black_base_image_20261101.md)을 참고하세요.
+
+> The black diagnostic base-image candidate is validated separately from the existing public image.
+> Ordinary USB runtime updates do not replace an old SD's immutable blue early screen.
+> Rewriting an SD erases its contents and is never automatic. See the linked change record for scope and validation status.

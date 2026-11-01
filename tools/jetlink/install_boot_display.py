@@ -2,24 +2,25 @@
 from pathlib import Path
 import shutil
 
+FILES = ('openpilot/__init__.py', 'tools/jetlink/boot_display.py', 'tools/jetlink/boot_status.py',
+         'tools/jetlink/host_health.py', 'openpilot/selfdrive/carrot/cluster/cluster_system_monitor.py',
+         'tools/jetlink/display_owner.py', 'openpilot/common/usbgpu_bus_lock.py',
+         'openpilot/selfdrive/carrot/cluster/cluster_usb_display.py',
+         'openpilot/selfdrive/carrot/cluster/cluster_config.py',
+         'openpilot/selfdrive/carrot/cluster/cluster_utils.py',
+         'openpilot/selfdrive/assets/fonts/KaiGenGothicKR-Bold.ttf', 'LICENSE')
+VENDOR = 'openpilot/selfdrive/carrot/cluster/.vendor/turing-smart-screen-python-main'
+
 
 def configure(root, source):
   root, source = Path(root), Path(source)
   repository = source.resolve().parents[1]
   target = root / 'usr/local/lib/carrot-jetlink/boot-display'
-  relative = ['openpilot/__init__.py', 'tools/jetlink/boot_display.py', 'tools/jetlink/boot_status.py',
-              'tools/jetlink/host_health.py', 'openpilot/selfdrive/carrot/cluster/cluster_system_monitor.py',
-              'tools/jetlink/display_owner.py', 'openpilot/common/usbgpu_bus_lock.py',
-              'openpilot/selfdrive/carrot/cluster/cluster_usb_display.py',
-              'openpilot/selfdrive/carrot/cluster/cluster_config.py',
-              'openpilot/selfdrive/carrot/cluster/cluster_utils.py',
-              'openpilot/selfdrive/assets/fonts/KaiGenGothicKR-Bold.ttf', 'LICENSE']
-  for name in relative:
+  for name in FILES:
     path = target / name
     path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(repository / name, path)
-  vendor = 'openpilot/selfdrive/carrot/cluster/.vendor/turing-smart-screen-python-main'
-  shutil.copytree(repository / vendor, target / vendor, dirs_exist_ok=True,
+  shutil.copytree(repository / VENDOR, target / VENDOR, dirs_exist_ok=True,
                   ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'log.log'))
   units = root / 'etc/systemd/system'
   units.mkdir(parents=True, exist_ok=True)

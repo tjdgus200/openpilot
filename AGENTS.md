@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-01 owner explicitly requests changing the base image's early boot
+  screen too. The immutable R2 diagnostic copy must use the same CPU-only black
+  nine-row screen and22px temperature | CPU | MEM | PWR as DATA runtime.
+  refresh_boot_image.py refreshes only the exact unprovisioned R2 image into a
+  separate regular PC file: preserve all files except diagnosis and the paired
+  APP/DATA factory display_owner.py helpers. Both old HUD copies must use the
+  same /run lock as new diagnosis; never mix /dev/shm and /run panel owners.
+  All bytes outside APP/DATA must match. Preserve GPT/firmware, boot/storage, factory
+  models/runtime and all four USB package pins. No live APP remount/write or
+  automatic SD rewrite. A new image has no inherited physical boot evidence;
+  finish PC checks and keep it a private candidate until exact-image validation.
+  See docs/jetson_black_base_image_20261101.md.
+
 - 2026-11-01 owner requests trip SOC use below the battery percentage. The
   Jetson HUD uses its first valid remote SOC as a fixed session baseline;
   display baseline-current in percentage points, gains labeled separately.
