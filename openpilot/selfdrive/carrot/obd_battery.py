@@ -634,8 +634,11 @@ class Link:
       if lines not in ([command, 'OK'], ['OK']):
         raise ValueError('ELM setup')
 
+  def encode_request(self, command):
+    return request_bytes(command)
+
   async def command(self, command):
-    request = request_bytes(command)
+    request = self.encode_request(command)
     delay = max(0., self.next_request - time.monotonic())
     if delay:
       await asyncio.sleep(delay)
@@ -745,24 +748,27 @@ class Link:
 
 async def run():
   from jeepney.io.asyncio import open_dbus_router
+  from openpilot.selfdrive.carrot import obd_debug
+  debug = obd_debug.Control()
   while True:
     link = poller = None
     identity, cleanup_complete = None, False
     try:
       address, confirmed = configuration(read_json(CONFIG))
       identity = config_id((address, confirmed))
+      lease = debug.active(identity)
       write_snapshot('connecting', identity=identity)
       # Each attempt is bounded, but failures never exhaust the onroad retry
       # allowance. Manager still stops this display-only reader offroad.
       async with asyncio.timeout(ATTEMPT_TIMEOUT) as startup_timeout:
         async with open_dbus_router('SYSTEM') as router:
-          link = Link(router, address)
+          link = Link(router, address) if lease is None else obd_debug.DiagnosticLink(router, address)
           try:
             await link.connect()
-            poller = MetricPoller()
+            poller = MetricPoller() if lease is None else obd_debug.Poller(lease, identity, lambda: debug.active(identity) == lease)
             details = 'charge_mode' in (confirmed | CHARGING_PREVIEW_FIELDS)
             monitor = None
-            if details:
+            if details and lease is None:
               monitor = vehicle_monitor()
               poller.details = True
             def publish(observed_at, candidates, field_times,
@@ -779,7 +785,13 @@ async def run():
             # Configuration is immutable for this session. A config change causes
             # a clean reconnect before any further poll or publication.
             while configuration(read_json(CONFIG)) == (address, confirmed):
-              if monitor is not None:
+              if debug.active(identity) != lease:
+                break  # Retire the old owner before switching ELM filters/mode.
+              if lease is not None:
+                if await poller.poll(link):
+                  write_snapshot('diagnostic', identity=identity)
+                  startup_timeout.reschedule(None)
+              elif monitor is not None:
                 await poller.poll(link, parked=lambda monitor=monitor: current_parked_state(monitor), publish=publish)
               else:
                 await poller.poll(link, publish=publish)
@@ -787,6 +799,9 @@ async def run():
               await asyncio.sleep(poller.delay(link))
           finally:
             try:
+              if lease is not None:
+                with suppress(OSError):
+                  obd_debug.STATUS.unlink(missing_ok=True)
               # A full/unwritable status filesystem must not skip teardown or
               # replace a manager cancellation with a new reconnect attempt.
               with suppress(OSError):

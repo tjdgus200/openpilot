@@ -13,6 +13,7 @@ from openpilot.selfdrive.carrot.deceleration_source import (
 # from openpilot.selfdrive.ui.mici.onroad.torque_bar import TorqueBar # 아이콘에 토크 적용: 토크바 미사용
 from openpilot.selfdrive.ui.mici.onroad import blend_colors
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
+from openpilot.selfdrive.ui.onroad.obd_debug import ObdDebugOverlay
 from openpilot.system.hardware.usbgpu import usbgpu_badge_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.multilang import tr
@@ -177,6 +178,7 @@ class HudRenderer(Widget):
   def __init__(self):
     super().__init__()
     self._overlay = OverlayLayer(1)
+    self._obd_debug = ObdDebugOverlay()
     self._overlay_state = None
     self._traffic_light_info = None
     self._cruise_speed_animation_started = 0.0
@@ -309,6 +311,7 @@ class HudRenderer(Widget):
     badge_width = min(500, rect.width * .62)
     draw_indicator(rect.x + (rect.width-badge_width)/2, rect.y+rect.height*.16,
                    badge_width, self._font_display, 26 if rect.width > 1200 else 19)
+    self._obd_debug.draw(rect, self._font_semi_bold, ui_state)
 
   def _paint(self, rect: rl.Rectangle) -> None:
 

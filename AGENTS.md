@@ -23,6 +23,20 @@
   the requested2.5Hz CAN sequence only, not actual visible2.5Hz. Require physical
   cluster observation before describing that rate as confirmed.
 
+- 2026-11-02 owner requests temporary raw OBD pages on comma for A/C ON/OFF
+  correlation. Keep default-OFF per-boot <=600s local diagnostic lease bound
+  to enrolled config/nonce. Existing single BLE owner replaces normal polling
+  only with fresh250ms PV5 Park/raw+filtered zero/inactive-control proof; check
+  before commands/after replies and at every UI render. Fixed observed pages
+  7EC0101/0106/0114 and7BB0100/0101/0102 only, one complete strict transaction
+  at a time with500ms completion gap. No arbitrary scan/write/reset or guessed
+  compressor/power meaning; no Jetson wire/runtime change. Preserve normal
+  allowlist, expiry, recovery and cleanup. All232 bytes shown with decimal D0
+  offsets after62+DID and hex values; yellow changes are diagnostic only.
+  Bounded latest rows, <=4KiB local status,1Hz UI reads, no growing history.
+  See docs/pv5_obd_raw_display_20261102.md and test_obd_debug*.py. PC tests and
+  synthetic preview are not live ECU/BLE/CPU or road validation.
+
 - 2026-11-01 PV5 cluster BSD background: in the existing CAMERA_SCC 0x161
   display path only, valid/non-timeout CarState plus a same-side retained turn
   request and blindspot flag requests native BACKGROUND=6 (flashing red;

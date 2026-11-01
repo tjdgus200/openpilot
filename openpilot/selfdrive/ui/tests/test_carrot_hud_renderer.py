@@ -598,6 +598,8 @@ def test_render_keeps_sampling_and_interactions_live(hud_module, monkeypatch, re
   renderer.is_cruise_available = False
   renderer._show_plot_mode = 6
   renderer._font_display = object()
+  renderer._font_semi_bold = object()
+  renderer._obd_debug = SimpleNamespace(draw=lambda *args: None)
   renderer._overlay_state = None
   renderer._blink_timer = renderer._disp_timer = 0
   renderer._overlay = SimpleNamespace(draw=lambda rect, callback, key, **kwargs: None if reuse else callback(rect))
