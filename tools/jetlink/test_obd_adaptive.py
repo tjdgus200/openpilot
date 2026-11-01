@@ -78,7 +78,7 @@ def test_only_complete_exact_no_data_is_recoverable(bad):
   asyncio.run(check())
 
 
-def test_no_data_cell_scan_is_discarded_then_restarted_without_mixing(monkeypatch):
+def test_no_data_retires_unfinished_scan_but_keeps_verified_pages(monkeypatch):
   clock, commands, fail = [100.], [], [True]
   monkeypatch.setattr(b, 'time', NS(monotonic=lambda: clock[0]))
   class Link:
@@ -94,16 +94,21 @@ def test_no_data_cell_scan_is_discarded_then_restarted_without_mixing(monkeypatc
     for now in (100., 100.5):
       clock[0] = now
       await poll_round(poller, Link(), parked=True)
-    assert not poller.cell_blocks and 'cell_voltages_v' not in poller.values
+    assert not poller.cell_blocks
+    assert poller.values['cell_voltages_v'] == [3.88]*32 + [None]*76
+    assert poller.cell_observed == (100., None, None, None)
+    assert poller.observed['cell_voltages_v'] == 100.
     for now in (101., 101.5, 102.):
       clock[0] = now
       before = len(commands)
       await poll_round(poller, Link(), parked=True)
       assert not any(c in dict(b.CELL_BLOCKS) for c in commands[before:])
+      assert poller.cell_observed == (100., None, None, None)
     for now in (102.5, 103., 103.5, 104.):
       clock[0] = now
       await poll_round(poller, Link(), parked=True)
-    assert len(poller.values['cell_voltages_v']) == 108
+    assert poller.values['cell_voltages_v'] == [3.88]*108
+    assert poller.cell_observed == (102.5,)*4 and not poller.cell_blocks
     assert poller.observed['cell_voltages_v'] == 102.5
   asyncio.run(check())
 
