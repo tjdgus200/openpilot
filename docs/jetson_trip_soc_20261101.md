@@ -26,3 +26,4 @@ layout checks do not establish physical display readability or driving safety.
 ## Distinct package source records
 
 - N16: combined connection-resource, incremental-cell and trip-SOC implementation.
+- flip-flop: distinct battery-progress bundle source; export `model_catalog/md-v3.json`.
