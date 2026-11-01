@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-11-02 daily WIP: reviewed through4a555c75; import pinned-runtime captured
+  copies/terminal startup TLB classification, bounded indicator origins/echo and
+  TBT distance holds. Manual positive adjacent-lane/OEM-white admission and
+  >50%/1s confidence remain; upstream directional/confidence relaxation is partial
+  or deferred. New model indication options stay default-OFF. Optional badge
+  source is compatible with old peers, but Jetson badge delivery awaits four new
+  PV5 packages; preserve all43 protected paths and current four source/pin pairs.
+  Imported remote approvals/drive/CI records are attributed upstream history,
+  never PV5 authorization. Preserve all13 behaviors plus page TTL, process SOC,
+  black22px resources and immutable /run ownership. No direct push, settings,
+  device, schedule or owner-validator changes. PC tests do not prove physical
+  CAN/BLE/USB/TRT/P99/20Hz or road behavior. See docs/pv5_wip_sync_20261102.md.
+
+
 - 2026-11-01 owner explicitly requests changing the base image's early boot
   screen too. The immutable R2 diagnostic copy must use the same CPU-only black
   nine-row screen and22px temperature | CPU | MEM | PWR as DATA runtime.

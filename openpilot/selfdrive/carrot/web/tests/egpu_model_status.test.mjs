@@ -5,12 +5,23 @@ import vm from "node:vm";
 
 import { CarrotEgpuModel } from "../src/features/tools/egpu_model.js";
 
+// The PV5 card also renders bounded fusion/quality tables. Keep those renderers
+// executing in this fixture instead of stubbing away the production path.
+function element() {
+  return {
+    dataset: {}, style: {}, children: [], classList: { toggle() {}, remove() {} },
+    appendChild(child) { this.children.push(child); return child; },
+    replaceChildren(...children) { this.children = children; },
+    addEventListener() {},
+  };
+}
+
 test("delivery failures explain automatic recovery and installed files do not imply active inference", (t) => {
   const saved = globalThis.document;
   t.after(() => { globalThis.document = saved; });
   const elements = new Map();
-  globalThis.document = { getElementById(id) {
-    if (!elements.has(id)) elements.set(id, { dataset: {}, style: {}, classList: { toggle() {} } });
+  globalThis.document = { createElement: element, getElementById(id) {
+    if (!elements.has(id)) elements.set(id, element());
     return elements.get(id);
   } };
   CarrotEgpuModel.render({ available: true, state: "waiting_for_network", error_code: "dns",
@@ -75,8 +86,8 @@ test("Korean timeout guidance names the actual reboot menu without exposing work
     window: { CarrotTranslations: { register(_language, translation) { strings = translation.strings; } } },
   });
   const elements = new Map();
-  globalThis.document = { getElementById(id) {
-    if (!elements.has(id)) elements.set(id, { dataset: {}, style: {}, classList: { toggle() {} } });
+  globalThis.document = { createElement: element, getElementById(id) {
+    if (!elements.has(id)) elements.set(id, element());
     return elements.get(id);
   } };
   globalThis.getUIText = (key, fallback) => strings[key] || fallback;
@@ -99,8 +110,9 @@ test("model update card shows download progress before compilation is available"
     else delete globalThis.document;
   });
   globalThis.document = {
+    createElement: element,
     getElementById(id) {
-      if (!elements.has(id)) elements.set(id, { dataset: {}, style: {}, classList: { toggle() {} } });
+      if (!elements.has(id)) elements.set(id, element());
       return elements.get(id);
     },
   };
@@ -129,8 +141,8 @@ test("Jetson-only card shows IP and temperature, clears stale values and cannot 
   const saved = globalThis.document;
   t.after(() => { globalThis.document = saved; });
   const elements = new Map();
-  globalThis.document = { getElementById(id) {
-    if (!elements.has(id)) elements.set(id, { dataset: {}, style: {}, classList: { toggle() {}, remove() {} } });
+  globalThis.document = { createElement: element, getElementById(id) {
+    if (!elements.has(id)) elements.set(id, element());
     return elements.get(id);
   } };
   const jetlink = { label: "jetSON", severity: "ok", addresses: ["192.168.0.199"], temp_c: 64.5 };
@@ -152,8 +164,8 @@ test("host reasons use Korean translations while preserving unknown diagnostics"
     else globalThis.getUIText = savedTranslator;
   });
   const elements = new Map();
-  globalThis.document = { getElementById(id) {
-    if (!elements.has(id)) elements.set(id, { dataset: {}, style: {}, classList: { toggle() {}, remove() {} } });
+  globalThis.document = { createElement: element, getElementById(id) {
+    if (!elements.has(id)) elements.set(id, element());
     return elements.get(id);
   } };
   globalThis.getUIText = (key, fallback) => ({
