@@ -27,3 +27,4 @@ layout checks do not establish physical display readability or driving safety.
 
 - N16: combined connection-resource, incremental-cell and trip-SOC implementation.
 - flip-flop: distinct battery-progress bundle source; export `model_catalog/md-v3.json`.
+- ctv3m: distinct battery-progress bundle source; export `model_catalog/ctv3m.json`.
