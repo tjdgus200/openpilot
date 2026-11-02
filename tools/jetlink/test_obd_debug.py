@@ -178,6 +178,144 @@ def test_no_data_does_not_invent_values(monkeypatch, tmp_path):
   assert poller.rows == {'7EC/0101': {'state': 'no_data', 'at': 100.}}
 
 
+def test_timeout_clears_only_its_page_then_next_query_waits_for_identity_and_gap(monkeypatch, tmp_path):
+  clock, events = [100.], []
+  monkeypatch.setattr(d, 'time', NS(monotonic=lambda: clock[0]))
+  poller = d.Poller(lease(), IDENTITY, lambda: True, tmp_path / 'status')
+  poller.publish('7EC/0101', 'ok', d.parse(reply('7EC/0101'), '7EC/0101'))
+  poller.publish('7EC/0106', 'ok', d.parse(reply('7EC/0106'), '7EC/0106'))
+  poller.last_valid = 99.
+  class Link:
+    async def command(self, command):
+      events.append(command)
+      if command == '220101':
+        raise b.QueryError('elm_prompt_timeout')
+      return reply('7EC/0106')
+    async def resynchronize(self):
+      record = d.read(poller.path)
+      assert record['rows']['7EC/0101'] == {'state': 'timeout', 'at': 100.}
+      assert record['rows']['7EC/0106']['state'] == 'ok'
+      events.append('bounded_quarantine_and_ATI')
+      clock[0] += 1.
+  async def check():
+    link = Link()
+    assert await poller.poll(link)
+    assert poller.index == 1 and poller.last_valid == 99.
+    assert not await poller.poll(link)
+    assert events == ['220101', 'bounded_quarantine_and_ATI']
+    clock[0] += .5
+    assert await poller.poll(link)
+    assert events[-1] == '220106'
+    assert poller.rows['7EC/0106']['state'] == 'ok' and poller.last_valid == 101.5
+  asyncio.run(check())
+
+
+@pytest.mark.parametrize('failure', ['gatt_write_timeout', 'gatt_write_failed', 'notification overflow', 'ELM trailing data'])
+def test_transport_failures_are_not_treated_as_unavailable_ecu(monkeypatch, tmp_path, failure):
+  monkeypatch.setattr(d, 'time', NS(monotonic=lambda: 100.))
+  class Link:
+    async def command(self, command): raise b.QueryError(failure)
+    async def resynchronize(self): pytest.fail('transport failure must reach existing teardown')
+  poller = d.Poller(lease(), IDENTITY, lambda: True, tmp_path / 'status')
+  with pytest.raises(b.QueryError, match=failure):
+    asyncio.run(poller.poll(Link()))
+  assert poller.index == 0 and not poller.path.exists()
+
+
+@pytest.mark.parametrize('revoked', [False, True])
+def test_timeout_cannot_advance_after_failed_recovery_or_permission_loss(monkeypatch, tmp_path, revoked):
+  monkeypatch.setattr(d, 'time', NS(monotonic=lambda: 100.))
+  allowed, writes = [True], []
+  class Link:
+    async def command(self, command):
+      writes.append(command)
+      raise b.QueryError('elm_prompt_timeout')
+    async def resynchronize(self):
+      if not revoked:
+        raise b.QueryError('elm_resync_identity')
+      allowed[0] = False
+  poller = d.Poller(lease(), IDENTITY, lambda: allowed[0], tmp_path / 'status')
+  with pytest.raises(d.ModeChanged if revoked else b.QueryError):
+    asyncio.run(poller.poll(Link()))
+  assert poller.index == 0 and writes == ['220101'] and poller.last_valid is None
+
+
+@pytest.mark.parametrize('target', [t[0] for t in d.TARGETS])
+def test_negative_or_pending_response_has_no_payload_and_advances(monkeypatch, tmp_path, target):
+  monkeypatch.setattr(d, 'time', NS(monotonic=lambda: 100.))
+  events = []
+  poller = d.Poller(lease(), IDENTITY, lambda: True, tmp_path / 'status')
+  poller.index = next(i for i, t in enumerate(d.TARGETS) if t[0] == target)
+  poller.rx = d.CONTRACTS[target][1]
+  class Link:
+    async def command(self, command):
+      events.append(command)
+      return poller.rx.encode() + b'037F227800000000\r>'
+    async def resynchronize(self): events.append('sync')
+  asyncio.run(poller.poll(Link()))
+  assert poller.rows[target] == {'state': 'unavailable', 'at': 100.}
+  assert poller.last_valid is None and events[-1] == 'sync'
+
+
+@pytest.mark.parametrize('raw', [b'7ED037F223100000000\r>', b'7EC037F2E3100000000\r>',
+                                 b'7EC037F223100000000', b'7EC037F223100000000\r>>',
+                                 b'7EC037F223100000000\r7EC2100000000000000\r>'])
+def test_unmatched_or_unframed_negative_is_not_a_completed_rejection(raw):
+  assert not d.negative_response(raw, '7EC')
+
+
+def test_late_timeout_bytes_are_retired_before_next_did_on_the_real_link(monkeypatch, tmp_path):
+  from test_obd_resync import ClockLink
+  from test_obd_battery import notification
+  async def check():
+    class Link(ClockLink):
+      failed = False
+      async def command(self, command):
+        if command == '220101' and not self.failed:
+          self.failed = True
+          # Late old response and prompt must not be read as ATI or next DID.
+          self.queue.put_nowait(notification(reply('7EC/0101')))
+          raise b.QueryError('elm_prompt_timeout')
+        return await super().command(command)
+    link = Link([b'ELM327 v2.3\r>', reply('7EC/0106')], monkeypatch)
+    link.diagnostic = True
+    monkeypatch.setattr(d, 'time', NS(monotonic=lambda: link.clock[0]))
+    poller = d.Poller(lease(), IDENTITY, lambda: True, tmp_path / 'status')
+    await poller.poll(link)
+    assert link.writes == [b'ATI\r'] and link.queue.empty()
+    assert poller.rows['7EC/0101']['state'] == 'timeout'
+    link.clock[0] = poller.next_poll
+    await poller.poll(link)
+    assert link.writes == [b'ATI\r', b'2201066\r']
+    assert poller.rows['7EC/0106']['data'] == d.parse(reply('7EC/0106'), '7EC/0106').hex().upper()
+  asyncio.run(check())
+
+
+def test_all_unavailable_ids_keep_rotating_with_bounded_cache_and_no_ble_close(monkeypatch, tmp_path):
+  clock, calls, syncing = [100.], [], [False]
+  monkeypatch.setattr(d, 'time', NS(monotonic=lambda: clock[0]))
+  class Link:
+    async def command(self, command):
+      assert not syncing[0]
+      if command.startswith('AT'):
+        return b'OK\r>'
+      calls.append((self.debug_rx, command))
+      raise b.QueryError('elm_prompt_timeout')
+    async def resynchronize(self):
+      syncing[0] = True
+      clock[0] += .6
+      syncing[0] = False
+  async def check():
+    poller, link = d.Poller(lease(), IDENTITY, lambda: True, tmp_path / 'status'), Link()
+    for _ in range(18):
+      clock[0] = max(clock[0], poller.next_poll)
+      await poller.poll(link)
+    assert calls == [(rx, cmd) for _, _, rx, cmd, _ in d.TARGETS] * 3
+    assert len(poller.rows) == 6 and all(row['state'] == 'timeout' and 'data' not in row for row in poller.rows.values())
+    assert poller.last_valid is None and len(poller.path.read_bytes()) < 4096
+  asyncio.run(check())
+
+
 def test_malformed_response_is_discarded_and_resync_cap(monkeypatch, tmp_path):
   clock, resync = [100.], []
   monkeypatch.setattr(d, 'time', NS(monotonic=lambda: clock[0]))

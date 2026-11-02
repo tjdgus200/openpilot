@@ -5,8 +5,7 @@ import vm from "node:vm";
 
 import { CarrotEgpuModel } from "../src/features/tools/egpu_model.js";
 
-// The PV5 card also renders bounded fusion/quality tables. Keep those renderers
-// executing in this fixture instead of stubbing away the production path.
+// Execute the production host card without a browser.
 function element() {
   return {
     dataset: {}, style: {}, children: [], classList: { toggle() {}, remove() {} },
@@ -15,6 +14,26 @@ function element() {
     addEventListener() {},
   };
 }
+
+test("older host performance reports cannot restore retired tables or write saved preferences", (t) => {
+  const saved = globalThis.document;
+  const savedSetter = globalThis.setParam;
+  t.after(() => { globalThis.document = saved; globalThis.setParam = savedSetter; });
+  const elements = new Map();
+  globalThis.document = {createElement: element, getElementById(id) {
+    if (!elements.has(id)) elements.set(id, element());
+    return elements.get(id);
+  }};
+  globalThis.setParam = () => assert.fail("displaying host health must not change FPS or fusion");
+  const host = {label: "jetSON", severity: "ok", addresses: ["192.0.2.1"], temp_c: 53.8};
+  for (const property of ["hud_quality", "input_fusion"]) {
+    Object.defineProperty(host, property, {get() { assert.fail("retired measurements must not be read"); }});
+  }
+  CarrotEgpuModel.render({available: false, jetlink: host});
+  assert.match(elements.get("jetlinkHealth").textContent, /53.8 °C/);
+  assert.equal(elements.has("jetlinkHudQuality"), false);
+  assert.equal(elements.has("jetlinkInputFusion"), false);
+});
 
 test("delivery failures explain automatic recovery and installed files do not imply active inference", (t) => {
   const saved = globalThis.document;

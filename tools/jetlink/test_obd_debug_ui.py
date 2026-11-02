@@ -41,6 +41,19 @@ def setup(monkeypatch, tmp_path, *, status=True):
   return overlay, calls, fake.Rectangle(0, 0, 1920, 1080), state
 
 
+@pytest.mark.parametrize('failure', ['timeout', 'unavailable', 'no_data'])
+def test_one_missing_ecu_page_is_blank_without_hiding_the_other_pages(monkeypatch, tmp_path, failure):
+  overlay, calls, rect, state = setup(monkeypatch, tmp_path)
+  record = d.read(overlay.display.status)
+  record['rows']['7EC/0101'] = {'state': failure, 'at': 100.}
+  d.atomic_write(overlay.display.status, record)
+  assert overlay.draw(rect, None, state)
+  labels = [args[1] for kind, args in calls if kind == 'text']
+  assert any(label.startswith('ID:7EC/0101') and label.endswith(failure.upper()) for label in labels)
+  assert labels.count('DATA: --') == 1
+  assert sum(len(label.split()) for label in labels if re.fullmatch(r'[0-9A-F]{2}(?: [0-9A-F]{2})*', label)) == 232 - 59
+
+
 @pytest.mark.parametrize('width', [1200, 1600, 1920, 2160])
 def test_all_six_full_pages_fit_without_truncating_bytes(monkeypatch, tmp_path, width):
   overlay, calls, rect, state = setup(monkeypatch, tmp_path)

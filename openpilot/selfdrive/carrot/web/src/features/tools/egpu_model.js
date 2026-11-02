@@ -1,37 +1,12 @@
 "use strict";
 import { renderLibrary } from "./model_library.js";
 
-import {renderQualityComparison} from "./hud_quality.js";
-import {renderInputFusion} from "./input_fusion.js";
-
 const POLL_INTERVAL_MS = 2000;
 let pollTimer = null;
 let lastStatus = null;
 let restartPending = false;
 
 const FALLBACK_STRINGS = {
-  fusion_title: "Jetson input-path comparison",
-  fusion_unavailable: "Waiting for the updated Jetson package / current observations.",
-  fusion_waiting: "Measurements require fresh Park, zero speed and inactive control.",
-  fusion_unsupported: "CPU staging retained: unsupported model/device, disabled, or startup qualification unavailable/failed.",
-  fusion_warmup: "Warm-up: first15 seconds after changing paths are excluded.",
-  fusion_measuring: "Measuring actual frames: at least60s and1000 samples per path.",
-  fusion_ready: "Current path has at least60s and1000 samples. Compare matching workloads.",
-  fusion_cpu: "CPU baseline",
-  fusion_gpu: "GPU fusion",
-  fusion_failures: "Inference failures (excluded from timing samples)",
-  fusion_change_failed: "Could not save the input-path selection.",
-  fusion_scope: "Complete request received and validated → reply buffers/framing ready before the first USB write. Includes host queue wait, input preparation, GPU work, validation and reply preparation; excludes incoming/outgoing USB transmission. Default GPU fusion attempts N16/Orin only after startup input-bit and four-frame output/state parity checks; otherwise CPU. Switch only in fresh Park/zero-speed/inactive control. Model/connection/HUD FPS changes clear results. No extra inference or automatic winner selection. Updated Jetson package required.",
-  quality_title: "Jetson HUD frame-rate comparison",
-  quality_rates: "Source / USB receive / output",
-  quality_candidate: "Candidate",
-  quality_unavailable: "Waiting for the updated Jetson runtime / current observations.",
-  quality_waiting: "Waiting for fresh inference samples.",
-  quality_warmup: "Warm-up: the first 15 seconds are excluded.",
-  quality_measuring: "Measuring: each candidate needs at least 60s and 1000 samples.",
-  quality_ready: "● Current output · ★ Lowest observed GPU P99, shown after at least two candidates qualify.",
-  quality_fallback: "CPU JPEG failed: baseline H264 is active. This is not a JPEG result.",
-  quality_scope: "Select Settings > External HUD > Screen & Camera > Jetson HUD Frame Rate. CPU TurboJPEG Q92 is fixed. Actual rates may be lower than the target: model requests take priority and late HUD frames are skipped. Saved Q92/FPS applies onroad at startup and reconnect without waiting for Park; FPS changes reopen only the HUD. GPU/server times are not the complete comma/USB round trip. Compare matching workloads; results reset on model/runtime changes. No automatic selection or zero-impact guarantee.",
   recovering: "eGPU reconnecting",
   recovering_detail: "The internal model remains in use while eGPU recovery is attempted, up to three times.",
   recovery_ready: "eGPU READY",
@@ -170,26 +145,8 @@ function render(status = lastStatus) {
     detailEl.after(hostEl);
   }
   const host = status.jetlink;
-  let qualityEl = document.getElementById("jetlinkHudQuality");
-  if (!qualityEl) {
-    qualityEl = document.createElement("div");
-    qualityEl.id = "jetlinkHudQuality";
-    qualityEl.className = "egpu-model-card__detail";
-    hostEl.after(qualityEl);
-  }
-  qualityEl.hidden = !host?.hud_quality;
-  if (host?.hud_quality) renderQualityComparison(qualityEl, host.hud_quality, t);
-  else qualityEl.replaceChildren();
-  let fusionEl = document.getElementById("jetlinkInputFusion");
-  if (!fusionEl) {
-    fusionEl = document.createElement("div");
-    fusionEl.id = "jetlinkInputFusion";
-    fusionEl.className = "egpu-model-card__detail";
-    qualityEl.after(fusionEl);
-  }
-  fusionEl.hidden = !host?.input_fusion;
-  if (host?.input_fusion) renderInputFusion(fusionEl, host.input_fusion, t);
-  else fusionEl.replaceChildren();
+  // Performance comparisons are retired, including reports from older hosts.
+  // Saved FPS/fusion preferences still belong to the runtime/settings path.
   hostEl.hidden = !host;
   if (host) {
     const severity = ["ok", "warning", "error", "unknown"].includes(host.severity) ? host.severity : "unknown";

@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-11-02 owner removes the remaining Tools performance comparison panels,
+  including input-path controls in that card. Ignore measurement reports from
+  old hosts; keep saved Q92/FPS/fusion settings and normal settings controls.
+  Production Jetson FPS counters/text are already off in the four published
+  diagnostics-off packages; do not restore them during upstream merges.
+  Raw diagnostic ECU response timeouts now blank only that fixed page and
+  advance after bounded late-byte quarantine plus exact ATI identity proof on
+  the same BLE owner. Framed negative/pending replies are never decoded and
+  use the same recovery. NO DATA advances directly. Failed GATT writes,
+  overflow, identity/header failures still use normal cleanup/retry. One query
+  at a time, completion gap500ms, six latest rows, no catch-up/history. Keep
+  all Park/lease/source/DID/length/sequence/freshness gates. PC tests cannot
+  prove the cause of a physical disconnect or live RF stability.
+
 - 2026-11-02 owner removes runtime FPS/inference performance instrumentation.
   CARROT_PERF_DIAGNOSTICS is default-OFF; exact1 is private diagnosis only.
   Do not restore automatic HUD statistics workers/control queries, served-frame

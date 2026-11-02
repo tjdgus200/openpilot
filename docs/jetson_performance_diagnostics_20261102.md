@@ -23,8 +23,9 @@ In normal operation:
   remain. These checks must never be confused with optional benchmarking.
 - No HUD FPS/inference AVG/P99/MAX or resource-performance footer. Temperature,
   power, early black boot resources, BSD/brightness, battery data and trip SOC
-  remain. Web omits absent quality results and keeps fusion selection controls
-  without an empty timing table.
+  remain. The Tools card omits both performance panels unconditionally, even
+  when older hosts send measurements. Their table-only path buttons are also
+  removed. Saved Q92/FPS/fusion values and the normal settings controls remain.
 
 Saved Q92 and 10/15/20/25/30 target rates, model-first idle budget, transport
 deadlines, receive timestamps used for freshness/ownership, watchdogs, bounded

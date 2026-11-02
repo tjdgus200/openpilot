@@ -309,7 +309,7 @@ Display contains 36 settings. External-HUD settings control the layout and outpu
 
 Battery heatmaps show the lowest available value in green and distinguish higher values toward yellow, orange and red. Differences of1°C or20mV are visible; these colors are diagnostic cues. BSD warning blinking stays at the existing2.5Hz when FPS increases.
 
-The Tools Jetlink card lists each candidate’s GPU inference mean/P99, >50ms count/rate and server P99. After excluding the first 15 seconds, at least two candidates must each have 60 seconds and 1,000 samples before the lowest observed GPU P99 is indicated. The HUD inference strip also names the current profile and `B:` lowest-P99 profile. This does not measure the full comma/USB round trip, visual quality or driving safety. A failed JPEG candidate returns to baseline H264 without crediting those samples to JPEG. Comparisons reset on model/runtime-session changes; use matching workloads and thermal conditions.
+The Tools Jetlink card no longer displays HUD frame-rate or input-path performance comparisons, including reports from older hosts. Saved Q92, FPS and input-fusion settings are unchanged. Disabling Jetson FPS/inference sampling and numeric overlays requires the updated diagnostics-off package. Connection health, temperature and errors remain visible.
 
 ESP32-S3 Wi-Fi display support has been removed. Connect the USB display to Jetson. Comma sends HUD and navigation data over the dedicated Wi-Fi connection, without falling back to USB display transport. The comma-to-Jetson USB link carries model inference and connection provisioning. Both ends require the updated software.
 

@@ -38,7 +38,8 @@ Leaving the admission conditions immediately restores the normal HUD.
 Normal battery metrics temporarily become unavailable under their existing
 expiry rules; no debug bytes are sent to the Jetson HUD or control processes.
 Each page displays its own age. Missing, malformed and expired data show
-`WAITING`, `NO_DATA`, `INVALID` or `STALE` rather than a substituted value.
+`WAITING`, `NO_DATA`, `TIMEOUT`, `UNAVAILABLE`, `INVALID` or `STALE` rather
+than a substituted value. A missing page does not hide the other valid pages.
 
 ## Activation
 
@@ -88,6 +89,16 @@ The display requires the updated comma UI; no Jetson runtime package is needed.
   replies. A malformed reply is discarded and uses the existing bounded UART
   silence/ATI resynchronization; at most two consecutive recoveries, otherwise
   the existing close/reconnect path handles it. NO DATA is not a metric.
+- A diagnostic DID's three-second ELM prompt timeout immediately clears only
+  that row. Before advancing, the same Link must retire late fragments with
+  the existing bounded quarantine and prove the local ATI identity. Only
+  successful recovery permits the next fixed DID after the completion gap.
+  Framed negative responses (including response-pending) similarly display
+  UNAVAILABLE and require recovery; they carry no accepted signal payload.
+  NO DATA advances directly. No unbounded queue, parallel request or retry
+  burst is added. Recovery failure, GATT write failure, overflow and header/
+  identity failures still reach existing teardown/reconnect. Successful raw
+  response time alone renews diagnostic-receiving freshness, never a timeout.
 - One latest row per page (232 binary data bytes / 464 hex characters), a
   <=4096-byte status file, <=512-byte lease and <=232 UI change markers.
   No sample history or persistent raw-log recorder. UI file reads at most 1 Hz;
@@ -118,3 +129,9 @@ last-moment permission loss and restoration after a partial header change.
 The changed collector/diagnostic/status files and tests pass Ruff; the patch
 passes `git diff --check`. PC results do not establish actual BLE stability, ECU/adapter behavior, CPU
 cost, screen readability, or road safety. No vehicle installation was performed.
+
+The timeout follow-up passed 511 related PC regressions. After adding three
+page-isolation rendering cases, the focused collector/UI suite passed141 tests
+(overlaps the regressions). Faults include per-page timeouts, all six pages
+unavailable, late old data before ATI, recovery/permission failures, GATT
+failures and source-mismatched negative replies. No live adapter was contacted.

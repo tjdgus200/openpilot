@@ -154,12 +154,37 @@ def parse(reply, target):
   return bytes(payload[3:])
 
 
+def negative_response(reply, rx):
+  # A single framed UDS negative response has no DID payload to display. It
+  # cannot identify a particular signal; do not infer a value or meaning.
+  if not isinstance(reply, bytes) or len(reply) > 4096 or reply.count(b'>') != 1 or not reply.endswith(b'>'):
+    return False
+  compact = reply[:-1].strip().replace(b' ', b'').upper()
+  if re.fullmatch(rx.encode() + rb'037F22[0-9A-F]{10}', compact) is None:
+    return False
+  return int(compact[9:11], 16) != 0
+
+
 class Poller:
   def __init__(self, lease, identity, allowed, path=STATUS):
     self.lease, self.identity, self.allowed, self.path = lease, identity, allowed, path
     self.rows, self.index, self.rx, self.next_poll = {}, 0, '7EC', 0.
     self.resync_streak = 0
     self.last_valid = None
+
+  def publish(self, key, state, data=None):
+    self.check()
+    now = time.monotonic()
+    row = {'state': state, 'at': now}
+    if data is not None:
+      row['data'] = data.hex().upper()
+    self.rows[key] = row  # Replace, never retain bytes from a failed request.
+    atomic_write(self.path, {'version': 1, 'nonce': self.lease['nonce'], 'config_id': self.identity,
+                             'updated': now, 'rows': self.rows})
+
+  def advance(self):
+    self.index = (self.index + 1) % len(TARGETS)
+    self.next_poll = time.monotonic() + PERIOD
 
   def check(self):
     if not self.allowed():
@@ -179,11 +204,33 @@ class Poller:
       self.rx = rx
     link.debug_rx = rx
     self.check()
-    reply = await link.command(cmd)
+    try:
+      reply = await link.command(cmd)
+    except QueryError as exc:
+      # Only an ECU/UART response deadline is recoverable here. A failed GATT
+      # write, overflow or adapter/filter failure still ends the connection.
+      if exc.code != 'elm_prompt_timeout':
+        raise
+      self.publish(key, 'timeout')
+      # Never send the next DID into an unfinished response. Retire late bytes
+      # and require bounded UART silence plus the exact local ATI identity.
+      await link.resynchronize()
+      self.check()
+      self.resync_streak = 0
+      self.advance()
+      return True
     self.check()  # A response cannot renew validity after motion/control loss.
     now = time.monotonic()
     if no_data(reply):
-      row = {'state': 'no_data', 'at': now}
+      self.resync_streak = 0
+      self.publish(key, 'no_data')
+    elif negative_response(reply, rx):
+      self.publish(key, 'unavailable')
+      # This includes response-pending: quarantine any later completion before
+      # sending another ID. Never decode it as this or the next page's data.
+      await link.resynchronize()
+      self.check()
+      self.resync_streak = 0
     else:
       try:
         data = parse(reply, key)
@@ -194,16 +241,12 @@ class Poller:
         self.check()
         await link.resynchronize()
         self.check()
-        row = {'state': 'invalid', 'at': now}
+        self.publish(key, 'invalid')
       else:
         self.resync_streak = 0
         self.last_valid = now
-        row = {'state': 'ok', 'at': now, 'data': data.hex().upper()}
-    self.rows[key] = row  # One latest response per fixed page; no history.
-    atomic_write(self.path, {'version': 1, 'nonce': self.lease['nonce'], 'config_id': self.identity,
-                             'updated': now, 'rows': self.rows})
-    self.index = (self.index + 1) % len(TARGETS)
-    self.next_poll = time.monotonic() + PERIOD
+        self.publish(key, 'ok', data)
+    self.advance()
     return True
 
   def delay(self, link):
@@ -246,7 +289,7 @@ class Display:
             or not isinstance(record.get('rows'), dict) or not record['rows'].keys() <= CONTRACTS.keys()):
           raise ValueError('debug snapshot')
         for key, row in record['rows'].items():
-          if (not isinstance(row, dict) or row.get('state') not in ('ok', 'no_data', 'invalid')
+          if (not isinstance(row, dict) or row.get('state') not in ('ok', 'no_data', 'invalid', 'timeout', 'unavailable')
               or not finite(row.get('at')) or not lease['start'] <= row['at'] <= record['updated']):
             raise ValueError('debug row')
           if row['state'] == 'ok':
