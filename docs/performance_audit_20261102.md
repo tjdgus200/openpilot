@@ -61,3 +61,5 @@
 - flip-flop: separate committed package identity; catalog `md-v3.json`.
 
 - ctv3m: separate committed package identity; catalog `ctv3m.json`.
+
+- light-speed: separate committed package identity; catalog `light-speed.json`.
