@@ -429,7 +429,9 @@ def main(demo=False):
   diagnostics = RuntimeDiagnostics('modeld', cloudlog.event)
   camera_gap = CameraGapTrace(cloudlog.event)
   while True:
-    loop_start, cpu_start = time.monotonic(), time.thread_time()
+    loop_start = time.monotonic()
+    if diagnostics.enabled:
+      cpu_start = time.thread_time()
     frame += 1
     if frame % 100 == 0:
       custom_lat_delay = params.get_float("SteerActuatorDelay") * 0.01
@@ -512,7 +514,8 @@ def main(demo=False):
     inference_started = time.monotonic()
     mt1 = time.perf_counter()
     camera_age_at_run_ms = (inference_started - meta_main.timestamp_eof * 1e-9) * 1000
-    inference_cpu_start = time.thread_time()
+    if diagnostics.enabled:
+      inference_cpu_start = time.thread_time()
     try:
       model_output = model.run(bufs, transforms, inputs, prepare_only)
     except Exception as exc:
@@ -544,7 +547,8 @@ def main(demo=False):
       last_vipc_frame_id = meta_main.frame_id
       continue
     mt2 = time.perf_counter()
-    inference_cpu_ms = (time.thread_time() - inference_cpu_start) * 1000
+    if diagnostics.enabled:
+      inference_cpu_ms = (time.thread_time() - inference_cpu_start) * 1000
     model_execution_time = mt2 - mt1
     inference_backend, inference_usbgpu = type(model).__name__, model.usbgpu
 
@@ -670,12 +674,15 @@ def main(demo=False):
         if egpu_recovery.task is not None:
           egpu_recovery.task.cancel.set()
         egpu_recovery = None
-    camera_gap.record(meta_main.frame_id, vipc_dropped_frames, inference_backend,
-                      camera_wait=(camera_ready - loop_start) * 1000,
-                      before_inference=(inference_started - camera_ready) * 1000,
-                      inference=model_execution_time * 1000,
-                      postprocess=(time.perf_counter() - mt2) * 1000,
-                      loop=(time.monotonic() - loop_start) * 1000)
+    if camera_gap.detailed:
+      camera_gap.record(meta_main.frame_id, vipc_dropped_frames, inference_backend,
+                        camera_wait=(camera_ready - loop_start) * 1000,
+                        before_inference=(inference_started - camera_ready) * 1000,
+                        inference=model_execution_time * 1000,
+                        postprocess=(time.perf_counter() - mt2) * 1000,
+                        loop=(time.monotonic() - loop_start) * 1000)
+    else:
+      camera_gap.record(meta_main.frame_id, vipc_dropped_frames, inference_backend)
     if diagnostics.enabled:
       diagnostics.record(
         context={'backend': inference_backend, 'usbgpu': inference_usbgpu, 'frame_id': meta_main.frame_id},

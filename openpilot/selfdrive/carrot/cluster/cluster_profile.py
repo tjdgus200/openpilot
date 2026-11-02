@@ -97,10 +97,12 @@ class ProfileReporter:
         self.enabled = enabled
         self.interval_s = max(0.2, interval_s)
         self.samples: dict[str, ProfileSampleStats] = {}
+        self.report_frames = 0
+        if not enabled:
+            return
         self.last_report_time = time.perf_counter()
         self.last_process_time = time.process_time()
         self.last_system_cpu = _read_system_cpu_stat()
-        self.report_frames = 0
 
     def add(self, name: str, milliseconds: float) -> None:
         if not self.enabled:
@@ -212,15 +214,15 @@ def freeze_gc_after_init(profile: ProfileReporter) -> tuple[int, int, int] | Non
         return
 
     previous_thresholds = gc.get_threshold()
-    profile_stage = time.perf_counter()
+    profile_stage = time.perf_counter() if profile.enabled else 0.0
     gc.collect(2)
     profile.add_elapsed("gc.freeze_init.collect", profile_stage)
 
-    profile_stage = time.perf_counter()
+    profile_stage = time.perf_counter() if profile.enabled else 0.0
     _trim_unused_heap()
     profile.add_elapsed("gc.freeze_init.trim", profile_stage)
 
-    profile_stage = time.perf_counter()
+    profile_stage = time.perf_counter() if profile.enabled else 0.0
     freeze()
     profile.add_elapsed("gc.freeze_init.freeze", profile_stage)
     gc.set_threshold(*_post_freeze_gc_thresholds())

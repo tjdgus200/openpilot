@@ -222,7 +222,7 @@ class AugmentedRoadView(CameraView):
   def _render(self, _):
     # plotMode 갱신(가끔 파일 읽기)은 drawTime 창 밖에서 — total을 오염시키지 않는다
     self._refresh_plot_mode(time.monotonic())
-    start_draw = time.monotonic()
+    start_draw = time.monotonic() if self._render_diagnostics.enabled else 0.0
     timing = self._render_diagnostics
     timing.start()
     # 구간별 계측(계측 전용) — 렌더 호출 순서는 그대로, 각 구간 전후 monotonic만 잰다.
@@ -251,59 +251,59 @@ class AugmentedRoadView(CameraView):
     )
 
     road_view_mode = self._road_view_mode()
-    _t = time.monotonic()
+    _t = time.monotonic() if timing.enabled else 0.0
     if self._suppress_camera_for_cluster or road_view_mode in (2, 3):
       rl.draw_rectangle_rec(self._content_rect, rl.BLACK)
     else:
       # Render the base camera view
       super()._render(self._content_rect)
-    cam_ms = (time.monotonic() - _t) * 1000.0
+    cam_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     self._overlay_state.update(ui_state, self.client, self.stream_type, (self._suppress_camera_for_cluster, road_view_mode))
 
     if not self._suppress_camera_for_cluster and road_view_mode in (0, 2):
       # Draw all UI overlays
-      _t = time.monotonic()
+      _t = time.monotonic() if timing.enabled else 0.0
       timing.call('model', self._model_renderer.render, self._content_rect)
-      model_ms = (time.monotonic() - _t) * 1000.0
+      model_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     if not self._suppress_camera_for_cluster:
       # Fade out bottom of overlays for looks
-      _t = time.monotonic()
+      _t = time.monotonic() if timing.enabled else 0.0
       rl.draw_texture_ex(self._fade_texture, rl.Vector2(self._content_rect.x, self._content_rect.y), 0.0, 1.0, rl.WHITE)
-      extras_ms += (time.monotonic() - _t) * 1000.0
+      extras_ms += (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
-    _t = time.monotonic()
+    _t = time.monotonic() if timing.enabled else 0.0
     alert_to_render, not_animating_out = self._alert_renderer.will_render()
-    alert_ms += (time.monotonic() - _t) * 1000.0
+    alert_ms += (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     self._hud_renderer.set_can_draw_top_icons(alert_to_render is None)
     self._hud_renderer.set_wheel_critical_icon(alert_to_render is not None and not not_animating_out and
                                                alert_to_render.visual_alert == car.CarControl.HUDControl.VisualAlert.steerRequired)
     # TODO: have alert renderer draw offroad mici label below
-    _t = time.monotonic()
+    _t = time.monotonic() if timing.enabled else 0.0
     self._hud_renderer.render(self._content_rect)
     self._vision_renderer.render(self._content_rect)
-    hud_ms = (time.monotonic() - _t) * 1000.0
+    hud_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
     if ui_state.started:
-      _t = time.monotonic()
+      _t = time.monotonic() if timing.enabled else 0.0
       self._alert_renderer.render(self._content_rect)
-      alert_ms += (time.monotonic() - _t) * 1000.0
+      alert_ms += (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     # Draw fake rounded border
-    _t = time.monotonic()
+    _t = time.monotonic() if timing.enabled else 0.0
     rl.draw_rectangle_rounded_lines_ex(self._content_rect, 0.2 * 1.02, 10, 50, rl.BLACK)
-    extras_ms += (time.monotonic() - _t) * 1000.0
+    extras_ms += (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     # End clipping region
     rl.end_scissor_mode()
 
     # Custom UI extension point - add custom overlays here
     # Use self._content_rect for positioning within camera bounds
-    _t = time.monotonic()
+    _t = time.monotonic() if timing.enabled else 0.0
     self._driver_state_renderer.draw_onroad(self.rect, alert_to_render is not None)
-    ds_ms = (time.monotonic() - _t) * 1000.0
-    _t = time.monotonic()
+    ds_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
+    _t = time.monotonic() if timing.enabled else 0.0
     self._traffic_light.render(self.rect)
     if not self._traffic_light.is_visible():
       self._confidence_ball.render(self.rect)
@@ -319,12 +319,12 @@ class AugmentedRoadView(CameraView):
       x = int(self._content_rect.x + 16)
       y = int(self._content_rect.y + self._content_rect.height - 16)
       rl.draw_circle(x, y, 6, rl.Color(255, 0, 0, 220))
-    extras_ms += (time.monotonic() - _t) * 1000.0
+    extras_ms += (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     # publish uiDebug
     msg = messaging.new_message('uiDebug', valid=True)
     ud = msg.uiDebug
-    ud.drawTimeMillis = (time.monotonic() - start_draw) * 1000
+    ud.drawTimeMillis = (time.monotonic() - start_draw) * 1000 if timing.enabled else 0.0
     ud.cameraTimeMillis = cam_ms
     ud.modelTimeMillis = model_ms
     ud.driverStateTimeMillis = ds_ms
@@ -334,9 +334,10 @@ class AugmentedRoadView(CameraView):
     ud.plotMode = self._plot_mode
     ud.recording = gui_app.is_recording()
     self._pm.send('uiDebug', msg)
-    timing.values['native_draw'] = float(native_draw.active())
-    timing.values['native_geometry'] = float(native_geometry.active())
-    timing.values['native_text'] = float(native_text.active())
+    if timing.enabled:
+      timing.values['native_draw'] = float(native_draw.active())
+      timing.values['native_geometry'] = float(native_geometry.active())
+      timing.values['native_text'] = float(native_text.active())
     timing.finish()
 
   def close(self):

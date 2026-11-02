@@ -159,3 +159,20 @@ assert calls == ([0] if PLATFORM == 'linux' and HAS_TRIM else [])
 '''.replace('HAS_TRIM', repr(has_trim)).replace('PLATFORM', repr(platform))
   result = subprocess.run([sys.executable, '-c', code], cwd=ROOT, capture_output=True, text=True, timeout=30)
   assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_disabled_profiler_does_not_read_proc_or_clocks(monkeypatch):
+  import cluster_profile as profile
+  def forbidden(*args, **kwargs):
+    pytest.fail('disabled HUD profiler sampled resources')
+  monkeypatch.setattr(profile.time, 'perf_counter', forbidden)
+  monkeypatch.setattr(profile.time, 'process_time', forbidden)
+  monkeypatch.setattr(profile, '_read_system_cpu_stat', forbidden)
+  reporter = profile.ProfileReporter(False, 1.)
+  for _ in range(100):
+    reporter.add_elapsed('draw', 0.)
+    reporter.add('encode', 1.)
+    reporter.add_samples([('readback', 1.)])
+    reporter.frame_done()
+    reporter.maybe_report(10.)
+  assert reporter.samples == {} and reporter.report_frames == 0

@@ -5,6 +5,8 @@ from pathlib import Path
 import pickle
 import time
 
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
+
 import numpy as np
 
 from openpilot.selfdrive.modeld.generic_model_runtime import GenericModelRuntime, input_view
@@ -190,29 +192,35 @@ class LocalWarpRuntime(GenericModelRuntime):
 
   def run(self):
     progress = getattr(self, 'progress', lambda stage: None)
-    started, cpu_started = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      started, cpu_started = time.monotonic(), time.thread_time()
     progress('local_prepare')
     images = self.prepare_images()
     np.copyto(self.compact[:self.frames_offset], self.raw[:self.frames_offset])
     np.copyto(self.compact[self.frames_offset:], images.reshape(-1))
-    prepared, cpu_prepared = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      prepared, cpu_prepared = time.monotonic(), time.thread_time()
     progress('input_upload')
     self.copy_inputs()
-    uploaded, cpu_uploaded = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      uploaded, cpu_uploaded = time.monotonic(), time.thread_time()
     progress('model_call')
     self.run_model(output_buffers=self.outputs, **self.queues)
-    dispatched, cpu_dispatched = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      dispatched, cpu_dispatched = time.monotonic(), time.thread_time()
     progress('output_read')
     result = self.copy_outputs().numpy().reshape(-1)
-    finished, cpu_finished = time.monotonic(), time.thread_time()
-    self.last_timings = {
-      'local_prepare_ms': (prepared - started) * 1000,
-      'local_prepare_cpu_ms': (cpu_prepared - cpu_started) * 1000,
-      'input_upload_ms': (uploaded - prepared) * 1000,
-      'input_upload_cpu_ms': (cpu_uploaded - cpu_prepared) * 1000,
-      'model_call_ms': (dispatched - uploaded) * 1000,
-      'model_call_cpu_ms': (cpu_dispatched - cpu_uploaded) * 1000,
-      'output_read_ms': (finished - dispatched) * 1000,
-      'output_read_cpu_ms': (cpu_finished - cpu_dispatched) * 1000,
-    }
+    if PERF_DIAGNOSTICS:
+      finished, cpu_finished = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      self.last_timings = {
+        'local_prepare_ms': (prepared - started) * 1000,
+        'local_prepare_cpu_ms': (cpu_prepared - cpu_started) * 1000,
+        'input_upload_ms': (uploaded - prepared) * 1000,
+        'input_upload_cpu_ms': (cpu_uploaded - cpu_prepared) * 1000,
+        'model_call_ms': (dispatched - uploaded) * 1000,
+        'model_call_cpu_ms': (cpu_dispatched - cpu_uploaded) * 1000,
+        'output_read_ms': (finished - dispatched) * 1000,
+        'output_read_cpu_ms': (cpu_finished - cpu_dispatched) * 1000,
+      }
     return result

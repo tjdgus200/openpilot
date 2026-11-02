@@ -118,9 +118,10 @@ def main():
         if finished >= next_preview:
           write_preview(image, reason=reason)
           next_preview = finished + .5
-        diagnostics.record(render_ms=(finished - started) * 1000, cpu_ms=cpu * 1000,
-                           context={'map_valid': valid, 'route_points': len(route), 'interval': render_interval(cpu),
-                                    'parked_position_hold': position.held})
+        if diagnostics.enabled:
+          diagnostics.record(render_ms=(finished - started) * 1000, cpu_ms=cpu * 1000,
+                             context={'map_valid': valid, 'route_points': len(route), 'interval': render_interval(cpu),
+                                      'parked_position_hold': position.held})
       was_ready = ready
       rk.keep_time()
   finally:

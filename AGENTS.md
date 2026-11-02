@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-02 production overhead audit: disabling runtimeTiming must also skip
+  caller-side clocks, context dictionaries and CAN stage accumulation. Render
+  callbacks still execute in the same order; uiDebug status remains, optional
+  timing fields are zero when disabled. Camera pairing and rate-limited gap
+  warnings remain; per-receive trace is private opt-in. Preserve native model
+  execution timestamps, CAN timeout/slow-loop warnings, freshness clocks, GPU
+  checkpoint synchronization and WorkerProgress liveness. JPEG/H.264 pipelines
+  must not collect profiling samples or query native timing getters unless the
+  display profiler is explicitly enabled; diagnostic sample queues are bounded
+  to256 even when enabled. Capacity/ACK deadlines are independent. Keep Q92/FPS,
+  fusion, models and all PV5 features during WIP merges. See
+  docs/performance_audit_20261102.md; PC tests are not physical CPU/P99 proof.
+
 - 2026-11-02 owner removes the remaining Tools performance comparison panels,
   including input-path controls in that card. Ignore measurement reports from
   old hosts; keep saved Q92/FPS/fusion settings and normal settings controls.

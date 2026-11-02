@@ -84,13 +84,12 @@ class AugmentedRoadView(CameraView):
     # plotMode 갱신(가끔 파일 읽기)은 drawTime 창 밖에서 — total을 오염시키지 않는다
     self._refresh_plot_mode(time.monotonic())
     # Only render when system is started to avoid invalid data access
-    start_draw = time.monotonic()
+    start_draw = time.monotonic() if self._render_diagnostics.enabled else 0.0
     if not ui_state.started:
       return
     timing = self._render_diagnostics
     timing.start()
-    # Preserve uiDebug wall timers and draw order; runtimeTiming also measures
-    # thread CPU work so scheduler/GPU waits are not mistaken for render work.
+    # Draw order and uiDebug status remain; wall/CPU profiling is opt-in.
     # scissor begin/end는 raylib 배치 flush 지점이라 특정 구간에 귀속시키지 않는다 —
     # total과 구간 합의 차이(미귀속)로 남는다. extras = carrot 테두리(+텍스트)
     cam_ms = model_ms = ds_ms = hud_ms = alert_ms = extras_ms = 0.0
@@ -116,31 +115,31 @@ class AugmentedRoadView(CameraView):
       int(self._content_rect.height)
     )
 
-    _t = time.monotonic()
+    _t = time.monotonic() if timing.enabled else 0.0
     if self._suppress_camera_for_cluster:
       rl.draw_rectangle_rec(self._content_rect, rl.BLACK)
     else:
       # Render the base camera view
       timing.call('camera', super()._render, rect)
-    cam_ms = (time.monotonic() - _t) * 1000.0
+    cam_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     self._overlay_state.update(ui_state, self.client, self.stream_type, self._suppress_camera_for_cluster)
 
     if not self._suppress_camera_for_cluster:
       # Draw the model overlay only with the camera view
-      _t = time.monotonic()
+      _t = time.monotonic() if timing.enabled else 0.0
       timing.call('model', self.model_renderer.render, self._content_rect)
-      model_ms = (time.monotonic() - _t) * 1000.0
-    _t = time.monotonic()
+      model_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
+    _t = time.monotonic() if timing.enabled else 0.0
     timing.call('hud', self._hud_renderer.render, self._content_rect)  # includes plot when enabled
-    hud_ms = (time.monotonic() - _t) * 1000.0
-    _t = time.monotonic()
+    hud_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
+    _t = time.monotonic() if timing.enabled else 0.0
     timing.call('alert', self.alert_renderer.render, self._content_rect)
-    alert_ms = (time.monotonic() - _t) * 1000.0
-    _t = time.monotonic()
+    alert_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
+    _t = time.monotonic() if timing.enabled else 0.0
     timing.call('driver_state', self.driver_state_renderer.draw_onroad, self._content_rect,
                 self.alert_renderer.get_alert(ui_state.sm) is not None)
-    ds_ms = (time.monotonic() - _t) * 1000.0
+    ds_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     # Custom UI extension point - add custom overlays here
     # Use self._content_rect for positioning within camera bounds
@@ -149,14 +148,14 @@ class AugmentedRoadView(CameraView):
     rl.end_scissor_mode()
 
     # Draw colored border based on driving state
-    _t = time.monotonic()
+    _t = time.monotonic() if timing.enabled else 0.0
     timing.call('border', self._draw_border_carrot, rect)
-    extras_ms = (time.monotonic() - _t) * 1000.0
+    extras_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     # publish uiDebug
     msg = messaging.new_message('uiDebug', valid=True)
     ud = msg.uiDebug
-    ud.drawTimeMillis = (time.monotonic() - start_draw) * 1000
+    ud.drawTimeMillis = (time.monotonic() - start_draw) * 1000 if timing.enabled else 0.0
     ud.cameraTimeMillis = cam_ms
     ud.modelTimeMillis = model_ms
     ud.driverStateTimeMillis = ds_ms

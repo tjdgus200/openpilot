@@ -68,10 +68,12 @@ def main():
   diagnostics = RuntimeDiagnostics('plannerd', cloudlog.event)
 
   while True:
-    wait_start = time.monotonic()
+    if diagnostics.enabled:
+      wait_start = time.monotonic()
     sm.update()
-    loop_start, cpu_start = time.monotonic(), time.thread_time()
-    timings = {'poll_ms': (loop_start - wait_start) * 1000}
+    if diagnostics.enabled:
+      loop_start, cpu_start = time.monotonic(), time.thread_time()
+      timings = {'poll_ms': (loop_start - wait_start) * 1000}
 
     if sm.updated['radarState']:
       fast_radar.observe_radar_state(
@@ -163,11 +165,13 @@ def main():
         fast_radar_execution_time=fast_radar_execution_time,
         fast_lead_reason=(fast_result.lead_one_reason if fast_result is not None else 'inactive'),
       )
-      timings['longitudinal_ms'] = (time.monotonic() - planner_start) * 1000
+      if diagnostics.enabled:
+        timings['longitudinal_ms'] = (time.monotonic() - planner_start) * 1000
 
     if sm.updated['modelV2']:
-      lateral_start = time.monotonic()
-      timings['model_age_at_lateral_ms'] = (lateral_start - sm.logMonoTime['modelV2'] * 1e-9) * 1000
+      if diagnostics.enabled:
+        lateral_start = time.monotonic()
+        timings['model_age_at_lateral_ms'] = (lateral_start - sm.logMonoTime['modelV2'] * 1e-9) * 1000
       model_frame += 1
       lateral_planner.update(sm, carrot)
       lateral_planner.publish(sm, pm, carrot)
@@ -178,7 +182,8 @@ def main():
       msg.driverAssistance.leftLaneDeparture = ldw.left
       msg.driverAssistance.rightLaneDeparture = ldw.right
       pm.send('driverAssistance', msg)
-      timings['lateral_and_assistance_ms'] = (time.monotonic() - lateral_start) * 1000
+      if diagnostics.enabled:
+        timings['lateral_and_assistance_ms'] = (time.monotonic() - lateral_start) * 1000
 
     if diagnostics.enabled:
       diagnostics.record(

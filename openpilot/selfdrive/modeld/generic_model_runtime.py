@@ -6,6 +6,8 @@ from pathlib import Path
 import pickle
 import time
 
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
+
 import numpy as np
 
 from openpilot.selfdrive.modeld.precompiled_artifact import compile_warp, load_warp, prepare_jit
@@ -185,12 +187,14 @@ class GenericModelRuntime:
 
   def save_recovery_state(self):
     from tinygrad import Device
-    started, cpu_started = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      started, cpu_started = time.monotonic(), time.thread_time()
     self._save_recovery_state(*(self.queues[name] for name in self.recovery_state))
     Device[self.device].synchronize()
-    self.last_timings = getattr(self, 'last_timings', {})
-    self.last_timings.update(state_checkpoint_ms=(time.monotonic() - started) * 1000,
-                             state_checkpoint_cpu_ms=(time.thread_time() - cpu_started) * 1000)
+    if PERF_DIAGNOSTICS:
+      self.last_timings = getattr(self, 'last_timings', {})
+      self.last_timings.update(state_checkpoint_ms=(time.monotonic() - started) * 1000,
+                               state_checkpoint_cpu_ms=(time.thread_time() - cpu_started) * 1000)
 
   def reset_state(self):
     from tinygrad import Device, Tensor
@@ -214,31 +218,37 @@ class GenericModelRuntime:
 
   def run(self):
     progress = getattr(self, 'progress', lambda stage: None)
-    started, cpu_started = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      started, cpu_started = time.monotonic(), time.thread_time()
     progress('input_upload')
     self.copy_inputs()
-    uploaded, cpu_uploaded = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      uploaded, cpu_uploaded = time.monotonic(), time.thread_time()
     progress('warp')
     self.queues['new_img'] = self.run_warp(input_frame=self.frames, M_inv=self.transforms)
-    warped, cpu_warped = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      warped, cpu_warped = time.monotonic(), time.thread_time()
     progress('model_call')
     self.run_model(output_buffers=self.outputs, **self.queues)
-    dispatched, cpu_dispatched = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      dispatched, cpu_dispatched = time.monotonic(), time.thread_time()
     progress('output_read')
     result = self.copy_outputs().numpy().reshape(-1)
-    finished, cpu_finished = time.monotonic(), time.thread_time()
+    if PERF_DIAGNOSTICS:
+      finished, cpu_finished = time.monotonic(), time.thread_time()
     # Call boundaries only: GPU work may finish in a later call. Do not insert
     # synchronizations that change pipelining or label these as kernel timings.
     # In particular, generic output download is inside adapter.run(), whereas
     # the worker's result_sync_ms only measures validation/shared-output copy.
-    self.last_timings = {
-      'input_upload_ms': (uploaded - started) * 1000,
-      'input_upload_cpu_ms': (cpu_uploaded - cpu_started) * 1000,
-      'warp_call_ms': (warped - uploaded) * 1000,
-      'warp_call_cpu_ms': (cpu_warped - cpu_uploaded) * 1000,
-      'model_call_ms': (dispatched - warped) * 1000,
-      'model_call_cpu_ms': (cpu_dispatched - cpu_warped) * 1000,
-      'output_read_ms': (finished - dispatched) * 1000,
-      'output_read_cpu_ms': (cpu_finished - cpu_dispatched) * 1000,
-    }
+    if PERF_DIAGNOSTICS:
+      self.last_timings = {
+        'input_upload_ms': (uploaded - started) * 1000,
+        'input_upload_cpu_ms': (cpu_uploaded - cpu_started) * 1000,
+        'warp_call_ms': (warped - uploaded) * 1000,
+        'warp_call_cpu_ms': (cpu_warped - cpu_uploaded) * 1000,
+        'model_call_ms': (dispatched - warped) * 1000,
+        'model_call_cpu_ms': (cpu_dispatched - cpu_warped) * 1000,
+        'output_read_ms': (finished - dispatched) * 1000,
+        'output_read_cpu_ms': (cpu_finished - cpu_dispatched) * 1000,
+      }
     return result

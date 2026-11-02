@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Iterable
 import threading
 import time
@@ -10,11 +11,12 @@ from cluster_usb_display import TuringUsbDisplay
 class AsyncJpegUsbPipeline:
     def __init__(self, usb_display: TuringUsbDisplay) -> None:
         self.usb_display = usb_display
+        self.profile_enabled = bool(getattr(usb_display, "profile_enabled", False))
         self._condition = threading.Condition()
         self._pending_rgba: tuple[bytes, int, int] | None = None
         self._closing = False
         self._error: BaseException | None = None
-        self._samples: list[tuple[str, float]] = []
+        self._samples: deque[tuple[str, float]] = deque(maxlen=256)
         self._thread = threading.Thread(target=self._run, name="cluster-usb-jpeg", daemon=True)
 
     def start(self) -> None:
@@ -42,6 +44,8 @@ class AsyncJpegUsbPipeline:
             return self._pending_rgba is None
 
     def profile_samples(self) -> tuple[tuple[str, float], ...]:
+        if not self.profile_enabled:
+            return ()
         with self._condition:
             samples = tuple(self._samples)
             self._samples.clear()
@@ -60,12 +64,14 @@ class AsyncJpegUsbPipeline:
         self._thread.join(timeout=3.0)
 
     def _add_sample(self, name: str, start_time: float) -> None:
+        if not self.profile_enabled:
+            return
         milliseconds = (time.perf_counter() - start_time) * 1000.0
         with self._condition:
             self._samples.append((name, milliseconds))
 
     def _add_samples(self, samples: Iterable[tuple[str, float]]) -> None:
-        if not samples:
+        if not self.profile_enabled or not samples:
             return
         with self._condition:
             self._samples.extend(samples)
@@ -88,16 +94,19 @@ class AsyncJpegUsbPipeline:
                 return
             rgba, width, height = pending
             try:
-                self.usb_display.clear_profile_samples()
-                profile_stage = time.perf_counter()
+                if self.profile_enabled:
+                    self.usb_display.clear_profile_samples()
+                profile_stage = time.perf_counter() if self.profile_enabled else 0.0
                 jpeg = self.usb_display.encode_jpeg(rgba, width, height)
                 self._add_sample("usb_async.encode_jpeg", profile_stage)
 
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if self.profile_enabled else 0.0
                 self.usb_display.send_jpeg(jpeg)
                 self._add_sample("usb_async.send_jpeg", profile_stage)
-                self._add_samples(self.usb_display.profile_samples())
-                self.usb_display.clear_profile_samples()
+                if self.profile_enabled:
+                    self._add_samples(self.usb_display.profile_samples())
+                if self.profile_enabled:
+                    self.usb_display.clear_profile_samples()
             except BaseException as exc:
                 with self._condition:
                     self._error = exc

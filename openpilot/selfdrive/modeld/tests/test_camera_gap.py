@@ -18,7 +18,7 @@ def test_trace_distinguishes_queue_gap_from_pair_resync(monkeypatch):
   calls = []
   clock = [10.]
   monkeypatch.setattr('openpilot.selfdrive.modeld.camera_gap.time.monotonic', lambda: clock[0])
-  recorder = CameraGapTrace(lambda *a, **kw: calls.append(kw))
+  recorder = CameraGapTrace(lambda *a, **kw: calls.append(kw), detailed=True)
   main = Camera([(1, 50_000_000), (3, 150_000_000)])
   wide = Camera([(1, 50_000_000), (2, 100_000_000), (3, 150_000_000)])
   assert recorder.receive(main, wide)[1].frame_id == 1
@@ -41,10 +41,27 @@ def test_trace_distinguishes_queue_gap_from_pair_resync(monkeypatch):
 def test_trace_is_bounded_and_logging_failure_cannot_stop_inference():
   def fail(*args, **kwargs):
     raise OSError('logger unavailable')
-  recorder = CameraGapTrace(fail)
+  recorder = CameraGapTrace(fail, detailed=True)
   main = Camera((i, i * 100_000_000) for i in range(100))
   wide = Camera((i, i * 100_000_000 + 50_000_000) for i in range(100))
   assert recorder.receive(main, wide) is None
   assert len(recorder.received) <= 12
   recorder.record(20, 1, 'JoiningModel', loop=100.)
   assert recorder.previous['frame_id'] == 20
+
+
+def test_disabled_trace_preserves_pairing_and_rate_limited_fault_evidence(monkeypatch):
+  clock_calls, events = [], []
+  monkeypatch.setattr('openpilot.selfdrive.modeld.camera_gap.time.monotonic', lambda: clock_calls.append(1) or 10.)
+  recorder = CameraGapTrace(lambda *a, **kw: events.append(kw), detailed=False)
+  main = Camera([(1, 50_000_000), (3, 150_000_000)])
+  wide = Camera([(1, 50_000_000), (2, 100_000_000), (3, 150_000_000)])
+  assert recorder.receive(main, wide)[1].frame_id == 1
+  recorder.record(1, 0, 'JoiningModel')
+  assert not clock_calls and not recorder.received
+  assert recorder.receive(main, wide)[1].frame_id == 3
+  recorder.record(3, 1, 'JoiningModel')
+  recorder.record(4, 1, 'JoiningModel')
+  assert len(events) == 1
+  assert events[0]['previous']['frame_id'] == 1
+  assert events[0]['current'] == {'frame_id': 3, 'backend': 'JoiningModel', 'received': [], 'timings_ms': {}}

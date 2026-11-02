@@ -1,24 +1,26 @@
 """Bounded per-gap evidence; never changes camera selection or pose validity."""
 import time
 
+from openpilot.common.performance_diagnostics import ENABLED
 from openpilot.selfdrive.modeld.camera_sync import receive_camera_pair
 
 
 class CameraGapTrace:
-  def __init__(self, emit):
+  def __init__(self, emit, *, detailed=ENABLED):
     self.emit = emit
+    self.detailed = detailed
     self.received = []
     self.previous = None
     self.next_emit = 0.
 
   def receive(self, main, extra):
     self.received = []
-    return receive_camera_pair(main, extra, trace=self.received)
+    return receive_camera_pair(main, extra, trace=self.received if self.detailed else None)
 
   def record(self, frame_id, dropped, backend, **timings):
     current = {'frame_id': frame_id, 'backend': backend, 'received': self.received,
-               'timings_ms': {k: round(v, 3) for k, v in timings.items()}}
-    now = time.monotonic()
+               'timings_ms': {k: round(v, 3) for k, v in timings.items()} if self.detailed else {}}
+    now = time.monotonic() if dropped else 0.
     if dropped and now >= self.next_emit:
       self.next_emit = now + 1.
       try:

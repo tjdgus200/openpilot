@@ -755,7 +755,7 @@ def run_demo(
         usb_display.set_orientation(active_orientation)
         usb_display.set_profile_enabled(profile_render)
         if not getattr(usb_display, "open_after_renderer", False):
-            profile_stage = time.perf_counter()
+            profile_stage = time.perf_counter() if profile.enabled else 0.0
             try:
                 usb_display.open()
             except Exception:
@@ -912,7 +912,7 @@ def run_demo(
         )
     route_source = None
     if input_mode == "route":
-        profile_stage = time.perf_counter()
+        profile_stage = time.perf_counter() if profile.enabled else 0.0
         try:
             route_source = RouteReplaySource.load(
                 route_path,
@@ -1045,7 +1045,7 @@ def run_demo(
         renderer.clear_profile_samples()
         if usb_display is not None:
             if getattr(usb_display, "open_after_renderer", False):
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 usb_display.open()
                 profile.add_elapsed("usb.open", profile_stage)
                 profile.add_samples(usb_display.profile_samples())
@@ -1080,7 +1080,7 @@ def run_demo(
                 usb_h264_diagnose_interval_s,
                 ffmpeg_threads=usb_h264_ffmpeg_threads,
             )
-            profile_stage = time.perf_counter()
+            profile_stage = time.perf_counter() if profile.enabled else 0.0
             h264_pipeline.start()
             profile.add_elapsed("usb_h264.start", profile_stage)
             profile.add_samples(usb_display.profile_samples())
@@ -1346,7 +1346,7 @@ def run_demo(
             source_status: str | None = None
             center_clock_text: str | None = None
             if live_source is not None:
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 state = live_source.update()
                 scheduler.update(
                     live_source.onroad_state() is True,
@@ -1367,12 +1367,12 @@ def run_demo(
                 profile.add_samples(live_source.profile_samples())
                 profile.add_elapsed("source.live_update", profile_stage)
             elif input_mode == "navi" and navi_source is not None:
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 state = navi_source.update()
                 source_status = navi_source.status_text()
                 profile.add_elapsed("source.navi_update", profile_stage)
             elif route_source is not None:
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 playback_seconds = (
                     route_playback_base_s
                     if route_paused
@@ -1544,7 +1544,7 @@ def run_demo(
                     )
                 profile.add_elapsed("source.route_update", profile_stage)
             elif controller is None:
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 command = random_input.update(dt) if random_input is not None else SimulatorInput()
                 source_status = (
                     f"random R2={command.throttle:.2f} "
@@ -1555,7 +1555,7 @@ def run_demo(
                 state = simulator.update(command, dt)
                 profile.add_elapsed("source.random_update", profile_stage)
             else:
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 command = controller.read_input()
                 source_status = controller.status_text()
                 if simulator is None:
@@ -1564,7 +1564,7 @@ def run_demo(
                 profile.add_elapsed("source.gamepad_update", profile_stage)
 
             if navi_overlay_enabled and navi_source is not None:
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 navi_overlay_state = navi_source.update()
                 state = merge_navi_overlay_state(state, navi_overlay_state)
                 navi_status = navi_source.status_text()
@@ -1576,7 +1576,7 @@ def run_demo(
 
             cluster_core_usage_text = None
             if cluster_core_usage_sampler is not None:
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 cluster_core_usage_text = cluster_core_usage_sampler.sample_text(now)
                 profile.add_elapsed("main.cluster_core_usage_sample", profile_stage)
             network_address = network_address_provider.address(now)
@@ -1628,7 +1628,7 @@ def run_demo(
                 next_brightness_param_read = brightness_now + BRIGHTNESS_PARAM_POLL_SECONDS
 
             if output_mode in ("window", "both"):
-                profile_stage = time.perf_counter()
+                profile_stage = time.perf_counter() if profile.enabled else 0.0
                 if route_source is not None and route_tools_mode == "overlay":
                     renderer.render_route_replay_frame(
                         state,
@@ -1643,23 +1643,23 @@ def run_demo(
             if usb_display is not None:
                 if usb_codec == "jpeg":
                     if usb_pipeline is not None:
-                        profile_stage = time.perf_counter()
+                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                         usb_pipeline.wait_for_capacity()
                         profile.add_elapsed("main.usb_async.wait_capacity", profile_stage)
                         profile.add_samples(usb_pipeline.profile_samples())
 
-                        profile_stage = time.perf_counter()
+                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                         rgba, image_width, image_height = renderer.render_to_rgba_bytes(
                             state,
                             portrait_upload=True,
                         )
                         profile.add_elapsed("main.usb.render_rgba_total", profile_stage)
 
-                        profile_stage = time.perf_counter()
+                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                         usb_pipeline.submit_rgba(rgba, image_width, image_height)
                         profile.add_elapsed("main.usb_async.submit_rgba", profile_stage)
                     else:
-                        profile_stage = time.perf_counter()
+                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                         with renderer.render_to_rgba_buffer(state, portrait_upload=True) as (
                             rgba,
                             image_width,
@@ -1667,11 +1667,11 @@ def run_demo(
                         ):
                             profile.add_elapsed("main.usb.render_rgba_total", profile_stage)
 
-                            profile_stage = time.perf_counter()
+                            profile_stage = time.perf_counter() if profile.enabled else 0.0
                             jpeg = usb_display.encode_jpeg(rgba, image_width, image_height)
                             profile.add_elapsed("main.usb.encode_jpeg", profile_stage)
 
-                        profile_stage = time.perf_counter()
+                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                         usb_display.send_jpeg(jpeg)
                         profile.add_elapsed("main.usb.send_jpeg", profile_stage)
                 elif usb_codec == "h264":
@@ -1685,7 +1685,7 @@ def run_demo(
                             native_frame_handled = False
                             if h264_dmabuf_nv12_input:
                                 try:
-                                    profile_stage = time.perf_counter()
+                                    profile_stage = time.perf_counter() if profile.enabled else 0.0
                                     with h264_pipeline.native_nv12_input_buffer() as direct_input:
                                         profile.add_elapsed("main.usb_h264.acquire_dmabuf", profile_stage)
                                         if direct_input.dmabuf_fd < 0:
@@ -1693,7 +1693,7 @@ def run_demo(
                                                 "native H264 input lease did not expose a DMA-BUF fd"
                                             )
 
-                                        profile_stage = time.perf_counter()
+                                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                                         with renderer.render_to_nv12_buffer(
                                             state,
                                             h264_pipeline.encoder_width,
@@ -1709,7 +1709,7 @@ def run_demo(
                                             pass
                                         profile.add_elapsed("main.usb.render_nv12_dmabuf_total", profile_stage)
 
-                                        profile_stage = time.perf_counter()
+                                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                                         h264_pipeline.submit_native_nv12_dmabuf_input(direct_input)
                                         profile.add_elapsed("main.usb_h264.submit_dmabuf", profile_stage)
                                     native_frame_handled = True
@@ -1724,11 +1724,11 @@ def run_demo(
                             if not native_frame_handled and h264_async_nv12_input:
                                 try:
                                     if renderer.async_nv12_readback_ready():
-                                        profile_stage = time.perf_counter()
+                                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                                         with h264_pipeline.native_nv12_input_buffer() as direct_input:
                                             profile.add_elapsed("main.usb_h264.acquire_pbo", profile_stage)
 
-                                            profile_stage = time.perf_counter()
+                                            profile_stage = time.perf_counter() if profile.enabled else 0.0
                                             if not renderer.copy_async_nv12_readback(
                                                 direct_input.address,
                                                 direct_input.size,
@@ -1738,12 +1738,12 @@ def run_demo(
                                                 )
                                             profile.add_elapsed("main.usb_h264.copy_pbo", profile_stage)
 
-                                            profile_stage = time.perf_counter()
+                                            profile_stage = time.perf_counter() if profile.enabled else 0.0
                                             h264_pipeline.submit_native_nv12_input(direct_input)
                                             profile.add_elapsed("main.usb_h264.submit_pbo", profile_stage)
 
                                     if renderer.async_nv12_readback_can_enqueue():
-                                        profile_stage = time.perf_counter()
+                                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                                         with renderer.render_to_nv12_buffer(
                                             state,
                                             h264_pipeline.encoder_width,
@@ -1771,10 +1771,10 @@ def run_demo(
 
                             if not native_frame_handled and h264_direct_nv12_input:
                                 try:
-                                    profile_stage = time.perf_counter()
+                                    profile_stage = time.perf_counter() if profile.enabled else 0.0
                                     with h264_pipeline.native_nv12_input_buffer() as direct_input:
                                         profile.add_elapsed("main.usb_h264.acquire_direct", profile_stage)
-                                        profile_stage = time.perf_counter()
+                                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                                         with renderer.render_to_nv12_buffer(
                                             state,
                                             h264_pipeline.encoder_width,
@@ -1791,7 +1791,7 @@ def run_demo(
                                             pass
                                         profile.add_elapsed("main.usb.render_nv12_total", profile_stage)
 
-                                        profile_stage = time.perf_counter()
+                                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                                         h264_pipeline.submit_native_nv12_input(direct_input)
                                         profile.add_elapsed("main.usb_h264.submit_direct", profile_stage)
                                     native_frame_handled = True
@@ -1805,7 +1805,7 @@ def run_demo(
                                     )
 
                             if not native_frame_handled:
-                                profile_stage = time.perf_counter()
+                                profile_stage = time.perf_counter() if profile.enabled else 0.0
                                 with renderer.render_to_nv12_buffer(
                                     state,
                                     h264_pipeline.encoder_width,
@@ -1822,7 +1822,7 @@ def run_demo(
                                     if isinstance(h264_render_nv12_frame, bytearray):
                                         h264_render_nv12_buffer = h264_render_nv12_frame
 
-                                    profile_stage = time.perf_counter()
+                                    profile_stage = time.perf_counter() if profile.enabled else 0.0
                                     h264_pipeline.submit_nv12(
                                         h264_render_nv12_frame,
                                         h264_pipeline.encoder_width,
@@ -1830,7 +1830,7 @@ def run_demo(
                                     )
                                     profile.add_elapsed("main.usb_h264.submit_nv12", profile_stage)
                         else:
-                            profile_stage = time.perf_counter()
+                            profile_stage = time.perf_counter() if profile.enabled else 0.0
                             with renderer.render_to_rgba_buffer(
                                 state,
                                 portrait_upload=h264_portrait_upload,
@@ -1843,11 +1843,11 @@ def run_demo(
                             ):
                                 profile.add_elapsed("main.usb.render_rgba_total", profile_stage)
 
-                                profile_stage = time.perf_counter()
+                                profile_stage = time.perf_counter() if profile.enabled else 0.0
                                 h264_pipeline.submit_rgba(rgba, image_width, image_height)
                                 profile.add_elapsed("main.usb_h264.submit_rgba", profile_stage)
                     else:
-                        profile_stage = time.perf_counter()
+                        profile_stage = time.perf_counter() if profile.enabled else 0.0
                         if h264_test_pattern_nv12 is not None:
                             h264_pipeline.submit_nv12(
                                 h264_test_pattern_nv12,
@@ -1862,10 +1862,10 @@ def run_demo(
                             )
                         profile.add_elapsed("main.usb_h264.submit_test_pattern", profile_stage)
                 else:
-                    profile_stage = time.perf_counter()
+                    profile_stage = time.perf_counter() if profile.enabled else 0.0
                     png = renderer.render_to_png_bytes(state, portrait_upload=True)
                     profile.add_elapsed("main.usb.render_png_total", profile_stage)
-                    profile_stage = time.perf_counter()
+                    profile_stage = time.perf_counter() if profile.enabled else 0.0
                     usb_display.send_png(png)
                     profile.add_elapsed("main.usb.send_png", profile_stage)
                 if usb_pipeline is not None:
@@ -1884,7 +1884,7 @@ def run_demo(
                 elapsed = time.perf_counter() - frame_start_time
                 remaining = frame_interval - elapsed
                 if remaining > 0.0:
-                    profile_stage = time.perf_counter()
+                    profile_stage = time.perf_counter() if profile.enabled else 0.0
                     time.sleep(remaining)
                     profile.add_elapsed("main.sleep", profile_stage)
 

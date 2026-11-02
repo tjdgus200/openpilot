@@ -76,11 +76,12 @@ def test_lamp_diagnostics_are_periodic_only_during_sessions_and_immediate_on_sta
 
 @pytest.mark.parametrize("gate", ["ready", "startup", "dashcam", "stale_model", "stale_control"])
 @pytest.mark.parametrize("suspend_ns", [0, 5_000_000_000])
-def test_final_card_boundary_uses_gated_control_and_fresh_intent(gate, suspend_ns):
+@pytest.mark.parametrize("profiling", [False, True])
+def test_final_card_boundary_uses_gated_control_and_fresh_intent(gate, suspend_ns, profiling):
   path = Path(__file__).parents[1] / "card.py"
   tree = ast.parse(path.read_text())
   method = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "controls_update")
-  ns = {"car": car, "REPLAY": False, "can_list_to_can_capnp": can_list_to_can_capnp,
+  ns = {"PERF_DIAGNOSTICS": profiling, "car": car, "REPLAY": False, "can_list_to_can_capnp": can_list_to_can_capnp,
         "time": NS(monotonic=lambda: (N - suspend_ns) / 1e9, monotonic_ns=lambda: N - suspend_ns,
                    clock_gettime_ns=lambda clock: N if clock == 7 else N - suspend_ns, CLOCK_BOOTTIME=7, CLOCK_MONOTONIC=1)}
   exec(compile(ast.Module(body=[method], type_ignores=[]), str(path), "exec"), ns)

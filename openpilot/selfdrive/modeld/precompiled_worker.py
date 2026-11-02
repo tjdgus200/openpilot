@@ -158,10 +158,12 @@ def main():
         if command != b'r':
           raise ValueError('invalid model worker command')
         progress.frame += 1
-        started, cpu_started = time.monotonic(), time.thread_time()
+        if diagnostics.enabled:
+          started, cpu_started = time.monotonic(), time.thread_time()
         if generic:
           result = recovery.run()
-          dispatched = time.monotonic()
+          if diagnostics.enabled:
+            dispatched = time.monotonic()
           if result is None:
             # Shared output and original publication timestamps remain untouched.
             control.write(b'0\n')
@@ -171,28 +173,31 @@ def main():
         else:
           progress.mark('model_call')
           outs, = run_model(**{k: queues[k] for k in model_runtime.MODELD_INPUTS})
-          dispatched = time.monotonic()
+          if diagnostics.enabled:
+            dispatched = time.monotonic()
           progress.mark('output_read')
           result = outs.numpy().reshape(-1)
         validate_compiled_output(result, count)
         progress.mark('publish')
         output[:] = result
-        finished, cpu_finished = time.monotonic(), time.thread_time()
+        if diagnostics.enabled:
+          finished, cpu_finished = time.monotonic(), time.thread_time()
         control.write(b'1\n')
         control.flush()
         progress.mark('idle')
         # Timings include transfers/synchronization; these are not pure GPU
         # kernel durations. Keep the pipe protocol and the compiled graph intact.
-        diagnostics.record(context={'gpu_arch': manifest['gpu_arch'], 'format': manifest['format'],
-                                    'camera_width': width, 'camera_height': height, 'input_bytes': input_bytes,
-                                    'warp_backend': 'qcom' if generic and isinstance(adapter, LocalWarpRuntime) else 'amd',
-                                    'usb_input_bytes': getattr(adapter, 'upload_bytes', input_bytes) if generic else input_bytes,
-                                    'model_sha256': manifest['pickle']['sha256']},
-                           run_model_ms=(dispatched - started) * 1000,
-                           result_sync_ms=(finished - dispatched) * 1000,
-                           work_ms=(finished - started) * 1000,
-                           thread_cpu_ms=(cpu_finished - cpu_started) * 1000,
-                           **(adapter.last_timings if generic else {}))
+        if diagnostics.enabled:
+          diagnostics.record(context={'gpu_arch': manifest['gpu_arch'], 'format': manifest['format'],
+                                      'camera_width': width, 'camera_height': height, 'input_bytes': input_bytes,
+                                      'warp_backend': 'qcom' if generic and isinstance(adapter, LocalWarpRuntime) else 'amd',
+                                      'usb_input_bytes': getattr(adapter, 'upload_bytes', input_bytes) if generic else input_bytes,
+                                      'model_sha256': manifest['pickle']['sha256']},
+                             run_model_ms=(dispatched - started) * 1000,
+                             result_sync_ms=(finished - dispatched) * 1000,
+                             work_ms=(finished - started) * 1000,
+                             thread_cpu_ms=(cpu_finished - cpu_started) * 1000,
+                             **(adapter.last_timings if generic else {}))
       if generic:
         del adapter
       del output, packed_shared, queues

@@ -96,7 +96,12 @@ def test_amd_binding_failure_is_not_hidden(monkeypatch):
     local.bind_runtime(Amd(), (), object(), lambda _: pytest.fail('unexpected local fallback'))
 
 
-def test_prepared_transfer_preserves_controls_and_recurrent_state():
+@pytest.mark.parametrize('enabled', [False, True])
+def test_prepared_transfer_preserves_controls_and_recurrent_state(monkeypatch, enabled):
+  monkeypatch.setattr(local, 'PERF_DIAGNOSTICS', enabled)
+  if not enabled:
+    monkeypatch.setattr(local, 'time', SimpleNamespace(
+      monotonic=lambda: pytest.fail('disabled clock'), thread_time=lambda: pytest.fail('disabled CPU clock')))
   runtime = object.__new__(local.LocalWarpRuntime)
   runtime.frames_offset = 512
   images = np.arange(2 * 6 * 128 * 256, dtype=np.uint8).reshape(2, 6, 128, 256)
@@ -130,8 +135,11 @@ def test_prepared_transfer_preserves_controls_and_recurrent_state():
   assert state[0] == 2
   assert calls == ['upload', 'model', 'upload', 'model']
   assert stages == ['local_prepare', 'input_upload', 'model_call', 'output_read'] * 2
-  assert runtime.last_timings['local_prepare_ms'] >= 0
-  assert runtime.last_timings['input_upload_ms'] >= 0
+  if enabled:
+    assert runtime.last_timings['local_prepare_ms'] >= 0
+    assert runtime.last_timings['input_upload_ms'] >= 0
+  else:
+    assert not hasattr(runtime, 'last_timings')
 
 
 @pytest.mark.parametrize('fault', [None, 'pixel', 'dtype', 'shape', 'exception'])

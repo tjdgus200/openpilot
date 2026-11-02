@@ -45,12 +45,17 @@ def test_reject_incompatible_generic_artifact(artifact, change):
     model_metadata(artifact)
 
 
-def test_generic_dispatch_uploads_warps_and_feeds_back_state(monkeypatch):
+@pytest.mark.parametrize("enabled", [False, True])
+def test_generic_dispatch_uploads_warps_and_feeds_back_state(monkeypatch, enabled):
   from openpilot.selfdrive.modeld import generic_model_runtime
+  monkeypatch.setattr(generic_model_runtime, 'PERF_DIAGNOSTICS', enabled)
   wall_clock = iter([0, .01, .03, .06, .10, .10, .12, .13, .17, .23])
   cpu_clock = iter([0, .001, .003, .006, .010, .010, .012, .013, .017, .023])
   monkeypatch.setattr(generic_model_runtime, 'time', SimpleNamespace(
     monotonic=lambda: next(wall_clock), thread_time=lambda: next(cpu_clock)))
+  if not enabled:
+    monkeypatch.setattr(generic_model_runtime, 'time', SimpleNamespace(
+      monotonic=lambda: pytest.fail('disabled clock'), thread_time=lambda: pytest.fail('disabled CPU clock')))
   runtime = object.__new__(GenericModelRuntime)
   calls = []
   stages = []
@@ -74,18 +79,22 @@ def test_generic_dispatch_uploads_warps_and_feeds_back_state(monkeypatch):
     calls.append(('model',))
   runtime.run_warp, runtime.run_model = warp, run
   np.testing.assert_array_equal(runtime.run(), [1, 2])
-  assert runtime.last_timings['input_upload_ms'] == pytest.approx(10)
-  assert runtime.last_timings['output_read_ms'] == pytest.approx(40)
+  if enabled:
+    assert runtime.last_timings['input_upload_ms'] == pytest.approx(10)
+    assert runtime.last_timings['output_read_ms'] == pytest.approx(40)
+  else:
+    assert not hasattr(runtime, 'last_timings')
   runtime.run()
   assert state[0] == 2
   assert [call[0] for call in calls] == ['upload', 'warp', 'model'] * 2
   assert stages == ['input_upload', 'warp', 'model_call', 'output_read'] * 2
-  assert runtime.last_timings == pytest.approx({
-    'input_upload_ms': 20, 'input_upload_cpu_ms': 2,
-    'warp_call_ms': 10, 'warp_call_cpu_ms': 1,
-    'model_call_ms': 40, 'model_call_cpu_ms': 4,
-    'output_read_ms': 60, 'output_read_cpu_ms': 6,
-  })
+  if enabled:
+    assert runtime.last_timings == pytest.approx({
+      'input_upload_ms': 20, 'input_upload_cpu_ms': 2,
+      'warp_call_ms': 10, 'warp_call_cpu_ms': 1,
+      'model_call_ms': 40, 'model_call_cpu_ms': 4,
+      'output_read_ms': 60, 'output_read_cpu_ms': 6,
+    })
 
 
 def test_precompiled_only_boot_failure_skips_local_compilation(monkeypatch, tmp_path):
@@ -118,3 +127,25 @@ def test_precompiled_only_boot_failure_skips_local_compilation(monkeypatch, tmp_
 def test_compiled_copies_only_select_the_verified_upstream_runtime(manifest, expected):
   from openpilot.selfdrive.modeld.generic_model_runtime import use_compiled_copies
   assert use_compiled_copies(manifest) is expected
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_disabling_checkpoint_timers_preserves_copy_and_synchronization(monkeypatch, enabled):
+  from openpilot.selfdrive.modeld import generic_model_runtime as module
+  monkeypatch.setattr(module, 'PERF_DIAGNOSTICS', enabled)
+  def clock():
+    assert enabled, 'disabled checkpoint read clock'
+    return 1.
+  monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=clock, thread_time=clock))
+  calls = []
+  device = SimpleNamespace(synchronize=lambda: calls.append('synchronize'))
+  monkeypatch.setitem(sys.modules, 'tinygrad', SimpleNamespace(Device={'AMD': device}))
+  runtime = object.__new__(GenericModelRuntime)
+  runtime.device = 'AMD'
+  state = object()
+  runtime.queues = {'state': state}
+  runtime.recovery_state = {'state': object()}
+  runtime._save_recovery_state = lambda *values: calls.append(values)
+  runtime.save_recovery_state()
+  assert calls == [(state,), 'synchronize']
+  assert hasattr(runtime, 'last_timings') == enabled

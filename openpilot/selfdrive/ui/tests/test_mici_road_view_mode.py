@@ -86,9 +86,11 @@ def test_out_of_range_values_are_bounded(screen, stored, expected):
 
 @pytest.mark.parametrize("mode,camera,model", ((0, True, True), (1, True, False), (2, False, True), (3, False, False)))
 @pytest.mark.parametrize("connected,show_camera", ((False, False), (True, False), (True, True)))
-def test_render_combinations_preserve_alerts_and_cluster_preference(screen, mode, camera, model, connected, show_camera):
+@pytest.mark.parametrize("profiling", [False, True])
+def test_render_combinations_preserve_alerts_and_cluster_preference(screen, mode, camera, model, connected, show_camera, profiling):
   view, state, rl = screen
   state.show_model_view = mode
+  view._render_diagnostics.enabled = profiling
   view.set_cluster_hud_connected(connected, show_camera)
   suppressed = connected and not show_camera
   view._render(None)

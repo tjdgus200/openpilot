@@ -757,6 +757,7 @@ class H264UsbPipeline:
         ffmpeg_threads: int = 0,
     ) -> None:
         self.usb_display = usb_display
+        self.profile_enabled = bool(getattr(usb_display, "profile_enabled", False))
         self.width = int(width)
         self.height = int(height)
         align_hardware_input = backend != "ffmpeg"
@@ -818,7 +819,7 @@ class H264UsbPipeline:
         self._closing = False
         self._stream_started = False
         self._error: BaseException | None = None
-        self._samples: list[tuple[str, float]] = []
+        self._samples: deque[tuple[str, float]] = deque(maxlen=256)
         self._stderr_tail: deque[str] = deque(maxlen=20)
         self._padded_rgba: bytearray | None = None
         now = time.perf_counter()
@@ -1029,14 +1030,14 @@ class H264UsbPipeline:
         if input_size == encoder_size:
             encoder_rgba = rgba
         else:
-            profile_stage = time.perf_counter()
+            profile_stage = time.perf_counter() if self.profile_enabled else 0.0
             encoder_rgba = self._encoder_rgba(rgba, width, height)
             self._add_sample("usb_h264.pad_rgba", profile_stage)
         proc = self._proc
         if proc is None or proc.stdin is None:
             raise RuntimeError("H264 USB pipeline is not started")
 
-        profile_stage = time.perf_counter()
+        profile_stage = time.perf_counter() if self.profile_enabled else 0.0
         try:
             self._write_all(proc.stdin.fileno(), encoder_rgba, self.encoder_width * self.encoder_height * 4)
         except BrokenPipeError as exc:
@@ -1088,7 +1089,7 @@ class H264UsbPipeline:
         if not view.contiguous:
             raise RuntimeError("H264 encoder NV12 input must be contiguous")
 
-        profile_stage = time.perf_counter()
+        profile_stage = time.perf_counter() if self.profile_enabled else 0.0
         try:
             data_ptr = ctypes.addressof(ctypes.c_uint8.from_buffer(view))
         except TypeError as exc:
@@ -1245,7 +1246,7 @@ class H264UsbPipeline:
         if input_buffer.owner_id != id(self) or not input_buffer.active:
             raise RuntimeError("native H264 input buffer lease is not active")
 
-        profile_stage = time.perf_counter()
+        profile_stage = time.perf_counter() if self.profile_enabled else 0.0
         timestamp_us = self._native_frame_index * 1000000 // self.fps
         result = lib.cluster_h264_encoder_bridge_submit_nv12_input(
             handle,
@@ -1271,7 +1272,7 @@ class H264UsbPipeline:
         if input_buffer.owner_id != id(self) or not input_buffer.active or input_buffer.dmabuf_fd < 0:
             raise RuntimeError("native H264 DMA-BUF input lease is not active")
 
-        profile_stage = time.perf_counter()
+        profile_stage = time.perf_counter() if self.profile_enabled else 0.0
         timestamp_us = self._native_frame_index * 1000000 // self.fps
         result = lib.cluster_h264_encoder_bridge_submit_nv12_input_dmabuf(
             handle,
@@ -1317,6 +1318,8 @@ class H264UsbPipeline:
         return dst
 
     def profile_samples(self) -> tuple[tuple[str, float], ...]:
+        if not self.profile_enabled:
+            return ()
         with self._condition:
             samples = tuple(self._samples)
             self._samples.clear()
@@ -2197,6 +2200,8 @@ class H264UsbPipeline:
         return int(getter(handle))
 
     def _add_native_timing_samples(self, lib: ctypes.CDLL, handle: int) -> None:
+        if not self.profile_enabled:
+            return
         for sample_name, getter_name in NATIVE_TIMING_GETTERS:
             try:
                 getter = getattr(lib, getter_name)
@@ -2311,7 +2316,8 @@ class H264UsbPipeline:
                 f"last={1 if is_last else 0} total_usb={self._debug_usb_bytes} {summary}",
                 flush=True,
             )
-        profile_stage = time.perf_counter()
+        measure_send = self.profile_enabled or self._diagnostics_enabled()
+        profile_stage = time.perf_counter() if measure_send else 0.0
         self.usb_display.send_h264_chunk(
             chunk,
             is_last=is_last,
@@ -2319,9 +2325,10 @@ class H264UsbPipeline:
             require_ack_response=not self.soft_ack,
         )
         self._chunks_completed += 1
-        elapsed_ms = (time.perf_counter() - profile_stage) * 1000.0
-        self._add_sample_value("usb_h264.send_chunk", elapsed_ms)
-        self._record_h264_send(source, len(chunk), elapsed_ms)
+        if measure_send:
+            elapsed_ms = (time.perf_counter() - profile_stage) * 1000.0
+            self._add_sample_value("usb_h264.send_chunk", elapsed_ms)
+            self._record_h264_send(source, len(chunk), elapsed_ms)
 
     def _read_stderr(self) -> None:
         proc = self._proc
@@ -2343,10 +2350,14 @@ class H264UsbPipeline:
             return
 
     def _add_sample(self, name: str, start_time: float) -> None:
+        if not self.profile_enabled:
+            return
         milliseconds = (time.perf_counter() - start_time) * 1000.0
         self._add_sample_value(name, milliseconds)
 
     def _add_sample_value(self, name: str, milliseconds: float) -> None:
+        if not self.profile_enabled:
+            return
         with self._condition:
             self._samples.append((name, milliseconds))
 
