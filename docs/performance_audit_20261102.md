@@ -63,3 +63,12 @@
 - ctv3m: separate committed package identity; catalog `ctv3m.json`.
 
 - light-speed: separate committed package identity; catalog `light-speed.json`.
+
+## Package delivery
+
+593 PC tests passed; 5 native/device-dependent tests skipped, one unavailable loggerd source test deselected. Four isolated bundles pass imports, production-off workers/profilers, HUD/boot resources and model queue contracts. All16 public assets match local size/SHA256. No physical device was installed or tested.
+
+- [n16](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-perf-audit-n16-20261102-a8aca246), source `a8aca246`.
+- [flip-flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-perf-audit-flip-flop-20261102-11fddd6a), source `11fddd6a`.
+- [ctv3m](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-perf-audit-ctv3m-20261102-59c4caa8), source `59c4caa8`.
+- [light-speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-perf-audit-light-speed-20261102-93ffd08f), source `93ffd08f`.
