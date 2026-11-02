@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-perf-audit-light-speed-20261102-93ffd08f",
-  "source_commit": "93ffd08f2fe4ed42f4dfaf80db051fa70a2a5c7c",
+  "profile": "pv5-hud20-light-speed-20261102-0feeab42",
+  "source_commit": "0feeab42a2ca0aa504f21930db3a918e72672f13",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-perf-audit-light-speed-20261102-93ffd08f/host.tar.gz",
-    "sha256": "b38b4cb1fcf129922190200be117bb25ce0f1558658b46d240bf063159bbcc20",
-    "size": 65213631
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud20-light-speed-20261102-0feeab42/host.tar.gz",
+    "sha256": "5f4db4bcee6064424b9f987dbe02c36dc657c02e779a408dc43b52d83bb735b2",
+    "size": 65221214
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
