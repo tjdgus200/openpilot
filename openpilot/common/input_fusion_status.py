@@ -27,4 +27,5 @@ def status(value):
   failed = value.get('failed')
   failed = failed if type(failed) is int and 0 <= failed <= 1_000_000 else 0
   return {k: value[k] for k in ('version', 'scope', 'state', 'requested', 'effective', 'change_allowed')} | {
-    'reason': reason, 'failed': failed, 'rows': rows}
+    'reason': reason, 'failed': failed, 'rows': rows,
+    'measurement_enabled': value.get('measurement_enabled') is not False}

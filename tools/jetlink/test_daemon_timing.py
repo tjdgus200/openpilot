@@ -26,6 +26,8 @@ def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, 
   monkeypatch.setattr(daemon.time, 'monotonic', lambda: now[0])
   monkeypatch.setattr(daemon.time, 'thread_time', lambda: 0.)
   monkeypatch.setattr(runtime_diagnostics.RuntimeDiagnostics, '_schedstat', lambda _: ())
+  from functools import partial
+  monkeypatch.setattr(runtime_diagnostics, 'RuntimeDiagnostics', partial(runtime_diagnostics.RuntimeDiagnostics, enabled=True))
   monkeypatch.setitem(sys.modules, 'openpilot.common.params', NS(Params=lambda: NS(put_bool_nonblocking=lambda *a: None)))
   monkeypatch.setitem(sys.modules, 'openpilot.common.swaglog', NS(cloudlog=NS(event=lambda *a, **kw: events.append(kw))))
   attached = iter([True, True, False, False])

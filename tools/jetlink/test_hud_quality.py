@@ -129,7 +129,7 @@ class TestProfile:
 
 
 class TestDisplay:
-  def display(self, directory, fail=False):
+  def display(self, directory, fail=False, performance=True):
 
     class Base:
       def send_jpeg(self, frame):
@@ -151,6 +151,7 @@ class TestDisplay:
       'display_metrics': {},
       'self_quality': dict,
       'FrameRate': __import__('hud_rate').FrameRate,
+      'PERF_DIAGNOSTICS': performance,
       'read_snapshot': lambda: None,
       'VehicleNetworkAddress': lambda: NS(address=lambda: 'test'),
     }
@@ -176,6 +177,15 @@ class TestDisplay:
         with pytest.raises(RuntimeError, match='USB failed'):
           getattr(self.display(directory, fail=True), method)(b'frame')
       assert not (directory / 'status.json').exists()
+
+  @pytest.mark.parametrize('method', ['send_jpeg', 'send_h264_chunk'])
+  def test_production_status_is_only_connection_heartbeat(self, method):
+    with tempfile.TemporaryDirectory() as temp:
+      directory = Path(temp)
+      display = self.display(directory, performance=False)
+      assert getattr(display, method)(b'frame') == b'frame'
+      assert json.loads((directory / 'status.json').read_text()) == {'updated': 10.}
+      assert not hasattr(display, '_output_rate')
 
   def test_existing_pillow_cpu_encoder_produces_decodable_jpeg(self):
     try:
@@ -238,7 +248,7 @@ class TestProfileGate:
     selected, allowed = [3], [False]
     namespace = {'selection': __import__('hud_rate').selection, 'PARAM': 'JetsonHudFps', 'override': None,
                  'requested': 0, 'settings': NS(get_int=lambda _: selected[0]),
-                 'profile_allowed': lambda _: allowed[0]}
+                 'profile_allowed': lambda _: allowed[0], 'dashboard_ready': lambda: True}
     watcher = extract_class(source, 'QualityWatch', namespace)()
     assert watcher.read() == 1
     namespace['requested'] = 3
@@ -274,7 +284,7 @@ class TestProfileGate:
                  'sys': NS(argv=[]), 'base': ['hud.py'], 'codec_options': quality.codec_options,
                  'NAMES': quality.NAMES, 'RATES': (10,15,20,25,30), 'extra_args': [], 'cluster': NS(main=render),
                  'panel_owner': lambda **kw: Owner(), 'CpuJpegError': quality.CpuJpegError,
-                 'QualityWatch': lambda: NS(read=lambda: 0)}
+                 'QualityWatch': lambda: NS(read=lambda: 0), 'dashboard_ready': lambda: True}
     runner = ast.FunctionDef(name='run', args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
                              body=[loop], decorator_list=[])
     exec(compile(ast.fix_missing_locations(ast.Module(body=[runner], type_ignores=[])), str(source), 'exec'), namespace)

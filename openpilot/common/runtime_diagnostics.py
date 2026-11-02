@@ -4,10 +4,14 @@ import os
 from pathlib import Path
 import threading
 import time
+from openpilot.common.performance_diagnostics import ENABLED
 
 
 class RuntimeDiagnostics:
-  def __init__(self, component, emit, interval=1.0, *, peak_metric=None):
+  def __init__(self, component, emit, interval=1.0, *, peak_metric=None, enabled=ENABLED):
+    self.enabled = enabled
+    if not enabled:
+      return
     self.component, self.emit, self.interval = component, emit, interval
     self.peak_metric, self.peak_sample = peak_metric, None
     self.started = time.monotonic()
@@ -27,6 +31,8 @@ class RuntimeDiagnostics:
       return ()
 
   def record(self, context=None, **values):
+    if not self.enabled:
+      return
     # No growing history or per-frame logging. One aggregate per second includes
     # healthy periods, so an uploaded segment also contains the pre-error baseline.
     self.frames += 1

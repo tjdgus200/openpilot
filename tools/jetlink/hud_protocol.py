@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 from hud_rate import PARAM as FPS_PARAM, rate, selection, RATES, FrameRate
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 
 HUD_MESSAGE = 0x4000
 HUD_CAPABILITY = 'carrot_hud_v1'
@@ -219,16 +220,17 @@ class SnapshotBuilder:
     period = 1. / self.target_fps
     self.next_send = now + period
     device_badge = badge()
-    if not hasattr(self, 'source_rate'):
-      self.source_rate = FrameRate()
-    self.source_rate.frame(now)
     record = {'version': 1, 'sent': now, 'events': self.cached, 'params': self.settings,
-              'hud_source_fps': self.source_rate.sample(now),
               **({'jetson_release': self.host_release} if self.host_release is not None else {}),
               'vehicle_network_address': self.network.address(),
               'external_compute_label': device_badge[0] if device_badge and device_badge[1] == 'active' else '',
               'received': self.sm.recv_time, 'mono': self.sm.logMonoTime,
               'valid': self.sm.valid, 'alive': self.sm.alive, 'cameras': self.camera_previews()}
+    if PERF_DIAGNOSTICS:
+      if not hasattr(self, 'source_rate'):
+        self.source_rate = FrameRate()
+      self.source_rate.frame(now)
+      record['hud_source_fps'] = self.source_rate.sample(now)
     from hud_signal import signal_packet
     record['signal_display'] = signal_packet(now)
     from openpilot.common.indicator_display import current

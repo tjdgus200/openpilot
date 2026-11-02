@@ -18,7 +18,7 @@ def packet(mode=1, parked=True, fps=10):
 
 def setup_compare():
   now = [0.]
-  c = Comparison(clock=lambda: now[0], worker=False)
+  c = Comparison(clock=lambda: now[0], worker=False, measure=True)
   changes = []
   f = NS(active=1, qualified=True)
   def select_mode(mode):
@@ -110,6 +110,7 @@ def test_complete_tx_measurement_does_not_include_usb_write_delay():
     def close(self):
       pass
   t = Transport()
+  t.measure_send_ready = True
   t.send(P.Msg.INFER_RESP, 7, (b'test',))
   assert t.ready > 0 and t.wire.endswith(b'test')
   c, now, loaded, _ = setup_compare()
@@ -142,6 +143,7 @@ def test_session_records_complete_response_before_slow_usb_and_counts_invalid(mo
   comparison.before(loaded)
   clock[0], comparison.park_until = 16., 17.
   session.t, session.send_lock = Transport(), threading.Lock()
+  session.t.measure_send_ready = True
   session.telemetry = NS(health=None)
   session.input_comparison = comparison
   session._input_measurement = 16_000_000_000

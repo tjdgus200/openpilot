@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {fusionRows} from "../src/features/tools/input_fusion.js";
+import {fusionRows, renderInputFusion} from "../src/features/tools/input_fusion.js";
 
 const row = (id) => ({id, n: 1201, seconds: 60, mean_ms: 25.123, p99_ms: 26.456,
   max_ms: 27, over50: 0});
@@ -18,4 +18,17 @@ test("invalid values and insufficient samples cannot qualify", () => {
   const rows = fusionRows({rows: [{...row(0), p99_ms: NaN}, {...row(1), n: 999}]});
   assert.deepEqual(rows[0].cells, Array(5).fill("--"));
   assert.equal(rows[1].ready, false);
+});
+
+test("production retains gated path controls without constructing a statistics table", () => {
+  const tags = [];
+  const document = {createElement(tag) {
+    tags.push(tag);
+    return {children: [], style: {}, appendChild(child) {this.children.push(child);}, addEventListener() {}};
+  }};
+  const element = {ownerDocument: document, replaceChildren(...children) {this.children = children;}};
+  renderInputFusion(element, {measurement_enabled: false, effective: 1, change_allowed: true}, (key) => key);
+  assert.equal(tags.includes("table"), false);
+  assert.equal(element.children.length, 3);
+  assert.deepEqual(element.children[2].children.map((button) => button.disabled), [false, true]);
 });

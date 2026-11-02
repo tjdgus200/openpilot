@@ -1,5 +1,6 @@
 """Vehicle statistics from forwarded cereal, never from the rendering host."""
 import math
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 
 from cluster_system_monitor import NetworkAddressProvider, SystemStats
 
@@ -55,5 +56,7 @@ class VehicleCpuOverlay(VehicleSystemStats):
     super().__init__(refresh_interval_s, **kwargs)
 
   def sample_text(self, now=None):
+    if not PERF_DIAGNOSTICS:
+      return None
     average = self.sample(now).cpu_used_percent
     return 'CPU --' if average is None else f'CPU {average:.0f}%'

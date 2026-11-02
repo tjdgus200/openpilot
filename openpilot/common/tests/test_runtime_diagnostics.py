@@ -10,7 +10,7 @@ def test_aggregation_is_bounded_and_logs_pre_error_baseline(monkeypatch, tmp_pat
   now = [0.0]
   monkeypatch.setattr(diagnostics.time, 'monotonic', lambda: now[0])
   events = []
-  timing = diagnostics.RuntimeDiagnostics('modeld', lambda *a, **kw: events.append(kw))
+  timing = diagnostics.RuntimeDiagnostics('modeld', lambda *a, **kw: events.append(kw), enabled=True)
   timing.sched_path = tmp_path / 'schedstat'
   timing.sched_prev = (1000000, 2000000, 3)
   timing.sched_path.write_text('6000000 11000000 7')
@@ -34,7 +34,7 @@ def test_missing_schedstat_and_logging_failure_do_not_stop_inference(monkeypatch
   def fail(*args, **kwargs):
     assert kwargs['scheduler'] == {}
     raise OSError('log transport unavailable')
-  timing = diagnostics.RuntimeDiagnostics('worker', fail)
+  timing = diagnostics.RuntimeDiagnostics('worker', fail, enabled=True)
   timing.sched_path = tmp_path / 'missing'
   now[0] = 1.0
   timing.record(work_ms=40)
@@ -46,7 +46,7 @@ def test_peak_keeps_one_actual_frame_not_unrelated_phase_maxima(monkeypatch):
   now = [0.]
   monkeypatch.setattr(diagnostics.time, 'monotonic', lambda: now[0])
   events = []
-  timing = diagnostics.RuntimeDiagnostics('jetlinkd', lambda *a, **kw: events.append(kw), peak_metric='exchange')
+  timing = diagnostics.RuntimeDiagnostics('jetlinkd', lambda *a, **kw: events.append(kw), peak_metric='exchange', enabled=True)
   context = {'frame_id': 1}
   timing.record(context, exchange=45., send=5., server=25.)
   context['frame_id'] = 2

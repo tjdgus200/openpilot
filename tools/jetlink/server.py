@@ -28,6 +28,7 @@ from hud_wifi import REQUEST as HUD_WIFI_REQUEST, RESPONSE as HUD_WIFI_RESPONSE,
 from host_reader import ReadAheadTransport
 from host_health import health_worker
 from host_lpm import SessionLease
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 from blink_protocol import Host as BlinkerHost, CAPABILITY as BLINKER_CAPABILITY, BEGIN as BLINKER_BEGIN, ACK as BLINKER_ACK, DATA as BLINKER_DATA
 from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, MESSAGE as WIFI_MESSAGE, receive as receive_wifi
 from model_library import CAPABILITY as LIBRARY_CAPABILITY, REQUEST as LIBRARY_REQUEST, RESPONSE as LIBRARY_RESPONSE, host_request as library_request
@@ -51,7 +52,7 @@ class DisplayTelemetry:
     try:
       status = json.loads(Path('/dev/shm/carrot-jetlink-hud-status.json').read_text())
       connected = 0 <= time.monotonic() - status['updated'] < 2
-      if connected:
+      if connected and PERF_DIAGNOSTICS:
         from openpilot.common.hud_quality_status import quality_status
         quality = quality_status(status.get('quality'))
     except (OSError, ValueError, KeyError, TypeError, ImportError):
@@ -59,7 +60,8 @@ class DisplayTelemetry:
       pass
     comparison = getattr(self, 'input_comparison', None)
     return {**self.original.read(), 'carrot_hud_connected': connected,
-            **({'carrot_input_fusion': comparison.value} if comparison is not None else {}),
+            **({'carrot_input_fusion': comparison.report() if not comparison.measure else comparison.value}
+               if comparison is not None else {}),
             **({'carrot_hud_quality': quality} if quality else {}),
             **({'carrot_blinker': self.blinker.telemetry()} if self.blinker is not None and self.blinker.worker is not None else {}),
             **({'carrot_health': self.health.read()} if self.health else {})}
@@ -98,6 +100,7 @@ class CarrotSession(Session):
     # from old HUD support so a Wi-Fi-only comma never starts USB accidentally.
     self.usb_display = True
     self.hud_wifi_supported = False
+    self.t.measure_send_ready = PERF_DIAGNOSTICS
     if sys.platform == 'linux':
       self.t = ReadAheadTransport(self.t)
     self.telemetry = DisplayTelemetry(self.telemetry)
@@ -281,6 +284,8 @@ class CarrotSession(Session):
         f.write(HEADER.pack(time.monotonic()))
         f.write(msg.payload)
       os.replace(temporary, HUD_PACKET)
+      if not PERF_DIAGNOSTICS:
+        return
       now = time.monotonic()
       if not hasattr(self, 'hud_frame_rate'):
         self.hud_frame_rate = FrameRate()
@@ -299,7 +304,7 @@ class CarrotSession(Session):
     comparison = getattr(self, 'input_comparison', None)
     if comparison is not None:
       comparison.before(loaded)
-    self._input_measurement = getattr(msg, 'received_ns', None)
+    self._input_measurement = getattr(msg, 'received_ns', None) if PERF_DIAGNOSTICS else None
     try:
       if msg.payload.nbytes < P.INFER_REQ_SIZE:
         raise ValueError('incomplete frame')

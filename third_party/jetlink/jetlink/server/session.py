@@ -43,6 +43,7 @@ from jetlink.spec import (
 from jetlink.transport.base import LinkError, LinkTimeout, Message, Transport
 
 log = logging.getLogger('jetlink.server')
+PERF_DIAGNOSTICS = os.environ.get('CARROT_PERF_DIAGNOSTICS') == '1'
 
 # Server-side turnaround worth a log line. The comma's own line fires at
 # 80 ms end to end; anything past this here is most of that budget.
@@ -919,7 +920,8 @@ class Session:
       # frame by its own stages; together they place a slow frame.
       log.warning("slow frame %d: gpu %.1f queue %.1f total %.1f send %.1f ms", frame_id,
                   loaded.engine.last_gpu_us / 1e3, queue_us / 1e3, total_us / 1e3, send_us / 1e3)
-    self.host.frame_stats.record(total_us, loaded.engine.last_gpu_us)
+    if PERF_DIAGNOSTICS:
+      self.host.frame_stats.record(total_us, loaded.engine.last_gpu_us)
 
   def on_shutdown(self, msg: Message) -> None:
     from jetlink.server.power import request_poweroff

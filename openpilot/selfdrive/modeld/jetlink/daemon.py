@@ -345,7 +345,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
         send(connection, json.dumps(hello).encode())
         while host_attached():
           park_update.tick(client)
-          loop_started, cpu_started = time.monotonic(), time.thread_time()
+          loop_started = time.monotonic()
+          cpu_started = time.thread_time() if diagnostics.enabled else 0.
           if time.monotonic() - last_status >= 1:
             update_affinity()
             if publisher is not None:
@@ -474,38 +475,39 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
           finished = time.monotonic()
           # Record in rlog as well as stderr. Receive time includes normal idle
           # waiting; the reply tail may delay admission of the NEXT request.
-          diagnostics.record(
-            context={'frame_id': frame, 'usb_seq': seq},
-            housekeeping_ms=(receive_started-loop_started)*1000,
-            ipc_receive_ms=(received-receive_started)*1000,
-            ipc_request_bytes=wire_request_bytes,
-            ipc_shared_input=int(shared_request),
-            request_parse_ms=(started-received)*1000,
-            usb_send_ms=(sent-started)*1000,
-            request_bytes=getattr(client, 'last_request_bytes', spec.infer_req_nbytes),
-            phase_ms=(phase_done-sent)*1000,
-            map_stage_ms=(map_done-phase_done)*1000,
-            map_stage_bytes=map_bytes,
-            map_deferred_used=int(nav_meta is not None and getattr(client, 'last_map_used', False)),
-            hud_ms=(hud_done-phase_done)*1000,
-            usb_response_ms=(completed-hud_done)*1000,
-            # Same-frame totals: HUD overlaps server execution, so separate
-            # aggregate maxima must never be added to estimate response latency.
-            usb_exchange_ms=(completed-started)*1000,
-            submit_to_response_ms=(completed-sent)*1000,
-            display_early_media_ms=early_media_ms,
-            display_early_media_bytes=early_media_bytes,
-            ipc_reply_ms=(replied-completed)*1000,
-            display_tail_ms=(tail_done-replied)*1000,
-            wifi_tail_ms=(finished-tail_done)*1000,
-            server_gpu_ms=client.last_timings[0]/1000,
-            server_queue_ms=client.last_timings[1]/1000,
-            server_total_ms=client.last_timings[2]/1000,
-            loop_ms=(finished-loop_started)*1000,
-            thread_cpu_ms=(time.thread_time()-cpu_started)*1000,
-            **display_metrics,
-            **receive_metrics,
-          )
+          if diagnostics.enabled:
+            diagnostics.record(
+              context={'frame_id': frame, 'usb_seq': seq},
+              housekeeping_ms=(receive_started-loop_started)*1000,
+              ipc_receive_ms=(received-receive_started)*1000,
+              ipc_request_bytes=wire_request_bytes,
+              ipc_shared_input=int(shared_request),
+              request_parse_ms=(started-received)*1000,
+              usb_send_ms=(sent-started)*1000,
+              request_bytes=getattr(client, 'last_request_bytes', spec.infer_req_nbytes),
+              phase_ms=(phase_done-sent)*1000,
+              map_stage_ms=(map_done-phase_done)*1000,
+              map_stage_bytes=map_bytes,
+              map_deferred_used=int(nav_meta is not None and getattr(client, 'last_map_used', False)),
+              hud_ms=(hud_done-phase_done)*1000,
+              usb_response_ms=(completed-hud_done)*1000,
+              # Same-frame totals: HUD overlaps server execution, so separate
+              # aggregate maxima must never be added to estimate response latency.
+              usb_exchange_ms=(completed-started)*1000,
+              submit_to_response_ms=(completed-sent)*1000,
+              display_early_media_ms=early_media_ms,
+              display_early_media_bytes=early_media_bytes,
+              ipc_reply_ms=(replied-completed)*1000,
+              display_tail_ms=(tail_done-replied)*1000,
+              wifi_tail_ms=(finished-tail_done)*1000,
+              server_gpu_ms=client.last_timings[0]/1000,
+              server_queue_ms=client.last_timings[1]/1000,
+              server_total_ms=client.last_timings[2]/1000,
+              loop_ms=(finished-loop_started)*1000,
+              thread_cpu_ms=(time.thread_time()-cpu_started)*1000,
+              **display_metrics,
+              **receive_metrics,
+            )
       except RuntimeHandoff:
         raise
       except (ConnectionError, BrokenPipeError, ValueError) as exc:

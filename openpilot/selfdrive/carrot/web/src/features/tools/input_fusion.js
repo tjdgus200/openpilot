@@ -19,7 +19,29 @@ export function renderInputFusion(element, report, text) {
   const title = document.createElement("strong");
   title.textContent = text("fusion_title");
   const note = document.createElement("p");
-  note.textContent = text(report ? `fusion_${report.state}` : "fusion_unavailable");
+  const measuring = report?.measurement_enabled !== false;
+  note.textContent = measuring ? text(report ? `fusion_${report.state}` : "fusion_unavailable")
+    : text(report?.effective ? "fusion_gpu" : "fusion_cpu");
+  if (!measuring) {
+    const controls = document.createElement("p");
+    for (const mode of [0, 1]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = text(mode ? "fusion_gpu" : "fusion_cpu");
+      button.disabled = report?.change_allowed !== true || report?.effective === mode;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await globalThis.setParam("JetsonInputFusion", mode);
+        } catch {
+          if (typeof globalThis.showAppToast === "function") globalThis.showAppToast(text("fusion_change_failed"));
+        }
+      });
+      controls.appendChild(button);
+    }
+    element.replaceChildren(title, note, controls);
+    return;
+  }
   const table = document.createElement("table");
   table.style.fontSize = "12px";
   table.style.width = "100%";

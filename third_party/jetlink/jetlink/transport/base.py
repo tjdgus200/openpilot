@@ -264,7 +264,8 @@ class StreamTransport(Transport):
     bufs.insert(0, memoryview(header))
     # Host-only observation: framing is complete, no USB/TCP write started.
     # Does not alter either protocol version or the response timing fields.
-    self.last_send_ready = (msg_type, seq, time.monotonic_ns())
+    if getattr(self, 'measure_send_ready', False):
+      self.last_send_ready = (msg_type, seq, time.monotonic_ns())
     self._send_deadline = None if timeout is None else time.monotonic() + timeout
     try:
       while bufs:

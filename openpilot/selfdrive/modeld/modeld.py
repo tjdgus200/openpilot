@@ -676,15 +676,16 @@ def main(demo=False):
                       inference=model_execution_time * 1000,
                       postprocess=(time.perf_counter() - mt2) * 1000,
                       loop=(time.monotonic() - loop_start) * 1000)
-    diagnostics.record(
-      context={'backend': inference_backend, 'usbgpu': inference_usbgpu, 'frame_id': meta_main.frame_id},
-      camera_wait_ms=(camera_ready - loop_start) * 1000,
-      camera_age_at_run_ms=camera_age_at_run_ms,
-      inference_ms=model_execution_time * 1000, inference_thread_cpu_ms=inference_cpu_ms,
-      postprocess_ms=(time.perf_counter() - mt2) * 1000,
-      loop_ms=(time.monotonic() - loop_start) * 1000, thread_cpu_ms=(time.thread_time() - cpu_start) * 1000,
-      dropped_frames=vipc_dropped_frames, published=int(model_output is not None),
-    )
+    if diagnostics.enabled:
+      diagnostics.record(
+        context={'backend': inference_backend, 'usbgpu': inference_usbgpu, 'frame_id': meta_main.frame_id},
+        camera_wait_ms=(camera_ready - loop_start) * 1000,
+        camera_age_at_run_ms=camera_age_at_run_ms,
+        inference_ms=model_execution_time * 1000, inference_thread_cpu_ms=inference_cpu_ms,
+        postprocess_ms=(time.perf_counter() - mt2) * 1000,
+        loop_ms=(time.monotonic() - loop_start) * 1000, thread_cpu_ms=(time.thread_time() - cpu_start) * 1000,
+        dropped_frames=vipc_dropped_frames, published=int(model_output is not None),
+      )
 
 
 if __name__ == "__main__":

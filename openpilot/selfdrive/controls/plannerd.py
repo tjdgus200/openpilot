@@ -180,11 +180,12 @@ def main():
       pm.send('driverAssistance', msg)
       timings['lateral_and_assistance_ms'] = (time.monotonic() - lateral_start) * 1000
 
-    diagnostics.record(
-      context={'planning_trigger': planning_trigger, 'model_frame_id': int(sm['modelV2'].frameId)},
-      work_ms=(time.monotonic() - loop_start) * 1000, thread_cpu_ms=(time.thread_time() - cpu_start) * 1000,
-      model_updated=int(sm.updated['modelV2']), longitudinal_run=int(run_longitudinal and sm.seen['modelV2']), **timings,
-    )
+    if diagnostics.enabled:
+      diagnostics.record(
+        context={'planning_trigger': planning_trigger, 'model_frame_id': int(sm['modelV2'].frameId)},
+        work_ms=(time.monotonic() - loop_start) * 1000, thread_cpu_ms=(time.thread_time() - cpu_start) * 1000,
+        model_updated=int(sm.updated['modelV2']), longitudinal_run=int(run_longitudinal and sm.seen['modelV2']), **timings,
+      )
 
 
 if __name__ == "__main__":

@@ -36,9 +36,11 @@ def test_only_new_receiver_negotiates_higher_snapshot_rates():
 
 
 @pytest.mark.parametrize('fps', RATES)
-def test_real_snapshot_builder_cadence_is_not_limited_to_model_twenty_hz(monkeypatch, fps):
+@pytest.mark.parametrize('performance', [False, True])
+def test_real_snapshot_builder_cadence_is_not_limited_to_model_twenty_hz(monkeypatch, fps, performance):
   import hud_protocol as protocol
   import openpilot.common.jetlink_status as status
+  monkeypatch.setattr(protocol, 'PERF_DIAGNOSTICS', performance)
   clock = [100.]
   car = NS(gearShifter='park', vEgo=0.)
   class SM:
@@ -66,6 +68,7 @@ def test_real_snapshot_builder_cadence_is_not_limited_to_model_twenty_hz(monkeyp
   # Drive the actual producer at its next deadline, without a catch-up burst.
   for _ in range(fps * 3):
     packet = json.loads(builder.packet())
+    assert ('hud_source_fps' in packet) is performance
     assert packet['events'] == {}
     assert int(base64.b64decode(packet['params']['JetsonHudFps'])) == RATES.index(fps)
     stamps.append(clock[0])

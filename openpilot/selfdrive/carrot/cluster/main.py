@@ -8,6 +8,7 @@ import signal
 import sys
 import threading
 import time
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 from pathlib import Path
 
 from cluster_config import (
@@ -1335,7 +1336,7 @@ def run_demo(
 
             dt = max(0.001, now - last_frame_time)
             last_frame_time = now
-            if dt < 1.0:
+            if PERF_DIAGNOSTICS and dt < 1.0:
                 instant_fps = 1.0 / dt
                 display_actual_fps = (
                     instant_fps
@@ -1875,7 +1876,8 @@ def run_demo(
                 else:
                     profile.add_samples(usb_display.profile_samples())
             profile.add_samples(renderer.profile_samples())
-            report_frames += 1
+            if PERF_DIAGNOSTICS:
+                report_frames += 1
             profile.add_elapsed("main.frame_active", frame_start_time)
 
             if frame_interval > 0.0:
@@ -1889,7 +1891,7 @@ def run_demo(
             now = time.perf_counter()
             profile.add_elapsed("main.frame_total", frame_start_time)
             profile.frame_done()
-            should_print_status = now - last_report_time >= 2.0
+            should_print_status = PERF_DIAGNOSTICS and now - last_report_time >= 2.0
             if should_print_status and source_status is None and live_source is not None:
                 source_status = live_source.status_text()
                 profile.add_samples(live_source.profile_samples())

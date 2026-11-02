@@ -1,5 +1,16 @@
 # Repository memory
 
+- 2026-11-02 owner removes runtime FPS/inference performance instrumentation.
+  CARROT_PERF_DIAGNOSTICS is default-OFF; exact1 is private diagnosis only.
+  Do not restore automatic HUD statistics workers/control queries, served-frame
+  samples, FPS counters, rolling runtimeTiming aggregates or AVG/P99/FPS footer
+  during WIP merges. Keep qualified/default input fusion and Park selection,
+  actual Q92/FPS scheduling, model-first admission, output/state validation,
+  ownership/deadline/watchdog/frequency health checks, errors and W/temperature.
+  Four model-specific PV5 packages require the same behavior before pin updates.
+  PC checks do not establish actual Jetson CPU/P99 or road safety. See
+  docs/jetson_performance_diagnostics_20261102.md.
+
 - 2026-11-02 owner reports raw diagnostic panel too small and BLE disconnect
   on activation. Use the full onroad content rectangle with opaque black and
   32px data at1920x1080; skip only normal HUD painting while admitted, leaving

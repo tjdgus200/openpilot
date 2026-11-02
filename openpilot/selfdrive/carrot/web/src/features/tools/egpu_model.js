@@ -177,8 +177,9 @@ function render(status = lastStatus) {
     qualityEl.className = "egpu-model-card__detail";
     hostEl.after(qualityEl);
   }
-  qualityEl.hidden = !host;
-  renderQualityComparison(qualityEl, host?.hud_quality, t);
+  qualityEl.hidden = !host?.hud_quality;
+  if (host?.hud_quality) renderQualityComparison(qualityEl, host.hud_quality, t);
+  else qualityEl.replaceChildren();
   let fusionEl = document.getElementById("jetlinkInputFusion");
   if (!fusionEl) {
     fusionEl = document.createElement("div");
@@ -186,8 +187,9 @@ function render(status = lastStatus) {
     fusionEl.className = "egpu-model-card__detail";
     qualityEl.after(fusionEl);
   }
-  fusionEl.hidden = !host;
-  renderInputFusion(fusionEl, host?.input_fusion, t);
+  fusionEl.hidden = !host?.input_fusion;
+  if (host?.input_fusion) renderInputFusion(fusionEl, host.input_fusion, t);
+  else fusionEl.replaceChildren();
   hostEl.hidden = !host;
   if (host) {
     const severity = ["ok", "warning", "error", "unknown"].includes(host.severity) ? host.severity : "unknown";

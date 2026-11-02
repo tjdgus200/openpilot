@@ -8,6 +8,7 @@ import json
 import os
 import threading
 import time
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 
 PARAM = 'JetsonInputFusion'
 LIMIT = 6000
@@ -41,13 +42,14 @@ def distribution(values):
 
 
 class Comparison:
-  def __init__(self, clock=time.monotonic, *, worker=True):
+  def __init__(self, clock=time.monotonic, *, worker=True, measure=PERF_DIAGNOSTICS):
     self.clock = clock
+    self.measure = measure
     self.park_until = -1.
     self.requested, self.effective = 1, 0
     self.loaded = None
     self.generation = 0
-    self.rows = (deque(maxlen=LIMIT), deque(maxlen=LIMIT))
+    self.rows = (deque(maxlen=LIMIT), deque(maxlen=LIMIT)) if measure else ()
     self.since = clock()
     self.was_parked = False
     self.reason = 'waiting'
@@ -57,7 +59,7 @@ class Comparison:
     self.stop = threading.Event()
     self.thread = None
     self.next_observe = 0.
-    if worker:
+    if worker and measure:
       self.thread = threading.Thread(target=self._run, name='input-path-stats', daemon=True)
       self.thread.start()
 
@@ -82,6 +84,7 @@ class Comparison:
       pass
 
   def clear(self, now):
+    self._control_key = None
     self.generation += 1
     for row in self.rows:
       row.clear()
@@ -104,11 +107,21 @@ class Comparison:
     if actual != self.effective or parked != self.was_parked:
       self.generation += 1
       self.value = {}
-      if parked:
+      if parked and self.measure:
         self.rows[actual].clear()
       self.effective, self.was_parked, self.since = actual, parked, now
+    key = self.requested, actual, parked, supported, self.reason
+    if not self.measure and key != getattr(self, '_control_key', None):
+      self._control_key = key
+      # Keep the qualified Park-only optimization selector without a stats worker.
+      self.value = {'version': 1, 'scope': 'rx_complete_to_tx_ready', 'state': 'waiting',
+                    'requested': self.requested, 'effective': actual, 'reason': self.reason,
+                    'change_allowed': parked and supported, 'rows': [], 'failed': 0,
+                    'measurement_enabled': False}
 
   def record(self, received_ns, ready_ns):
+    if not self.measure:
+      return
     now = self.clock()
     if (self.reason != 'ready' or now > self.park_until or not self.was_parked
         or received_ns / 1e9 < self.since + WARMUP
@@ -117,6 +130,11 @@ class Comparison:
     self.rows[self.effective].append((ready_ns / 1e9, (ready_ns - received_ns) / 1e6))
 
   def report(self):
+    if not self.measure:
+      if self.value and self.clock() > self.park_until and self.value['change_allowed']:
+        self.value = {**self.value, 'change_allowed': False}
+        self._control_key = None
+      return self.value
     now, generation = self.clock(), self.generation
     rows = []
     for mode, source in enumerate(self.rows):
@@ -132,7 +150,8 @@ class Comparison:
       state = 'ready'
     value = {'version': 1, 'scope': 'rx_complete_to_tx_ready', 'state': state, 'requested': self.requested,
              'effective': self.effective, 'change_allowed': parked and self.reason == 'ready',
-             'reason': self.reason, 'rows': rows, 'failed': min(self.failed, 1_000_000), 'hud_fps': self.fps}
+             'reason': self.reason, 'rows': rows, 'failed': min(self.failed, 1_000_000), 'hud_fps': self.fps,
+             'measurement_enabled': True}
     if generation == self.generation:
       self.value = value
     return value

@@ -5,6 +5,7 @@ from dataclasses import replace
 
 from host_health import STATUS
 from openpilot.common.jetlink_status import _fresh
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 from cluster_battery import remote_panel, StationaryBatteryView, valid_value
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
@@ -135,6 +136,8 @@ class HealthRenderer(ClusterUiRenderer):
       (getattr(state, 'left_signal', False), getattr(state, 'right_signal', False)))
 
   def _host_metrics(self):
+    if not PERF_DIAGNOSTICS:
+      return {}
     from hud_runtime_stats import RuntimeFooterSampler
     if not hasattr(self, '_runtime_footer'):
       self._runtime_footer = RuntimeFooterSampler()
@@ -160,6 +163,8 @@ class HealthRenderer(ClusterUiRenderer):
       x += advance
 
   def _draw_cluster_core_usage(self, text, *, right_x=DESIGN_WIDTH):
+    if not PERF_DIAGNOSTICS:
+      return
     from hud_runtime_stats import footer_segments
     segments = footer_segments(self._system_stats.sample(), self._host_metrics(), self.language)
     self._draw_runtime_line(segments, right_x, 464, 760, 21, 'resources')
@@ -172,6 +177,8 @@ class HealthRenderer(ClusterUiRenderer):
                                       NAVI_LIVE_PANEL_W * .5 - 48), right, 169, 28,
                     NORMAL if used is not None and used < 0 else self._current_theme().muted,
                     anchor='right')
+    if not PERF_DIAGNOSTICS:
+      return
     from hud_runtime_stats import inference_segments
     right = self._information_panel_x(NAVI_LIVE_PANEL_X) + NAVI_LIVE_PANEL_W - 20
     if right > DESIGN_WIDTH - 130:
@@ -199,7 +206,7 @@ class HealthRenderer(ClusterUiRenderer):
     # Keep the existing low-priority sampler alive in layouts that omit its
     # visible footer too; quality observations must not depend on screen mode.
     from hud_quality import RUN_PROFILE
-    if RUN_PROFILE is not None:
+    if PERF_DIAGNOSTICS and RUN_PROFILE is not None:
       self._host_metrics()
     self._bsd_warning = warning_sides(state, snapshot, now)
     if not hasattr(self, '_bsd_pulse'):

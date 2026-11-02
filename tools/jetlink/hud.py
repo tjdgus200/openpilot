@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'openpilot/selfdrive/carrot/cluster'))
 from hud_protocol import read_snapshot, SERVICES
+from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 
 
 def require_usb_display(scan, expected):
@@ -203,13 +204,14 @@ def main():
     def update(self, navi_live):
       dashboard = self.pump.update(navi_live)
       frame = next((f for f in dashboard.media if f.key == 'render:map_main' and f.present), None)
-      display_metrics['map'] = {'sequence': frame.sequence if frame else None,
-                                'width': frame.width if frame else None,
-                                'height': frame.height if frame else None,
-                                'age_ms': dashboard.map_frame_age_ms,
-                                'stalled': dashboard.map_stream_stalled,
-                                'decode_drops': self.source._h264_worker.dropped_requests,
-                                'received': dashboard.received_count}
+      if PERF_DIAGNOSTICS:
+        display_metrics['map'] = {'sequence': frame.sequence if frame else None,
+                                  'width': frame.width if frame else None,
+                                  'height': frame.height if frame else None,
+                                  'age_ms': dashboard.map_frame_age_ms,
+                                  'stalled': dashboard.map_stream_stalled,
+                                  'decode_drops': self.source._h264_worker.dropped_requests,
+                                  'received': dashboard.received_count}
       return dashboard
 
     def close(self):
@@ -258,35 +260,40 @@ def main():
 
     def publish_status(self):
       now = time.monotonic()
-      if getattr(self, '_output_rate', None) is None:
-        self._output_rate = FrameRate()
-      self._output_rate.frame(now)
+      if PERF_DIAGNOSTICS:
+        if getattr(self, '_output_rate', None) is None:
+          self._output_rate = FrameRate()
+        self._output_rate.frame(now)
       if now >= self.next_status:
         path = Path('/dev/shm/carrot-jetlink-hud-status.json')
         tmp = path.with_suffix('.tmp')
-        stats = vehicle_stats.sample()
-        remote_nav_preview.fresh()
-        display_metrics['nav_model_map'] = remote_nav_preview.status
-        signal_color, signal_held, signal_online = remote_signals.status()
-        display_metrics['signal_display'] = {'enabled': remote_signals.enabled, 'color': signal_color,
-                                             'held': signal_held, 'online': signal_online}
-        quality = dict(self_quality())
-        quality['output_fps'] = self._output_rate.sample(now)
-        try:
-          with Path('/dev/shm/carrot-jetlink-hud-rate.json').open('rb') as source:
-            transfer = json.loads(source.read(257))
-          if 0 <= now - transfer['updated'] < 3:
-            quality['usb_fps'] = transfer['fps']
-        except (OSError, ValueError, KeyError, TypeError):
-          pass
-        snapshot = read_snapshot()
-        if snapshot is not None:
-          quality['source_fps'] = snapshot[1].get('hud_source_fps')
-        tmp.write_text(json.dumps({'updated': now, **display_metrics,
-                                  'quality': quality,
-                                  'vehicle_network_address': VehicleNetworkAddress().address(),
-                                  'vehicle_cpu': stats.cpu_core_percents,
-                                  'vehicle_memory_percent': stats.memory_used_percent}))
+        if PERF_DIAGNOSTICS:
+          stats = vehicle_stats.sample()
+          remote_nav_preview.fresh()
+          display_metrics['nav_model_map'] = remote_nav_preview.status
+          signal_color, signal_held, signal_online = remote_signals.status()
+          display_metrics['signal_display'] = {'enabled': remote_signals.enabled, 'color': signal_color,
+                                               'held': signal_held, 'online': signal_online}
+        quality = {}
+        if PERF_DIAGNOSTICS:
+          quality = dict(self_quality())
+          quality['output_fps'] = self._output_rate.sample(now)
+          try:
+            with Path('/dev/shm/carrot-jetlink-hud-rate.json').open('rb') as source:
+              transfer = json.loads(source.read(257))
+            if 0 <= now - transfer['updated'] < 3:
+              quality['usb_fps'] = transfer['fps']
+          except (OSError, ValueError, KeyError, TypeError):
+            pass
+          snapshot = read_snapshot()
+          if snapshot is not None:
+            quality['source_fps'] = snapshot[1].get('hud_source_fps')
+        status = {'updated': now}
+        if PERF_DIAGNOSTICS:
+          status.update(display_metrics, quality=quality,
+                        vehicle_network_address=VehicleNetworkAddress().address(),
+                        vehicle_cpu=stats.cpu_core_percents, vehicle_memory_percent=stats.memory_used_percent)
+        tmp.write_text(json.dumps(status))
         os.replace(tmp, path)
         self.next_status = now + 1
   cluster.TuringUsbDisplay = Display
