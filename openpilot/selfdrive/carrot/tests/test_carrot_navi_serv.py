@@ -10,6 +10,36 @@ def _meta(sequence, present=True):
   return {"present": present, "sequence": sequence}
 
 
+def test_route_and_control_share_one_decode_but_keep_heartbeat_and_disconnect(monkeypatch):
+  from openpilot.selfdrive.carrot import carrot_navi_control as control
+  calls, original = [], control.parse_carrot_navi_control
+  def parse(value):
+    calls.append(1)
+    return original(value)
+  monkeypatch.setattr(control, 'parse_carrot_navi_control', parse)
+  serv = _serv()
+  sm = _SubMaster({'schemaVersion': 1, 'connected': True, 'sessionId': 'shared',
+                  'speed': {'meta': _meta(1), 'roadLimitValid': True, 'roadLimitKph': 80}})
+  sm.recv_frame, sm.logMonoTime = {'carrotNavi': 1}, {'carrotNavi': 100}
+  assert serv.carrot_navi_snapshot(sm).speed.road_limit_kph == 80
+  serv._update_carrot_navi(sm)
+  assert len(calls) == 1 and serv.nRoadLimitSpeed == 80
+  serv.nSdiDist = 41
+  sm.updated['carrotNavi'] = False
+  serv.carrot_navi_snapshot(sm)
+  serv._update_carrot_navi(sm)
+  assert len(calls) == 1 and serv.nSdiDist == 41
+  sm.valid['carrotNavi'] = False
+  assert serv.carrot_navi_snapshot(sm) is None
+  assert not serv._update_carrot_navi(sm)
+  assert not serv.carrot_navi_active and not serv.carrot_navi_has_control
+  sm.valid['carrotNavi'] = sm.updated['carrotNavi'] = True
+  sm.data['sessionId'] = 'new-session'
+  assert serv.carrot_navi_snapshot(sm).session_id == 'new-session'
+  serv._update_carrot_navi(sm)
+  assert len(calls) == 2 and serv.carrot_navi_session_id == 'new-session'
+
+
 class _SubMaster:
   def __init__(self, data):
     self.data = data

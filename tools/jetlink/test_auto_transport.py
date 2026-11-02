@@ -34,7 +34,7 @@ def test_real_bootstrap_hello_is_accepted_before_wifi_and_signed_update(monkeypa
   official = matching_release(startup.RELEASE, required=True)
   monkeypatch.setattr(startup, 'selected_release', lambda *a, **kw: official)
   sent = []
-  bootstrap = boot_update.BootstrapSession(SimpleNamespace(send_json=lambda *args: sent.append(args)), None)
+  bootstrap = boot_update.BootstrapSession(SimpleNamespace(send_json=lambda *args: sent.append(args)), boot_update.Gate())
   bootstrap.handle(SimpleNamespace(msg_type=P.Msg.HELLO_REQ, seq=1))
   peer = sent[0][2]
   assert 'backend' not in peer and 'device' not in peer

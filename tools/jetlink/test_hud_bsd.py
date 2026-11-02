@@ -114,14 +114,14 @@ def test_live_snapshot_timestamp_keeps_fresh_bsd_and_rejects_stale_data(monkeypa
   builder.host_release = builder.nav_map = None
   builder.network = NS(address=lambda: '')
 
-  def camera_previews():
+  def camera_previews(snapshot=None):
     clock.now += build_delay
     return {}
 
   builder.camera_previews = camera_previews
   builder.battery_snapshot = lambda now: None
   monkeypatch.setattr(protocol.time, 'monotonic', lambda: clock.now)
-  monkeypatch.setattr(status, 'badge', lambda: None)
+  monkeypatch.setattr(status, 'badge', lambda snapshot=None: None)
   record = json.loads(builder.packet())
   assert record['sent'] >= record['received']['carState']
   assert record['sent'] == clock.now

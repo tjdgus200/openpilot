@@ -60,10 +60,10 @@ def test_real_snapshot_builder_cadence_is_not_limited_to_model_twenty_hz(monkeyp
   builder.host_release = builder.nav_map = None
   builder.target_fps, builder.requested_fps, builder.rate_control = 10, fps, True
   builder.network = NS(address=lambda: '')
-  builder.camera_previews = dict
+  builder.camera_previews = lambda snapshot=None: {}
   builder.battery_snapshot = lambda _: None
   monkeypatch.setattr(protocol.time, 'monotonic', lambda: clock[0])
-  monkeypatch.setattr(status, 'badge', lambda: None)
+  monkeypatch.setattr(status, 'badge', lambda snapshot=None: None)
   stamps = []
   # Drive the actual producer at its next deadline, without a catch-up burst.
   for _ in range(fps * 3):

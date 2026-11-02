@@ -35,7 +35,6 @@ from openpilot.common.constants import CV
 
 from openpilot.selfdrive.carrot.carrot_serv import CarrotServ
 from openpilot.selfdrive.carrot.curve_speed import VisionCurveSpeed, curve_speed
-from openpilot.selfdrive.carrot.carrot_navi_control import CarrotNaviControl, parse_carrot_navi_control
 from openpilot.selfdrive.carrot.server.services.web_settings import read_web_settings
 from openpilot.selfdrive.carrot.web_upload import (
   carrot_logs_web_target,
@@ -404,8 +403,7 @@ class CarrotMan:
         self.sm.update(0)
         if self.sm.updated['navRouteNavd']:
           self.route_source.mapbox = route_coordinates(self.sm['navRouteNavd'].coordinates) if self.sm.valid['navRouteNavd'] else ()
-        carrot_navi_service_active = self.sm.alive['carrotNavi'] and self.sm.valid['carrotNavi']
-        carrot_navi = parse_carrot_navi_control(self.sm['carrotNavi']) if carrot_navi_service_active else None
+        carrot_navi = self.carrot_serv.carrot_navi_snapshot(self.sm)
         self._select_navigation_route(carrot_navi)
         remote_addr = self.remote_addr
         remote_ip = remote_addr[0] if remote_addr is not None else ""

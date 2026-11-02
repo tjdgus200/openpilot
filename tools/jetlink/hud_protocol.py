@@ -134,10 +134,10 @@ class SnapshotBuilder:
       self.camera.close()
     self.network.close()
 
-  def camera_previews(self):
-    from openpilot.common.jetlink_status import LINK_STATUS, _fresh, host_label
+  def camera_previews(self, status_snapshot=None):
+    from openpilot.common.jetlink_status import LINK_STATUS, _fresh, fresh_value, host_label
     now = time.monotonic()
-    link = _fresh(LINK_STATUS, now)
+    link = _fresh(LINK_STATUS, now) if status_snapshot is None else fresh_value(status_snapshot[0], now)
     try:
       host_display = (host_label(link.get('peer')) == 'jetSON' and
                       0 <= now - float(link['telemetry_updated']) < 3 and
@@ -187,7 +187,7 @@ class SnapshotBuilder:
 
   def packet(self):
     from openpilot.cereal import log
-    from openpilot.common.jetlink_status import badge
+    from openpilot.common.jetlink_status import badge, read_status
     now = time.monotonic()
     if now < self.next_send:
       return None
@@ -220,13 +220,14 @@ class SnapshotBuilder:
     self.settings[FPS_PARAM] = base64.b64encode(str(RATES.index(self.target_fps)).encode()).decode()
     period = 1. / self.target_fps
     self.next_send = now + period
-    device_badge = badge()
+    status_snapshot = read_status()
+    device_badge = badge(status_snapshot)
     record = {'version': 1, 'sent': now, 'events': self.cached, 'params': self.settings,
               **({'jetson_release': self.host_release} if self.host_release is not None else {}),
               'vehicle_network_address': self.network.address(),
               'external_compute_label': device_badge[0] if device_badge and device_badge[1] == 'active' else '',
               'received': self.sm.recv_time, 'mono': self.sm.logMonoTime,
-              'valid': self.sm.valid, 'alive': self.sm.alive, 'cameras': self.camera_previews()}
+              'valid': self.sm.valid, 'alive': self.sm.alive, 'cameras': self.camera_previews(status_snapshot)}
     if PERF_DIAGNOSTICS:
       if not hasattr(self, 'source_rate'):
         self.source_rate = FrameRate()
@@ -258,20 +259,59 @@ class SnapshotBuilder:
 
 def encode_snapshot(record):
   data = json.dumps(record, separators=(',', ':')).encode()
-  if len(data) > 96 * 1024:
+  size = len(data)
+  if size <= 96 * 1024:
+    return data
+
+  def value_size(value):
+    return len(json.dumps(value, separators=(',', ':')).encode())
+
+  def without_field(mapping, key, size):
+    if key in mapping:
+      # Include exactly one comma unless this was the only item. json.dumps
+      # keeps the insertion order; the final encode uses the original object.
+      size -= value_size(key) + 1 + value_size(mapping[key]) + (len(mapping) > 1)
+      mapping.pop(key)
+    return size
+
+  def small_scalar(value):
+    return value is None or type(value) in (bool, int, float) or isinstance(value, str) and len(value) <= 1024
+
+  def small_metadata(value):
+    # Cost heuristic only: either branch still performs exact JSON sizing.
+    return small_scalar(value) or (isinstance(value, dict) and len(value) <= 16
+      and all(small_scalar(key) and small_scalar(item) for key, item in value.items()))
+
+  if size > 96 * 1024:
     # Optional signal metadata must not evict an existing camera or NAV image.
-    record.pop('indicator_display', None)
-    record.pop('signal_display', None)
-    data = json.dumps(record, separators=(',', ':')).encode()
-  if len(data) > 96 * 1024:
+    # Re-encoding the remainder is cheaper than encoding a large removed value
+    # just to count its bytes. Skip this whole encode when neither key exists.
+    if all(small_metadata(record.get(key)) for key in ('indicator_display', 'signal_display')):
+      size = without_field(record, 'indicator_display', size)
+      size = without_field(record, 'signal_display', size)
+    elif 'indicator_display' in record or 'signal_display' in record:
+      record.pop('indicator_display', None)
+      record.pop('signal_display', None)
+      data = json.dumps(record, separators=(',', ':')).encode()
+      size = len(data)
+      if size <= 96 * 1024:
+        return data
+  if size > 96 * 1024:
+    if 'cameras' in record:
+      size += 2 - value_size(record['cameras'])
+    else:
+      size += value_size('cameras') + 3 + bool(record)
     record['cameras'] = {}
-    data = json.dumps(record, separators=(',', ':')).encode()
-  if len(data) > 96 * 1024:
-    record.pop('nav_map_preview', None)
-    data = json.dumps(record, separators=(',', ':')).encode()
-  if len(data) > 96 * 1024:
-    record['events'] = {k:v for k,v in record['events'].items() if k != 'navRoute'}
-    data = json.dumps(record, separators=(',', ':')).encode()
+  if size > 96 * 1024:
+    size = without_field(record, 'nav_map_preview', size)
+  if size > 96 * 1024:
+    # Own the replacement: cached service events must never be mutated.
+    events = dict(record['events'].items())
+    size = without_field(events, 'navRoute', size)
+    record['events'] = events
+  if size > 96 * 1024:
+    raise ValueError('HUD snapshot exceeds bounded display allocation')
+  data = json.dumps(record, separators=(',', ':')).encode()
   if len(data) > 96 * 1024:
     raise ValueError('HUD snapshot exceeds bounded display allocation')
   return data

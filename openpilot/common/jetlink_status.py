@@ -63,9 +63,13 @@ def host_label(peer, mode='usb'):
   return 'Jetlink'
 
 
-def _fresh(path, now, *, handshake=False, preparing=False):
+def read_status():
+  """One packet owns these two records; this is not a time-based status cache."""
+  return _read(LINK_STATUS), _read(MODEL_STATUS)
+
+
+def fresh_value(value, now, *, handshake=False, preparing=False):
   try:
-    value = _read(path)
     # HELLO blocks for 3s in auto probing, or 5s in the normal path. A 3s
     # display lease falsely declares a dead daemon during that bounded wait.
     # Cover HELLO + the 2s reconnect pause; all other reports still expire at 3s.
@@ -81,12 +85,16 @@ def _fresh(path, now, *, handshake=False, preparing=False):
   return {}
 
 
-def diagnostics():
+def _fresh(path, now, *, handshake=False, preparing=False):
+  return fresh_value(_read(path), now, handshake=handshake, preparing=preparing)
+
+
+def diagnostics(snapshot=None):
   """Only current telemetry can report health or an address; HELLO is identity."""
   now = time.monotonic()
-  saved = _read(LINK_STATUS)
-  link = _fresh(LINK_STATUS, now, handshake=True, preparing=True)
-  model = _fresh(MODEL_STATUS, now)
+  saved, saved_model = read_status() if snapshot is None else snapshot
+  link = fresh_value(saved, now, handshake=True, preparing=True)
+  model = fresh_value(saved_model, now)
   if not saved.get('peer') and saved.get('state') not in ('connecting', 'loading', 'retrying', 'blocked') and not model.get('active'):
     return None
   result = {'label': host_label(saved.get('peer'), saved.get('transport', 'usb')), 'state': link.get('state', 'disconnected'),
@@ -144,14 +152,15 @@ def diagnostics():
   return result
 
 
-def badge():
+def badge(snapshot=None):
   now = time.monotonic()
-  link = _fresh(LINK_STATUS, now, handshake=True, preparing=True)
-  model = _fresh(MODEL_STATUS, now)
+  snapshot = read_status() if snapshot is None else snapshot
+  link = fresh_value(snapshot[0], now, handshake=True, preparing=True)
+  model = fresh_value(snapshot[1], now)
   label = host_label(link.get('peer'), link.get('transport', 'usb'))
   if link.get('state') == 'updating' and label == 'jetSON':
     return update_badge(link.get('host_update') or {})
-  health = diagnostics()
+  health = diagnostics(snapshot)
   if health:
     label = health['label']
     if health['state'] == 'waiting' and health['severity'] == 'unknown':

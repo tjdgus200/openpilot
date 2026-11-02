@@ -218,6 +218,28 @@ def _traffic(data: Any) -> NaviTrafficControl:
   )
 
 
+class CarrotNaviReader:
+  """Share only immutable decoded content from one received SubMaster message."""
+  def __init__(self):
+    self.source = self.generation = self.value = None
+
+  def read(self, sm) -> CarrotNaviControl | None:
+    # Liveness/validity are live gates, never part of the cached decision.
+    if not (sm.alive['carrotNavi'] and sm.valid['carrotNavi']):
+      self.source = self.generation = self.value = None
+      return None
+    try:
+      generation = sm.recv_frame['carrotNavi'], sm.logMonoTime['carrotNavi']
+      if not all(type(v) is int and v >= 0 for v in generation):
+        generation = None
+    except (AttributeError, KeyError, TypeError):
+      generation = None
+    if generation is None or self.source is not sm or self.generation != generation:
+      self.value = parse_carrot_navi_control(sm['carrotNavi'])
+      self.source, self.generation = sm, generation
+    return self.value
+
+
 def parse_carrot_navi_control(data: Any) -> CarrotNaviControl | None:
   if _int(data, "schemaVersion") != 1 or not bool(_get(data, "connected", False)):
     return None

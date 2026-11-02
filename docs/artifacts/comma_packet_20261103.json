@@ -1,0 +1,75 @@
+{
+  "benchmark": {
+    "scope": "Linux x86 PC microbenchmark; not C3/Jetson CPU, inference latency or road-safety proof",
+    "baseline_commit": "120566c473fd117a558d216b2dd525eb0d2bdcac",
+    "status_packet": {
+      "before_us": 32.95196,
+      "after_us": 12.49882,
+      "reduction_percent": 62.06957036850008,
+      "file_reads_before": 6,
+      "file_reads_after": 2
+    },
+    "navigation": {
+      "1": {
+        "before_us": 1105.3599,
+        "after_us": 59.7199,
+        "reduction_percent": 94.59724384790871,
+        "unit": "20 service ticks; synthetic 256-point route",
+        "parses_before": 21,
+        "parses_after": 1
+      },
+      "5": {
+        "before_us": 1310.2868,
+        "after_us": 273.32529999999997,
+        "reduction_percent": 79.14004018051621,
+        "unit": "20 service ticks; synthetic 256-point route",
+        "parses_before": 25,
+        "parses_after": 5
+      },
+      "20": {
+        "before_us": 2088.9919,
+        "after_us": 1095.2437,
+        "reduction_percent": 47.5707062339495,
+        "unit": "20 service ticks; synthetic 256-point route",
+        "parses_before": 40,
+        "parses_after": 20
+      }
+    },
+    "json": {
+      "small": {
+        "before_us": 7.65376,
+        "after_us": 7.66938,
+        "reduction_percent": -0.20408269922234548
+      },
+      "signals_only": {
+        "before_us": 151.35733,
+        "after_us": 151.57323000000002,
+        "reduction_percent": -0.14264257964912125
+      },
+      "drop_camera": {
+        "before_us": 573.65698,
+        "after_us": 470.0728,
+        "reduction_percent": 18.05681506742932
+      },
+      "drop_map": {
+        "before_us": 861.34374,
+        "after_us": 504.1013,
+        "reduction_percent": 41.47501437695479
+      },
+      "drop_route": {
+        "before_us": 1053.0088799999999,
+        "after_us": 536.72483,
+        "reduction_percent": 49.02941084409468
+      }
+    }
+  },
+  "validation": {
+    "exit_code": 0,
+    "passed": 1622,
+    "failed": 0,
+    "skipped": 5,
+    "deselected": 1,
+    "scope": "PC synthetic tests; no actual Jetson inference"
+  },
+  "method": "Current Git sources; real cereal/PC files and protocol; explicit hardware/Params/msgq/logger import doubles; no devices or actual TensorRT execution"
+}

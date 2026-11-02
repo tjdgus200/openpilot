@@ -1,5 +1,20 @@
 # Repository memory
 
+- 2026-11-03 additional comma packet optimization1-3: a single HUD packet
+  shares two freshly read Jetlink/model status records, never a global TTL;
+  recheck each consumer's original3s/8s/35s and telemetry-age gates, with the
+  camera's strict3s lease. CarrotMan and CarrotServ share one immutable parsed
+  CarrotNavi value keyed by subscriber identity/recv_frame/logMonoTime; check
+  alive/valid every call, clear on disconnect, use uncached fallback without
+  reliable generation. Preserve existing heartbeat/sequence/session/GPS rules.
+  Oversized HUD JSON retains byte-identical96KiB boundaries, optional-drop
+  order and owned navRoute removal; small packets still encode once. Keep
+  production diagnostics OFF, Q92/FPS, all model/USB safety gates and all PV5
+  custom features. No model/CAN/BLE algorithm or package-pin change. Preserve
+  these regressions through carrot-wip merges. PC integration passed1622 tests
+  plus3 subtests;5 skips/1 unavailable-source exclusion are not device proof.
+  See docs/comma_packet_optimization_20261103.md for timing and test limits.
+
 - 2026-11-03 owner reaffirms preservation of ALL completed PV5 changes and
   optimizations, including the latest comma auxiliary1-4, during daily
   carrot-wip integration, updates and refactors. Read the current entries below

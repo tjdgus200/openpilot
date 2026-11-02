@@ -42,10 +42,10 @@ def builder_at_realistic_receive_time(monkeypatch):
   builder.rate_control = True
   builder.host_release = builder.nav_map = None
   builder.network = NS(address=lambda:'')
-  builder.camera_previews = dict
+  builder.camera_previews = lambda snapshot=None: {}
   builder.battery_snapshot = lambda _:None
   monkeypatch.setattr(p.time,'monotonic',lambda:clock[0])
-  monkeypatch.setattr(status,'badge',lambda:None)
+  monkeypatch.setattr(status,'badge',lambda snapshot=None:None)
   return builder,clock,selected,state
 
 
