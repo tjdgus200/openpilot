@@ -57,3 +57,5 @@
 통합 PC 검증:593 passed, 5 skipped, 1 deselected, 3 subtests passed.
 변경 파일 Ruff: 기존169개, 이후169개, 새 위반0개.
 패키지 배포 기록은 네 모델의 체크포인트/런타임 조합을 보존하여 아래에 추가한다.
+
+- flip-flop: separate committed package identity; catalog `md-v3.json`.
