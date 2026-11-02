@@ -13,9 +13,20 @@
   device, schedule or owner-validator changes. PC tests do not prove physical
   CAN/BLE/USB/TRT/P99/20Hz or road behavior. See docs/pv5_wip_sync_20261102.md.
 
+- 2026-11-02 owner reports native cluster flash about1s ON/1s OFF and requests
+  2.5Hz. Gate only the PV5 BSD BACKGROUND=6 request for200ms ON/200ms normal
+  background using the existing100Hz controller frame and20Hz 0x161 cadence.
+  No new messages/timer/state/history or undefined steady-red code. Preserve
+  enabled paddle warning priority, PV5 orange model turns, validity guards and
+  other cars. The free-running phase may delay the first red request by up to
+  200ms. Native animation can still alter the physical output: PC tests verify
+  the requested2.5Hz CAN sequence only, not actual visible2.5Hz. Require physical
+  cluster observation before describing that rate as confirmed.
+
 - 2026-11-01 PV5 cluster BSD background: in the existing CAMERA_SCC 0x161
   display path only, valid/non-timeout CarState plus a same-side retained turn
-  request and blindspot flag requests native BACKGROUND=6 (flashing red),
+  request and blindspot flag requests native BACKGROUND=6 (flashing red;
+  now gated at2.5Hz as described above),
   independently of engagement. Owner choice1 changes PV5 active model-turn
   indication to steady orange BACKGROUND=3. BSD or the existing enabled paddle
   warning takes flashing-red priority; clearing BSD restores orange if still

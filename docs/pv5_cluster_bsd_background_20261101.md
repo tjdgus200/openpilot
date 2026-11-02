@@ -2,10 +2,21 @@
 
 The owner requests a red flashing OEM cluster background when a turn signal
 and a blindspot warning refer to the same side. Reuse the existing CAMERA_SCC
-`ADRV_0x161` display path and `BACKGROUND=6`; the cluster animates the flash.
-There is no software flash timer, additional CAN frame, sensor query, process,
-or Jetson inference work. This does not synchronize the OEM flash period with
-the separate Jetson HUD's 2.5 Hz warning brackets.
+`ADRV_0x161` display path and the defined `BACKGROUND=6` flashing-red request.
+On 2026-11-02 the owner observed about one second ON/one second OFF and requested
+2.5 Hz. The PV5 BSD request now alternates code 6 and the normal/turn background
+every 200 ms using the existing 100 Hz controller frame. At the unchanged 20 Hz
+0x161 cadence this is four red-request frames and four restoration frames,
+repeated every 400 ms. No extra CAN frame, wall-clock timer, mutable state,
+sensor query, process or Jetson inference work is added. The free-running phase
+can delay the first red request by up to 200 ms.
+
+This is a 2.5 Hz **request sequence**, not a verified physical flash rate. Code 6
+still asks the cluster to animate; the DBC defines no steady-red code or flash
+frequency field. Its internal animation/reset behavior may affect visible
+brightness and frequency. Do not invent code 5 or claim a software CAN test
+proves visible 2.5 Hz. A real-cluster check is required. The separate Jetson HUD
+warning brackets retain their own 2.5 Hz timing; phases are not synchronized.
 
 Admission is limited to `CAR.KIA_PV5`, valid CarState, no CAN timeout, and either
 left signal plus left blindspot or right signal plus right blindspot. Use the
@@ -19,8 +30,10 @@ and its underlying sensor freshness rules are unchanged.
 
 The owner selected orange for the PV5 model-turn indication. While lateral
 control is active and model desire is turnLeft/turnRight, request steady
-`BACKGROUND=3`. BSD and the existing enabled paddle warning take flashing-red
-priority. Clearing BSD returns to orange when the model turn remains active,
+`BACKGROUND=3`. The BSD ON phase and the existing enabled paddle warning take
+flashing-red priority. BSD OFF phases restore the normal/turn background; an
+enabled held-paddle warning keeps its original native flashing-red request,
+including during BSD OFF phases. Clearing BSD returns to orange when the model turn remains active,
 otherwise to the normal cruise/lateral background. Lane-change desire alone
 does not request the model-turn color.
 
@@ -36,11 +49,14 @@ undocumented enum value based on a gap in this table.
 
 PC validation uses archived current source, actual DBC parsing/CAN packing and
 checksum code, synthetic CarState/CarControl, and an inert Params import.
-`test_ccnc_cluster.py` and `test_blink_hold.py`: 261 passed, no skips. The new
+`test_ccnc_cluster.py` and `test_blink_hold.py`: 277 passed, no skips. The
 tests cover every left/right signal/warning combination, invalid/timeout data,
 engagement-independent warning, other-vehicle preservation, event clearing,
 warning/turn/paddle priority, every desire class and identical-frame A/B
-payload/counter checks. Physical cluster color and
+payload/counter checks. The 2.5 Hz regression exercises every controller tick
+over two seconds, checks four-ON/four-OFF request groups, unchanged transmission
+count/counters/CRC/unrelated fields and native paddle/other-vehicle behavior.
+Physical cluster color and
 animation, CAN delivery and driving behavior have not been tested. No device
 update or package publication is part of this verification. On 2026-11-02 the
 owner separately authorized source publication; the cluster change is integrated
