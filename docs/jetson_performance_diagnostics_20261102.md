@@ -39,3 +39,5 @@ measure actual Jetson CPU savings, thermal behavior, P99, BLE/USB or road safety
 
 All four model packages must carry this change before their PV5 USB pins move;
 keep each existing model hash/size, distinct source identity and paired runtime.
+
+- flip-flop: separate committed package identity; catalog `md-v3.json`.
