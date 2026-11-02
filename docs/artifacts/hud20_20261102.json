@@ -1,0 +1,364 @@
+{
+  "scope": "Offline PC measurements plus assumed stage model; no physical Jetson/USB/road safety proof",
+  "microbenchmarks": {
+    "unit": "microseconds per call on this PC; not Jetson",
+    "heatmap_original": {
+      "mean": 88.373408,
+      "p99": 128.66,
+      "maximum": 172.156
+    },
+    "heatmap_cached": {
+      "mean": 9.16845,
+      "p99": 25.199,
+      "maximum": 63.752
+    },
+    "snapshot_original_64KiB": {
+      "mean": 64.397128,
+      "p99": 104.332,
+      "maximum": 197.081
+    },
+    "snapshot_unchanged_64KiB": {
+      "mean": 2.645188,
+      "p99": 2.891,
+      "maximum": 3.035
+    },
+    "owned_bytes_allocate_1920x462": {
+      "mean": 81.5415,
+      "p99": 118.564,
+      "maximum": 239.249
+    },
+    "owned_buffer_reuse_1920x462": {
+      "mean": 80.749052,
+      "p99": 127.093,
+      "maximum": 191.286
+    },
+    "pool_bytes_1920x462": 7096320,
+    "pool_bytes_maximum": 11059200
+  },
+  "model": [
+    {
+      "scenario": "ample_headroom",
+      "assumed_stage_ms": [
+        8,
+        10,
+        5
+      ],
+      "assumed_parallel_compute_slowdown": 0.0,
+      "before": {
+        "fps": 20.0,
+        "age_ms": {
+          "mean": 23.037119475900823,
+          "p99": 24.823395435831117,
+          "maximum": 25.05124380545567
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 20.0,
+        "age_ms": {
+          "mean": 23.537119475900823,
+          "p99": 25.323395435831117,
+          "maximum": 25.55124380545567
+        },
+        "pending_replacements_or_expiry": 0
+      }
+    },
+    {
+      "scenario": "ample_headroom",
+      "assumed_stage_ms": [
+        8,
+        10,
+        5
+      ],
+      "assumed_parallel_compute_slowdown": 0.1,
+      "before": {
+        "fps": 20.0,
+        "age_ms": {
+          "mean": 23.037119475900823,
+          "p99": 24.823395435831117,
+          "maximum": 25.05124380545567
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 20.0,
+        "age_ms": {
+          "mean": 25.34040996694229,
+          "p99": 27.265269403897037,
+          "maximum": 27.51982848211992
+        },
+        "pending_replacements_or_expiry": 0
+      }
+    },
+    {
+      "scenario": "ample_headroom",
+      "assumed_stage_ms": [
+        8,
+        10,
+        5
+      ],
+      "assumed_parallel_compute_slowdown": 0.2,
+      "before": {
+        "fps": 20.0,
+        "age_ms": {
+          "mean": 23.037119475900823,
+          "p99": 24.823395435831117,
+          "maximum": 25.05124380545567
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 20.0,
+        "age_ms": {
+          "mean": 27.143700457983844,
+          "p99": 29.207143371962957,
+          "maximum": 29.491977019406477
+        },
+        "pending_replacements_or_expiry": 0
+      }
+    },
+    {
+      "scenario": "near_50ms_budget",
+      "assumed_stage_ms": [
+        20,
+        22,
+        12
+      ],
+      "assumed_parallel_compute_slowdown": 0.0,
+      "before": {
+        "fps": 18.483333333333334,
+        "age_ms": {
+          "mean": 54.073950058976635,
+          "p99": 58.11243522577297,
+          "maximum": 58.81492153564977
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 19.983333333333334,
+        "age_ms": {
+          "mean": 54.58579582964065,
+          "p99": 58.73835154159724,
+          "maximum": 59.31492153564977
+        },
+        "pending_replacements_or_expiry": 0
+      }
+    },
+    {
+      "scenario": "near_50ms_budget",
+      "assumed_stage_ms": [
+        20,
+        22,
+        12
+      ],
+      "assumed_parallel_compute_slowdown": 0.1,
+      "before": {
+        "fps": 18.483333333333334,
+        "age_ms": {
+          "mean": 54.073950058976635,
+          "p99": 58.11243522577297,
+          "maximum": 58.81492153564977
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 19.983333333333334,
+        "age_ms": {
+          "mean": 58.79335236664915,
+          "p99": 63.27121133874198,
+          "maximum": 63.90121495351923
+        },
+        "pending_replacements_or_expiry": 0
+      }
+    },
+    {
+      "scenario": "near_50ms_budget",
+      "assumed_stage_ms": [
+        20,
+        22,
+        12
+      ],
+      "assumed_parallel_compute_slowdown": 0.2,
+      "before": {
+        "fps": 18.483333333333334,
+        "age_ms": {
+          "mean": 54.073950058976635,
+          "p99": 58.11243522577297,
+          "maximum": 58.81492153564977
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 19.983333333333334,
+        "age_ms": {
+          "mean": 63.000908903657496,
+          "p99": 67.80407113588626,
+          "maximum": 68.50288295177597
+        },
+        "pending_replacements_or_expiry": 0
+      }
+    },
+    {
+      "scenario": "slow_usb",
+      "assumed_stage_ms": [
+        15,
+        18,
+        40
+      ],
+      "assumed_parallel_compute_slowdown": 0.0,
+      "before": {
+        "fps": 13.683333333333334,
+        "age_ms": {
+          "mean": 73.06656036868495,
+          "p99": 78.29141872081527,
+          "maximum": 79.61595996466349
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 17.2,
+        "age_ms": {
+          "mean": 98.35274532664297,
+          "p99": 124.74852448537422,
+          "maximum": 126.87153929475608
+        },
+        "pending_replacements_or_expiry": 166
+      }
+    },
+    {
+      "scenario": "slow_usb",
+      "assumed_stage_ms": [
+        15,
+        18,
+        40
+      ],
+      "assumed_parallel_compute_slowdown": 0.1,
+      "before": {
+        "fps": 13.683333333333334,
+        "age_ms": {
+          "mean": 73.06656036868495,
+          "p99": 78.29141872081527,
+          "maximum": 79.61595996466349
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 16.7,
+        "age_ms": {
+          "mean": 101.62406271094109,
+          "p99": 128.31052193420328,
+          "maximum": 130.93534397235635
+        },
+        "pending_replacements_or_expiry": 196
+      }
+    },
+    {
+      "scenario": "slow_usb",
+      "assumed_stage_ms": [
+        15,
+        18,
+        40
+      ],
+      "assumed_parallel_compute_slowdown": 0.2,
+      "before": {
+        "fps": 13.683333333333334,
+        "age_ms": {
+          "mean": 73.06656036868495,
+          "p99": 78.29141872081527,
+          "maximum": 79.61595996466349
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 16.2,
+        "age_ms": {
+          "mean": 105.0896714199836,
+          "p99": 132.1131181920282,
+          "maximum": 136.00109240877646
+        },
+        "pending_replacements_or_expiry": 227
+      }
+    },
+    {
+      "scenario": "usb_stalls",
+      "assumed_stage_ms": [
+        15,
+        18,
+        12
+      ],
+      "assumed_parallel_compute_slowdown": 0.0,
+      "before": {
+        "fps": 16.733333333333334,
+        "age_ms": {
+          "mean": 55.01107051437105,
+          "p99": 246.19266657437947,
+          "maximum": 248.93889368443342
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 17.033333333333335,
+        "age_ms": {
+          "mean": 59.41034940797845,
+          "p99": 246.95678564366972,
+          "maximum": 249.43889368443342
+        },
+        "pending_replacements_or_expiry": 177
+      }
+    },
+    {
+      "scenario": "usb_stalls",
+      "assumed_stage_ms": [
+        15,
+        18,
+        12
+      ],
+      "assumed_parallel_compute_slowdown": 0.1,
+      "before": {
+        "fps": 16.733333333333334,
+        "age_ms": {
+          "mean": 55.01107051437105,
+          "p99": 246.19266657437947,
+          "maximum": 248.93889368443342
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 17.033333333333335,
+        "age_ms": {
+          "mean": 63.030184952695265,
+          "p99": 250.35245733981355,
+          "maximum": 253.0544963556058
+        },
+        "pending_replacements_or_expiry": 177
+      }
+    },
+    {
+      "scenario": "usb_stalls",
+      "assumed_stage_ms": [
+        15,
+        18,
+        12
+      ],
+      "assumed_parallel_compute_slowdown": 0.2,
+      "before": {
+        "fps": 16.733333333333334,
+        "age_ms": {
+          "mean": 55.01107051437105,
+          "p99": 246.19266657437947,
+          "maximum": 248.93889368443342
+        },
+        "pending_replacements_or_expiry": 0
+      },
+      "after": {
+        "fps": 17.033333333333335,
+        "age_ms": {
+          "mean": 66.73703269545278,
+          "p99": 253.75824523696156,
+          "maximum": 256.6700990267782
+        },
+        "pending_replacements_or_expiry": 177
+      }
+    }
+  ]
+}

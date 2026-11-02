@@ -697,6 +697,7 @@ def run_demo(
     is_metric: bool | None,
     usb_h264_ffmpeg_threads: int = 0,
 ) -> None:
+    AsyncJpegUsbPipeline.ensure_idle()
     scheduler = DisplayScheduler(4, enabled=TICI)
     scheduler.update(False, force=True)
     profile = ProfileReporter(profile_render, profile_interval_s)
@@ -1644,19 +1645,16 @@ def run_demo(
                 if usb_codec == "jpeg":
                     if usb_pipeline is not None:
                         profile_stage = time.perf_counter() if profile.enabled else 0.0
-                        usb_pipeline.wait_for_capacity()
-                        profile.add_elapsed("main.usb_async.wait_capacity", profile_stage)
+                        usb_pipeline.check_error()
                         profile.add_samples(usb_pipeline.profile_samples())
 
                         profile_stage = time.perf_counter() if profile.enabled else 0.0
-                        rgba, image_width, image_height = renderer.render_to_rgba_bytes(
-                            state,
-                            portrait_upload=True,
-                        )
-                        profile.add_elapsed("main.usb.render_rgba_total", profile_stage)
-
-                        profile_stage = time.perf_counter() if profile.enabled else 0.0
-                        usb_pipeline.submit_rgba(rgba, image_width, image_height)
+                        with renderer.render_to_rgba_buffer(state, portrait_upload=True) as (
+                            rgba, image_width, image_height,
+                        ):
+                            profile.add_elapsed("main.usb.render_rgba_total", profile_stage)
+                            profile_stage = time.perf_counter() if profile.enabled else 0.0
+                            usb_pipeline.submit_rgba_buffer(rgba, image_width, image_height)
                         profile.add_elapsed("main.usb_async.submit_rgba", profile_stage)
                     else:
                         profile_stage = time.perf_counter() if profile.enabled else 0.0
@@ -1957,7 +1955,7 @@ def run_demo(
             try:
                 renderer.close()
             finally:
-                if usb_display is not None:
+                if usb_display is not None and not (usb_pipeline is not None and usb_pipeline.is_running):
                     usb_display.close()
 
 

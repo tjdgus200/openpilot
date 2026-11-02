@@ -19,7 +19,7 @@ from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
 from openpilot.selfdrive.carrot.signal_display import SignalDisplayReader, project_box
 from openpilot.selfdrive.carrot.lead_brake_lights import BrakeDisplayReader
-from cluster_battery import BatteryPanelData, heat_color, panel_labels
+from cluster_battery import BatteryPanelData, HeatmapLabels, panel_labels
 
 from cluster_gles_dmabuf import DirectNv12DmabufError, create_tici_nv12_dmabuf_pool
 from cluster_gles_readback import DirectNv12ReadbackError, create_tici_direct_readback
@@ -4077,30 +4077,25 @@ class ClusterUiRenderer:
         self._draw_text(electric, left, 65, 20, theme.text)
         # Separate sensors and voltage channels; no invented pack position or
         # cell-by-cell temperature. Fixed arrays, no history or image textures.
+        if not hasattr(self, '_heatmap_labels'):
+            self._heatmap_labels = HeatmapLabels()
         for name, label, top, columns, row_height in (
             ('module_temps_c', '온도 센서 15개' if ko else '15 temperature sensors', 112, 8, 34),
             ('cell_voltages_v', '전압 채널 108개' if ko else '108 voltage channels', 231, 18, 36),
         ):
             values = data.value(name)
-            available = [v for v in values if v is not None] if values is not None else []
-            reference = min(available) if available else None
-            spread = max(available) - min(available) if available else None
+            spread, cells = self._heatmap_labels.get(name, values)
             diff_label = '차이' if ko else 'spread'
             suffix = (f' · {diff_label} {spread * 1000:.0f} mV' if name == 'cell_voltages_v' else f' · {diff_label} {spread:.0f}°C') if spread is not None else ' · --'
             self._draw_text(label + suffix, left, top - 20, 20, theme.text)
-            count = 108 if name == 'cell_voltages_v' else 15
             cell_width = (width - 48) / columns
-            for i in range(count):
-                value = values[i] if values is not None else None
+            for i, (color, ink, number, text) in enumerate(cells):
                 px, py = left + (i % columns) * cell_width, top + (i // columns) * row_height
-                color = heat_color(value, reference, name)
                 rl.draw_rectangle(int(px), int(py), int(cell_width - 3), row_height - 3, rl_color(color))
-                ink = (16, 22, 28) if value is not None else (220, 220, 225)
                 if name == 'cell_voltages_v':
-                    self._draw_text(f'{i+1:03d}', px + 4, py + 9, 13, ink)
-                    self._draw_text(f'{value:.2f}' if value is not None else '--', px + 4, py + 24, 17, ink)
+                    self._draw_text(number, px + 4, py + 9, 13, ink)
+                    self._draw_text(text, px + 4, py + 24, 17, ink)
                 else:
-                    text = f'T{i+1:02d}  {value:.0f}°C' if value is not None else f'T{i+1:02d}  --'
                     self._draw_text(text, px + 5, py + 16, 18, ink)
         legend = ('색상: 최저값 대비 차이 · 진단용 / 회색: 미수신' if ko else
                   'Color: difference from minimum / diagnostic only · Gray: unavailable')

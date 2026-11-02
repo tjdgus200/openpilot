@@ -151,6 +151,36 @@ def heat_color(value, reference, name):
     return colors[-1]
 
 
+class HeatmapLabels:
+    """Two latest value plans, no history/age cache and no graphics ownership."""
+    def __init__(self):
+        self._plans = {}
+
+    def get(self, name, values):
+        count = ARRAYS[name][0]
+        key = tuple(values) if valid_value(name, values) else None
+        cached = self._plans.get(name)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        available = [v for v in key if v is not None] if key is not None else []
+        reference = min(available) if available else None
+        spread = max(available) - reference if available else None
+        cells = []
+        for i in range(count):
+            value = key[i] if key is not None else None
+            color = heat_color(value, reference, name)
+            ink = (16, 22, 28) if value is not None else (220, 220, 225)
+            if name == 'cell_voltages_v':
+                number, text = f'{i+1:03d}', f'{value:.2f}' if value is not None else '--'
+            else:
+                number = ''
+                text = f'T{i+1:02d}  {value:.0f}°C' if value is not None else f'T{i+1:02d}  --'
+            cells.append((color, ink, number, text))
+        plan = spread, tuple(cells)
+        self._plans[name] = key, plan
+        return plan
+
+
 def charging_view(data, gear, speed, fresh_vehicle, stopped_for_s=0.0):
     # Preserve the existing P view; other gears require an observed full second
     # at exactly zero. This selects a layout, never authorizes extra OBD reads.

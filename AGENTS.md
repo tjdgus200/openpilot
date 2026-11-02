@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-02 HUD20 optimization: preserve saved Q92/FPS, model-first USB
+  admission, Nice19, disabled production profiling, input fusion and all PV5
+  features. Production Jetson Q92 uses one CPU JPEG/USB worker and two owned
+  RGBA staging slots; never hand an async worker a borrowed raylib view. One
+  replaceable pending frame only,150ms pre/post-encode expiry, no catch-up.
+  Never close/rebind USB while its worker is alive; fail closed on stuck teardown.
+  Keep CPU JPEG error fallback after teardown. Cache only latest snapshot JSON
+  and immutable service bytes; recheck original500ms lifetime on every call,
+  each consumer owns its cereal builder. Two heatmap value plans must not cache
+  validity/age;5s/60s field expiry and incremental108 channels remain. Full
+  render/readback/JPEG work remains. PC modelling is not physical20Hz, lower
+  latency or inference/safety proof. See docs/hud_20fps_optimization_20261102.md.
+
 - 2026-11-02 production overhead audit: disabling runtimeTiming must also skip
   caller-side clocks, context dictionaries and CAN stage accumulation. Render
   callbacks still execute in the same order; uiDebug status remains, optional

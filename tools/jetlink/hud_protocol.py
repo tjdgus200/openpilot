@@ -1,6 +1,7 @@
 """Read-only display snapshots over a negotiated Jetlink extension."""
 import base64
 import json
+import os
 from pathlib import Path
 import struct
 import socket
@@ -278,27 +279,58 @@ def encode_snapshot(record):
 
 _cached_snapshot = None
 _next_snapshot_read = 0.
+_snapshot_signature = None
+_event_snapshot = None
+_event_bytes = {}
+
+
+def snapshot_event_bytes(value, name):
+  """Share immutable wire bytes only; every consumer owns its cereal builder."""
+  global _event_snapshot, _event_bytes
+  if value is not _event_snapshot:
+    _event_snapshot, _event_bytes = value, {}
+  encoded = value['events'][name]
+  cached = _event_bytes.get(name)
+  if cached is None or cached[0] != encoded:
+    raw = base64.b64decode(encoded)
+    # The complete snapshot is already bounded. Keep at most its fixed services.
+    if name in SERVICES:
+      _event_bytes[name] = encoded, raw
+    return raw
+  return cached[1]
 
 
 def read_snapshot():
-  global _cached_snapshot, _next_snapshot_read
+  global _cached_snapshot, _next_snapshot_read, _snapshot_signature
   now = time.monotonic()
   if now < _next_snapshot_read:
-    return _cached_snapshot
+    # A cache hit must not extend the original vehicle-data lifetime.
+    return _cached_snapshot if _cached_snapshot and 0 <= now - _cached_snapshot[0] < .5 else None
   _next_snapshot_read = now + .02
-  _cached_snapshot = None
   try:
     with HUD_PACKET.open('rb') as f:
+      info = os.fstat(f.fileno())
+      signature = (str(HUD_PACKET), info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+      # The server publishes with atomic replace. Match the opened file, never
+      # a stat from before open; unchanged packets need no JSON/base64 reparse.
+      if signature == _snapshot_signature and _cached_snapshot:
+        if 0 <= now - _cached_snapshot[0] < .5:
+          return _cached_snapshot
+        _cached_snapshot, _snapshot_signature = None, None
+        return None
       data = f.read(MAX_HUD_BYTES + HEADER.size + 1)
+    _cached_snapshot, _snapshot_signature = None, None
     if len(data) > MAX_HUD_BYTES + HEADER.size:
       return None
     received, = HEADER.unpack_from(data)
     if not 0 <= time.monotonic() - received < .5:
       return None
     value = json.loads(data[HEADER.size:])
-    if value.get('version') == 1:
+    if isinstance(value, dict) and type(value.get('version')) is int and value['version'] == 1:
       _cached_snapshot = received, value
+      _snapshot_signature = signature
       return _cached_snapshot
   except (OSError, ValueError, struct.error):
     pass
+  _cached_snapshot, _snapshot_signature = None, None
   return None

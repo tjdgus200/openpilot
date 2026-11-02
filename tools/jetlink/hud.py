@@ -10,7 +10,7 @@ import types
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'openpilot/selfdrive/carrot/cluster'))
-from hud_protocol import read_snapshot, SERVICES
+from hud_protocol import read_snapshot, snapshot_event_bytes, SERVICES
 from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 
 
@@ -128,7 +128,7 @@ class RemoteSubMaster:
       self.logMonoTime[name] = int(mono + shift * 1e9)
       if mono == self.generations.get(name) or name not in value['events']:
         continue
-      raw = base64.b64decode(value['events'][name])
+      raw = snapshot_event_bytes(value, name)
       with self.log.Event.from_bytes(raw) as reader:
         if reader.which() != name:
           raise ValueError('display service identity mismatch')
@@ -332,6 +332,8 @@ def main():
       fps = RATES[effective] if override is None else 10
       sys.argv = [*base, *codec_options(NAMES[codec]), *extra_args]
       if override is None:
+        if codec == 6:
+          sys.argv += ['--usb-async']
         sys.argv += ['--fps', str(fps)]
       try:
         if '--help' in sys.argv:
@@ -342,7 +344,9 @@ def main():
         if QualityWatch().read():
           break  # Recreate only the display; finally paths close all buffers.
         return
-      except CpuJpegError:
+      except (CpuJpegError, RuntimeError) as exc:
+        if not isinstance(exc, CpuJpegError) and not isinstance(exc.__cause__, CpuJpegError):
+          raise
         if codec == 0:
           raise
         codec = 0

@@ -118,7 +118,8 @@ def test_publisher_restart_onroad_keeps_saved_choice_without_waiting_for_park(mo
     assert builder.target_fps == fps
 
 
-def test_actual_host_restart_loop_applies_each_admitted_fps():
+@pytest.mark.parametrize('wrapped_failure', [False, True])
+def test_actual_host_restart_loop_applies_each_admitted_fps(wrapped_failure):
   import hud_quality as quality
   source=Path(__file__).with_name('hud.py')
   tree=ast.parse(source.read_text(encoding='utf-8'))
@@ -132,6 +133,7 @@ def test_actual_host_restart_loop_applies_each_admitted_fps():
     def __exit__(self,*args):
       pass
   choices,commands,position=[0,1,2,3,4,0],[],[0]
+  fail = [wrapped_failure]
   waited=[0]
   def sleep(seconds):
     assert seconds == .2
@@ -141,6 +143,9 @@ def test_actual_host_restart_loop_applies_each_admitted_fps():
         'valid': {'carState': True}, 'events': {'carState': 'valid event'}})
   def render(**kwargs):
     commands.append(list(env['sys'].argv))
+    if fail[0]:
+      fail[0] = False
+      raise RuntimeError('asynchronous USB JPEG pipeline failed') from quality.CpuJpegError('encoder failed')
     position[0]+=1
   env={'selection':selection,'PARAM':PARAM,'override':None,'requested':0,
        'settings':NS(get_int=lambda _:choices[min(position[0],len(choices)-1)]),
@@ -154,6 +159,10 @@ def test_actual_host_restart_loop_applies_each_admitted_fps():
     kw_defaults=[],defaults=[]),body=[loop],decorator_list=[])
   exec(compile(ast.fix_missing_locations(ast.Module(body=[dashboard_ready,runner],type_ignores=[])),str(source),'exec'),env)
   env['run']()
-  assert [args[-1] for args in commands] == ['10','15','20','25','30','10']
-  assert all(args[args.index('--usb-jpeg-quality')+1]=='92' for args in commands)
+  assert [args[-1] for args in (commands[1:] if wrapped_failure else commands)] == ['10','15','20','25','30','10']
+  jpeg_commands = [args for args in commands if '--usb-jpeg-quality' in args]
+  assert all(args[args.index('--usb-jpeg-quality')+1]=='92' and '--usb-async' in args for args in jpeg_commands)
+  if wrapped_failure:
+    assert commands[1][commands[1].index('--usb-codec')+1] == 'h264'
+    assert '--usb-async' not in commands[1]
   assert waited == [2]
