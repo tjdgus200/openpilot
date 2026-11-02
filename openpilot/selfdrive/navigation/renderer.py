@@ -199,6 +199,29 @@ class MapRenderer:
     self.archive = archive
     self.zoom = min(max(ZOOM, archive.min_zoom), archive.max_zoom)
     self.roads = lru_cache(maxsize=128)(self._load_roads)
+    self._tiles = ()
+    self._merged = None
+    self._route = self._route_mercator = None
+
+  def _merge_roads(self, tiles):
+    if self._merged is not None and len(tiles) == len(self._tiles) and all(a is b for a, b in zip(tiles, self._tiles, strict=True)):
+      return self._merged
+    merged = tuple(np.concatenate(column) for column in zip(*tiles, strict=True))
+    # Only owned, immutable decoded tiles can be reused by identity. Keep one
+    # view, capped at 2 MiB; dense/oversized views retain the uncached path.
+    cacheable = sum(a.nbytes for a in merged) <= 2 * 1024 * 1024 and all(not a.flags.writeable for tile in tiles for a in tile)
+    self._tiles, self._merged = (tuple(tiles), merged) if cacheable else ((), None)
+    return merged
+
+  def _project_route(self, route, position):
+    if self._route is not None and route.dtype == self._route.dtype and np.array_equal(route, self._route):
+      points = self._route_mercator
+    else:
+      points = mercator(route)
+      # A caller may mutate an array in place: retain an owned value key, not
+      # its address. Oversized external routes never grow the cache.
+      self._route, self._route_mercator = (route.copy(), points) if len(route) <= 4096 else (None, None)
+    return project(points, position)
 
   def _load_roads(self, x: int, y: int):
     """A tile's visible road segments as flat arrays: mercator starts/ends, style index, level and polyline end flags."""
@@ -219,9 +242,11 @@ class MapRenderer:
       ends_of_line = np.zeros((n, 2), dtype=bool)
       ends_of_line[0, 0] = ends_of_line[-1, 1] = True
       caps.append(ends_of_line)
-    if not starts:
-      return np.empty((0, 2)), np.empty((0, 2)), np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty((0, 2), dtype=bool)
-    return np.concatenate(starts), np.concatenate(ends), np.concatenate(styles), np.concatenate(levels), np.concatenate(caps)
+    arrays = ((np.concatenate(starts), np.concatenate(ends), np.concatenate(styles), np.concatenate(levels), np.concatenate(caps))
+              if starts else (np.empty((0, 2)), np.empty((0, 2)), np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty((0, 2), dtype=bool)))
+    for array in arrays:
+      array.flags.writeable = False
+    return arrays
 
   def view_tiles(self, longitude: float, latitude: float) -> tuple[list[tuple[int, int]], bool]:
     """Tiles covering the view at a point for every heading, and whether the view stays within the map."""
@@ -260,7 +285,7 @@ class MapRenderer:
     ego = np.array([SIZE / 2, SIZE / 2 + FORWARD_OFFSET / METERS_PER_PIXEL])
     road_distance = math.inf
     if tiles:
-      starts, ends, styles, levels, caps = (np.concatenate(column) for column in zip(*tiles, strict=True))
+      starts, ends, styles, levels, caps = self._merge_roads(tiles)
       starts, ends = project(starts, position), project(ends, position)
       # Tunnels are drawn at their interior width; everywhere else the white casing widens the stroke.
       table = np.array([[interpolate_width(style_zoom, *style.interior), interpolate_width(style_zoom, *style.casing)]
@@ -276,7 +301,7 @@ class MapRenderer:
         draw_segments(image, starts[chosen], ends[chosen], widths[chosen] / 2, ROAD_INTENSITY)
     route_present = route is not None and len(route) >= 2
     if route_present:
-      draw_line(image, project(mercator(route), position), ROUTE_INTENSITY, ROUTE_WIDTH, overlay=True)
+      draw_line(image, self._project_route(route, position), ROUTE_INTENSITY, ROUTE_WIDTH, overlay=True)
     draw_vehicle(image, ego)
     return RenderResult(image, complete, route_present, road_distance)
 

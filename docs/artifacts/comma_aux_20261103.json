@@ -1,0 +1,76 @@
+{
+  "baseline": "9254cb32f34c834876aa8670750a0323fdd224a7",
+  "scope": "PC Linux CPU; file-backed Python Params adapter, synthetic map; not comma or Jetson performance",
+  "native_rasterizer": true,
+  "settings": {
+    "before_ms": 0.1547828735,
+    "after_ms": 0.0012622789999999998,
+    "saved_ms": 0.1535205945,
+    "reduction_percent": 99.1844840637359,
+    "reads_per_unchanged_tick": [
+      22,
+      0
+    ],
+    "avoided_file_reads_per_second_at_20hz": 440
+  },
+  "route_4096": {
+    "before_ms": 0.059330926,
+    "after_ms": 0.028308661,
+    "saved_ms": 0.031022265,
+    "reduction_percent": 52.286837727764436
+  },
+  "render_256": {
+    "before_ms": 1.5491839375,
+    "after_ms": 1.5382995625,
+    "saved_ms": 0.010884375000000057,
+    "reduction_percent": 0.702587648666481,
+    "merged_cache_bytes": 64000,
+    "route_cache_bytes": 8192
+  },
+  "render_4096": {
+    "before_ms": 1.7489526875,
+    "after_ms": 1.67791428125,
+    "saved_ms": 0.07103840625000002,
+    "reduction_percent": 4.061768323278328,
+    "merged_cache_bytes": 64000,
+    "route_cache_bytes": 131072
+  },
+  "unused_png": {
+    "before_ms": 0.70848599,
+    "after_ms": 2.026e-05,
+    "saved_ms": 0.70846573,
+    "reduction_percent": 99.99714038099752,
+    "avoided_encodes_per_second_when_10hz_model_map_active": 2
+  },
+  "no_map_consumers": {
+    "render_calls_per_second_before": "up to 10 when UsbGpuActive",
+    "render_calls_per_second_after": 0,
+    "black_visionipc_keepalive_hz_after": 1
+  },
+  "checks": {
+    "focused": {
+      "exit_code": 0,
+      "passed": 97,
+      "failed": 0,
+      "skipped": 0,
+      "deselected": 0,
+      "scope": "PC synthetic tests; no actual Jetson inference"
+    },
+    "wider_regression": {
+      "exit_code": 0,
+      "passed": 863,
+      "failed": 0,
+      "skipped": 5,
+      "deselected": 1,
+      "scope": "PC synthetic tests; no actual Jetson inference"
+    },
+    "wider_subtests_passed": 3,
+    "lint_new_violations": 0,
+    "limits": [
+      "No physical comma/Jetson/vehicle validation",
+      "CarrotServ method isolated from native IPC/Params",
+      "Full navigation route-engine native IPC test not run; native msgq unavailable",
+      "C3 native Params/full AGNOS build not run"
+    ]
+  }
+}

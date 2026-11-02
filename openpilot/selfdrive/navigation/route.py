@@ -27,17 +27,19 @@ class RouteTracker:
   """Progress of the ego along a route, in meters, and the map pose at that progress."""
 
   def __init__(self, route: np.ndarray):
-    self.route = np.asarray(route, dtype=np.float64).reshape((-1, 2))
+    self.route = np.array(route, dtype=np.float64, copy=True).reshape((-1, 2))
+    self.route.flags.writeable = False
     self.distance = cumulative_distance(self.route) if len(self.route) >= 2 else np.zeros(len(self.route))
+    self.origin = self.route[0] if len(self.route) else np.zeros(2)
+    self.scale = np.array([111320.0 * np.cos(np.radians(self.origin[1])), 110540.0])
+    self.path = (self.route - self.origin) * self.scale
     self.progress = -np.inf  # the first fix may land anywhere on the route
 
   def project(self, longitude: float, latitude: float) -> float:
     """Advance to the nearest spot on the route within the window ahead of the previous progress."""
     if len(self.route) < 2:
       raise ValueError("Route needs at least two coordinates")
-    origin = self.route[0]
-    scale = np.array([111320.0 * np.cos(np.radians(origin[1])), 110540.0])
-    path, point = (self.route - origin) * scale, (np.array([longitude, latitude]) - origin) * scale
+    path, point = self.path, (np.array([longitude, latitude]) - self.origin) * self.scale
     near = np.flatnonzero((self.distance[1:] >= self.progress + PROJECTION_WINDOW[0]) & (self.distance[:-1] <= self.progress + PROJECTION_WINDOW[1]))
     if not len(near):
       near = np.arange(len(path) - 1)

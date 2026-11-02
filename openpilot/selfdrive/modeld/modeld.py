@@ -254,6 +254,7 @@ def main(demo=False):
     params.put_bool("UsbGpuHardwareSeen", True)
   params.put_bool("UsbGpuCompiled", _compiled)
   params.put_bool("UsbGpuLoading", USBGPU)
+  params.put_bool("UsbGpuNavModel", False)
   params.put_bool("UsbGpuActive", False)
   if _present and (not _compiled or _startup_failed):
     queue_usbgpu_error_tmux(params, "USB present but eGPU model unavailable at startup")
@@ -335,6 +336,7 @@ def main(demo=False):
     if model is None:
       params.put_bool("UsbGpuStartupFailed", True)
     usbgpu_model_loaded = model is not None
+    params.put_bool("UsbGpuNavModel", 'nav_map' in getattr(model, 'views', {}))
     params.put_bool("UsbGpuActive", usbgpu_model_loaded)
 
   # Keep the internal-GPU model ready so a USB disconnect or runtime error does
@@ -524,6 +526,7 @@ def main(demo=False):
       cloudlog.exception("eGPU model failed, falling back to internal GPU")
       queue_usbgpu_error_tmux(params, "runtime model execution failed")
       params.put_bool("UsbGpuActive", False)
+      params.put_bool("UsbGpuNavModel", False)
       params.put_bool("UsbGpuStartupFailed", True)
       params.put_bool("UsbGpuLoading", False)
       usbgpu_startup_pending = False
@@ -664,6 +667,7 @@ def main(demo=False):
           model = recovered
           internal_needs_reset = True
           params.put_bool('UsbGpuStartupFailed', False)
+          params.put_bool('UsbGpuNavModel', 'nav_map' in getattr(model, 'views', {}))
           params.put_bool('UsbGpuActive', True)
           params.put_bool('UsbGpuLoading', True)
           usbgpu_startup_pending = True

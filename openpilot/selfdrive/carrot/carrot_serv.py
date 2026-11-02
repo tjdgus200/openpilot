@@ -14,6 +14,7 @@ from openpilot.cereal import log
 import openpilot.cereal.messaging as messaging
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.params import Params
+from openpilot.common.params_watch import ParamsWatch
 from openpilot.common.filter_simple import MyMovingAverage
 from openpilot.system.hardware import PC, TICI
 from openpilot.selfdrive.navd.helpers import Coordinate
@@ -222,9 +223,25 @@ class CarrotServ:
     # 规则：main_ko -> 韩语；main_zh-CHS -> 中文；其他 -> 英文
     self.lang = "en"
 
+    self._params_watch = ParamsWatch(self.params, (
+      'AutoNaviSpeedBumpSpeed', 'AutoNaviSpeedBumpTime', 'AutoNaviSpeedBumpEndDistance',
+      'AutoNaviSpeedCtrlEnd', 'AutoNaviRearCameraHoldDistance', 'AutoNaviSpeedCtrlMode',
+      'VehicleNaviCanControl', 'VehicleNaviSchoolZoneControl', 'VehicleSpeedCameraControlMode',
+      'AutoNaviSpeedSafetyFactor', 'AutoNaviSpeedDecelRate', 'AutoNaviCountDownMode',
+      'TurnSpeedControlMode', 'MapTurnSpeedFactor', 'AutoTurnControlSpeedTurn', 'AutoTurnMapChange',
+      'AutoTurnControl', 'AutoTurnControlTurnEnd', 'AutoCurveSpeedLowerLimit', 'IsMetric',
+      'AutoRoadSpeedLimitOffset', 'LanguageSetting', 'lang',
+    ))
+    self._params_loaded = False
     self.update_params()
 
   def update_params(self):
+    changed = self._params_watch.changed()
+    if self._params_loaded and not changed:
+      return
+    # Never cache a partially failed read. Events arriving during these reads
+    # remain queued and force another read on the next navigation tick.
+    self._params_loaded = False
     self.autoNaviSpeedBumpSpeed = float(self.params.get_int("AutoNaviSpeedBumpSpeed"))
     self.autoNaviSpeedBumpTime = float(self.params.get_int("AutoNaviSpeedBumpTime"))
     self.autoNaviSpeedBumpEndDistance = float(min(5000, max(0, self.params.get_int("AutoNaviSpeedBumpEndDistance")))) * 0.01
@@ -265,6 +282,7 @@ class CarrotServ:
       self.lang = "zh"
     else:
       self.lang = "en"
+    self._params_loaded = True
 
 
   def _update_cmd(self):

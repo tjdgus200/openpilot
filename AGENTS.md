@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-03 comma auxiliary optimization1-4: CarrotServ caches only unchanged
+  settings using nonblocking inotify plus directory identity; all getter keys
+  watched, failure/overflow/replacement means per-tick original reads, no TTL.
+  UsbGpuNavModel describes the loaded local model's nav_map views, same clear
+  flags as UsbGpuActive; missing status retains conservative old demand. Keep
+  Jetlink/HUD7/web demand and all500ms/2s/route/black/CPU-budget gates. Cache only
+  fixed route/tile work, owned value+dtype route keys and one immutable merged
+  view<=2MiB; no cached validity/pose. Encode PNG only for HUD7/web consumers,
+  never renew stopped image age. Preserve all PV5 features, Q92/FPS, input
+  fusion, USB power block and production diagnostics OFF. No host wire/pin or
+  control/CAN/BLE change. PC timing is not native Params/C3 CPU/P99/road proof.
+  See docs/comma_aux_optimization_20261103.md.
+
 - 2026-11-02 HUD20 optimization: preserve saved Q92/FPS, model-first USB
   admission, Nice19, disabled production profiling, input fusion and all PV5
   features. Production Jetson Q92 uses one CPU JPEG/USB worker and two owned

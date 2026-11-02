@@ -19,6 +19,14 @@ def render_interval(cpu_seconds):
   return max(.1, cpu_seconds * 10)
 
 
+def map_demand(params, *, now):
+  # Missing state from older modeld retains the old conservative eGPU demand.
+  # The flag describes the LOADED model, never a next-boot model selection.
+  local = params.get_bool('UsbGpuActive') and params.get('UsbGpuNavModel') is not False
+  preview = params.get_int('ClusterHudScreenMode') == 7 or preview_fresh(WEB_DEMAND_PATH)
+  return bool(local or jetlink_map_demand(now=now) or preview), preview
+
+
 def main():
   from openpilot.selfdrive.navigation.tiles import RemoteTiles
   from openpilot.selfdrive.navigation.mapbox_tiles import MapboxTiles
@@ -43,7 +51,7 @@ def main():
   server.create_buffers_with_sizes(VisionStreamType.VISION_STREAM_MAP, 4, SIZE, SIZE, SIZE * SIZE, SIZE, SIZE * SIZE)
   server.start_listener()
   params = Params()
-  demand_checked, demand = 0., False
+  demand_checked, demand, preview_demand = 0., False, False
   mapbox_token = ''
   archive_created = 0.
   diagnostics = RuntimeDiagnostics('mapsd', cloudlog.event, interval=5.)
@@ -66,8 +74,7 @@ def main():
       fresh_tbt = sm.valid['navInstructionCarrot'] and 0 <= now - sm.recv_time['navInstructionCarrot'] < 2.
       # Navigation without usable position/instruction immediately publishes black.
       if now >= demand_checked:
-        demand = (params.get_bool('UsbGpuActive') or jetlink_map_demand(now=now) or
-                  params.get_int('ClusterHudScreenMode') == 7 or preview_fresh(WEB_DEMAND_PATH))
+        demand, preview_demand = map_demand(params, now=now)
         token = os.environ.get('MAPBOX_TOKEN') or params.get('MapboxPublicKey') or ''
         if isinstance(token, bytes):
           token = token.decode('utf-8')
@@ -115,7 +122,7 @@ def main():
         # Timestamp at render START prevents a slow tile request looking fresh.
         server.send(VisionStreamType.VISION_STREAM_MAP, image.tobytes(), rk.frame,
                     route_id, int(started * 1e9))
-        if finished >= next_preview:
+        if preview_demand and finished >= next_preview:
           write_preview(image, reason=reason)
           next_preview = finished + .5
         if diagnostics.enabled:
