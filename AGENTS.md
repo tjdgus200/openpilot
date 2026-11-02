@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-03 daily WIP: integrate08f99d4e/03a28b25 TBT wheel return.
+  Selected-side steering>30deg and measured rotation>=20deg admit return
+  completion at abs(wheel)<=30deg while moving>=1km/h. Approach/stop,
+  original distance fallback,300s cap, freshness/route/driver cancellation
+  remain. Queue the next same/opposite cue separately; same-side continuation
+  retains its ID without another tap. Manual confidence/adjacent-lane gates,
+  default-OFF options, receiver/CAN and all PV5 behavior remain unchanged.
+  Upstream private-drive/approval/publication/CI records are attributed history,
+  not PV5 authority or this run's validation. Preserve all43 protected paths,
+  latest four HUD20 package identities, diagnostics OFF, auxiliary/packet caches
+  and all13 contracts. No package, settings, device, schedule or direct push.
+  See docs/pv5_wip_sync_20261103.md; PC checks are not physical/road proof.
+
 - 2026-11-03 additional comma packet optimization1-3: a single HUD packet
   shares two freshly read Jetlink/model status records, never a global TTL;
   recheck each consumer's original3s/8s/35s and telemetry-age gates, with the

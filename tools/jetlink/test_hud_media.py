@@ -200,7 +200,9 @@ class FakeSM:
   def __getitem__(self,key):return self.device
 
 
-def test_stats_use_all_vehicle_cores_including_idle_and_never_host_fallback():
+def test_stats_use_all_vehicle_cores_including_idle_and_never_host_fallback(monkeypatch):
+  import hud_stats
+  monkeypatch.setattr(hud_stats, 'PERF_DIAGNOSTICS', True)
   sm=FakeSM(); adapter=VehicleSystemStats(sm=sm)
   stats=adapter.sample()
   assert stats.cpu_core_percents==(0,20,40,60,80,100,10,30)
@@ -211,6 +213,14 @@ def test_stats_use_all_vehicle_cores_including_idle_and_never_host_fallback():
   sm.alive['deviceState']=False
   assert adapter.sample().cpu_core_percents==()
   assert overlay.sample_text()=='CPU --'
+
+
+def test_disabled_vehicle_cpu_overlay_does_not_sample(monkeypatch):
+  import hud_stats
+  monkeypatch.setattr(hud_stats, 'PERF_DIAGNOSTICS', False)
+  overlay = VehicleCpuOverlay(sm=FakeSM())
+  monkeypatch.setattr(overlay, 'sample', lambda *args: pytest.fail('disabled overlay sampled'))
+  assert overlay.sample_text() is None
 
 
 def test_invalid_percentages_do_not_become_plausible_vehicle_values():

@@ -10,8 +10,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize('scenario', ['fresh', 'optional_import_missing', 'stale', 'invalid_quality'])
-def test_fresh_telemetry_without_repository_pythonpath(scenario):
+@pytest.mark.parametrize('diagnostics', [False, True])
+def test_fresh_telemetry_without_repository_pythonpath(scenario, diagnostics):
   env = os.environ.copy()
+  env.pop('CARROT_PERF_DIAGNOSTICS', None)
+  if diagnostics:
+    env['CARROT_PERF_DIAGNOSTICS'] = '1'
   # Keep external PC dependency directories, never this checkout or its modules.
   paths = [p for p in env.get('PYTHONPATH', '').split(os.pathsep)
            if p and not Path(p).resolve().is_relative_to(ROOT)]
@@ -26,6 +30,7 @@ from types import SimpleNamespace as NS
 import server
 
 scenario = sys.argv[1]
+diagnostics = sys.argv[2] == '1'
 quality = {'version': 1, 'active': 0, 'effective': 0, 'state': 'waiting', 'rows': []}
 if scenario == 'invalid_quality':
   quality['active'] = 999
@@ -51,10 +56,10 @@ for _ in range(3):
   assert value['original'] == 'kept'
   assert value['carrot_health'] == {'severity': 'ok'}
   assert value['carrot_hud_connected'] == (scenario != 'stale')
-  assert ('carrot_hud_quality' in value) == (scenario == 'fresh')
+  assert ('carrot_hud_quality' in value) == (diagnostics and scenario == 'fresh')
 print('FRESH_TELEMETRY_OK', scenario)
 '''
-  result = subprocess.run([sys.executable, '-c', code, scenario], cwd=ROOT / 'tools/jetlink',
+  result = subprocess.run([sys.executable, '-c', code, scenario, str(int(diagnostics))], cwd=ROOT / 'tools/jetlink',
                           env=env, capture_output=True, text=True, timeout=20)
   assert result.returncode == 0, result.stderr[-2500:]
   assert f'FRESH_TELEMETRY_OK {scenario}' in result.stdout
