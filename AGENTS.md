@@ -1,5 +1,20 @@
 # Repository memory
 
+- 2026-11-02 owner reports raw diagnostic panel too small and BLE disconnect
+  on activation. Use the full onroad content rectangle with opaque black and
+  32px data at1920x1080; skip only normal HUD painting while admitted, leaving
+  parent alerts/driver monitoring intact. Mode/nonce changes now keep one BLE
+  router, notification subscription and Link: after the old transaction ends,
+  bounded UART silence+ATI and checked BMS filter restoration precede replacing
+  the poller. Do not close a healthy radio for a mode change. Actual transport,
+  identity or filter failures still use normal cleanup/retry. Recheck diagnostic
+  permission after pacing before writes and after responses; local ATI may finish
+  recovery after revocation. Clear mode caches/status; never decode/reuse old bytes.
+  Green BLEOBD recognizes diagnostic_receiving only with the original last-valid
+  raw response timestamp (5s expiry); NO DATA/invalid replies do not refresh it.
+  Preserve default-OFF <=600s lease, exact6 pages, P/zero/inactive/freshness gates,
+  fixed request cadence and bounded RAM. PC tests do not prove live RF stability.
+
 - 2026-11-02 daily WIP: reviewed through4a555c75; import pinned-runtime captured
   copies/terminal startup TLB classification, bounded indicator origins/echo and
   TBT distance holds. Manual positive adjacent-lane/OEM-white admission and

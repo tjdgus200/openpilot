@@ -42,7 +42,8 @@ def test_exact_source_length_did_count_and_offsets(target):
   value = d.parse(reply(target), target)
   assert value == bytes(range(d.CONTRACTS[target][3] - 3))
   tx, rx, cmd, length = d.CONTRACTS[target]
-  link = d.DiagnosticLink(None, '00:11:22:33:44:55')
+  link = b.Link(None, '00:11:22:33:44:55')
+  link.diagnostic = True
   link.debug_rx = rx
   assert link.encode_request(cmd) == (cmd + format((length + 7) // 7, 'X') + '\r').encode()
   assert link.encode_request('ATSH' + tx) == ('ATSH' + tx + '\r').encode()
@@ -72,7 +73,7 @@ def test_malformed_payloads_never_display(target, fault):
 @pytest.mark.parametrize('command', ['ATZ', 'ATMA', '2E010100', '310101', 'ATSH000', '220199', '220114\rATI'])
 def test_no_scan_reset_write_or_arbitrary_ecu(command):
   with pytest.raises(ValueError):
-    d.DiagnosticLink(None, '00:11:22:33:44:55').encode_request(command)
+    d.diagnostic_request_bytes(command, '7EC')
 
 
 def test_normal_reader_retains_original_allowlist():
@@ -161,7 +162,7 @@ def test_revoked_during_filter_or_reply_cannot_issue_next_query_or_publish(monke
       return b'OK\r>' if command.startswith('AT') else reply('7EC/0101')
   poller = d.Poller(lease(), IDENTITY, lambda: allowed[0], tmp_path / 'status')
   poller.index = index
-  with pytest.raises(ValueError, match='configuration changed'):
+  with pytest.raises(d.ModeChanged):
     asyncio.run(poller.poll(Link()))
   assert len(calls) == 1
   assert not poller.path.exists()
@@ -251,41 +252,140 @@ def test_ui_rejects_malformed_snapshot(tmp_path, fault):
   assert view.update(100.1, False) is None
 
 
-def test_mode_handoff_retires_connection_before_other_owner(monkeypatch, tmp_path):
+def test_mode_handoff_keeps_one_connection_and_restores_filter_before_normal_polling(monkeypatch, tmp_path):
   import jeepney.io.asyncio
-  events, modes, count = [], [None, lease(), None], [0]
+  events, modes, count, pollers, publications = [], [None, lease(), None], [0], [], []
   @asynccontextmanager
   async def router(*args):
-    yield None
-    events.append('router_exit')
+    try:
+      yield None
+    finally:
+      events.append('router_exit')
   class Control:
     def active(self, identity):
       return modes[min(count[0], 2)]
   class Link:
     connect_started = True
+    debug_rx = '7EC'
     def __init__(self, *args):
       events.append('create')
     async def connect(self): events.append('connect')
+    async def resynchronize(self): events.append('quarantine_and_ATI')
+    async def command(self, command):
+      events.append(command)
+      return b'OK\r>'
     async def close(self):
       events.append('close')
       return True
   class Poller:
-    def __init__(self, *args): pass
-    async def poll(self, *args, **kwargs):
+    last_valid = 100.
+    def __init__(self, *args):
+      pollers.append(self)
+      self.cell_observed = [len(pollers)] * 4
+    async def poll(self, link, **kwargs):
+      assert getattr(link, 'diagnostic', False) is (count[0] == 1)
+      events.append('poll')
+      if 'publish' in kwargs:
+        kwargs['publish'](100., {'soc_percent': 77.}, {'soc_percent': 100.})
+      if count[0] == 1:
+        link.debug_rx = '7BB'
       count[0] += 1
       if count[0] == 3:
         raise asyncio.CancelledError
+      return True
     def delay(self, _): return 0
   monkeypatch.setattr(jeepney.io.asyncio, 'open_dbus_router', router)
   monkeypatch.setattr(d, 'Control', Control)
-  monkeypatch.setattr(d, 'DiagnosticLink', Link)
   monkeypatch.setattr(d, 'Poller', Poller)
   monkeypatch.setattr(d, 'STATUS', tmp_path / 'status')
   monkeypatch.setattr(b, 'Link', Link)
   monkeypatch.setattr(b, 'MetricPoller', Poller)
   monkeypatch.setattr(b, 'vehicle_monitor', lambda: None)
   monkeypatch.setattr(b, 'read_json', lambda _: {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []})
-  monkeypatch.setattr(b, 'write_snapshot', lambda *a, **kw: None)
+  monkeypatch.setattr(b, 'write_snapshot', lambda *a, **kw: publications.append(kw.get('cell_times')))
   with pytest.raises(asyncio.CancelledError):
     asyncio.run(b.run())
-  assert events == ['create', 'connect', 'close', 'router_exit'] * 2 + ['create', 'connect', 'close']
+  assert events == ['create', 'connect', 'poll', 'quarantine_and_ATI', 'ATSH7E4', 'ATCRA7EC', 'poll',
+                    'quarantine_and_ATI', 'ATSH7E4', 'ATCRA7EC', 'poll', 'close', 'router_exit']
+  assert [value for value in publications if value is not None] == [[1] * 4, [3] * 4]
+
+
+def test_request_guard_is_checked_after_pacing_before_radio_write(monkeypatch):
+  from test_obd_resync import ClockLink
+  async def check():
+    link = ClockLink([reply('7EC/0101')], monkeypatch)
+    link.diagnostic = True
+    link.next_request = 100.3
+    link.request_guard = lambda: link.clock[0] < 100.2
+    with pytest.raises(d.ModeChanged):
+      await link.command('220101')
+    assert not link.writes and len(link.script) == 1
+    # Local identity queries remain available for bounded recovery only.
+    link.script = [b'ELM327 v2.3\r>']
+    assert await link.command('ATI') == b'ELM327 v2.3\r>'
+  asyncio.run(check())
+
+
+@pytest.mark.parametrize('fault', ['quarantine', 'header', 'filter'])
+def test_failed_mode_restore_cannot_start_a_new_query(monkeypatch, tmp_path, fault):
+  calls = []
+  class Link:
+    diagnostic = True
+    debug_rx = '7BB'
+    def request_guard(self): return True
+    async def resynchronize(self):
+      calls.append('sync')
+      if fault == 'quarantine':
+        raise b.QueryError('elm_resync_busy')
+    async def command(self, command):
+      assert not self.diagnostic and self.request_guard is None
+      calls.append(command)
+      return b'?\r>' if command == ('ATSH7E4' if fault == 'header' else 'ATCRA7EC') else b'OK\r>'
+  monkeypatch.setattr(d, 'STATUS', tmp_path / 'status')
+  link = Link()
+  with pytest.raises((ValueError, b.QueryError)):
+    asyncio.run(d.switch_mode(link, None, lambda: False))
+  assert not link.diagnostic and link.request_guard is None
+  assert all(not call.startswith('22') for call in calls)
+  assert calls[-1] == {'quarantine': 'sync', 'header': 'ATSH7E4', 'filter': 'ATCRA7EC'}[fault]
+
+
+def test_no_data_does_not_refresh_valid_raw_reception(monkeypatch, tmp_path):
+  clock = [100.]
+  monkeypatch.setattr(d, 'time', NS(monotonic=lambda: clock[0]))
+  class Link:
+    async def command(self, command):
+      return reply('7EC/0101') if command == '220101' else b'NO DATA\r>'
+  async def check():
+    poller = d.Poller(lease(), IDENTITY, lambda: True, tmp_path / 'status')
+    await poller.poll(Link())
+    assert poller.last_valid == 100.
+    clock[0] = 101.
+    await poller.poll(Link())
+    assert poller.last_valid == 100. and poller.rows['7EC/0106']['state'] == 'no_data'
+  asyncio.run(check())
+
+
+def test_partial_header_switch_is_restored_even_when_cached_rx_is_still_bms(monkeypatch, tmp_path):
+  allowed, calls = [True], []
+  class Link:
+    diagnostic = True
+    debug_rx = '7EC'
+    async def command(self, command):
+      calls.append(command)
+      if command == 'ATSH7B3':
+        allowed[0] = False
+      return b'OK\r>'
+    async def resynchronize(self): calls.append('sync')
+  monkeypatch.setattr(d, 'STATUS', tmp_path / 'status')
+  async def check():
+    link = Link()
+    poller = d.Poller(lease(), IDENTITY, lambda: allowed[0], tmp_path / 'status')
+    poller.index = 3
+    with pytest.raises(d.ModeChanged):
+      await poller.poll(link)
+    assert link.debug_rx == '7EC'  # Cached value cannot prove the header is unchanged.
+    await d.switch_mode(link, None, lambda: False)
+    assert calls == ['ATSH7B3', 'sync', 'ATSH7E4', 'ATCRA7EC']
+    assert not link.diagnostic and link.request_guard is None
+  asyncio.run(check())

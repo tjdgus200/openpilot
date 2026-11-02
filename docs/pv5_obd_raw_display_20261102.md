@@ -29,6 +29,12 @@ are decimal, data bytes are hexadecimal. All 232 data bytes are shown. Yellow
 indicates a byte changed between displayed observations within the last three
 seconds, not an OEM warning. Compare a screenshot's ID and exact D index.
 
+The temporary page fills the entire onroad content rectangle with an opaque
+black background. Data uses 32px text at 1920x1080 and scales to the actual
+rectangle. Normal HUD painting is bypassed while this page is admitted;
+the parent alert and driver-monitor layers continue to render above it.
+Leaving the admission conditions immediately restores the normal HUD.
+
 Normal battery metrics temporarily become unavailable under their existing
 expiry rules; no debug bytes are sent to the Jetson HUD or control processes.
 Each page displays its own age. Missing, malformed and expired data show
@@ -47,7 +53,16 @@ PYTHONPATH="$PWD/pydeps:$PWD${PYTHONPATH:+:$PYTHONPATH}" python3 tools/jetlink/o
 Stop before the expiry using the same command with `stop` instead of
 `start --seconds 600`. The tool changes only the temporary local request file;
 it neither opens Bluetooth itself nor restarts/kills a running service. A
-completed response boundary precedes the collector's normal teardown/handoff.
+completed response boundary precedes the collector's in-session mode handoff.
+Mode changes no longer tear down a responsive Bluetooth connection. At the
+completed transaction boundary the same owner retires late bytes using bounded
+UART silence plus ATI identity verification, restores the BMS header/filter
+with checked OK replies, then replaces only the poller/encoder. Both filter
+commands are repeated even if permission loss interrupted a prior change before
+the cached receive-ECU value was updated.
+Lease renewal, stop, expiry or loss of Park proof use the same handoff. No
+second link/router/notification subscription is created. Actual transport,
+identity or filter-restore errors still close/retry through the existing path.
 The display requires the updated comma UI; no Jetson runtime package is needed.
 
 ## Bounds and gates
@@ -59,6 +74,7 @@ The display requires the updated comma UI; no Jetson runtime package is needed.
   CAN timeout, P, raw and filtered speed within 0.01 m/s of zero, and all
   engagement/lateral/longitudinal/active flags false. Leaving P, motion, stale
   evidence or control activation stops admitting further diagnostic requests.
+  Permission is checked again after request pacing and before the BLE write.
   The UI checks the same vehicle gate at every render. An already submitted
   request cannot be recalled; normal collector cleanup follows its bounded end.
 - The six fixed read-only DIDs and two known ECU filter/header pairs are the
@@ -81,15 +97,24 @@ This cycle does not guarantee the unknown compressor/power signal is included.
 Temporal correlation is only a candidate; distinguish cabin A/C from battery
 thermal care and verify scales independently before assigning a HUD label.
 
+The green BLEOBD badge accepts `diagnostic_receiving` as well as normal
+`receiving`. Diagnostic status retains the last strictly valid raw response's
+original timestamp; NO DATA/invalid pages and mode changes cannot renew it.
+The five-second freshness limit is unchanged. A missing reception badge is
+not proof that the underlying Bluetooth radio disconnected.
+
 ## Validation
 
 Synthetic tests cover all six payload contracts, malformed sources/DIDs/counts/
 sequences, denied arbitrary commands, no-data and bounded resynchronization,
-mode handoff after old connection teardown, motion/control/freshness gates,
+mode handoff on a single connection, failed UART/filter restoration,
+revocation during pacing, motion/control/freshness gates,
 lease/config/nonce/clock expiry, UI byte highlights, and complete page layout.
 Existing OBD scheduling, reconnect, per-field expiry, incremental voltage and
 comma HUD tests are included. The PC preview contains synthetic bytes only.
-The complete PC suite passed 481 tests; after the final renderer wording/cache
-adjustment, the 39 affected UI tests passed again. New files pass Ruff and the
-patch passes `git diff --check`. PC results do not establish actual BLE stability, ECU/adapter behavior, CPU
+The updated complete PC suite passed 491 tests, including full-screen C3/C4
+HUD hooks, a single-connection round trip, fresh diagnostic badge expiry,
+last-moment permission loss and restoration after a partial header change.
+The changed collector/diagnostic/status files and tests pass Ruff; the patch
+passes `git diff --check`. PC results do not establish actual BLE stability, ECU/adapter behavior, CPU
 cost, screen readability, or road safety. No vehicle installation was performed.

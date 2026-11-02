@@ -285,6 +285,8 @@ class HudRenderer(Widget):
 
   def _render(self, rect: rl.Rectangle) -> None:
     """Render HUD elements to the screen."""
+    if self._obd_debug.draw(rect, self._font_semi_bold, ui_state):
+      return
     self._refresh_hud_params(time.monotonic())
     self._plot_renderer.update(self._show_plot_mode)
     state = self._overlay_state
@@ -301,7 +303,6 @@ class HudRenderer(Widget):
     badge_width = min(500, rect.width * .62)
     draw_indicator(rect.x + (rect.width-badge_width)/2, rect.y+rect.height*.16,
                    badge_width, self._font_display, 26 if rect.width > 1200 else 19)
-    self._obd_debug.draw(rect, self._font_semi_bold, ui_state)
 
   def _paint(self, rect: rl.Rectangle) -> None:
 

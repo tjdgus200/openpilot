@@ -28,7 +28,7 @@ class ObdBadgeStatus:
           now = clock()
         updated = record['updated']
         if (type(record.get('version')) is int and record['version'] == 1
-            and record.get('config_id') == identity and record.get('state') == 'receiving'
+            and record.get('config_id') == identity and record.get('state') in ('receiving', 'diagnostic_receiving')
             and type(updated) in (int, float) and math.isfinite(updated)
             and 0 <= now - updated <= 5.0):
           self.received_at = updated

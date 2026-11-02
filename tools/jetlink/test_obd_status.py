@@ -29,6 +29,16 @@ def test_receiving_before_calibration_and_cached_expiry(badge):
   assert not status.update(106.0, True)
 
 
+@pytest.mark.parametrize('state,expected', [('diagnostic_receiving', True), ('diagnostic', False)])
+def test_diagnostic_badge_requires_a_fresh_valid_raw_response(badge, state, expected):
+  status, record = badge
+  record['state'] = state
+  status.snapshot_path.write_text(json.dumps(record))
+  assert status.update(100., True) is expected
+  # A mode flag alone cannot prolong the original last-good timestamp.
+  assert not status.update(105.01, True)
+
+
 @pytest.mark.parametrize('field,value', [
   ('state', 'connecting'), ('state', 'retry_exhausted'), ('state', 'disconnected'),
   ('state', 'unavailable'), ('state', 'stopped'), ('config_id', 'other'),

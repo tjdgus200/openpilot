@@ -557,6 +557,9 @@ class Link:
     self.request_gap = REQUEST_GAP_MIN
     self.next_request = 0.
     self.last_latency_ms = 0.
+    self.diagnostic = False
+    self.debug_rx = '7EC'
+    self.request_guard = None
 
   async def call(self, path, interface, method, signature=None, body=(), bus='org.bluez', timeout=5):  # noqa: ASYNC109
     from jeepney import DBusAddress, new_method_call
@@ -635,6 +638,9 @@ class Link:
         raise ValueError('ELM setup')
 
   def encode_request(self, command):
+    if self.diagnostic:
+      from openpilot.selfdrive.carrot.obd_debug import diagnostic_request_bytes
+      return diagnostic_request_bytes(command, self.debug_rx)
     return request_bytes(command)
 
   async def command(self, command):
@@ -642,6 +648,11 @@ class Link:
     delay = max(0., self.next_request - time.monotonic())
     if delay:
       await asyncio.sleep(delay)
+    # ATI verifies only the local adapter after bounded UART quarantine;
+    # every diagnostic/header write otherwise rechecks after pacing waits.
+    if command != 'ATI' and self.request_guard is not None and not self.request_guard():
+      from openpilot.selfdrive.carrot.obd_debug import ModeChanged
+      raise ModeChanged
     if self.queue.overflow or not self.queue.empty():
       raise QueryError('unsolicited ELM data')
     started = time.monotonic()
@@ -746,6 +757,20 @@ class Link:
     return False
 
 
+def metric_publisher(address, confirmed, identity, link, poller, startup_timeout):
+  # Bind this normal poller's source/cache explicitly. A later mode change
+  # must never publish from a retired poller or a previous connection.
+  def publish(observed_at, candidates, field_times):
+    if configuration(read_json(CONFIG)) != (address, confirmed):
+      raise ValueError('configuration changed')
+    write_snapshot('receiving' if candidates else 'waiting_data', candidates, confirmed, identity=identity,
+                   observed_at=observed_at, field_times=field_times, diagnostics=collection_info(link, poller),
+                   cell_times=poller.cell_observed)
+    # Even NO DATA proves a responsive ELM, not a valid metric.
+    startup_timeout.reschedule(None)
+  return publish
+
+
 async def run():
   from jeepney.io.asyncio import open_dbus_router
   from openpilot.selfdrive.carrot import obd_debug
@@ -756,45 +781,54 @@ async def run():
     try:
       address, confirmed = configuration(read_json(CONFIG))
       identity = config_id((address, confirmed))
-      lease = debug.active(identity)
+      lease = None
       write_snapshot('connecting', identity=identity)
       # Each attempt is bounded, but failures never exhaust the onroad retry
       # allowance. Manager still stops this display-only reader offroad.
       async with asyncio.timeout(ATTEMPT_TIMEOUT) as startup_timeout:
         async with open_dbus_router('SYSTEM') as router:
-          link = Link(router, address) if lease is None else obd_debug.DiagnosticLink(router, address)
+          link = Link(router, address)
           try:
             await link.connect()
-            poller = MetricPoller() if lease is None else obd_debug.Poller(lease, identity, lambda: debug.active(identity) == lease)
+            poller = MetricPoller()
             details = 'charge_mode' in (confirmed | CHARGING_PREVIEW_FIELDS)
             monitor = None
-            if details and lease is None:
+            if details:
               monitor = vehicle_monitor()
               poller.details = True
-            def publish(observed_at, candidates, field_times,
-                        session=(address, confirmed, identity, link, poller, startup_timeout)):
-              target, fields, source_id, transport, reader, timeout = session
-              if configuration(read_json(CONFIG)) != (target, fields):
-                raise ValueError('configuration changed')
-              write_snapshot('receiving' if candidates else 'waiting_data', candidates, fields, identity=source_id,
-                             observed_at=observed_at, field_times=field_times, diagnostics=collection_info(transport, reader),
-                             cell_times=reader.cell_observed)
-              # Even a complete NO DATA prompt proves that this ELM session is
-              # responsive; it does not make an absent battery field valid.
-              timeout.reschedule(None)
+            publish = metric_publisher(address, confirmed, identity, link, poller, startup_timeout)
             # Configuration is immutable for this session. A config change causes
             # a clean reconnect before any further poll or publication.
             while configuration(read_json(CONFIG)) == (address, confirmed):
-              if debug.active(identity) != lease:
-                break  # Retire the old owner before switching ELM filters/mode.
-              if lease is not None:
-                if await poller.poll(link):
-                  write_snapshot('diagnostic', identity=identity)
-                  startup_timeout.reschedule(None)
-              elif monitor is not None:
-                await poller.poll(link, parked=lambda monitor=monitor: current_parked_state(monitor), publish=publish)
-              else:
-                await poller.poll(link, publish=publish)
+              requested = debug.active(identity)
+              if requested != lease:
+                # Previous poll has completed. Keep the one BLE/UART owner;
+                # restore the known BMS filter before replacing its poller.
+                def allowed(current=requested, target=(address, confirmed), source_id=identity):
+                  return configuration(read_json(CONFIG)) == target and debug.active(source_id) == current
+                await obd_debug.switch_mode(link, requested, allowed)
+                lease = requested
+                poller = MetricPoller() if lease is None else obd_debug.Poller(lease, identity, allowed)
+                monitor = vehicle_monitor() if details and lease is None else None
+                if lease is None:
+                  poller.details = details
+                  publish = metric_publisher(address, confirmed, identity, link, poller, startup_timeout)
+                write_snapshot('waiting_data' if lease is None else 'diagnostic', identity=identity)
+              try:
+                if lease is not None:
+                  if await poller.poll(link):
+                    write_snapshot('diagnostic_receiving' if poller.last_valid is not None else 'diagnostic',
+                                   identity=identity, observed_at=poller.last_valid)
+                    startup_timeout.reschedule(None)
+                elif monitor is not None:
+                  await poller.poll(link, parked=lambda monitor=monitor: current_parked_state(monitor), publish=publish)
+                else:
+                  await poller.poll(link, publish=publish)
+              except obd_debug.ModeChanged:
+                # Revoked while waiting for a response/gap: discard it and
+                # re-evaluate the mode, without closing a responsive BLE link.
+                await asyncio.sleep(.05)
+                continue
               # No overlapping requests and no catch-up burst after a slow poll.
               await asyncio.sleep(poller.delay(link))
           finally:

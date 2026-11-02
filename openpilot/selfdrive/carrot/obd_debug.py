@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import time
 
-from openpilot.selfdrive.carrot.obd_battery import Link, SETUP, QueryError, no_data
+from openpilot.selfdrive.carrot.obd_battery import SETUP, QueryError, no_data
 
 REQUEST = Path('/dev/shm/carrot-obd-debug-request.json')
 STATUS = Path('/dev/shm/carrot-obd-debug.json')
@@ -23,6 +23,11 @@ TARGETS = (
   ('7BB/0102', '7B3', '7BB', '220102', 39),
 )
 CONTRACTS = {key: (tx, rx, cmd, length) for key, tx, rx, cmd, length in TARGETS}
+REQUEST_LENGTHS = {(rx, cmd): length for _, _, rx, cmd, length in TARGETS}
+
+
+class ModeChanged(Exception):
+  """Lease or vehicle proof revoked; no new diagnostic write may start."""
 
 
 def finite(value):
@@ -101,18 +106,31 @@ class Control:
       return None
 
 
-class DiagnosticLink(Link):
-  """Same single BLE owner/transport; only fixed extra read requests and filters."""
-  def encode_request(self, command):
-    if command in SETUP or command in ('ATI', 'ATSH7B3', 'ATCRA7BB'):
-      return (command + '\r').encode('ascii')
-    lengths = {(rx, cmd): length for _, _, rx, cmd, length in TARGETS}
-    target = (getattr(self, 'debug_rx', '7EC'), command)
-    if target not in lengths:
-      raise ValueError('debug command not allowed')
-    # 0101 differs by ECU. Count must match the current receive filter.
-    length = lengths[target]
-    return (command + format((length + 7) // 7, 'X') + '\r').encode('ascii')
+def diagnostic_request_bytes(command, rx):
+  if command in SETUP or command in ('ATI', 'ATSH7B3', 'ATCRA7BB'):
+    return (command + '\r').encode('ascii')
+  if (rx, command) not in REQUEST_LENGTHS:
+    raise ValueError('debug command not allowed')
+  # 0101 differs by ECU. Count must match the current receive filter.
+  length = REQUEST_LENGTHS[rx, command]
+  return (command + format((length + 7) // 7, 'X') + '\r').encode('ascii')
+
+
+async def switch_mode(link, lease, allowed):
+  """Called only between complete transactions by the existing single owner."""
+  link.request_guard = None
+  link.diagnostic = False
+  await link.resynchronize()
+  # Restore both even if a prior permission loss interrupted a header change
+  # before debug_rx was updated. These local ELM commands do not query an ECU.
+  for command in ('ATSH7E4', 'ATCRA7EC'):
+    reply = await link.command(command)
+    if reply.strip() not in (b'OK\r>', b'OK\r\n>'):
+      raise ValueError('ELM setup')
+  link.debug_rx = '7EC'
+  STATUS.unlink(missing_ok=True)  # noqa: ASYNC240 -- one fixed tmpfs entry; avoid a worker thread
+  link.diagnostic = lease is not None
+  link.request_guard = allowed if lease is not None else None
 
 
 def parse(reply, target):
@@ -141,10 +159,11 @@ class Poller:
     self.lease, self.identity, self.allowed, self.path = lease, identity, allowed, path
     self.rows, self.index, self.rx, self.next_poll = {}, 0, '7EC', 0.
     self.resync_streak = 0
+    self.last_valid = None
 
   def check(self):
     if not self.allowed():
-      raise ValueError('configuration changed')
+      raise ModeChanged
 
   async def poll(self, link):
     self.check()
@@ -178,6 +197,7 @@ class Poller:
         row = {'state': 'invalid', 'at': now}
       else:
         self.resync_streak = 0
+        self.last_valid = now
         row = {'state': 'ok', 'at': now, 'data': data.hex().upper()}
     self.rows[key] = row  # One latest response per fixed page; no history.
     atomic_write(self.path, {'version': 1, 'nonce': self.lease['nonce'], 'config_id': self.identity,
