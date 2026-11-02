@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-hud-battery-progress-light-speed-20261101-b00f1550",
-  "source_commit": "b00f1550d7d3a42bb9fb4bba589721aa734e590e",
+  "profile": "pv5-no-perf-light-speed-20261102-d1cd52b9",
+  "source_commit": "d1cd52b9cba91d8764fa1b894ae9ac64e15e71b4",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-battery-progress-light-speed-20261101-b00f1550/host.tar.gz",
-    "sha256": "aa8377d8277bdfde7a6d6fd3463d713f136d497438896c720679baa656b57680",
-    "size": 65182071
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-no-perf-light-speed-20261102-d1cd52b9/host.tar.gz",
+    "sha256": "93d7fb52143546fbc762f9287b2b685dd5021965c99451623180919d486b9aa9",
+    "size": 65211307
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",

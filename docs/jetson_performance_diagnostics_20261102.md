@@ -45,3 +45,12 @@ keep each existing model hash/size, distinct source identity and paired runtime.
 - ctv3m: separate committed package identity; catalog `ctv3m.json`.
 
 - light-speed: separate committed package identity; catalog `light-speed.json`.
+
+## Package delivery
+
+PC389 passed; one unrelated native-FFmpeg test skipped. Web9 passed, build and user-doc validator passed. Four isolated bundles pass imports, production-off worker checks, HUD/boot resources and model queue parity. All16 public assets were downloaded anonymously and matched local size/SHA256. Model identities and N16 default remain unchanged; no physical device was installed or tested.
+
+- [n16](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-no-perf-n16-20261102-f9a5b680), source `f9a5b680`.
+- [flip-flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-no-perf-flip-flop-20261102-3f8c86de), source `3f8c86de`.
+- [ctv3m](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-no-perf-ctv3m-20261102-76adb819), source `76adb819`.
+- [light-speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-no-perf-light-speed-20261102-d1cd52b9), source `d1cd52b9`.

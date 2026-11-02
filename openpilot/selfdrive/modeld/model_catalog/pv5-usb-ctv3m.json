@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-hud-battery-progress-ctv3m-20261101-73bc9d89",
-  "source_commit": "73bc9d8914d9517cd84a7f91f7a3de6ac4edd2f2",
+  "profile": "pv5-no-perf-ctv3m-20261102-76adb819",
+  "source_commit": "76adb8196aa1009af5ce872b19f232b2f15f9cd9",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-battery-progress-ctv3m-20261101-73bc9d89/host.tar.gz",
-    "sha256": "76223e3c95a0966e66e97624c7822a625c96336f605c5c7a1420fc659a7bd251",
-    "size": 65181978
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-no-perf-ctv3m-20261102-76adb819/host.tar.gz",
+    "sha256": "b691ea4bb416d370060f28b6bc5dfa962fb65e8d502744d13f887b04d7aed9cf",
+    "size": 65211106
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
