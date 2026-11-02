@@ -41,3 +41,5 @@ All four model packages must carry this change before their PV5 USB pins move;
 keep each existing model hash/size, distinct source identity and paired runtime.
 
 - flip-flop: separate committed package identity; catalog `md-v3.json`.
+
+- ctv3m: separate committed package identity; catalog `ctv3m.json`.
