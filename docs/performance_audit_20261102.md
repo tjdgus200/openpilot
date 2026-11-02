@@ -59,3 +59,5 @@
 패키지 배포 기록은 네 모델의 체크포인트/런타임 조합을 보존하여 아래에 추가한다.
 
 - flip-flop: separate committed package identity; catalog `md-v3.json`.
+
+- ctv3m: separate committed package identity; catalog `ctv3m.json`.
