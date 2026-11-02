@@ -89,3 +89,5 @@ Park checks must verify visual warnings/brightness/expiry, disconnect and
 shutdown recovery, actual output rate, temperatures, and model deadline
 behavior before relying on the new path in driving. The existing lower-FPS
 selection remains available.
+
+- flip-flop: separate committed package identity; catalog `md-v3.json`.
