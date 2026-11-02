@@ -1,5 +1,25 @@
 # Repository memory
 
+- 2026-11-03 owner reaffirms preservation of ALL completed PV5 changes and
+  optimizations, including the latest comma auxiliary1-4, during daily
+  carrot-wip integration, updates and refactors. Read the current entries below
+  before merging; newer owner decisions supersede historical variants. Preserve
+  behavior and its regression coverage, not an indiscriminate whole-file freeze.
+  Retain BSD brackets/gradients/pulsing/brightness and native cluster warning;
+  W/temperature/resources and black boot/connection diagnostics; battery8,
+  incremental108 voltages/15 temperatures, charging/stopped overview, trip SOC
+  and original per-field expiry; single-owner adaptive sequential BLE/recovery;
+  saved onroad Q92/FPS and model-first bounded HUD pipeline; all approved model
+  identities, matching packages and qualified input/memory optimizations;
+  Jetson USB input-power cutoff and fresh Park update/retirement/rollback gates.
+  Keep production profiling/FPS comparison UI OFF and temporary diagnostics
+  opt-in. Retain settings-watch failure fallback, demand-only maps/PNG and
+  bounded immutable geometry caches. Do not silently remove/disable these to
+  resolve an upstream conflict. Resolve against the latest behavior, run its
+  focused regressions and report any unresolved conflict before publication.
+  This reminder does not change schedules, device settings or temporary access
+  expiry, and does not upgrade PC evidence into physical/road validation.
+
 - 2026-11-03 comma auxiliary optimization1-4: CarrotServ caches only unchanged
   settings using nonblocking inotify plus directory identity; all getter keys
   watched, failure/overflow/replacement means per-tick original reads, no TTL.
