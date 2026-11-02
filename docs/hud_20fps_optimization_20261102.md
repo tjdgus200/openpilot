@@ -91,3 +91,5 @@ behavior before relying on the new path in driving. The existing lower-FPS
 selection remains available.
 
 - flip-flop: separate committed package identity; catalog `md-v3.json`.
+
+- ctv3m: separate committed package identity; catalog `ctv3m.json`.
