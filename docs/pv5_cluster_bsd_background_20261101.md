@@ -18,6 +18,11 @@ brightness and frequency. Do not invent code 5 or claim a software CAN test
 proves visible 2.5 Hz. A real-cluster check is required. The separate Jetson HUD
 warning brackets retain their own 2.5 Hz timing; phases are not synchronized.
 
+The owner subsequently observed 2.5 Hz on the HUD border and about 0.5 Hz
+on the OEM background with the gated request. This is consistent with the
+cluster running its own animation for code 6. A verified steady-red request
+or a cluster flash-rate control is needed to drive the OEM background at 2.5 Hz.
+
 Admission is limited to `CAR.KIA_PV5`, valid CarState, no CAN timeout, and either
 left signal plus left blindspot or right signal plus right blindspot. Use the
 retained turn request rather than the lit/dark lamp phase. Cruise/lateral

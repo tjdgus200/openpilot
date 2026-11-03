@@ -9,13 +9,17 @@ which runs every 250 ms.
 
 The PV5 fork applies a small additive lateral acceleration request before the existing
 curvature smoothing and limiting. It requires active driving control, valid Drive
-gear at 45–100 km/h, gentle curvature, two confident lane lines and agreement
+gear at 18 km/h or above, gentle curvature, two confident lane lines and agreement
 between the lane center and the model path. It yields to existing lane-line
 mode, driver steering or braking, turn signals, maneuver intent, blind spots,
 driver monitoring alerts, nearby tracked leads, and stale input. The extra
 request is capped at 0.08 m/s² and ramps in after 0.5 seconds of eligibility.
 When eligibility is lost, the extra request becomes zero and the existing
 curvature filter and rate limits govern the transition.
+
+최저 속도 18km/h는 ZoomPilot 2026.11.02-18의 Blendful 기준과 같습니다. 보정 전용 최고 속도는 없습니다.
+The minimum matches the 5 m/s Blendful threshold in ZoomPilot 2026.11.02-18.
+There is no assist-specific upper speed cutoff.
 
 합성 입력으로 기존 조향 루프를 검증합니다. 공사 차선과 인식하지 못한
 장애물은 보정 허용 조건을 통과할 수 있습니다. 이때 의도하지 않은 조향의

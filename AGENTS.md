@@ -15,7 +15,7 @@
 
 - 2026-11-03 PV5 Lane Center Assist is an experimental, default-OFF CarrotWeb
   setting at the bottom of Settings. Preserve live on/off in any gear and
-  the PV5-only, cruise, 45–100 km/h, input and geometry/lead gates and the
+  the PV5-only, cruise, ZoomPilot-derived 18 km/h floor, input and geometry/lead gates and the
   0.08 m/s² additive ceiling upstream of the existing curvature filter/limits.
   Preserve OFF parity and regression tests in carrot-wip merges. See
   docs/pv5_lane_center_assist_20261103.md for scope and verification limits.

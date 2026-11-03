@@ -25,7 +25,7 @@ def setup_control(offset, selected=1):
   sm['radarState'] = log.RadarState.new_message()
   sm['driverMonitoringState'] = log.DriverMonitoringState.new_message()
   model = sm['modelV2']
-  xs = [0., 20., 45.]
+  xs = [0., 20., 60.]
   model.position.x = xs
   model.position.y = [0.] * len(xs)
   model.init('laneLines', 4)
@@ -60,6 +60,14 @@ def drive(control):
   control.sm['selfdriveState'].enabled = control.sm['selfdriveState'].active = True
 
 
+@pytest.mark.parametrize('kph,correcting', [(17.9, False), (18.0, True), (120.0, True)])
+def test_original_speed_floor_without_pv5_ceiling(kph, correcting):
+  control, _, tick = setup_control(.27)
+  drive(control)
+  control.sm['carState'].vEgo = kph / 3.6
+  for i in range(140):
+    tick(new_model=i % 5 == 0)
+  assert (control.pv5_lane_center.target > 0.) == correcting
 def test_disabled_matches_existing_control():
   control, _, tick = setup_control(.27, selected=0)
   baseline, _, baseline_tick = setup_control(.27, selected=0)

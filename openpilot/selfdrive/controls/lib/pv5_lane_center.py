@@ -6,6 +6,7 @@ from openpilot.common.realtime import DT_CTRL
 PARAM = "Pv5LaneCenterAssist"
 MAX_CORRECTION_ACCEL = 0.08  # m/s²
 PREVIEW_SECONDS = 1.5
+MIN_SPEED = 5.0  # m/s, ZoomPilot Blendful minimum
 
 
 def _fresh(sm, service, now, limit=0.2):
@@ -79,7 +80,7 @@ class Pv5LaneCenter:
     speed = cs.vEgo
     errors = radar.radarErrors
     if (not engaged or lane_mode or not cs.canValid or cs.canTimeout or cs.gearShifter != 'drive' or cs.standstill or
-        not 45 / 3.6 <= speed <= 100 / 3.6 or cs.steeringPressed or cs.brakePressed or
+        not math.isfinite(speed) or speed < MIN_SPEED or cs.steeringPressed or cs.brakePressed or
         cs.leftBlinker or cs.rightBlinker or cs.leftBlindspot or cs.rightBlindspot or
         meta.laneChangeState != 'off' or meta.desire != 'none' or meta.leverTurn or
         meta.autoTurnSignal != 'none' or meta.hardBrakePredicted or dm.lockout or dm.alertLevel != 'none' or
