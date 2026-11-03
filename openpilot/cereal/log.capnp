@@ -864,6 +864,16 @@ struct ControlsState @0x97ff69c53601abf1 {
   forceDecel @51 :Bool;
 
   activeLaneLine @67 : Bool;
+  pv5LaneCenterStatus @68 :Pv5LaneCenterStatus;
+  pv5LaneCenterFraction @69 :Float32;  # signed fraction of the assist ceiling before curvature limits
+
+  enum Pv5LaneCenterStatus {
+    off @0;
+    waiting @1;
+    correcting @2;
+    laneMode @3;
+    blindspot @4;
+  }
 
   lateralControlState :union {
     pidState @53 :LateralPIDState;

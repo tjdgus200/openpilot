@@ -501,6 +501,8 @@ class ClusterUiState:
     steering_output: float | None = None
     steering_output_normalized: float | None = None
     steering_output_kind: Literal["angle", "torque"] | None = None
+    pv5_lane_center_status: str = "off"
+    pv5_lane_center_fraction: float = 0.0
     fuel_gauge: float | None = None
     energy_gauge_label: Literal["fuel", "battery"] = "fuel"
     urea_gauge: float | None = None

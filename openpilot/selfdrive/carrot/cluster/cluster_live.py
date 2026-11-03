@@ -368,6 +368,10 @@ class OpenpilotLiveSource:
         car_output = self._service_data("carOutput")
         actuators_output = safe_get(car_output, "actuatorsOutput")
         controls_state = self._service_data("controlsState")
+        controls_received = self._service_receive_time("controlsState")
+        lane_center_fresh = (onroad and controls_received is not None
+                             and self._service_alive("controlsState") and self._service_valid("controlsState")
+                             and 0.0 <= time.monotonic() - controls_received <= 0.3)
         lateral_state = safe_get(controls_state, "lateralControlState")
         try:
             lateral_kind = str(lateral_state.which()) if lateral_state is not None else ""
@@ -475,6 +479,8 @@ class OpenpilotLiveSource:
             steering_output=steering_output,
             steering_output_normalized=steering_output_normalized,
             steering_output_kind=steering_output_kind,
+            pv5_lane_center_status=str(safe_get(controls_state, "pv5LaneCenterStatus", "off")) if lane_center_fresh else "off",
+            pv5_lane_center_fraction=(safe_optional_float(controls_state, "pv5LaneCenterFraction") or 0.0) if lane_center_fresh else 0.0,
             fuel_gauge=fuel_gauge,
             energy_gauge_label=energy_gauge_label,
             urea_gauge=urea_gauge,

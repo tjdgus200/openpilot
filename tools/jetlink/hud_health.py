@@ -11,6 +11,7 @@ from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
                               WIFI_STATUS_CENTER_X, WIFI_STATUS_ICON_SIZE, TOP_CLOCK_CENTER_X, TOP_STATUS_CENTER_Y,
                               NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W,
+                              SIDE_GAUGE_LEFT_CENTER_X, SIDE_GAUGE_COLUMN_GAP, SIDE_GAUGE_BOTTOM,
                               SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y, SPEED_VALUE_FONT_SIZE, rl, rl_color)
 
 NORMAL = (100, 225, 170)
@@ -189,6 +190,33 @@ class HealthRenderer(ClusterUiRenderer):
   def _draw_battery_status(self, text, left, width, color):
     # Keep the complete availability message clear of the diagnostic footer.
     self._draw_text(self._ellipsize_text(text, 16, width), left, 55, 16, color)
+
+  def _draw_steering_output_block(self, state):
+    super()._draw_steering_output_block(state)
+    status = state.pv5_lane_center_status
+    if status not in ('waiting', 'correcting', 'laneMode', 'blindspot'):
+      return
+    fraction = state.pv5_lane_center_fraction
+    active = status == 'correcting' and math.isfinite(fraction) and 0 < abs(fraction) <= 1.0
+    ko = self.language == 'ko'
+    if active:
+      label = ('중앙 보정 ' if ko else 'Center ') + ('‹' if fraction < 0 else '›')
+    elif status == 'laneMode':
+      label = '중앙 · 레인모드' if ko else 'Center · Lane mode'
+    elif status == 'blindspot':
+      label = '중앙 · BSD 대기' if ko else 'Center · BSD hold'
+    else:
+      label = '중앙 보정 대기' if ko else 'Center · Ready'
+    x = SIDE_GAUGE_LEFT_CENTER_X + SIDE_GAUGE_COLUMN_GAP / 2
+    y = SIDE_GAUGE_BOTTOM + 31
+    color = (100, 200, 255) if active else UNKNOWN
+    half_bar = 68
+    rl.draw_rectangle(int(x - 117), int(y - 10), 234, 34, rl_color((5, 9, 12), 225))
+    self._draw_text(label, x, y, 18, color, anchor='center')
+    rl.draw_rectangle(int(x - half_bar), int(y + 14), half_bar * 2, 5, rl_color((52, 62, 74)))
+    if active:
+      width = max(1, round(half_bar * abs(fraction)))
+      rl.draw_rectangle(int(x - width if fraction < 0 else x), int(y + 14), width, 5, rl_color(color))
 
   def close(self):
     footer = getattr(self, '_runtime_footer', None)

@@ -25,7 +25,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.controls.lib.steer_ratio import resolve_vehicle_model_steer_ratio
 from openpilot.selfdrive.controls.lib.lateral_readiness import LateralStartupGate, lateral_vehicle_parameters
-from openpilot.selfdrive.controls.lib.pv5_lane_center import Pv5LaneCenter
+from openpilot.selfdrive.controls.lib.pv5_lane_center import MAX_CORRECTION_ACCEL, Pv5LaneCenter
 
 
 from openpilot.common.realtime import DT_CTRL, DT_MDL
@@ -242,6 +242,7 @@ class Controls:
       new_desired_curvature = smooth_value(model_curvature, self.desired_curvature, 0.1)
 
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
+    self.pv5_lane_center_accel = correction * CS.vEgo**2 if correction else 0.0
 
     actuators.curvature = float(self.desired_curvature)
 
@@ -468,6 +469,16 @@ class Controls:
       cs.lateralControlState.torqueState = lac_log
 
     cs.activeLaneLine = self.lanefull_mode_enabled
+    if self.pv5_lane_center is not None and self.pv5_lane_center.enabled:
+      cs.pv5LaneCenterFraction = self.pv5_lane_center_accel / MAX_CORRECTION_ACCEL
+      if self.pv5_lane_center_accel:
+        cs.pv5LaneCenterStatus = 'correcting'
+      elif self.sm['lateralPlan'].useLaneLines:
+        cs.pv5LaneCenterStatus = 'laneMode'
+      elif CS.leftBlindspot or CS.rightBlindspot:
+        cs.pv5LaneCenterStatus = 'blindspot'
+      else:
+        cs.pv5LaneCenterStatus = 'waiting'
     self.pm.send('controlsState', dat)
 
     # carControl
