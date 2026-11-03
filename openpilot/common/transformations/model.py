@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 
 from openpilot.common.transformations.orientation import rot_from_euler
@@ -38,6 +40,19 @@ sbigmodel_intrinsics = np.array([
   [sbigmodel_fl,  0.0,  0.5 * SBIGMODEL_INPUT_SIZE[0]],
   [0.0,  sbigmodel_fl,      0.5 * (256 + MEDMODEL_CY)],
   [0.0,  0.0,                                     1.0]])
+
+WIDE_MODEL_FOV_CHOICES = (65, 70, 75, 80)
+
+
+def wider_model_warp(stock_warp: np.ndarray, fov: int) -> np.ndarray:
+  """Keep the stock optical center while expanding the wide model view."""
+  if fov not in WIDE_MODEL_FOV_CHOICES:
+    raise ValueError(f"Unsupported experimental FOV: {fov}")
+  intrinsics = sbigmodel_intrinsics.copy()
+  focal = SBIGMODEL_INPUT_SIZE[0] / (2 * math.tan(math.radians(fov / 2)))
+  intrinsics[0, 0] = intrinsics[1, 1] = focal
+  return (stock_warp @ sbigmodel_intrinsics @ np.linalg.inv(intrinsics)).astype(np.float32)
+
 
 DM_INPUT_SIZE = (1440, 960)
 dmonitoringmodel_fl = _ar_ox_fisheye.focal_length

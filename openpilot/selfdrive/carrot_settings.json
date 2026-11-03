@@ -660,12 +660,35 @@
           "ko": "주행 보조",
           "en": "Driving Assist",
           "zh": "驾驶辅助",
-          "params": ["Pv5LaneCenterAssist"]
+          "params": ["Pv5LaneCenterAssist", "Pv5WideModelFov"]
         }
       ]
     }
   ],
   "params": [
+    {
+      "group": "PV5",
+      "name": "Pv5WideModelFov",
+      "title": "모델 광각 시야 (실험)",
+      "descr": "기본 약 59°. 콤마와 Jetson의 광각 모델 입력에 약 0.25초 내 반영됩니다. 일반각 입력은 그대로입니다. 감속·조향이 달라질 수 있으며 실차 동작은 검증 전입니다.",
+      "egroup": "PV5",
+      "etitle": "Model Wide FOV (Experimental)",
+      "edescr": "Default is about 59°. Applies to the wide model input on comma and Jetson within about 0.25 seconds. The narrow input is unchanged. Acceleration and steering may differ. Vehicle behavior is unvalidated.",
+      "cgroup": "PV5",
+      "ctitle": "模型广角视野（实验）",
+      "cdescr": "默认约 59°。约 0.25 秒内应用于 comma 和 Jetson 的广角模型输入。窄角输入不变。加减速和转向可能改变，尚未完成实车验证。",
+      "control": "select",
+      "risk": "high",
+      "min": 0,
+      "max": 4,
+      "default": 0,
+      "unit": 1,
+      "options": {
+        "ko": ["기본 (약 59°)", "65°", "70°", "75°", "80°"],
+        "en": ["Stock (about 59°)", "65°", "70°", "75°", "80°"],
+        "zh": ["默认（约 59°）", "65°", "70°", "75°", "80°"]
+      }
+    },
     {
       "group": "PV5",
       "name": "Pv5LaneCenterAssist",

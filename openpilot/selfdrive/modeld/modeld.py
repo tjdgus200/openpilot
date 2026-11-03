@@ -19,7 +19,7 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import config_realtime_process, DT_MDL
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
-from openpilot.common.transformations.model import get_warp_matrix
+from openpilot.common.transformations.model import WIDE_MODEL_FOV_CHOICES, get_warp_matrix, wider_model_warp
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.selfdrive.controls.lib.desire_lib.boundary_observer import BoundaryObserver
 from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value, get_curvature_from_plan
@@ -430,6 +430,10 @@ def main(demo=False):
   lat_delay_dynamic = lat_smooth_seconds
   diagnostics = RuntimeDiagnostics('modeld', cloudlog.event)
   camera_gap = CameraGapTrace(cloudlog.event)
+  wide_fov_index = 0
+  stock_transform_extra = model_transform_extra
+  has_wide_camera = False
+  next_wide_fov_poll = 0.0
   while True:
     loop_start = time.monotonic()
     if diagnostics.enabled:
@@ -464,7 +468,16 @@ def main(demo=False):
     frame_id = sm["roadCameraState"].frameId
     v_ego = max(sm["carState"].vEgo, 0.)
     #lat_delay = sm["liveDelay"].lateralDelay + LAT_SMOOTH_SECONDS
-    if sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']:
+    wide_fov_changed = False
+    if loop_start >= next_wide_fov_poll:
+      next_wide_fov_poll = loop_start + 0.25
+      selection = params.get_int("Pv5WideModelFov")
+      selection = selection if 1 <= selection <= len(WIDE_MODEL_FOV_CHOICES) else 0
+      wide_fov_changed = selection != wide_fov_index
+      wide_fov_index = selection
+
+    calibration_updated = sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']
+    if calibration_updated:
       device_from_calib_euler = np.array(sm["liveCalibration"].rpyCalib, dtype=np.float32)
 
       calib_done = sm["liveCalibration"].calStatus == log.LiveCalibrationData.Status.calibrated
@@ -476,8 +489,13 @@ def main(demo=False):
       dc = DEVICE_CAMERAS[(str(sm['deviceState'].deviceType), str(sm['roadCameraState'].sensor))]
       model_transform_main = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if main_wide_camera else dc.fcam.intrinsics, False).astype(np.float32)
       has_wide_camera = use_extra_client or main_wide_camera
-      model_transform_extra = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if has_wide_camera else dc.fcam.intrinsics, True).astype(np.float32)
+      stock_transform_extra = get_warp_matrix(device_from_calib_euler, dc.ecam.intrinsics if has_wide_camera else dc.fcam.intrinsics, True)
       live_calib_seen = True
+
+    if calibration_updated or wide_fov_changed:
+      model_transform_extra = stock_transform_extra.astype(np.float32)
+      if has_wide_camera and wide_fov_index:
+        model_transform_extra = wider_model_warp(stock_transform_extra, WIDE_MODEL_FOV_CHOICES[wide_fov_index - 1])
 
     traffic_convention = np.zeros(2)
     traffic_convention[int(is_rhd)] = 1

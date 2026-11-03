@@ -2,14 +2,11 @@
 
 import argparse
 import itertools
-import math
 
 import numpy as np
 
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
-from openpilot.common.transformations.model import SBIGMODEL_INPUT_SIZE, get_warp_matrix, sbigmodel_intrinsics
-
-FOV_CHOICES = (65, 70, 75, 80)
+from openpilot.common.transformations.model import SBIGMODEL_INPUT_SIZE, WIDE_MODEL_FOV_CHOICES as FOV_CHOICES, get_warp_matrix, wider_model_warp
 CAMERAS = {sensor: DEVICE_CAMERAS["mici", sensor].ecam for sensor in ("ox03c10", "os04c10")}
 
 
@@ -18,12 +15,7 @@ def wide_warp(calibration, intrinsics, fov=None):
   warp = get_warp_matrix(calibration, intrinsics, bigmodel_frame=True)
   if fov is None:
     return warp.astype(np.float32)
-  if fov not in FOV_CHOICES:
-    raise ValueError(f"Unsupported experimental FOV: {fov}")
-  model_intrinsics = sbigmodel_intrinsics.copy()
-  focal = SBIGMODEL_INPUT_SIZE[0] / (2 * math.tan(math.radians(fov / 2)))
-  model_intrinsics[0, 0] = model_intrinsics[1, 1] = focal
-  return (warp @ sbigmodel_intrinsics @ np.linalg.inv(model_intrinsics)).astype(np.float32)
+  return wider_model_warp(warp, fov)
 
 
 def outside_fraction(warp, source_size):
