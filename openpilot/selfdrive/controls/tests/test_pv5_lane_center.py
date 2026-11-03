@@ -77,7 +77,7 @@ def test_disabled_matches_existing_control():
 def test_full_control_loop_bounded_correction_and_release(offset):
   control, settings, tick = setup_control(offset)
   tick()
-  assert control.pv5_lane_center.armed
+  assert control.pv5_lane_center.enabled
   drive(control)
   for i in range(200):
     cc = tick(new_model=i % 5 == 0)
@@ -87,14 +87,21 @@ def test_full_control_loop_bounded_correction_and_release(offset):
       assert cc.actuators.curvature == 0
   assert cc.actuators.curvature * 20**2 == pytest.approx(math.copysign(.06, offset), abs=.001)
   settings[PARAM] = 0
+  for i in range(26):
+    tick(new_model=i % 5 == 0)
+  assert not control.pv5_lane_center.enabled
+  assert control.pv5_lane_center.target == 0.
   for i in range(90):
     cc = tick(new_model=i % 5 == 0)
-  assert not control.pv5_lane_center.armed
+  assert not control.pv5_lane_center.enabled
   assert abs(cc.actuators.curvature) * 20**2 < .001
   settings[PARAM] = 1
+  for i in range(26):
+    tick(new_model=i % 5 == 0)
+  assert control.pv5_lane_center.enabled
   for i in range(130):
     cc = tick(new_model=i % 5 == 0)
-  assert not control.pv5_lane_center.armed
+  assert cc.actuators.curvature * 20**2 == pytest.approx(math.copysign(.06, offset), abs=.001)
 
 
 @pytest.mark.parametrize('condition', ['blinker', 'blindspot', 'driver', 'radar', 'radar_fault', 'model_lead', 'desire',

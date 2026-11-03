@@ -56,7 +56,7 @@ def _target_accel(model, speed, curvature):
 class Pv5LaneCenter:
   def __init__(self, params):
     self.params = params
-    self.armed = False
+    self.enabled = False
     self.next_settings_check = 0.0
     self._reset()
 
@@ -68,12 +68,8 @@ class Pv5LaneCenter:
   def update(self, sm, cs, model, now, *, active, engaged, lane_mode):
     if now >= self.next_settings_check:
       self.next_settings_check = now + 0.25
-      selected = self.params.get_bool(PARAM)
-      self.armed = selected and (self.armed or (
-        not active and not engaged and cs.canValid and not cs.canTimeout and cs.gearShifter == 'park' and
-        cs.standstill and 0 <= cs.vEgo < 0.1 and _fresh(sm, 'carState', now, 0.1)
-      ))
-    if not self.armed or not active:
+      self.enabled = self.params.get_bool(PARAM)
+    if not self.enabled or not active:
       self._reset()
       return 0.0
 

@@ -14,8 +14,8 @@
   See docs/pv5_wip_sync_20261103.md; PC checks are not physical/road proof.
 
 - 2026-11-03 PV5 Lane Center Assist is an experimental, default-OFF CarrotWeb
-  setting at the bottom of Settings. Preserve the PV5-only gate, fresh stopped
-  Park/disengaged arming, cruise and input gates, geometry/lead checks and the
+  setting at the bottom of Settings. Preserve live on/off in any gear and
+  the PV5-only, cruise, 45–100 km/h, input and geometry/lead gates and the
   0.08 m/s² additive ceiling upstream of the existing curvature filter/limits.
   Preserve OFF parity and regression tests in carrot-wip merges. See
   docs/pv5_lane_center_assist_20261103.md for scope and verification limits.

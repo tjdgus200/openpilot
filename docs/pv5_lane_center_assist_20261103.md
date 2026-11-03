@@ -1,11 +1,11 @@
 # PV5 차로 중앙 보정 · Lane Center Assist
 
 캐럿웹 **설정 → PV5 → 주행 보조 → 차로 중앙 보정 (실험)**에서 선택합니다. 기본값은 꺼짐입니다.
-제어를 해제하고 차량을 P단에 정차하면 켜짐이 반영됩니다. 끄기는 기어와 무관하게 반영되며 설정 확인 주기는 250ms입니다.
+켜기와 끄기는 기어와 무관하게 반영됩니다. 제어기의 설정 확인 주기는 250ms입니다.
 
 In CarrotWeb, open **Settings → PV5 → Driving Assist → Lane Center Assist (Experimental)**.
-It defaults to off. The selected setting arms when stopped in Park with control disengaged.
-Off applies in any gear on the next settings check, which runs every 250 ms.
+It defaults to off. Both settings apply in any gear on the next settings check,
+which runs every 250 ms.
 
 The PV5 fork applies a small additive lateral acceleration request before the existing
 curvature smoothing and limiting. It requires active driving control, valid Drive
