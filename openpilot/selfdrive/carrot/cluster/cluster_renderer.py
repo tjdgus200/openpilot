@@ -4242,7 +4242,7 @@ class ClusterUiRenderer:
     ) -> None:
         offset_x = self._driving_hud_offset_design_x(screen_mode)
         tpms_offset_x = self._tpms_offset_design_x(screen_mode)
-        side_gauge_offset_x = self._side_gauge_offset_design_x(screen_mode)
+        side_gauge_offset_x = self._side_gauge_offset_design_x(screen_mode) + 16
         rl.rl_push_matrix()
         if abs(offset_x) > 0.001:
             rl.rl_translatef(offset_x, 0.0, 0.0)
