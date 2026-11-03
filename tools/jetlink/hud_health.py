@@ -208,10 +208,10 @@ class HealthRenderer(ClusterUiRenderer):
     else:
       label = '중앙 보정 대기' if ko else 'Center · Ready'
     x = SIDE_GAUGE_LEFT_CENTER_X + SIDE_GAUGE_COLUMN_GAP / 2
-    y = SIDE_GAUGE_BOTTOM + 31
+    y = SIDE_GAUGE_BOTTOM + 39
     color = (100, 200, 255) if active else UNKNOWN
     half_bar = 68
-    rl.draw_rectangle(int(x - 117), int(y - 10), 234, 34, rl_color((5, 9, 12), 225))
+    rl.draw_rectangle(int(x - 98), int(y - 10), 196, 34, rl_color((5, 9, 12), 225))
     self._draw_text(label, x, y, 18, color, anchor='center')
     rl.draw_rectangle(int(x - half_bar), int(y + 14), half_bar * 2, 5, rl_color((52, 62, 74)))
     if active:

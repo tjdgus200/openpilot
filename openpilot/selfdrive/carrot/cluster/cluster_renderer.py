@@ -7565,7 +7565,7 @@ class ClusterUiRenderer:
                                color if i < level else (56, 64, 72, 150))
         self._draw_text_with_stroke(label, center_x, SIDE_GAUGE_VALUE_Y, 20, color,
                                     (5, 9, 12), 2, anchor="center", cache=True)
-        self._draw_text_with_stroke("모델 신뢰도", center_x, bottom + SIDE_GAUGE_LABEL_OFFSET, 17, WHITE,
+        self._draw_text_with_stroke("모델 신뢰도", center_x, bottom + SIDE_GAUGE_LABEL_OFFSET, 15, WHITE,
                                     (5, 9, 12), 2, anchor="center", cache=True)
 
     def _draw_accel_block(self, state: ClusterUiState) -> None:
