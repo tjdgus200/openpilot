@@ -25,6 +25,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.controls.lib.steer_ratio import resolve_vehicle_model_steer_ratio
 from openpilot.selfdrive.controls.lib.lateral_readiness import LateralStartupGate, lateral_vehicle_parameters
+from openpilot.selfdrive.controls.lib.pv5_lane_center import Pv5LaneCenter
 
 
 from openpilot.common.realtime import DT_CTRL, DT_MDL
@@ -55,6 +56,8 @@ def lateral_control_allowed(selfdrive_active: bool, always_lateral: bool, lat_en
 
 
 class Controls:
+  pv5_lane_center = None
+
   def __init__(self) -> None:
     self.params = Params()
     cloudlog.info("controlsd is waiting for CarParams")
@@ -63,6 +66,8 @@ class Controls:
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP)
     self.physical_blinker_hold = HoldReader(self.CP.carFingerprint, self.params)
+    if self.CP.carFingerprint == 'KIA_PV5' and not self.CP.notCar:
+      self.pv5_lane_center = Pv5LaneCenter(self.params)
 
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
@@ -204,6 +209,14 @@ class Controls:
       alpha = 1 - np.exp(-DT_CTRL / tau) if tau > 0 else 1
       return alpha * val + (1 - alpha) * prev_val
 
+    correction = 0.0
+    if self.pv5_lane_center is not None:
+      correction = self.pv5_lane_center.update(
+        self.sm, CS, model_v2, time.monotonic(), active=CC.latActive,
+        engaged=CC.enabled and self.sm['selfdriveState'].active,
+        lane_mode=lat_plan.useLaneLines,
+      )
+
     if not CC.latActive:
       new_desired_curvature = self.curvature
     elif self.is_vw_meb:
@@ -223,7 +236,10 @@ class Controls:
         curvature = get_lag_adjusted_curvature(self.CP, CS.vEgo, lat_plan.psis, lat_plan.curvatures, steer_actuator_delay + lat_smooth_seconds, lat_plan.distances)
         new_desired_curvature = smooth_value(curvature, self.desired_curvature, lat_smooth_seconds)
     else:      
-      new_desired_curvature = smooth_value(model_v2.action.desiredCurvature, self.desired_curvature, 0.1)
+      model_curvature = model_v2.action.desiredCurvature
+      if correction:
+        model_curvature += correction
+      new_desired_curvature = smooth_value(model_curvature, self.desired_curvature, 0.1)
 
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
 
