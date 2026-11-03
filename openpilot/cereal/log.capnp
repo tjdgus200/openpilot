@@ -1127,6 +1127,7 @@ struct ModelDataV2 {
     indicatorJournalMonoTime @32 :UInt64;
     indicatorPrepareDirection @33 :LaneChangeDirection; # Display only; never an actuation request.
     indicatorPrepareSource @34 :Text;
+    laneChangeWaitReason @35 :Text; # Display only.
 
 
     deprecated :group {

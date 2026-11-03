@@ -4164,7 +4164,13 @@ class ClusterUiRenderer:
             panel_w = CAMERA_BACKGROUND_W
             panel_center_x = panel_x + panel_w * 0.5
 
-            if alert.size >= CLUSTER_ALERT_SIZE_FULL:
+            lane_change_wait = alert.alert_type == "clusterLaneChangeWait"
+            if lane_change_wait:
+                panel_center_x = DESIGN_WIDTH * 0.5
+                max_text_w = DESIGN_WIDTH - 100.0
+                title_size = 76.0
+                detail_size = 44.0
+            elif alert.size >= CLUSTER_ALERT_SIZE_FULL:
                 max_text_w = panel_w - 100.0
                 title_size = 56.0
                 detail_size = 32.0
@@ -4185,8 +4191,12 @@ class ClusterUiRenderer:
             center_y = DESIGN_HEIGHT * 0.5
             title_color = CLUSTER_ALERT_TEXT_COLORS.get(alert.status, CLUSTER_ALERT_TEXT_COLORS[0])
             if detail:
-                title_y = center_y - (22.0 if alert.size == CLUSTER_ALERT_SIZE_SMALL else 30.0)
-                detail_y = center_y + (27.0 if alert.size == CLUSTER_ALERT_SIZE_SMALL else 36.0)
+                if lane_change_wait:
+                    title_y, detail_y = center_y - 40.0, center_y + 46.0
+                elif alert.size == CLUSTER_ALERT_SIZE_SMALL:
+                    title_y, detail_y = center_y - 22.0, center_y + 27.0
+                else:
+                    title_y, detail_y = center_y - 30.0, center_y + 36.0
                 self._draw_text_with_stroke(
                     title, panel_center_x, title_y, title_size, title_color,
                     CLUSTER_ALERT_TEXT_STROKE, 4, anchor="center", cache=True,

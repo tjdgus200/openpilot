@@ -544,6 +544,25 @@ class OpenpilotLiveSource:
                     status=0,
                     alert_type="clusterSelfdriveReboot",
                 )
+        if current_alert is not None and current_alert.size > 0:
+            return current_alert
+        model_received = self._service_receive_time("modelV2")
+        if (model_received is None or not 0 <= now - model_received <= 0.5
+                or not self._service_alive("modelV2") or not self._service_valid("modelV2")):
+            return current_alert
+        meta = safe_get(self._service_data("modelV2"), "meta")
+        if str(safe_get(meta, "laneChangeState")) != "preLaneChange":
+            return current_alert
+        direction = {"left": "왼쪽", "right": "오른쪽"}.get(str(safe_get(meta, "laneChangeDirection")))
+        reason = {
+            "blindspot": "사각지대 차량",
+            "adjacentVehicle": "옆 차선 차량",
+            "adjacentLaneUnavailable": "옆 차선 확인 안 됨",
+            "laneBoundary": "차선 경계 조건 미충족",
+        }.get(str(safe_get(meta, "laneChangeWaitReason")))
+        if direction and reason:
+            return ClusterAlert(text1=f"{direction} 차선 변경 대기", text2=reason,
+                                size=3, status=0, alert_type="clusterLaneChangeWait")
         return current_alert
 
     def onroad_state(self) -> bool | None:

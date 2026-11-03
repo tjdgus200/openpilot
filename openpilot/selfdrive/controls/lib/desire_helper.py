@@ -114,6 +114,7 @@ class DesireHelper:
     self.laneChangeDelay = 0.0
     self.blinkerLatchedTurn = 0.0  # m/s, 0 = off
     self.laneChangeLeverWait = False
+    self.lane_change_wait_reason = ''
 
     # misc
     self.prev_desire_enabled = False
@@ -716,6 +717,17 @@ class DesireHelper:
       self._update_auto_signal(carstate, modeldata, carrotMan, lateral_active, atc_enabled, atc_st, driver_st, prev_lane_change_state)
     if self.tesla_auto_signals and (self.lane_change_state == LaneChangeState.off or self._auto_lane_completed):
       self._auto_app_direction = BLINKER_NONE
+
+    self.lane_change_wait_reason = ''
+    if driver_enabled and side is not None and self.lane_change_state == LaneChangeState.preLaneChange:
+      if side.bsd_hold_counter > 0 and self.laneChangeBsd >= 0:
+        self.lane_change_wait_reason = 'blindspot'
+      elif side.side_object_detected:
+        self.lane_change_wait_reason = 'adjacentVehicle'
+      elif not side.lane_available and not side.edge_available:
+        self.lane_change_wait_reason = 'adjacentLaneUnavailable'
+      elif not side.lane_change_available_geom:
+        self.lane_change_wait_reason = 'laneBoundary'
 
     # keep pulse
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.laneChangeStarting):
