@@ -7549,7 +7549,7 @@ class ClusterUiRenderer:
 
     def _draw_model_confidence(self, state: ClusterUiState) -> None:
         top, bottom = SIDE_GAUGE_TOP, SIDE_GAUGE_BOTTOM
-        center_x = SIDE_GAUGE_LEFT_CENTER_X
+        center_x = SIDE_GAUGE_LEFT_CENTER_X + 12
         left = center_x - SIDE_GAUGE_WIDTH * 0.5
         level, label, color = {
             "green": (3, "높음", GREEN),
