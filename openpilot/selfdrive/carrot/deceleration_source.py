@@ -53,6 +53,30 @@ def deceleration_source_presentation(source: str | None) -> tuple[str, int]:
   return DECELERATION_SOURCE_LABELS.get(normalized, normalized[:8]), 2
 
 
+DECELERATION_BANNER_LABELS = {
+  "vturn": "커브 감속",
+  "model": "모델 경로 감속",
+  "turn": "회전 감속",
+  "route": "경로 감속",
+  "road": "제한속도 적용",
+  "waze": "제한속도 적용",
+  "cam": "단속 구간 감속",
+  "section": "구간 단속 감속",
+  "bump": "방지턱 감속",
+  "school": "보호구역 감속",
+}
+
+
+def deceleration_banner_text(label, speed, set_speed, desired_speed, plan_target, acceleration):
+  text = DECELERATION_BANNER_LABELS.get(label)
+  if text is None or None in (set_speed, desired_speed, plan_target, acceleration):
+    return None
+  if (0 < desired_speed < set_speed - 0.5 and abs(plan_target - desired_speed) <= 0.5
+      and speed > plan_target + 0.5 and acceleration < -0.05):
+    return text
+  return None
+
+
 def navigation_status_presentation(vehicle_available: bool, external_active: bool) -> tuple[str, int] | None:
   """Return the navigation availability badge, independent of speed control."""
   if external_active:

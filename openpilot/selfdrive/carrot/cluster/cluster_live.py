@@ -44,7 +44,9 @@ if OPENPILOT_ROOT is not None:
     package_root = OPENPILOT_ROOT.parent if (OPENPILOT_ROOT / "__init__.py").is_file() else OPENPILOT_ROOT
     sys.path.insert(0, str(package_root))
 
-from openpilot.selfdrive.carrot.deceleration_source import deceleration_source_presentation, external_navigation_connected
+from openpilot.selfdrive.carrot.deceleration_source import (
+    deceleration_banner_text, deceleration_source_presentation, external_navigation_connected,
+)
 
 LIVE_NAV_ROUTE_MAX_POINTS = 4096
 LIVE_NAVI_IMAGE_BASE64_MAX_CHARS = 2 * 1024 * 1024
@@ -464,9 +466,28 @@ class OpenpilotLiveSource:
                     cruise_override_kph = desired_speed
                     cruise_override_label, cruise_override_color_mode = deceleration_source_presentation(desired_source)
 
+        now = time.monotonic()
+        confidence = None
+        deceleration_banner = None
+        if onroad:
+            if self._service_is_fresh("modelV2", now, 0.5):
+                confidence = str(safe_get(self._service_data("modelV2"), "confidence", ""))
+            if (self._service_is_fresh("carControl", now, 0.3)
+                    and self._service_is_fresh("longitudinalPlan", now, 0.5)
+                    and self._service_is_fresh("carrotMan", now, 1.0)
+                    and bool(safe_get(self._service_data("carControl"), "longActive", False))):
+                plan = self._service_data("longitudinalPlan")
+                deceleration_banner = deceleration_banner_text(
+                    cruise_override_label, state.speed_kph, state.cruise_kph,
+                    safe_optional_float(carrot_man, "desiredSpeed"),
+                    safe_optional_float(plan, "cruiseTarget"), safe_optional_float(plan, "aTarget"),
+                )
+
         return replace(
             state,
             onroad=onroad,
+            model_confidence=confidence,
+            deceleration_banner=deceleration_banner,
             alert=self._live_cluster_alert(state.alert, onroad),
             egpu_active=getattr(self, "_egpu_active", False),
             external_compute_label=getattr(self, '_external_compute_label', ''),
@@ -1320,6 +1341,11 @@ class OpenpilotLiveSource:
             return bool(self.sm.alive.get(service, False))
         except AttributeError:
             return False
+
+    def _service_is_fresh(self, service: str, now: float, max_age: float) -> bool:
+        received = self._service_receive_time(service)
+        return (received is not None and 0 <= now - received <= max_age
+                and self._service_alive(service) and self._service_valid(service))
 
     def _service_updated(self, service: str) -> bool:
         try:

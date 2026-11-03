@@ -509,6 +509,7 @@ class ClusterUiState:
     ev_mode_valid: bool = False
     ev_mode_active: bool = False
     cruise_override_kph: float | None = None
+    deceleration_banner: str | None = None
     cruise_override_label: str | None = None
     cruise_override_color_mode: int = 0
     recorded_cutin_active: bool = False

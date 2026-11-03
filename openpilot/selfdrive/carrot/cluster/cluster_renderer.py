@@ -4256,8 +4256,8 @@ class ClusterUiRenderer:
                 rl.rl_translatef(side_gauge_offset_x, 0.0, 0.0)
             try:
                 profile_stage = self._profile_start()
-                self._draw_accel_block(state)
-                self._profile_add("hud.accel_block", profile_stage)
+                self._draw_model_confidence(state)
+                self._profile_add("hud.model_confidence", profile_stage)
                 self._draw_steering_output_block(state)
             finally:
                 if side_gauges_translated:
@@ -4304,7 +4304,9 @@ class ClusterUiRenderer:
                 )
                 self._profile_add("hud.navi_traffic", profile_stage)
             profile_stage = self._profile_start()
-            self._draw_center_clock(state, center_x=self._center_clock_x(screen_mode))
+            banner_visible = self._draw_deceleration_banner(state, screen_mode)
+            if not banner_visible or screen_mode != CLUSTER_SCREEN_MODE_FULLSCREEN_3D:
+                self._draw_center_clock(state, center_x=self._center_clock_x(screen_mode))
             self._profile_add("hud.center_clock", profile_stage)
         finally:
             rl.rl_pop_matrix()
@@ -7531,6 +7533,40 @@ class ClusterUiRenderer:
         if state.cruise_display_state == "paused":
             return theme.muted
         return GREEN
+
+    def _draw_deceleration_banner(self, state: ClusterUiState, screen_mode: int) -> bool:
+        text = state.deceleration_banner
+        if not text or (state.alert is not None and state.alert.size > 0):
+            return False
+        center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
+        width, height, top = 330, 54, 4
+        left = center_x - width * 0.5
+        self._rounded_rect(left, top, width, height, 12, (16, 25, 35, 245), (84, 103, 122, 255), 2)
+        self._rounded_rect(left + 14, top + 13, 5, height - 26, 2, AMBER)
+        self._draw_text_with_stroke(text, center_x + 5, top + height * 0.5, 36,
+                                    (255, 241, 211), (5, 9, 12), 2, anchor="center", cache=True)
+        return True
+
+    def _draw_model_confidence(self, state: ClusterUiState) -> None:
+        top, bottom = SIDE_GAUGE_TOP, SIDE_GAUGE_BOTTOM
+        center_x = SIDE_GAUGE_LEFT_CENTER_X
+        left = center_x - SIDE_GAUGE_WIDTH * 0.5
+        level, label, color = {
+            "green": (3, "높음", GREEN),
+            "yellow": (2, "주의", AMBER),
+            "red": (1, "낮음", RED),
+        }.get(state.model_confidence, (0, "--", self._current_theme().muted))
+        self._rounded_rect(left, top, SIDE_GAUGE_WIDTH, bottom - top, 18,
+                           (0, 0, 0, 0), self._side_gauge_outline(state), 2)
+        segment_height = 24
+        for i in range(3):
+            self._rounded_rect(left + 8, bottom - 8 - segment_height - i * 29,
+                               SIDE_GAUGE_WIDTH - 16, segment_height, 6,
+                               color if i < level else (56, 64, 72, 150))
+        self._draw_text_with_stroke(label, center_x, SIDE_GAUGE_VALUE_Y, 20, color,
+                                    (5, 9, 12), 2, anchor="center", cache=True)
+        self._draw_text_with_stroke("모델 신뢰도", center_x, bottom + SIDE_GAUGE_LABEL_OFFSET, 17, WHITE,
+                                    (5, 9, 12), 2, anchor="center", cache=True)
 
     def _draw_accel_block(self, state: ClusterUiState) -> None:
         theme = self._current_theme()
