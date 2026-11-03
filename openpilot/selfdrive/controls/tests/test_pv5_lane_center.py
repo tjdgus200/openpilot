@@ -60,14 +60,17 @@ def drive(control):
   control.sm['selfdriveState'].enabled = control.sm['selfdriveState'].active = True
 
 
-@pytest.mark.parametrize('kph,correcting', [(17.9, False), (18.0, True), (120.0, True)])
-def test_original_speed_floor_without_pv5_ceiling(kph, correcting):
+@pytest.mark.parametrize('kph', [0.0, 3.6, 17.9, 18.0, 120.0])
+def test_correction_without_separate_speed_gate(kph):
   control, _, tick = setup_control(.27)
   drive(control)
   control.sm['carState'].vEgo = kph / 3.6
   for i in range(140):
-    tick(new_model=i % 5 == 0)
-  assert (control.pv5_lane_center.target > 0.) == correcting
+    cc = tick(new_model=i % 5 == 0)
+  if kph > 0:
+    assert cc.actuators.curvature == pytest.approx(.06 / max(kph / 3.6, 5.0)**2, rel=.02)
+  else:
+    assert control.pv5_lane_center.target == 0.
 def test_disabled_matches_existing_control():
   control, _, tick = setup_control(.27, selected=0)
   baseline, _, baseline_tick = setup_control(.27, selected=0)
