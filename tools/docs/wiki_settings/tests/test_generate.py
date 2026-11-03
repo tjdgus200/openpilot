@@ -85,11 +85,14 @@ class WikiSettingsGeneratorTest(unittest.TestCase):
       catalog_commit=COMMIT,
       generated_at=STAMP,
     )
-    self.assertEqual(len(result.generated_settings), 208)
+    self.assertEqual(len(result.generated_settings), 211)
     self.assertIn("TeslaAutoTurnSignals", result.index["settings"])
     self.assertIn("JetsonHudFps", result.index["settings"])
     self.assertIn("JetsonInputFusion", result.index["settings"])
     self.assertIn("NNFF", result.index["settings"])
+    self.assertIn("CommaPedalEnabled", result.index["settings"])
+    self.assertIn("Pv5LaneCenterAssist", result.index["settings"])
+    self.assertIn("Pv5WideModelFov", result.index["settings"])
     self.assertIn("AutoBlinkerControl", result.index["settings"])
     self.assertIn("ManualLaneChangeIndicator", result.index["settings"])
     self.assertIn("ModelDesireIndicator", result.index["settings"])
@@ -108,15 +111,15 @@ class WikiSettingsGeneratorTest(unittest.TestCase):
     for retired in ("ClusterHudPriority", "ClusterHudCoreMode", "ClusterHudLiveFps", "CanfdStopRetry", "DisableDM",
                     "CarrotYouTubeLive", "CarrotYouTubeQuality", "CarrotYouTubeTimestamp"):
       self.assertNotIn(retired, result.index["settings"])
-    self.assertEqual(result.index["review"], {"current": 0, "needs_review": 208})
+    self.assertEqual(result.index["review"], {"current": 0, "needs_review": 211})
     self.assertEqual(result.index["locales"], ["ko", "en", "zh"])
-    self.assertEqual(len(result.pages), (208 * 3) + 2)
+    self.assertEqual(len(result.pages), (211 * 3) + 2)
     setting_pages = {
       name: text
       for name, text in result.pages.items()
       if GENERATOR.GENERATED_PAGE_RE.fullmatch(name)
     }
-    self.assertEqual(len(setting_pages), 208 * 3)
+    self.assertEqual(len(setting_pages), 211 * 3)
     self.assertTrue(all(text.count("<!-- CARROT:SETTING:BEGIN ") == 1 for text in setting_pages.values()))
     for name, text in result.pages.items():
       if name.endswith(".md"):

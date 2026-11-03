@@ -1,5 +1,21 @@
 # Repository memory
 
+- 2026-11-04 daily WIP: review through dda78d2b; import final default-OFF
+  Ray-only Comma Pedal/DBC/safety profile, isolated CameraSCC MAIN request,
+  native ALT2 test fix and action-head 2.5m/s curvature denominator floor.
+  Import configurable ATC distance (0..500m, step50, legacy ON->250m), retaining
+  PV5 wheel-return30deg, original receiver/driver cancellation, manual adjacent
+  lane/confidence gates and default-OFF options. The other1196a59d changes are
+  deferred. Entire B1 BLE/auto-enrollment/firmware/OTA chain is deferred together:
+  no board binary or new receiver package, no onroad automatic OTA admission.
+  Preserve all43 context protected paths and four HUD20 model identities,
+  all13 contracts, diagnostics OFF, packet/aux caches, lane center0.08m/s2 cap,
+  live default0 wide FOV and latest wait/deceleration/confidence/correction HUD.
+  Imported approvals/log/CI/publication records are attributed upstream history,
+  not PV5 authority or this run's evidence. See docs/pv5_wip_sync_20261104.md.
+  No settings/device/package/schedule/owner-validator change or direct push.
+  PC checks are not physical CAN/BLE/USB/TRT/P99/20Hz or road validation.
+
 - 2026-11-03 daily WIP: integrate08f99d4e/03a28b25 TBT wheel return.
   Selected-side steering>30deg and measured rotation>=20deg admit return
   completion at abs(wheel)<=30deg while moving>=1km/h. Approach/stop,

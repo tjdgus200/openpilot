@@ -7,6 +7,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from openpilot.common.atc_params import right_lane_change_distance
 from blink_protocol import PACKAGE_CONFIG, LIMIT, encode, finite, fresh
 from blink_policy import Policy, AutomaticSignals
 from blink_tbt import TbtBlinker, right_front_clear
@@ -170,12 +171,13 @@ def main(fd, spas=False):
       automatic.update(now, mode, False, 0., 'none', '', 'none', use_travel=True)
     # The ATC add-on lights the real right indicator. Its CAN feedback goes through the
     # unchanged driver-blinker lane-change path; no LANECHANGE command is sent.
+    tbt_distance = right_lane_change_distance(params)
     tbt_enabled = (not spas and mode == 2 and params.get_int('AutoTurnControl') in (1, 2) and
-                   params.get_bool('AutoTurnControlRightLaneChange'))
+                   tbt_distance > 0)
     front_clear = (tbt_enabled and front_radar_available and 'radarState' in sm.services and sm.valid['radarState'] and
                    sm.alive['radarState'] and fresh(sm.recv_time['radarState'], now, .35) and
                    right_front_clear(sm['radarState']))
-    tbt_auto = tbt.update(now, enabled=tbt_enabled,
+    tbt_auto = tbt.update(now, enabled=tbt_enabled, distance_limit=tbt_distance,
                           front_clear=front_clear,
                           valid=(auto_valid and fresh(sm.recv_time['carrotMan'], now, .35) and
                                  sm['carControl'].latActive and params.get_int('LaneChangeNeedTorque') == 0),
