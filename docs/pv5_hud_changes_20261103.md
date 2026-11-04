@@ -36,3 +36,12 @@ GPU 사용량은 기존 표시 색상을 따른다. 온도 색상과 Jetson 과�
 - [오늘의 upstream 병합 기록](pv5_wip_sync_20261103.md)
 - [콤마 보조 경로 최적화](comma_aux_optimization_20261103.md)와 [패킷 처리 최적화](comma_packet_optimization_20261103.md)
 - StarPilot·sunnypilot 비교에서 나온 Jetson 준비 상태, 호환성 점검, 문제 발생 시점 저장, 시험판·검증판 분리, 설정 비교, 제한속도 출처 불일치, 앞차 출발 알림, 복구 모드는 검토 후보로 남겼다.
+
+## 2026-11-04 Jetson 패키지 게시
+
+HUD 변경은 콤마 소스 커밋 `66ef2ef0`에 포함됐다. 모델별 공개 릴리스 4종의 첨부 16개를 크기와 SHA-256으로 대조한 뒤 PV5 패키지 지정을 갱신했다. 실차 Jetson 설치와 동작 검증은 남아 있다.
+
+- n16 · `66ef2ef0` · [릴리스](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-refresh-n16-20261104-66ef2ef0)
+- flip-flop · `6b97d639` · [릴리스](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-refresh-flip-flop-20261104-6b97d639)
+- ctv3m · `2dab4094` · [릴리스](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-refresh-ctv3m-20261104-2dab4094)
+- light-speed · `362eaaf8` · [릴리스](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-refresh-light-speed-20261104-362eaaf8)
