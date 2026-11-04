@@ -43,8 +43,9 @@ def test_footer_separates_hosts_and_names_timing_scope():
 def test_resource_colors_are_display_only_and_gpu_load_is_not_a_fault():
   assert metric_color(None, 'cpu') == UNKNOWN
   assert metric_color(79, 'cpu') == NORMAL and metric_color(80, 'cpu') == CAUTION
-  assert metric_color(95, 'cpu') == HIGH
-  assert metric_color(85, 'memory') == CAUTION and metric_color(95, 'memory') == HIGH
+  assert metric_color(89, 'cpu') == CAUTION and metric_color(90, 'cpu') == HIGH
+  assert metric_color(79, 'memory') == NORMAL and metric_color(80, 'memory') == CAUTION
+  assert metric_color(89, 'memory') == CAUTION and metric_color(90, 'memory') == HIGH
   assert metric_color(35, 'infer') == CAUTION and metric_color(50, 'infer') == HIGH
   assert metric_color(100, 'gpu') == NORMAL
 

@@ -16,6 +16,14 @@
   No settings/device/package/schedule/owner-validator change or direct push.
   PC checks are not physical CAN/BLE/USB/TRT/P99/20Hz or road validation.
 
+- 2026-11-03 HUD follow-up: preserve full-width lane-change wait reasons with
+  system alert priority, the active deceleration banner, model confidence
+  classes, and the spacing of the steering and lane correction indicators.
+  Keep bold inline Jetson W | temperature with independent color thresholds,
+  and the 1 Hz comma/Jetson resource footer independent of performance timing.
+  Preserve display-only behavior and native thermal trip warnings. See
+  docs/pv5_hud_changes_20261103.md for layout, thresholds, tests and push status.
+
 - 2026-11-03 daily WIP: integrate08f99d4e/03a28b25 TBT wheel return.
   Selected-side steering>30deg and measured rotation>=20deg admit return
   completion at abs(wheel)<=30deg while moving>=1km/h. Approach/stop,

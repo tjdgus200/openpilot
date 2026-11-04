@@ -26,7 +26,7 @@ def screen():
   rl = Mock()
   rl.Rectangle.side_effect = lambda x, y, width, height: SimpleNamespace(x=x, y=y, width=width, height=height)
   namespace = {
-    "CameraBase": CameraBase, "ui_state": state, "rl": rl, "SIDE_PANEL_WIDTH": 80,
+    "CameraBase": CameraBase, "ui_state": state, "rl": rl, "SIDE_PANEL_WIDTH": 80, "WIDE_CAM": 1,
     "time": SimpleNamespace(monotonic=lambda: 100.0),
     "gui_app": SimpleNamespace(is_recording=lambda: False), "messaging": Mock(),
     "native_draw": SimpleNamespace(active=lambda: False),
@@ -40,6 +40,9 @@ def screen():
                "_traffic_light", "_confidence_ball", "_bookmark_icon", "_offroad_label", "_pm", "_overlay_state", "client"):
     setattr(view, name, Mock())
   view.stream_type = 0
+  view.available_streams = {1}
+  view.switch_stream = Mock()
+  view._fov_preview = SimpleNamespace(active=False, update=Mock())
   view.rect = SimpleNamespace(x=0, y=0, width=540, height=960)
   view._fade_texture = object()
   view._plot_mode = 0
@@ -100,3 +103,19 @@ def test_render_combinations_preserve_alerts_and_cluster_preference(screen, mode
   view._hud_renderer.render.assert_called_once()
   view._alert_renderer.render.assert_called_once()
   view._driver_state_renderer.draw_onroad.assert_called_once()
+
+def test_stopped_fov_preview_restores_camera_and_keeps_alerts(screen):
+  view, state, _ = screen
+  view.set_cluster_hud_connected(True)
+  state.show_model_view = 3
+  view._fov_preview.active = True
+  view._render(view.rect)
+  view.switch_stream.assert_called_once_with(1)
+  view.camera.assert_called_once()
+  view._model_renderer.render.assert_not_called()
+  view._alert_renderer.render.assert_called_once()
+
+  view._fov_preview.active = False
+  view._render(view.rect)
+  view.camera.assert_called_once()
+  assert view._alert_renderer.render.call_count == 2

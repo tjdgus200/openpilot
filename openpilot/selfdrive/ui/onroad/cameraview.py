@@ -224,6 +224,10 @@ class CameraView(Widget):
       self._render_egl(src_rect, dst_rect)
     else:
       self._render_textures(src_rect, dst_rect)
+    self._draw_frame_overlay(dst_rect)
+
+  def _draw_frame_overlay(self, dst_rect: rl.Rectangle) -> None:
+    pass
 
   def _draw_placeholder(self, rect: rl.Rectangle):
     if self._placeholder_color:

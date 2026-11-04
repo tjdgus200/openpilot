@@ -321,15 +321,15 @@ def test_optional_request_requires_fresh_parked_vehicle():
     def __getitem__(self, name):
       return self.state
   monitor = Monitor()
-  assert b.parked_state(monitor, 100.1)
-  assert not b.parked_state(monitor, 100.31)
-  assert not b.parked_state(monitor, 99.)
+  assert b.stopped_state(monitor, 100.1)
+  assert not b.stopped_state(monitor, 100.31)
+  assert not b.stopped_state(monitor, 99.)
   monitor.state.vEgo = float('nan')
-  assert not b.parked_state(monitor, 100.1)
+  assert not b.stopped_state(monitor, 100.1)
 
 
-@pytest.mark.parametrize('fresh_gear,expected', [('park', True), ('drive', False), (None, False)])
-def test_cell_gate_refreshes_after_slow_ble_reads_without_relaxing_vehicle_age(monkeypatch, fresh_gear, expected):
+@pytest.mark.parametrize('fresh_gear,speed,expected', [('park', 0., True), ('drive', 0., True), ('reverse', 0., True), ('drive', .1, False), (None, 0., False)])
+def test_cell_gate_refreshes_after_slow_ble_reads_without_relaxing_vehicle_age(monkeypatch, fresh_gear, speed, expected):
   clock = [100.]
   monkeypatch.setattr(b, 'time', NS(monotonic=lambda: clock[0]))
   class Monitor:
@@ -344,6 +344,7 @@ def test_cell_gate_refreshes_after_slow_ble_reads_without_relaxing_vehicle_age(m
       if fresh_gear is not None:
         self.recv_time['carState'] = clock[0]
         self.state.gearShifter = fresh_gear
+        self.state.vEgo = speed
     def __getitem__(self, key):
       return self.state
   monitor, commands = Monitor(), []
@@ -357,7 +358,7 @@ def test_cell_gate_refreshes_after_slow_ble_reads_without_relaxing_vehicle_age(m
     poller = b.MetricPoller(details=True)
     link = Link()
     for _ in range(60):
-      await poller.poll(link, parked=lambda: b.current_parked_state(monitor))
+      await poller.poll(link, parked=lambda: b.current_stopped_state(monitor))
       clock[0] += poller.delay(link)
       if 'cell_voltages_v' in poller.values:
         break

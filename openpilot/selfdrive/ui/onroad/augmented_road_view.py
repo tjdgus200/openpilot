@@ -17,6 +17,7 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, DeviceCameraConfig, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
+from openpilot.selfdrive.ui.onroad.stopped_fov_preview import StoppedFovPreview
 
 OpState = log.SelfdriveState.OpenpilotState
 CALIBRATED = log.LiveCalibrationData.Status.calibrated
@@ -38,6 +39,7 @@ INF_POINT = np.array([1000.0, 0.0, 0.0])
 class AugmentedRoadView(CameraView):
   def __init__(self, stream_type: VisionStreamType = VisionStreamType.VISION_STREAM_ROAD):
     super().__init__("camerad", stream_type)
+    self._fov_preview = StoppedFovPreview()
     self._set_placeholder_color(BORDER_COLORS[UIStatus.DISENGAGED])
 
     self.device_camera: DeviceCameraConfig | None = None
@@ -94,7 +96,11 @@ class AugmentedRoadView(CameraView):
     # total과 구간 합의 차이(미귀속)로 남는다. extras = carrot 테두리(+텍스트)
     cam_ms = model_ms = ds_ms = hud_ms = alert_ms = extras_ms = 0.0
 
-    if not self._suppress_camera_for_cluster:
+    self._fov_preview.update(ui_state, WIDE_CAM in self.available_streams)
+    if self._fov_preview.active:
+      if self.stream_type != WIDE_CAM:
+        self.switch_stream(WIDE_CAM)
+    elif not self._suppress_camera_for_cluster:
       self._switch_stream_if_needed(ui_state.sm)
       self._update_calibration()
 
@@ -116,7 +122,7 @@ class AugmentedRoadView(CameraView):
     )
 
     _t = time.monotonic() if timing.enabled else 0.0
-    if self._suppress_camera_for_cluster:
+    if not self._fov_preview.active and self._suppress_camera_for_cluster:
       rl.draw_rectangle_rec(self._content_rect, rl.BLACK)
     else:
       # Render the base camera view
@@ -125,7 +131,7 @@ class AugmentedRoadView(CameraView):
 
     self._overlay_state.update(ui_state, self.client, self.stream_type, self._suppress_camera_for_cluster)
 
-    if not self._suppress_camera_for_cluster:
+    if not self._fov_preview.active and not self._suppress_camera_for_cluster:
       # Draw the model overlay only with the camera view
       _t = time.monotonic() if timing.enabled else 0.0
       timing.call('model', self.model_renderer.render, self._content_rect)
@@ -229,7 +235,13 @@ class AugmentedRoadView(CameraView):
       wide_from_device = rot_from_euler(calib.wideFromDeviceEuler)
       self.view_from_wide_calib = view_frame_from_device_frame @ wide_from_device @ device_from_calib
 
+  def _draw_frame_overlay(self, dst_rect: rl.Rectangle) -> None:
+    if self.stream_type == WIDE_CAM and not self._switching:
+      self._fov_preview.draw(self.frame, dst_rect)
+
   def _calc_frame_matrix(self, rect: rl.Rectangle) -> np.ndarray:
+    if self._fov_preview.active:
+      return super()._calc_frame_matrix(rect)
     # Check if we can use cached matrix
     cache_key = (
       ui_state.sm.recv_frame['liveCalibration'],

@@ -9,13 +9,14 @@ from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 from cluster_battery import remote_panel, StationaryBatteryView, valid_value
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
-                              WIFI_STATUS_CENTER_X, WIFI_STATUS_ICON_SIZE, TOP_CLOCK_CENTER_X, TOP_STATUS_CENTER_Y,
+                              TOP_STATUS_CENTER_Y,
                               NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W,
                               SIDE_GAUGE_LEFT_CENTER_X, SIDE_GAUGE_COLUMN_GAP, SIDE_GAUGE_BOTTOM,
                               SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y, SPEED_VALUE_FONT_SIZE, rl, rl_color)
 
 NORMAL = (100, 225, 170)
 WARNING = (255, 205, 70)
+TELEMETRY_ORANGE = (255, 165, 60)
 ERROR = (255, 90, 90)
 UNKNOWN = (190, 190, 190)
 
@@ -89,8 +90,7 @@ def temperature_label(health):
   value = health.get('temp_c')
   if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or not -20 <= value <= 150:
     return '--°C', UNKNOWN
-  severity = health.get('thermal_severity', 'unknown')
-  color = {'ok': NORMAL, 'warning': WARNING, 'error': ERROR}.get(severity, UNKNOWN)
+  color = NORMAL if value <= 70 else TELEMETRY_ORANGE if value <= 80 else ERROR
   return f'{value:.1f}°C', color
 
 
@@ -137,11 +137,9 @@ class HealthRenderer(ClusterUiRenderer):
       (getattr(state, 'left_signal', False), getattr(state, 'right_signal', False)))
 
   def _host_metrics(self):
-    if not PERF_DIAGNOSTICS:
-      return {}
     from hud_runtime_stats import RuntimeFooterSampler
     if not hasattr(self, '_runtime_footer'):
-      self._runtime_footer = RuntimeFooterSampler()
+      self._runtime_footer = RuntimeFooterSampler(timing_enabled=PERF_DIAGNOSTICS)
     return self._runtime_footer.sample()
 
   def _draw_runtime_line(self, segments, right_x, y, max_width, size, key):
@@ -163,9 +161,11 @@ class HealthRenderer(ClusterUiRenderer):
       self._draw_text(text, x, y, size, color)
       x += advance
 
+  def _draw_status_footer(self, state, *, include_core_usage=True):
+    # Keep device usage visible alongside the trip report as well.
+    super()._draw_status_footer(state, include_core_usage=True)
+
   def _draw_cluster_core_usage(self, text, *, right_x=DESIGN_WIDTH):
-    if not PERF_DIAGNOSTICS:
-      return
     from hud_runtime_stats import footer_segments
     segments = footer_segments(self._system_stats.sample(), self._host_metrics(), self.language)
     self._draw_runtime_line(segments, right_x, 464, 760, 21, 'resources')
@@ -192,6 +192,8 @@ class HealthRenderer(ClusterUiRenderer):
     self._draw_text(self._ellipsize_text(text, 16, width), left, 55, 16, color)
 
   def _draw_steering_output_block(self, state):
+    x = SIDE_GAUGE_LEFT_CENTER_X + (SIDE_GAUGE_COLUMN_GAP - 4) / 2
+    self._draw_host_telemetry(x, 28)
     super()._draw_steering_output_block(state)
     status = state.pv5_lane_center_status
     if status not in ('waiting', 'correcting', 'laneMode', 'blindspot'):
@@ -207,16 +209,15 @@ class HealthRenderer(ClusterUiRenderer):
       label = '중앙 · BSD 대기' if ko else 'Center · BSD hold'
     else:
       label = '중앙 보정 대기' if ko else 'Center · Ready'
-    x = SIDE_GAUGE_LEFT_CENTER_X + SIDE_GAUGE_COLUMN_GAP / 2
-    y = SIDE_GAUGE_BOTTOM + 39
+    y = SIDE_GAUGE_BOTTOM + 43
     color = (100, 200, 255) if active else UNKNOWN
-    half_bar = 68
-    rl.draw_rectangle(int(x - 98), int(y - 10), 196, 34, rl_color((5, 9, 12), 225))
-    self._draw_text(label, x, y, 18, color, anchor='center')
-    rl.draw_rectangle(int(x - half_bar), int(y + 14), half_bar * 2, 5, rl_color((52, 62, 74)))
+    half_bar = 82
+    rl.draw_rectangle(int(x - 101), int(y - 12), 202, 44, rl_color((5, 9, 12), 225))
+    self._draw_text(label, x, y, 22, color, anchor='center')
+    rl.draw_rectangle(int(x - half_bar), int(y + 17), half_bar * 2, 7, rl_color((52, 62, 74)))
     if active:
       width = max(1, round(half_bar * abs(fraction)))
-      rl.draw_rectangle(int(x - width if fraction < 0 else x), int(y + 14), width, 5, rl_color(color))
+      rl.draw_rectangle(int(x - width if fraction < 0 else x), int(y + 17), width, 7, rl_color(color))
 
   def close(self):
     footer = getattr(self, '_runtime_footer', None)
@@ -243,7 +244,7 @@ class HealthRenderer(ClusterUiRenderer):
                                             (getattr(state, 'left_signal', False),
                                              getattr(state, 'right_signal', False)), now=now)
     self.host_health = _fresh(STATUS, time.monotonic())
-    self.host_badge_drawn = False
+    self.host_telemetry_drawn = False
     battery = remote_panel(snapshot, time.monotonic())
     vehicle_current = self._vehicle_data_current and vehicle_motion_fresh(snapshot, now)
     self._trip_soc_used = self._trip_soc.update(battery, vehicle_current)
@@ -266,26 +267,26 @@ class HealthRenderer(ClusterUiRenderer):
     self._draw_text_with_stroke('--', SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y,
                                 SPEED_VALUE_FONT_SIZE, UNKNOWN, (0, 0, 0), 3, anchor='center')
 
-  def _temperature_badge(self, x, y):
-    label, color = temperature_label(self.host_health)
-    rect = rl.Rectangle(x - 52, y - 17, 104, 60)
-    rl.draw_rectangle_rounded(rect, .25, 8, rl_color((0, 0, 0), 190))
-    rl.draw_rectangle_rounded_lines_ex(rect, .25, 8, 2., rl_color(color))
-    self._draw_text(power_label(self.host_health), x, y, 19, (245, 245, 245), anchor='center')
-    self._draw_text(label, x, y + 26, 20, color, anchor='center')
-    self.host_badge_drawn = True
+  def _draw_host_telemetry(self, x, y):
+    temperature, temperature_color = temperature_label(self.host_health)
+    power = power_label(self.host_health)
+    power_color = UNKNOWN
+    if power != '-- W':
+      watts = self.host_health['power_w']
+      power_color = NORMAL if watts <= 20 else TELEMETRY_ORANGE if watts < 30 else ERROR
+    parts = ((power, power_color), (' | ', (245, 245, 245)), (temperature, temperature_color))
+    widths = [self._measure_text(text, 26)[0] for text, _ in parts]
+    size = 26 * min(1.0, 194 / max(1.0, sum(widths)))
+    widths = [self._measure_text(text, size)[0] for text, _ in parts]
+    left = x - sum(widths) * 0.5
+    for (text, color), width in zip(parts, widths, strict=True):
+      self._draw_text_with_stroke(text, left + width * 0.5, y, size, color, color, 1, anchor='center', cache=True)
+      left += width
+    self.host_telemetry_drawn = True
 
   def _draw_egpu_status(self, state):
-    # The normal status row's transform also follows left/right panel swaps.
-    x = WIFI_STATUS_CENTER_X + WIFI_STATUS_ICON_SIZE * .5 + 10 + 52
-    self._temperature_badge(x, TOP_STATUS_CENTER_Y - 13)
-
-  def _draw_center_clock(self, state, *, center_x=TOP_CLOCK_CENTER_X):
-    if center_x == TOP_CLOCK_CENTER_X and state.center_clock_text:
-      width, _ = self._measure_text(state.center_clock_text, 48)
-      badge_right = WIFI_STATUS_CENTER_X + WIFI_STATUS_ICON_SIZE * .5 + 10 + 104
-      center_x = max(TOP_CLOCK_CENTER_X + 100, badge_right + 16 + width * .5)
-    super()._draw_center_clock(state, center_x=center_x)
+    # Jetson telemetry is drawn with the side gauges.
+    pass
 
   def _draw_alert_overlay(self, alert):
     left, right = getattr(self, '_bsd_warning', (False, False))
@@ -330,9 +331,9 @@ class HealthRenderer(ClusterUiRenderer):
               rl.draw_rectangle_gradient_h(horizontal_x, y, width - radius, edge_width,
                                            color if side == 0 else clear,
                                            clear if side == 0 else color)
-      if not self.host_badge_drawn:
-        # Full navigation/graph modes omit the driving status row.
-        self._temperature_badge(DESIGN_WIDTH - 66, TOP_STATUS_CENTER_Y)
+      if not self.host_telemetry_drawn:
+        # Layouts without side gauges still show the telemetry as text.
+        self._draw_host_telemetry(DESIGN_WIDTH - 100, TOP_STATUS_CENTER_Y)
       message, color = health_banner(self.host_health, self.language)
       if not getattr(self, '_vehicle_data_current', True):
         waiting = '콤마 데이터 연결 대기 · 차량 정보 없음' if self.language == 'ko' else 'Waiting for comma data · Vehicle data unavailable'

@@ -821,7 +821,7 @@ async def run():
                                    identity=identity, observed_at=poller.last_valid)
                     startup_timeout.reschedule(None)
                 elif monitor is not None:
-                  await poller.poll(link, parked=lambda monitor=monitor: current_parked_state(monitor), publish=publish)
+                  await poller.poll(link, parked=lambda monitor=monitor: current_stopped_state(monitor), publish=publish)
                 else:
                   await poller.poll(link, publish=publish)
               except obd_debug.ModeChanged:
@@ -904,25 +904,25 @@ def vehicle_monitor():
   return messaging.SubMaster(['carState'])
 
 
-def current_parked_state(monitor):
+def current_stopped_state(monitor):
   # BLE requests may outlast the vehicle freshness window. Consume the latest
   # carState only when the optional request is about to be admitted; never
-  # extend the freshness limit or treat an old P indication as current.
+  # extend the freshness limit or treat an old speed reading as current.
   try:
     monitor.update(0)
   except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
     return False
-  return parked_state(monitor, time.monotonic())
+  return stopped_state(monitor, time.monotonic())
 
 
-def parked_state(monitor, now):
+def stopped_state(monitor, now):
   """Read-only freshness gate for optional cell requests, never vehicle controls."""
   try:
     car = monitor['carState']
     speed = car.vEgo
     return (monitor.valid['carState'] and monitor.alive['carState']
             and 0 <= now - monitor.recv_time['carState'] <= .3
-            and str(car.gearShifter) == 'park' and finite_number(speed) and abs(speed) <= .01)
+            and finite_number(speed) and abs(speed) <= .01)
   except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
     return False
 

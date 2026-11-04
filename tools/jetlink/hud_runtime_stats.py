@@ -53,10 +53,14 @@ def valid_timing(value):
 
 
 class RuntimeFooterSampler:
-  def __init__(self):
-    from hud_quality import RUN_PROFILE, RUN_FPS
-    from hud_quality_compare import Comparison
-    self.comparison = Comparison(*RUN_PROFILE, kind='fps-q92' if RUN_FPS else 'codec') if RUN_PROFILE is not None else None
+  def __init__(self, *, timing_enabled=False):
+    self.timing_enabled = timing_enabled
+    self.comparison = None
+    if timing_enabled:
+      from hud_quality import RUN_PROFILE, RUN_FPS
+      if RUN_PROFILE is not None:
+        from hud_quality_compare import Comparison
+        self.comparison = Comparison(*RUN_PROFILE, kind='fps-q92' if RUN_FPS else 'codec')
     self.local = LocalSystemStatsSampler(refresh_interval_s=1.)
     self.lock = threading.Lock()
     self.stop = threading.Event()
@@ -127,10 +131,11 @@ class RuntimeFooterSampler:
       started = time.monotonic()
       stats = self.local.sample()
       timing = None
-      try:
-        timing = self._timing()
-      except (OSError, ValueError, TypeError, AttributeError):
-        self._disconnect()
+      if self.timing_enabled:
+        try:
+          timing = self._timing()
+        except (OSError, ValueError, TypeError, AttributeError):
+          self._disconnect()
       value = {'updated': time.monotonic(), 'cpu_percent': stats.cpu_used_percent,
                'memory_percent': stats.memory_used_percent, 'gpu_percent': gpu_percent(), 'timing': timing}
       if self.comparison is not None:
@@ -160,7 +165,7 @@ def metric_color(value, kind):
     return UNKNOWN
   # Display-only headroom cues, never fault classification or control input.
   # High GPU utilization alone is not an error or a reason to reduce inference.
-  warn, high = {'cpu': (80, 95), 'memory': (85, 95), 'infer': (35, 50)}.get(kind, (math.inf, math.inf))
+  warn, high = {'cpu': (80, 90), 'memory': (80, 90), 'infer': (35, 50)}.get(kind, (math.inf, math.inf))
   return HIGH if value >= high else CAUTION if value >= warn else NORMAL
 
 

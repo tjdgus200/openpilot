@@ -105,11 +105,11 @@ def sensor(root, index, temp, limit, cooling='cpu-balanced'):
   return zone
 
 
-@pytest.mark.parametrize('temp,severity,color', [(93, 'ok', hud.NORMAL), (94, 'warning', hud.WARNING), (99, 'error', hud.ERROR)])
-def test_real_trip_drives_temperature_and_bilingual_warning(tmp_path, temp, severity, color):
+@pytest.mark.parametrize('temp,severity', [(93, 'ok'), (94, 'warning'), (99, 'error')])
+def test_real_trip_drives_bilingual_warning(tmp_path, temp, severity):
   sensor(tmp_path, 0, temp, 99)
   health = thermal_health(tmp_path)
-  assert hud.temperature_label(health) == (f'{temp:.1f}°C', color)
+  assert hud.temperature_label(health) == (f'{temp:.1f}°C', hud.ERROR)
   assert health['thermal_severity'] == severity
   for language, word in [('ko', '냉각'), ('en', 'cooling')]:
     message, _ = hud.health_banner(health, language)
@@ -156,7 +156,7 @@ def test_freshness_and_vehicle_alert_precedence(monkeypatch, tmp_path):
   assert renderer.host_health == {}
   renderer.width, renderer.height, renderer.language = 1920, 480, 'ko'
   renderer.host_health = {'thermal_severity': 'error', 'thermal_reason': 'cpu 99C'}
-  renderer.host_badge_drawn = True
+  renderer.host_telemetry_drawn = True
   calls = []
   for name in ('rl_push_matrix', 'rl_pop_matrix', 'rl_scalef'):
     monkeypatch.setattr(hud.rl, name, lambda *a: None)
@@ -198,27 +198,31 @@ def test_expired_health_does_not_keep_old_power(tmp_path):
   assert hud.power_label(hud._fresh(path, 14.0)) == '-- W'
 
 
-def test_normal_badge_is_next_to_wifi_with_ten_pixel_gap():
+@pytest.mark.parametrize('watts,temp,power_color,temp_color', [
+  (20, 70, hud.NORMAL, hud.NORMAL),
+  (20.1, 80, hud.TELEMETRY_ORANGE, hud.TELEMETRY_ORANGE),
+  (30, 80.1, hud.ERROR, hud.ERROR),
+  (12.4, 81, hud.NORMAL, hud.ERROR),
+  (None, None, hud.UNKNOWN, hud.UNKNOWN),
+])
+def test_host_telemetry_is_one_line_above_side_gauges(monkeypatch, watts, temp, power_color, temp_color):
   renderer = object.__new__(hud.HealthRenderer)
+  renderer.host_health = {'power_w': watts, 'temp_c': temp, 'thermal_severity': 'ok'}
   calls = []
-  renderer._temperature_badge = lambda x, y: calls.append((x, y))
+  renderer._measure_text = lambda *_: (60, 26)
+  renderer._draw_text_with_stroke = lambda *args, **kwargs: calls.append((args, kwargs))
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_steering_output_block', lambda self, state: None)
   renderer._draw_egpu_status(NS())
-  x, y = calls[0]
-  assert x - 52 == hud.WIFI_STATUS_CENTER_X + hud.WIFI_STATUS_ICON_SIZE * 0.5 + 10
-  assert y - 17 + 30 == hud.TOP_STATUS_CENTER_Y
-
-
-@pytest.mark.parametrize('width', [120, 230, 340])
-def test_status_clock_keeps_clear_of_badge_and_custom_clock_position_is_preserved(monkeypatch, width):
-  renderer = object.__new__(hud.HealthRenderer)
-  renderer._measure_text = lambda *_: (width, 48)
-  calls = []
-  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_center_clock', lambda self, state, *, center_x: calls.append(center_x))
-  renderer._draw_center_clock(NS(center_clock_text='12:34:56'))
-  badge_right = hud.WIFI_STATUS_CENTER_X + hud.WIFI_STATUS_ICON_SIZE * 0.5 + 10 + 104
-  assert calls[0] - width * 0.5 >= badge_right + 16
-  renderer._draw_center_clock(NS(center_clock_text='12:34:56'), center_x=960)
-  assert calls[-1] == 960
+  assert calls == []
+  renderer._draw_steering_output_block(NS(pv5_lane_center_status='off'))
+  x = hud.SIDE_GAUGE_LEFT_CENTER_X + (hud.SIDE_GAUGE_COLUMN_GAP - 4) / 2
+  assert [args[0] for args, _ in calls] == [
+    hud.power_label(renderer.host_health), ' | ', hud.temperature_label(renderer.host_health)[0],
+  ]
+  assert [args[1] for args, _ in calls] == [x - 60, x, x + 60]
+  assert [args[4] for args, _ in calls] == [power_color, (245, 245, 245), temp_color]
+  assert all(args[2:4] == (28, 26) for args, _ in calls)
+  assert renderer.host_telemetry_drawn
 
 
 @pytest.mark.parametrize(
@@ -249,3 +253,19 @@ def test_valid_vehicle_data_restores_normal_speed_renderer(monkeypatch):
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_speed_block', lambda *a, **kw: calls.append(kw))
   renderer._draw_speed_block(NS(), tpms_offset_x=7.0)
   assert calls == [{'tpms_offset_x': 7.0}]
+
+def test_resource_footer_stays_visible_when_performance_diagnostics_are_off(monkeypatch):
+  import hud_runtime_stats
+
+  monkeypatch.setattr(hud, 'PERF_DIAGNOSTICS', False)
+  options = []
+  monkeypatch.setattr(hud_runtime_stats, 'RuntimeFooterSampler', lambda **kw: (
+    options.append(kw) or NS(sample=lambda: {'cpu_percent': 8., 'memory_percent': 27., 'gpu_percent': 54.})))
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer.language = 'ko'
+  renderer._system_stats = NS(sample=lambda: NS(cpu_used_percent=12., memory_used_percent=49.))
+  lines = []
+  renderer._draw_runtime_line = lambda segments, *_: lines.append(''.join(text for text, _ in segments))
+  renderer._draw_cluster_core_usage(None)
+  assert options == [{'timing_enabled': False}]
+  assert lines == ['COMMA CPU:12% MEM:49% | ORIN CPU:8% MEM:27% GPU:54%']
