@@ -363,3 +363,33 @@ ALT2 forwarding tests are included in Signal integration CI. Live ADAS response
 and physical cluster rendering require follow-up verification after Git Pull
 and comma restart. This change does not establish a cure for ineffective LFA
 requests or the remaining HDA activation conditions. Raw evidence stays private.
+
+
+## Steering-intent correction on 2026-11-04
+
+This section records ajouatom/carrot-wip history from
+`4b155d9e385195409e3928c138e457985a9ce06f`. Owner reports and desktop counts below
+are upstream evidence, not PV5 owner authorization or results from the PV5 sync.
+The current PV5 checks and scope are in [the daily report](pv5_wip_sync_20261105.md).
+
+Owners report steering activation after startup with AutoEngage disabled following
+the independent OEM MAIN change. The source path reproduces this mechanism.
+`_update_canfd_main_enabled` adopted OEM `MainMode_ACC` into `main_enabled`, which
+raised `cruiseState.available`. `VCruiseCarrot.update_v_cruise` armed lateral intent
+on that rising edge, and AlwaysLateral could then permit steering.
+
+The earlier packet tests checked request admission and transport, but missed this
+feedback path into driver intent. CameraSCC with openpilot longitudinal control
+now keeps OEM MAIN feedback separate from the driver's main selection. Initialization
+still derives from AutoEngage, and physical MAIN/RES/SET update the driver's choice.
+The driver LFA toggle remains effective across subsequent OEM MAIN transitions.
+The scope is the CAN-FD CameraSCC state receiver. The generic cruise state machine,
+stock-longitudinal path and existing MAIN request transport retain their code.
+
+A regression uses the production state-receiver helper, full VCruiseCarrot updates,
+real button events and the production lateral-permission function. Before the fix,
+seven of nine cases fail. All nine pass with the fix, including AutoEngage 0/1/2,
+LFA on/off, MAIN and RES/SET intent, repeated OEM state transitions and AlwaysLateral.
+The broader desktop state/button/pedal checks pass 368 cases with UTF-8 enabled.
+The fix is delivered by Git Pull and comma restart. Physical vehicle confirmation
+remains pending, and individual reports have not yet been matched to drive logs.

@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-11-05 daily WIP: reviewed through90bd49d2; import CameraSCC OEM MAIN
+  feedback/driver-intent separation, sustained independent radar-pair cut-in,
+  exact Light speed cb9bf2cf AMD USB cast-zero lowering before artifact load,
+  and existing orientation-rate std publication plus offline curve comparison.
+  Keep AutoEngage/physical buttons, manual OFF, common radar/parallel-pass gates,
+  runtime pairing, finite/join/reset/ownership guards and live curve policy.
+  Preserve diagnostics OFF with the independent1Hz resource footer, all13 PV5
+  contracts,43 protected paths and current four HUD-feedback package identities.
+  B1 BLE/board/automatic OTA chain and dependent assembly guides remain deferred.
+  Upstream requests, private logs and CI counts in imported notes are attributed
+  history, not PV5 permission or this run's evidence. No package/settings/device/
+  schedule/owner-validator changes or direct push. See docs/pv5_wip_sync_20261105.md.
+  PC checks are not physical CAN/BLE/USB/TRT/P99/20Hz or road validation.
+
 - 2026-11-04 Jetson HUD reads live model confidence from fresh brake-disengage
   and steer-override predictions, with the existing class for old peers.
   PV5 lane-center HUD shows the current admission reason through an additive

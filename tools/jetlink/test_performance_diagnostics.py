@@ -64,14 +64,27 @@ def test_no_stats_thread_or_samples_but_qualified_park_switch_still_works(monkey
   collector.close()
 
 
-def test_disabled_hud_does_not_start_runtime_sampler_or_draw_footer(monkeypatch):
+def test_disabled_hud_keeps_resources_without_enabling_performance_sampling(monkeypatch):
   import hud_health as hud
+  import hud_runtime_stats as stats
   monkeypatch.setattr(hud, 'PERF_DIAGNOSTICS', False)
+  created = []
+  def sampler(*, timing_enabled):
+    created.append(timing_enabled)
+    return NS(sample=lambda: {})
+  monkeypatch.setattr(stats, 'RuntimeFooterSampler', sampler)
   renderer = object.__new__(hud.HealthRenderer)
-  renderer._draw_runtime_line = lambda *args: pytest.fail('performance footer drawn')
+  renderer.language = 'en'
+  renderer._system_stats = NS(sample=lambda: NS(cpu_used_percent=12., memory_used_percent=49.))
+  drawn = []
+  renderer._draw_runtime_line = lambda *args: drawn.append(args)
   assert renderer._host_metrics() == {}
   renderer._draw_cluster_core_usage('')
-  assert not hasattr(renderer, '_runtime_footer')
+  assert created == [False]  # One resource sampler; no timing collection.
+  assert len(drawn) == 1 and drawn[0][-1] == 'resources'
+  text = ''.join(segment[0] for segment in drawn[0][0])
+  assert 'CPU' in text and 'MEM' in text
+  assert all(label not in text for label in ('FPS', 'P99', 'AVG', 'INFER'))
 
 
 def test_transport_keeps_packet_identical_without_tx_observation(monkeypatch):

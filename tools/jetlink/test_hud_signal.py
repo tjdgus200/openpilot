@@ -205,11 +205,15 @@ def test_pv5_signal_render_keeps_power_badge_bsd_walls_and_alert_last(monkeypatc
   r._signal_display_reader = remote.reader()
   r._brake_display_reader = NS(read=lambda frame: None)
   r._bsd_warning, r._bsd_alpha = (left, right), (255, 255)
-  r._vehicle_data_current, r.host_badge_drawn = True, False
+  r._vehicle_data_current, r.host_telemetry_drawn = True, False
   r.host_health = {'power_w': 14.7, 'temp_c': 59., 'severity': 'ok', 'thermal_severity': 'ok'}
   draws, labels = [], []
   r._draw_text = lambda text, *args, **kw: (labels.append(text), draws.append('badge-text'))
   r._draw_text_with_stroke = lambda text, *args, **kw: (labels.append(text), draws.append('signal-text'))
+  r._telemetry_font = object()
+  r._measure_text = lambda text, size, *args: (len(text) * size * .5, size)
+  monkeypatch.setattr(health.rl, 'draw_text_ex',
+                      lambda font, text, *args: (labels.append(text), draws.append('badge-text')))
   for name in ('rl_push_matrix', 'rl_pop_matrix', 'rl_scalef', 'rl_draw_render_batch_active',
                'draw_rectangle_rounded', 'draw_rectangle_rounded_lines_ex'):
     monkeypatch.setattr(health.rl, name, lambda *args: None)
@@ -227,6 +231,7 @@ def test_pv5_signal_render_keeps_power_badge_bsd_walls_and_alert_last(monkeypatc
   # Execute the real base render order, including HealthRenderer's BSD overlay.
   renderer_module.ClusterUiRenderer.render(r, NS(alert=NS(size=3, text1='TAKE OVER', text2='')), (False, False))
   assert 'R' in labels and '14.7 W' in labels and '59.0°C' in labels
+  assert ' | ' in labels and r.host_telemetry_drawn
   assert draws.index('signal-box') < draws.index('badge-text')
   assert draws[-1] == 'vehicle-alert'
   assert len(gradients) == 5 * (int(left) + int(right))
