@@ -39,3 +39,12 @@ Synthetic inputs exercise the existing steering loop. Construction markings
 and unrecognized obstacles can pass the eligibility checks. Unintended steering
 can have serious consequences, and physical vehicle safety and occurrence rate
 are unverified. Keep the feature off on public roads pending vehicle validation.
+
+## Jetson HUD packages
+
+Focused PC tests passed on Windows (713) and Linux (318). The four isolated bundles passed import, HUD, schema and model queue checks. All 16 downloaded release assets matched the local SHA-256 digests. Physical hardware verification is pending.
+
+- [n16](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-feedback-n16-20261104-2294231d), source `2294231d`.
+- [flip-flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-feedback-flip-flop-20261104-524b908d), source `524b908d`.
+- [ctv3m](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-feedback-ctv3m-20261104-a9786765), source `a9786765`.
+- [light-speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-feedback-light-speed-20261104-313d94bd), source `313d94bd`.

@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-hud-refresh-light-speed-20261104-362eaaf8",
-  "source_commit": "362eaaf889cb5e0847a81849b00db4f734976c02",
+  "profile": "pv5-hud-feedback-light-speed-20261104-313d94bd",
+  "source_commit": "313d94bdf571815c56f1eba9f440f0d3ea24e143",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-refresh-light-speed-20261104-362eaaf8/host.tar.gz",
-    "sha256": "1e563d72ef43cab02f507ccfed7e11a482d129f4b625e09defbedb5a01e83d74",
-    "size": 65238955
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-feedback-light-speed-20261104-313d94bd/host.tar.gz",
+    "sha256": "75f8f38cda043dc98e639633c124b3f36a2c5a877714637adaa5a0513af5a896",
+    "size": 65240157
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
