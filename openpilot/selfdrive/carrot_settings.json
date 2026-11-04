@@ -661,12 +661,29 @@
           "ko": "주행 보조",
           "en": "Driving Assist",
           "zh": "驾驶辅助",
-          "params": ["Pv5LaneCenterAssist", "Pv5WideModelFov"]
+          "params": ["Pv5LaneCenterAssist", "Pv5WideModelFov", "Pv5FovPreviewPitch"]
         }
       ]
     }
   ],
   "params": [
+    {
+      "group": "PV5",
+      "name": "Pv5FovPreviewPitch",
+      "title": "정차 FOV 상하 미리보기 (0.1°)",
+      "descr": "0이면 현재 모델 영역만 표시합니다. +10은 1° 아래, -10은 1° 위입니다. 두 카메라에 노란 비교선을 표시하며 실제 모델 입력과 보정값은 그대로입니다.",
+      "egroup": "PV5",
+      "etitle": "Stopped FOV Pitch Preview (0.1°)",
+      "edescr": "Zero shows the current model footprint. +10 previews 1° down and -10 previews 1° up. The yellow comparison outline appears on both cameras. Model inputs and calibration stay as they are.",
+      "cgroup": "PV5",
+      "ctitle": "停车视野俯仰预览（0.1°）",
+      "cdescr": "0仅显示当前模型区域。+10预览向下1°，-10预览向上1°。两路相机均显示黄色对比轮廓，实际模型输入和标定保持原样。",
+      "control": "slider",
+      "min": -30,
+      "max": 30,
+      "default": 0,
+      "unit": 5
+    },
     {
       "group": "PV5",
       "name": "Pv5WideModelFov",

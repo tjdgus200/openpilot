@@ -7556,13 +7556,22 @@ class ClusterUiRenderer:
             "yellow": (2, "주의", AMBER),
             "red": (1, "낮음", RED),
         }.get(state.model_confidence, (0, "--", self._current_theme().muted))
+        score = state.model_confidence_score
+        if score is not None and 0.0 <= score <= 1.0:
+            level = score * 3.0
+            label = f"{score * 100:.1f}%"
         self._rounded_rect(left, top, SIDE_GAUGE_WIDTH, bottom - top, 18,
                            (0, 0, 0, 0), self._side_gauge_outline(state), 2)
         segment_height = 24
         for i in range(3):
-            self._rounded_rect(left + 8, bottom - 8 - segment_height - i * 29,
-                               SIDE_GAUGE_WIDTH - 16, segment_height, 6,
-                               color if i < level else (56, 64, 72, 150))
+            segment_bottom = bottom - 8 - i * 29
+            fill_height = segment_height * min(1.0, max(0.0, level - i))
+            if fill_height < segment_height:
+                self._rounded_rect(left + 8, segment_bottom - segment_height,
+                                   SIDE_GAUGE_WIDTH - 16, segment_height, 6, (56, 64, 72, 150))
+            if fill_height >= 1.0:
+                self._rounded_rect(left + 8, segment_bottom - fill_height,
+                                   SIDE_GAUGE_WIDTH - 16, fill_height, 6, color)
         self._draw_text_with_stroke(label, center_x, SIDE_GAUGE_VALUE_Y, 20, color,
                                     (5, 9, 12), 2, anchor="center", cache=True)
         self._draw_text_with_stroke("모델 신뢰도", center_x, bottom + SIDE_GAUGE_LABEL_OFFSET, 15, WHITE,

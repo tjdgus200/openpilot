@@ -1,5 +1,30 @@
 # Repository memory
 
+- 2026-11-04 Jetson HUD reads live model confidence from fresh brake-disengage
+  and steer-override predictions, with the existing class for old peers.
+  PV5 lane-center HUD shows the current admission reason through an additive
+  controlsState field. Preserve all existing assist gates and the 0.08 m/s²
+  correction ceiling. See docs/pv5_lane_center_assist_20261103.md.
+
+- 2026-11-04 PV5 stopped FOV: with fresh valid zero-speed CAN and calibrated
+  geometry, alternate the wide and road previews every 2 seconds. The cyan
+  outline uses the corresponding model warp. Pv5FovPreviewPitch is a
+  preview-only common angular offset, default 0, and draws a separate yellow
+  candidate. Never feed it to modeld or overwrite live calibration. Match the
+  outline to the connected camera and cancel pending switches on preview exit.
+
+- 2026-11-04 Jetson HUD follow-up: use regular weight for inline W | °C
+  while keeping its size, position, independent colors and resource footer.
+  The original blue screen can recur from the protected APP diagnostic copy
+  after every reboot. Runtime USB installs in DATA cannot refresh it. Use the
+  separately staged black APP image only through an identified offline card.
+
+- 2026-11-04 PV5 display: native 0x161 uses gray (7) for active model turns
+  and steady orange (3) for valid same-side signal and BSD. The enabled paddle
+  warning retains native flashing red (6) priority. Jetson HUD keeps the
+  same-side red gradient steady and pulses only the red bracket at 2.5 Hz.
+  Preserve both behaviors through carrot-wip merges.
+
 - 2026-11-04 daily WIP: review through dda78d2b; import final default-OFF
   Ray-only Comma Pedal/DBC/safety profile, isolated CameraSCC MAIN request,
   native ALT2 test fix and action-head 2.5m/s curvature denominator floor.

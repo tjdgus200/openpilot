@@ -21,6 +21,15 @@ curvature filter and rate limits govern the transition.
 The assist follows the existing steering activation speed rules. Curvature
 conversion uses a bounded denominator to limit correction at low speed.
 
+Jetson HUD는 기존 ‘대기’를 제어 비활성, 정차, 입력 대기, 운전자 개입, 방향 전환,
+앞차, 레이더, 차선 신뢰도, 경로 조건, 연속 조건 확인 및 보정 불필요로 구분합니다.
+기존 레인모드와 BSD 표시는 유지합니다. 기존 보정 허용 조건과 보정량 계산은 같습니다.
+새 대기 사유는 기존 상태 필드와 별도로 전송되며, 이전 버전은 기존 ‘대기’를 표시합니다.
+
+모델 신뢰도 바의 높이와 숫자는 콤마 신뢰도 표시와 같은
+`(1 - 최대 브레이크 해제 예측) × (1 - 최대 조향 개입 예측)` 지표를 사용합니다.
+숫자는 표시용 지표이며 실제 성공 확률은 아닙니다. 색은 기존 모델 등급을 사용합니다.
+
 합성 입력으로 기존 조향 루프를 검증합니다. 공사 차선과 인식하지 못한
 장애물은 보정 허용 조건을 통과할 수 있습니다. 이때 의도하지 않은 조향의
 결과는 심각할 수 있으며, 실차 위험 발생률과 안전성은 확인되지 않았습니다.

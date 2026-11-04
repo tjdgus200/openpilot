@@ -198,6 +198,30 @@ def test_expired_health_does_not_keep_old_power(tmp_path):
   assert hud.power_label(hud._fresh(path, 14.0)) == '-- W'
 
 
+def test_regular_telemetry_font_is_loaded_once_and_released(monkeypatch):
+  renderer = object.__new__(hud.HealthRenderer)
+  renderer._window_open = False
+  font = NS(texture=NS(id=2))
+  loaded, unloaded = [], []
+  monkeypatch.setattr(hud.ClusterUiRenderer, 'open', lambda self, hidden=False: setattr(self, '_window_open', True))
+  monkeypatch.setattr(hud.ClusterUiRenderer, 'close', lambda self: setattr(self, '_window_open', False))
+  monkeypatch.setattr(hud.rl, 'get_font_default', lambda: NS(texture=NS(id=1)))
+  def load(path, size, glyphs, count):
+    loaded.append((Path(path).name, size, ''.join(chr(glyphs[i]) for i in range(count))))
+    return font
+  monkeypatch.setattr(hud.rl, 'load_font_ex', load)
+  monkeypatch.setattr(hud.rl, 'set_texture_filter', lambda *_: None)
+  monkeypatch.setattr(hud.rl, 'unload_font', unloaded.append)
+  renderer.open(hidden=True)
+  renderer.open(hidden=True)
+  assert loaded == [('Inter-Regular.ttf', 52, '0123456789.- WC°|')]
+  assert renderer._telemetry_font is font
+  renderer.close()
+  renderer.close()
+  assert unloaded == [font]
+  assert renderer._telemetry_font is None
+
+
 @pytest.mark.parametrize('watts,temp,power_color,temp_color', [
   (20, 70, hud.NORMAL, hud.NORMAL),
   (20.1, 80, hud.TELEMETRY_ORANGE, hud.TELEMETRY_ORANGE),
@@ -209,19 +233,23 @@ def test_host_telemetry_is_one_line_above_side_gauges(monkeypatch, watts, temp, 
   renderer = object.__new__(hud.HealthRenderer)
   renderer.host_health = {'power_w': watts, 'temp_c': temp, 'thermal_severity': 'ok'}
   calls = []
-  renderer._measure_text = lambda *_: (60, 26)
-  renderer._draw_text_with_stroke = lambda *args, **kwargs: calls.append((args, kwargs))
+  font = renderer._telemetry_font = object()
+  def measure(text, size, spacing, selected_font):
+    assert selected_font is font
+    return 60, 26
+  renderer._measure_text = measure
+  monkeypatch.setattr(hud.rl, 'draw_text_ex', lambda *args: calls.append(args))
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_steering_output_block', lambda self, state: None)
   renderer._draw_egpu_status(NS())
   assert calls == []
   renderer._draw_steering_output_block(NS(pv5_lane_center_status='off'))
   x = hud.SIDE_GAUGE_LEFT_CENTER_X + (hud.SIDE_GAUGE_COLUMN_GAP - 4) / 2
-  assert [args[0] for args, _ in calls] == [
+  assert [args[1] for args in calls] == [
     hud.power_label(renderer.host_health), ' | ', hud.temperature_label(renderer.host_health)[0],
   ]
-  assert [args[1] for args, _ in calls] == [x - 60, x, x + 60]
-  assert [args[4] for args, _ in calls] == [power_color, (245, 245, 245), temp_color]
-  assert all(args[2:4] == (28, 26) for args, _ in calls)
+  assert [args[2].x for args in calls] == [x - 90, x - 30, x + 30]
+  assert [(args[5].r, args[5].g, args[5].b) for args in calls] == [power_color, (245, 245, 245), temp_color]
+  assert all(args[0] is font and args[2].y == 15 and args[3:5] == (26, 1) for args in calls)
   assert renderer.host_telemetry_drawn
 
 

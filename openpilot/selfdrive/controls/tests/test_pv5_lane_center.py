@@ -69,8 +69,20 @@ def test_correction_without_separate_speed_gate(kph):
     cc = tick(new_model=i % 5 == 0)
   if kph > 0:
     assert cc.actuators.curvature == pytest.approx(.06 / max(kph / 3.6, 5.0)**2, rel=.02)
+    assert control.pv5_lane_center.status == 'correcting'
   else:
     assert control.pv5_lane_center.target == 0.
+    assert control.pv5_lane_center.status == 'stopped'
+
+
+def test_already_centered_is_distinct_from_eligibility_dwell():
+  for offset, expected in ((0., 'centered'), (.27, 'checking')):
+    control, _, tick = setup_control(offset)
+    drive(control)
+    assert tick().actuators.curvature == 0.
+    assert control.pv5_lane_center.status == expected
+
+
 def test_disabled_matches_existing_control():
   control, _, tick = setup_control(.27, selected=0)
   baseline, _, baseline_tick = setup_control(.27, selected=0)
@@ -151,3 +163,8 @@ def test_rejects_correction_and_resets_dwell(condition):
        stale='modelV2' if condition == 'stale' else None)
   assert control.pv5_lane_center.target == 0.
   assert control.pv5_lane_center.eligible_since is None
+  assert control.pv5_lane_center.status == {
+    'blinker': 'maneuver', 'blindspot': 'blindspot', 'driver': 'driver', 'radar': 'lead',
+    'radar_fault': 'radar', 'model_lead': 'lead', 'desire': 'maneuver', 'lane_mode': 'laneMode',
+    'stale': 'inputs', 'repeated': 'inputs', 'invalid_line': 'geometry', 'no_cruise': 'inactive',
+  }[condition]

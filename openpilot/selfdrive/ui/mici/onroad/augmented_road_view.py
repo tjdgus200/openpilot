@@ -231,13 +231,16 @@ class AugmentedRoadView(CameraView):
     # alert/extras처럼 흩어진 구간은 누적(+=). scissor begin/end는 raylib 배치 flush
     # 지점이라 특정 구간에 귀속시키지 않는다 — total과 구간 합의 차이(미귀속)로 남는다.
     cam_ms = model_ms = ds_ms = hud_ms = alert_ms = extras_ms = 0.0
-    self._fov_preview.update(ui_state, WIDE_CAM in self.available_streams)
+    preview_was_active = self._fov_preview.active
+    self._fov_preview.update(ui_state, ROAD_CAM in self.available_streams, WIDE_CAM in self.available_streams)
     if self._fov_preview.active:
-      if self.stream_type != WIDE_CAM:
-        self.switch_stream(WIDE_CAM)
-    elif not self._suppress_camera_for_cluster:
-      self._switch_stream_if_needed(ui_state.sm)
-      self._update_calibration()
+      self.switch_stream(WIDE_CAM if self._fov_preview.wide else ROAD_CAM)
+    else:
+      if preview_was_active and self._switching:
+        self.switch_stream(self.stream_type)
+      if not self._suppress_camera_for_cluster:
+        self._switch_stream_if_needed(ui_state.sm)
+        self._update_calibration()
 
     # Create inner content area with border padding
     self._content_rect = rl.Rectangle(
@@ -409,7 +412,8 @@ class AugmentedRoadView(CameraView):
       self.view_from_wide_calib = view_frame_from_device_frame @ wide_from_device @ device_from_calib
 
   def _draw_frame_overlay(self, dst_rect: rl.Rectangle) -> None:
-    if self.stream_type == WIDE_CAM and not self._switching:
+    target = WIDE_CAM if self._fov_preview.wide else ROAD_CAM
+    if self._fov_preview.active and self.stream_type == target and not self._switching:
       self._fov_preview.draw(self.frame, dst_rect)
 
   def _calc_frame_matrix(self, rect: rl.Rectangle) -> np.ndarray:

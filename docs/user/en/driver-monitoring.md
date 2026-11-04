@@ -5,6 +5,8 @@
 > [!CAUTION]
 > Leave driver monitoring ON. Turning it off removes driver-monitoring alerts, force deceleration, and lockout, and may violate applicable laws or driving requirements depending on where and how the vehicle is used. Experimental mode may also violate applicable law; use it only for experiments in a controlled test environment. The times below are implementation choices, not statutory allowances or certification. Even mode 0 uses different timing from stock comma when camera monitoring is unavailable.
 
+In the PV5 Jetson HUD, the lane-center status shows a driver hold when the existing driver-monitoring or manual-input conditions suspend lane-center correction.
+
 ## Enabling and disabling monitoring
 
 `DriverMonitoringEnabled` is on by default and appears only through Carrot Web setting search. Search for `DriverMonitoringEnabled` to find it. The OFF option is intended for an absent or failed DM camera; leaving the default ON unchanged is recommended. With monitoring on, an unavailable camera automatically uses interaction monitoring. Turning the setting off stops use of the driver-monitoring model and policy during normal driving, including interaction monitoring, driver-monitoring alerts, monitoring-triggered force deceleration, and lockout. Driver View may still run the model solely for face preview, while alert, deceleration, and lockout enforcement remains neutral. It does not change the selected `DriverMonitoringMode` or the independent `CarrotVisionEnabled` road-video setting.

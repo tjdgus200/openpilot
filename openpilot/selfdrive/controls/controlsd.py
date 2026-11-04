@@ -471,14 +471,12 @@ class Controls:
     cs.activeLaneLine = self.lanefull_mode_enabled
     if self.pv5_lane_center is not None and self.pv5_lane_center.enabled:
       cs.pv5LaneCenterFraction = self.pv5_lane_center_accel / MAX_CORRECTION_ACCEL
-      if self.pv5_lane_center_accel:
-        cs.pv5LaneCenterStatus = 'correcting'
-      elif self.sm['lateralPlan'].useLaneLines:
-        cs.pv5LaneCenterStatus = 'laneMode'
-      elif CS.leftBlindspot or CS.rightBlindspot:
-        cs.pv5LaneCenterStatus = 'blindspot'
+      status = self.pv5_lane_center.status
+      if status in ('off', 'correcting', 'laneMode', 'blindspot'):
+        cs.pv5LaneCenterStatus = status
       else:
         cs.pv5LaneCenterStatus = 'waiting'
+        cs.pv5LaneCenterWaitReason = status
     self.pm.send('controlsState', dat)
 
     # carControl

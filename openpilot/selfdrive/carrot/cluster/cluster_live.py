@@ -61,6 +61,18 @@ def deceleration_source_display_label(source: str | None) -> str:
     return deceleration_source_presentation(source)[0]
 
 
+def model_confidence_score(model: Any) -> float | None:
+    """Match the comma confidence indicator's model signal before smoothing."""
+    predictions = safe_get(safe_get(model, "meta"), "disengagePredictions")
+    score = 1.0
+    for field in ("brakeDisengageProbs", "steerOverrideProbs"):
+        values = safe_get(predictions, field)
+        if values is None or len(values) != 5 or not all(isinstance(value, (int, float)) and 0.0 <= value <= 1.0 for value in values):
+            return None
+        score *= 1.0 - max(values)
+    return score
+
+
 def _limited_items(items: Any, max_items: int):
     if max_items <= 0:
         return ()
@@ -374,6 +386,11 @@ class OpenpilotLiveSource:
         lane_center_fresh = (onroad and controls_received is not None
                              and self._service_alive("controlsState") and self._service_valid("controlsState")
                              and 0.0 <= time.monotonic() - controls_received <= 0.3)
+        lane_center_status = str(safe_get(controls_state, "pv5LaneCenterStatus", "off")) if lane_center_fresh else "off"
+        if lane_center_status == "waiting":
+            reason = str(safe_get(controls_state, "pv5LaneCenterWaitReason", "none"))
+            if reason != "none":
+                lane_center_status = reason
         lateral_state = safe_get(controls_state, "lateralControlState")
         try:
             lateral_kind = str(lateral_state.which()) if lateral_state is not None else ""
@@ -468,10 +485,13 @@ class OpenpilotLiveSource:
 
         now = time.monotonic()
         confidence = None
+        confidence_score = None
         deceleration_banner = None
         if onroad:
             if self._service_is_fresh("modelV2", now, 0.5):
-                confidence = str(safe_get(self._service_data("modelV2"), "confidence", ""))
+                model = self._service_data("modelV2")
+                confidence = str(safe_get(model, "confidence", ""))
+                confidence_score = model_confidence_score(model)
             if (self._service_is_fresh("carControl", now, 0.3)
                     and self._service_is_fresh("longitudinalPlan", now, 0.5)
                     and self._service_is_fresh("carrotMan", now, 1.0)
@@ -487,6 +507,7 @@ class OpenpilotLiveSource:
             state,
             onroad=onroad,
             model_confidence=confidence,
+            model_confidence_score=confidence_score,
             deceleration_banner=deceleration_banner,
             alert=self._live_cluster_alert(state.alert, onroad),
             egpu_active=getattr(self, "_egpu_active", False),
@@ -500,7 +521,7 @@ class OpenpilotLiveSource:
             steering_output=steering_output,
             steering_output_normalized=steering_output_normalized,
             steering_output_kind=steering_output_kind,
-            pv5_lane_center_status=str(safe_get(controls_state, "pv5LaneCenterStatus", "off")) if lane_center_fresh else "off",
+            pv5_lane_center_status=lane_center_status,
             pv5_lane_center_fraction=(safe_optional_float(controls_state, "pv5LaneCenterFraction") or 0.0) if lane_center_fresh else 0.0,
             fuel_gauge=fuel_gauge,
             energy_gauge_label=energy_gauge_label,

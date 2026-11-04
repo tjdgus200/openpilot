@@ -268,7 +268,7 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
 
   renderer = object.__new__(hud.HealthRenderer)
   renderer.width, renderer.height, renderer.language, renderer.panel_layout = 1920, 480, 'ko', layout
-  renderer.host_health, renderer.host_badge_drawn = {'severity': 'ok'}, True
+  renderer.host_health, renderer.host_telemetry_drawn = {'severity': 'ok'}, True
   renderer._bsd_warning, renderer._bsd_alpha = sides, (alpha, alpha)
   calls = []
   monkeypatch.setattr(hud.time, 'monotonic', lambda: now)
@@ -282,10 +282,10 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
   monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_alert_overlay', lambda *a: calls.append(('vehicle', ())))
   renderer._draw_alert_overlay(NS(size=3, text1='TAKE OVER', text2=''))
   assert (calls[0][0] == 'batch') == any(sides)
-  sides = tuple(active and alpha > 0 for active in sides)
   gradients = [a for kind, a in calls if kind == 'gradient' and a[3] == 480]
   assert [a[:4] for a in gradients] == [rect for rect, active in zip([(0, 0, 640, 480), (1280, 0, 640, 480)], sides, strict=True) if active]
   assert [(a[4].a, a[5].a) for a in gradients] == [alpha for alpha, active in zip([(96, 0), (0, 96)], sides, strict=True) if active]
+  sides = tuple(active and alpha > 0 for active in sides)
   edges = [a[:4] for kind, a in calls if kind == 'edge' and a[2] == 24]
   assert edges == [rect for rect, active in zip([(0, 72, 24, 336), (1896, 72, 24, 336)], sides, strict=True) if active]
   rails = [a[:4] for kind, a in calls if kind == 'gradient' and a[3] == 24]
@@ -313,7 +313,7 @@ def test_warning_uses_physical_outer_thirds_and_vehicle_alerts_stay_last(monkeyp
     if kind == 'gradient' and a[3] in (24, 48):
       opacity = alpha if a[3] == 24 else int(alpha * .3)
       # Both top and bottom must fade in the correct physical direction,
-      # including the halo; the off phase has no warning geometry.
+      # including the halo; the off phase retains only the background gradient.
       assert (a[4].a, a[5].a) == ((opacity, 0) if a[0] < 640 else (0, opacity))
   for kind, rect in calls:
     if kind in ('edge', 'gradient'):

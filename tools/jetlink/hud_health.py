@@ -8,7 +8,7 @@ from openpilot.common.jetlink_status import _fresh
 from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 from cluster_battery import remote_panel, StationaryBatteryView, valid_value
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
-from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT,
+from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT, OPENPILOT_FONT_DIR,
                               TOP_STATUS_CENTER_Y,
                               NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W,
                               SIDE_GAUGE_LEFT_CENTER_X, SIDE_GAUGE_COLUMN_GAP, SIDE_GAUGE_BOTTOM,
@@ -19,6 +19,22 @@ WARNING = (255, 205, 70)
 TELEMETRY_ORANGE = (255, 165, 60)
 ERROR = (255, 90, 90)
 UNKNOWN = (190, 190, 190)
+LANE_CENTER_STATUS = {
+  'waiting': ('중앙 보정 대기', 'Center · Ready'),
+  'inactive': ('중앙 · 제어 꺼짐', 'Center · Inactive'),
+  'stopped': ('중앙 · 정차', 'Center · Stopped'),
+  'laneMode': ('중앙 · 레인모드', 'Center · Lane mode'),
+  'blindspot': ('중앙 · BSD 대기', 'Center · BSD hold'),
+  'inputs': ('중앙 · 입력 대기', 'Center · Inputs'),
+  'driver': ('중앙 · 운전자', 'Center · Driver'),
+  'maneuver': ('중앙 · 방향 전환', 'Center · Maneuver'),
+  'lead': ('중앙 · 앞차 감지', 'Center · Lead'),
+  'radar': ('중앙 · 레이더', 'Center · Radar'),
+  'laneQuality': ('중앙 · 차선 신뢰도', 'Center · Lane quality'),
+  'geometry': ('중앙 · 경로 조건', 'Center · Geometry'),
+  'checking': ('중앙 · 조건 확인', 'Center · Checking'),
+  'centered': ('중앙 · 보정 불필요', 'Center · Aligned'),
+}
 
 
 class TripSocUsage:
@@ -127,6 +143,20 @@ class HealthRenderer(ClusterUiRenderer):
   # Renderer recreation for USB/FPS changes must not establish a new baseline.
   # A process restart (including a host reboot/runtime update) starts a session.
   _trip_soc = TripSocUsage()
+  _telemetry_font = None
+
+  def open(self, hidden=False):
+    if self._window_open:
+      return
+    super().open(hidden=hidden)
+    # Only this readout uses regular weight. Load its small glyph set once.
+    chars = '0123456789.- WC°|'
+    glyphs = rl.ffi.new('int[]', [ord(char) for char in chars])
+    font = rl.load_font_ex(str(OPENPILOT_FONT_DIR / 'Inter-Regular.ttf'), 52, glyphs, len(chars))
+    if font.texture.id > 0 and font.texture.id != rl.get_font_default().texture.id:
+      self._telemetry_font = font
+      rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+
   def usb_brightness_setting(self, state, setting):
     from hud_protocol import read_snapshot
     from hud_bsd import warning_sides, WarningBrightness
@@ -196,24 +226,20 @@ class HealthRenderer(ClusterUiRenderer):
     self._draw_host_telemetry(x, 28)
     super()._draw_steering_output_block(state)
     status = state.pv5_lane_center_status
-    if status not in ('waiting', 'correcting', 'laneMode', 'blindspot'):
-      return
-    fraction = state.pv5_lane_center_fraction
+    fraction = state.pv5_lane_center_fraction if status == 'correcting' else 0.0
     active = status == 'correcting' and math.isfinite(fraction) and 0 < abs(fraction) <= 1.0
     ko = self.language == 'ko'
     if active:
       label = ('중앙 보정 ' if ko else 'Center ') + ('‹' if fraction < 0 else '›')
-    elif status == 'laneMode':
-      label = '중앙 · 레인모드' if ko else 'Center · Lane mode'
-    elif status == 'blindspot':
-      label = '중앙 · BSD 대기' if ko else 'Center · BSD hold'
+    elif status in LANE_CENTER_STATUS:
+      label = LANE_CENTER_STATUS[status][0 if ko else 1]
     else:
-      label = '중앙 보정 대기' if ko else 'Center · Ready'
+      return
     y = SIDE_GAUGE_BOTTOM + 43
     color = (100, 200, 255) if active else UNKNOWN
     half_bar = 82
     rl.draw_rectangle(int(x - 101), int(y - 12), 202, 44, rl_color((5, 9, 12), 225))
-    self._draw_text(label, x, y, 22, color, anchor='center')
+    self._draw_text(self._ellipsize_text(label, 22, 190), x, y, 22, color, anchor='center')
     rl.draw_rectangle(int(x - half_bar), int(y + 17), half_bar * 2, 7, rl_color((52, 62, 74)))
     if active:
       width = max(1, round(half_bar * abs(fraction)))
@@ -224,6 +250,9 @@ class HealthRenderer(ClusterUiRenderer):
     if footer is not None:
       footer.close()
       del self._runtime_footer
+    if self._telemetry_font is not None:
+      rl.unload_font(self._telemetry_font)
+      self._telemetry_font = None
     super().close()
 
   def render(self, state, signal_lights=None):
@@ -275,12 +304,14 @@ class HealthRenderer(ClusterUiRenderer):
       watts = self.host_health['power_w']
       power_color = NORMAL if watts <= 20 else TELEMETRY_ORANGE if watts < 30 else ERROR
     parts = ((power, power_color), (' | ', (245, 245, 245)), (temperature, temperature_color))
-    widths = [self._measure_text(text, 26)[0] for text, _ in parts]
-    size = 26 * min(1.0, 194 / max(1.0, sum(widths)))
-    widths = [self._measure_text(text, size)[0] for text, _ in parts]
-    left = x - sum(widths) * 0.5
-    for (text, color), width in zip(parts, widths, strict=True):
-      self._draw_text_with_stroke(text, left + width * 0.5, y, size, color, color, 1, anchor='center', cache=True)
+    font = self._telemetry_font if self._telemetry_font is not None else rl.get_font_default()
+    measures = [self._measure_text(text, 26, 1, font) for text, _ in parts]
+    size = 26 * min(1.0, 194 / max(1.0, sum(width for width, _ in measures)))
+    if size < 26:
+      measures = [self._measure_text(text, size, 1, font) for text, _ in parts]
+    left = x - sum(width for width, _ in measures) * 0.5
+    for (text, color), (width, height) in zip(parts, measures, strict=True):
+      rl.draw_text_ex(font, text, rl.Vector2(left, y - height * 0.5), size, 1, rl_color(color))
       left += width
     self.host_telemetry_drawn = True
 
@@ -303,16 +334,18 @@ class HealthRenderer(ClusterUiRenderer):
       alphas = getattr(self, '_bsd_alpha', (255, 255))
       # Physical screen sides stay left/right even when the panels are swapped.
       for side, active in enumerate((left, right)):
-        if active and alphas[side]:
+        if active:
           # One constant, translucent native quad per side. No image buffers,
-          # shader, thread or timer; reuses the 10 Hz renderer. The center third
-          # remains untinted. Same-side turn requests flash the whole cue.
+          # shader, thread or timer. The center third remains untinted.
+          # The same-side turn request pulses only the red bracket.
           shade, clear = rl_color((255, 30, 30), GRADIENT_ALPHA), rl_color((255, 30, 30), 0)
           width = int(DESIGN_WIDTH / 3)
           rl.draw_rectangle_gradient_h(0 if side == 0 else int(DESIGN_WIDTH) - width,
                                        0, width, int(DESIGN_HEIGHT),
                                        shade if side == 0 else clear, clear if side == 0 else shade)
           alpha = alphas[side]
+          if not alpha:
+            continue
           # Three-sided brackets surround only the physical outer third.
           # Filled square outer corners keep the rounded inner wall/rail join.
           radius = 72

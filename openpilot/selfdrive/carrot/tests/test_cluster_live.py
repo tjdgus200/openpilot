@@ -21,6 +21,17 @@ import cluster_live
 from cluster_models import ClusterAlert
 
 
+@pytest.mark.parametrize("brake,steer,score", (
+    (0.0, 0.0, 1.0), (0.2, 0.25, 0.6), (0.6, 0.25, 0.3),
+    (float("nan"), 0.25, None), (0.2, 1.1, None), (0.2, None, None),
+))
+def test_hud_confidence_tracks_predictions_within_a_single_confidence_class(brake, steer, score):
+    predictions = SimpleNamespace(brakeDisengageProbs=[brake, 0., 0., 0., 0.],
+                                  steerOverrideProbs=[] if steer is None else [0., 0., 0., steer, 0.])
+    model = SimpleNamespace(confidence="green", meta=SimpleNamespace(disengagePredictions=predictions))
+    assert cluster_live.model_confidence_score(model) == (pytest.approx(score) if score is not None else None)
+
+
 @pytest.mark.parametrize(
   ("source", "expected"),
   (

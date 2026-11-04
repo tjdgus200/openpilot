@@ -17,7 +17,6 @@ LaneChangeDirection = log.LaneChangeDirection
 TurnDirection = log.Desire
 
 ACC_CONTROL_DT = 1.0 / 50.0
-CLUSTER_BSD_HALF_PERIOD_FRAMES = round(0.2 / DT_CTRL)
 
 
 def longitudinal_interlock_active(CS) -> bool:
@@ -880,11 +879,11 @@ def _cluster_bsd_warning(out):
 
 
 def _select_cluster_background(cruise_enabled, lat_active, paddle_pressed, paddle_mode, turning=False, *,
-                               bsd_warning=False, bsd_flash_on=True, turn_background=6):
-  # Code 6 still has a cluster-native animation. Gating its request does not
-  # prove the physical flash rate; preserve the existing paddle warning.
-  if (bsd_warning and bsd_flash_on) or (paddle_mode > 0 and paddle_pressed):
+                               bsd_warning=False, turn_background=6):
+  if paddle_mode > 0 and paddle_pressed:
     return 6
+  if bsd_warning:
+    return 3  # Steady orange is supported by the native cluster.
   if lat_active and turning:
     return turn_background
   return 1 if cruise_enabled else 3 if lat_active else 7
@@ -1084,8 +1083,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         pv5_cluster = getattr(CP, "carFingerprint", None) == CAR.KIA_PV5
         values["BACKGROUND"] = _select_cluster_background(
           cruise_enabled, lat_active, CS.paddle_button_prev > 0, paddle_mode, turning=desire in (1, 2),
-          bsd_warning=pv5_cluster and _cluster_bsd_warning(CS.out), turn_background=3 if pv5_cluster else 6,
-          bsd_flash_on=frame % (2 * CLUSTER_BSD_HALF_PERIOD_FRAMES) < CLUSTER_BSD_HALF_PERIOD_FRAMES,
+          bsd_warning=pv5_cluster and _cluster_bsd_warning(CS.out), turn_background=7 if pv5_cluster else 6,
         )
         values["CENTERLINE"] = 1 if HDA_CntrlModSta > 0 else 0
         values["CAR_CIRCLE"] = 2 if hdp_active else 1 if cruise_enabled else 0

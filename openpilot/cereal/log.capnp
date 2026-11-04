@@ -866,6 +866,7 @@ struct ControlsState @0x97ff69c53601abf1 {
   activeLaneLine @67 : Bool;
   pv5LaneCenterStatus @68 :Pv5LaneCenterStatus;
   pv5LaneCenterFraction @69 :Float32;  # signed fraction of the assist ceiling before curvature limits
+  pv5LaneCenterWaitReason @70 :Pv5LaneCenterWaitReason;
 
   enum Pv5LaneCenterStatus {
     off @0;
@@ -873,6 +874,21 @@ struct ControlsState @0x97ff69c53601abf1 {
     correcting @2;
     laneMode @3;
     blindspot @4;
+  }
+
+  enum Pv5LaneCenterWaitReason {
+    none @0;
+    inactive @1;
+    stopped @2;
+    inputs @3;
+    driver @4;
+    maneuver @5;
+    lead @6;
+    radar @7;
+    laneQuality @8;
+    geometry @9;
+    checking @10;
+    centered @11;
   }
 
   lateralControlState :union {

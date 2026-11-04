@@ -1,5 +1,11 @@
 # PV5 OEM cluster BSD background
 
+2026-11-04 follow-up. The PV5 native cluster now requests gray (7) for an
+active model turn and steady orange (3) for a same-side signal and BSD. The
+enabled paddle warning retains flashing-red (6) priority. The separate Jetson
+HUD retains the red gradient during both phases and flashes only the red
+bracket at 2.5 Hz. The original native-cluster experiment is recorded below.
+
 The owner requests a red flashing OEM cluster background when a turn signal
 and a blindspot warning refer to the same side. Reuse the existing CAMERA_SCC
 `ADRV_0x161` display path and the defined `BACKGROUND=6` flashing-red request.
