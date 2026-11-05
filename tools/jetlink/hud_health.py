@@ -152,7 +152,8 @@ class HealthRenderer(ClusterUiRenderer):
     # Only this readout uses regular weight. Load its small glyph set once.
     chars = '0123456789.- WC°|'
     glyphs = rl.ffi.new('int[]', [ord(char) for char in chars])
-    font = rl.load_font_ex(str(OPENPILOT_FONT_DIR / 'Inter-Regular.ttf'), 52, glyphs, len(chars))
+    # pyray takes the address of CFFI arrays, so pass the int* API expects.
+    font = rl.load_font_ex(str(OPENPILOT_FONT_DIR / 'Inter-Regular.ttf'), 52, rl.ffi.cast('int *', glyphs), len(chars))
     if font.texture.id > 0 and font.texture.id != rl.get_font_default().texture.id:
       self._telemetry_font = font
       rl.set_texture_filter(font.texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)

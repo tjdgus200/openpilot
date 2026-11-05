@@ -1,5 +1,10 @@
 # Repository memory
 
+- 2026-11-05 Jetson HUD font startup fix: keep the CFFI glyph array alive
+  and pass an explicit int pointer to pyray.load_font_ex for Inter Regular.
+  The raw array causes a startup TypeError before the first HUD frame. Cover
+  font initialization and the first rendered frame with native pyray.
+
 - 2026-11-05 daily WIP: reviewed through90bd49d2; import CameraSCC OEM MAIN
   feedback/driver-intent separation, sustained independent radar-pair cut-in,
   exact Light speed cb9bf2cf AMD USB cast-zero lowering before artifact load,

@@ -207,6 +207,7 @@ def test_regular_telemetry_font_is_loaded_once_and_released(monkeypatch):
   monkeypatch.setattr(hud.ClusterUiRenderer, 'close', lambda self: setattr(self, '_window_open', False))
   monkeypatch.setattr(hud.rl, 'get_font_default', lambda: NS(texture=NS(id=1)))
   def load(path, size, glyphs, count):
+    assert hud.rl.ffi.typeof(glyphs) == hud.rl.ffi.typeof('int *')
     loaded.append((Path(path).name, size, ''.join(chr(glyphs[i]) for i in range(count))))
     return font
   monkeypatch.setattr(hud.rl, 'load_font_ex', load)
