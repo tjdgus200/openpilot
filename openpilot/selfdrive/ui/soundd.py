@@ -5,7 +5,7 @@ import time
 import wave
 
 
-from openpilot.cereal import car, messaging
+from openpilot.cereal import car, log, messaging
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
@@ -173,6 +173,9 @@ def linear_resample(samples, original_rate, new_rate):
 
 
 class Soundd:
+  current_alert_critical = False
+  selfdrive_timeout_alert = False
+
   def __init__(self):
     self.params = Params()
     self.soundVolumeAdjust = 1.0
@@ -187,12 +190,11 @@ class Soundd:
     self.current_volume = MIN_VOLUME
     self.current_sound_frame = 0
 
-    self.selfdrive_timeout_alert = False
-
     self.spl_filter_weighted = FirstOrderFilter(0, 2.5, FILTER_DT, initialized=False)
 
   def load_sounds(self):
-    self.loaded_sounds: dict[int, np.ndarray] = {}
+    loaded_sounds: dict[int, np.ndarray] = {}
+    critical_gains: dict[int, float] = {}
     sound_dir = os.path.join(BASEDIR, "openpilot", "selfdrive", "assets", sound_asset_dir_for_language(self.lang))
     fallback_dir = os.path.join(BASEDIR, "openpilot", "selfdrive", "assets", "sounds_eng")
 
@@ -222,7 +224,13 @@ class Soundd:
 
       resampled_samples = linear_resample(samples, actual_sample_rate, SAMPLE_RATE) * volume
 
-      self.loaded_sounds[sound] = resampled_samples.astype(np.float32) / (2**16/2)
+      pcm = resampled_samples.astype(np.float32) / (2**16/2)
+      loaded_sounds[sound] = pcm
+      peak = float(np.max(np.abs(pcm), initial=0.0))
+      critical_gains[sound] = 1.0 / peak if 0.0 < peak < 1.0 else MAX_VOLUME
+
+    self.loaded_sounds = loaded_sounds
+    self.critical_gains = critical_gains
 
   def update_language(self) -> None:
     now = time.monotonic()
@@ -242,6 +250,7 @@ class Soundd:
 
     ret = np.zeros(frames, dtype=np.float32)
     alert, alert_type, volume = self.current_alert, self.current_alert_type, self.current_volume
+    critical = self.current_alert_critical
 
     if alert != AudibleAlert.none:
       num_loops = sound_list[alert][1]
@@ -258,6 +267,8 @@ class Soundd:
         written_frames += frames_to_write
         self.current_sound_frame += frames_to_write
 
+    if critical:
+      return ret * self.critical_gains.get(alert, MAX_VOLUME)
     return ret * dm_warning_volume(alert, alert_type, volume)
 
   def callback(self, data_out: np.ndarray, frames: int, time, status) -> None:
@@ -266,7 +277,7 @@ class Soundd:
 
     data_out[:frames, 0] = self.get_sound_data(frames)
 
-  def update_alert(self, new_alert, alert_type=""):
+  def update_alert(self, new_alert, alert_type="", *, critical=False):
     if new_alert != AudibleAlert.none and new_alert not in self.loaded_sounds:
       cloudlog.error(f"soundd received unsupported alert {new_alert}")
       new_alert = AudibleAlert.none
@@ -280,9 +291,11 @@ class Soundd:
       self.current_alert = new_alert
       self.current_sound_frame = 0
       self.current_alert_type = alert_type
+      self.current_alert_critical = critical
     elif self.current_alert == new_alert:
       # The same WAV may now belong to a different event; do not retain DM gain.
       self.current_alert_type = alert_type
+      self.current_alert_critical = critical
 
   def update_carrot_alert(self, sm, new_alert):
     if new_alert == AudibleAlert.none:
@@ -299,17 +312,27 @@ class Soundd:
     return new_alert
 
   def get_audible_alert(self, sm):
-    if sm.updated['selfdriveState'] or sm.updated['carrotMan']:
-      new_alert = sm['selfdriveState'].alertSound.raw
-      alert_type = sm['selfdriveState'].alertType if new_alert != AudibleAlert.none else ""
-      new_alert = self.update_carrot_alert(sm, new_alert)
-      self.update_alert(new_alert, alert_type)
-    elif check_selfdrive_timeout_alert(sm):
-      self.update_alert(AudibleAlert.warningImmediate)
+    state_updated = sm.updated['selfdriveState']
+    if not state_updated and check_selfdrive_timeout_alert(sm):
+      self.update_alert(AudibleAlert.warningImmediate, critical=True)
       self.selfdrive_timeout_alert = True
-    elif self.selfdrive_timeout_alert:
-      self.update_alert(AudibleAlert.none)
+      return
+    if self.selfdrive_timeout_alert:
       self.selfdrive_timeout_alert = False
+      if not state_updated:
+        self.update_alert(AudibleAlert.none)
+        return
+
+    if state_updated or sm.updated['carrotMan']:
+      state = sm['selfdriveState']
+      state_fresh = state_updated or time.monotonic() - sm.recv_time['selfdriveState'] <= SELFDRIVE_STATE_TIMEOUT
+      new_alert = state.alertSound.raw if state_fresh else AudibleAlert.none
+      critical = state_fresh and state.alertStatus == log.SelfdriveState.AlertStatus.critical
+      if critical and new_alert == AudibleAlert.none:
+        new_alert = AudibleAlert.warningImmediate
+      alert_type = state.alertType if new_alert != AudibleAlert.none else ""
+      new_alert = self.update_carrot_alert(sm, new_alert)
+      self.update_alert(new_alert, alert_type, critical=critical)
 
   def calculate_volume(self, weighted_db):
     volume = ((weighted_db - AMBIENT_DB) / DB_SCALE) * (MAX_VOLUME - MIN_VOLUME) + MIN_VOLUME
@@ -342,7 +365,9 @@ class Soundd:
           self.spl_filter_weighted.update(sm["soundPressure"].soundPressureWeightedDb)
           self.current_volume = self.calculate_volume(float(self.spl_filter_weighted.x)) * self.soundVolumeAdjust
 
-        if cruise_main_toggle.update(sm['carState'].buttonEvents, sm['selfdriveState'].enabled):
+        cruise_toggled = cruise_main_toggle.update(sm['carState'].buttonEvents, sm['selfdriveState'].enabled)
+        if (cruise_toggled and sm['selfdriveState'].alertStatus != log.SelfdriveState.AlertStatus.critical
+            and not check_selfdrive_timeout_alert(sm)):
           self.update_alert(AudibleAlert.prompt)
         else:
           self.get_audible_alert(sm)

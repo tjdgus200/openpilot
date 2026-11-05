@@ -85,3 +85,13 @@ def test_overlay_is_visible_only_onroad_on_a_real_pv5():
     cp.notCar = False
     overlay.draw(None, None, ui_state)
     draw.assert_called_once()
+
+    with patch('openpilot.selfdrive.ui.onroad.pv5_driving_feedback._draw_centered_feedback') as centered:
+      overlay.centered = True
+      overlay.warning = True
+      overlay.draw(None, None, ui_state)
+      centered.assert_not_called()
+      overlay.warning = False
+      overlay.draw(None, None, ui_state)
+      centered.assert_called_once()
+      draw.assert_called_once()

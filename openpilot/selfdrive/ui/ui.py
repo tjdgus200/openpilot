@@ -10,6 +10,7 @@ from openpilot.selfdrive.ui.layouts.main import MainLayout
 from openpilot.selfdrive.ui.mici.layouts.main import MiciMainLayout
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.impact_dashcam import ImpactDashcamPrompt
+from openpilot.selfdrive.ui.critical_alert import draw_critical_alert
 
 BIG_UI = gui_app.big_ui()
 
@@ -38,7 +39,7 @@ def main():
   for rendered in gui_app.render():
     ui_state.update()
     scheduler.update(ui_state.started)
-    if rendered:
+    if rendered and not draw_critical_alert(ui_state):
       impact_prompt.render()
 
 

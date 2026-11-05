@@ -1,4 +1,4 @@
-from openpilot.cereal import car
+from openpilot.cereal import car, log
 from openpilot.cereal import messaging
 from openpilot.cereal.messaging import SubMaster, PubMaster
 from openpilot.selfdrive.ui.soundd import (
@@ -25,8 +25,10 @@ AudibleAlert = car.CarControl.HUDControl.AudibleAlert
 class _SoundSubMaster:
   def __init__(self, countdown, *, selfdrive_updated=False, carrot_updated=True):
     self.updated = {"selfdriveState": selfdrive_updated, "carrotMan": carrot_updated}
+    self.recv_time = {"selfdriveState": time.monotonic()}
     self.services = {
-      "selfdriveState": SimpleNamespace(alertSound=SimpleNamespace(raw=AudibleAlert.none), alertType=""),
+      "selfdriveState": SimpleNamespace(alertSound=SimpleNamespace(raw=AudibleAlert.none), alertType="",
+                                        alertStatus=log.SelfdriveState.AlertStatus.normal, enabled=False),
       "carrotMan": SimpleNamespace(leftSec=countdown),
     }
 
@@ -35,6 +37,39 @@ class _SoundSubMaster:
 
 
 class TestSoundd:
+  def test_critical_alert_reaches_full_pcm_even_when_muted_and_restores_normal_gain(self):
+    soundd = Soundd.__new__(Soundd)
+    soundd.current_alert = AudibleAlert.none
+    soundd.current_alert_type = ''
+    soundd.current_sound_frame = 0
+    soundd.current_volume = 0.0
+    soundd.loaded_sounds = {AudibleAlert.warningImmediate: np.array([0.375, -0.375], dtype=np.float32)}
+    soundd.critical_gains = {AudibleAlert.warningImmediate: 1.0 / 0.375}
+    sm = _SoundSubMaster(0, selfdrive_updated=True)
+    state = sm['selfdriveState']
+    state.alertStatus = log.SelfdriveState.AlertStatus.critical
+    soundd.get_audible_alert(sm)
+    np.testing.assert_allclose(soundd.get_sound_data(2), [1.0, -1.0])
+
+    state.alertStatus = log.SelfdriveState.AlertStatus.normal
+    state.alertSound.raw = AudibleAlert.warningImmediate
+    soundd.get_audible_alert(sm)
+    np.testing.assert_allclose(soundd.get_sound_data(2), 0.0)
+
+  def test_timeout_warning_takes_priority_over_navigation_updates(self):
+    soundd = Soundd.__new__(Soundd)
+    soundd.current_alert = AudibleAlert.none
+    soundd.current_alert_type = ''
+    soundd.current_sound_frame = 0
+    soundd.current_volume = 0.0
+    soundd.loaded_sounds = {AudibleAlert.warningImmediate: np.array([0.5], dtype=np.float32)}
+    soundd.critical_gains = {AudibleAlert.warningImmediate: 2.0}
+    sm = _SoundSubMaster(10)
+    sm['selfdriveState'].enabled = True
+    sm.recv_time['selfdriveState'] -= SELFDRIVE_STATE_TIMEOUT + 1
+    soundd.get_audible_alert(sm)
+    np.testing.assert_allclose(soundd.get_sound_data(1), 1.0)
+
   @pytest.mark.parametrize('name', ['driverDistracted', 'driverUnresponsive'])
   @pytest.mark.parametrize('volume', [0., 0.05, 0.69, 0.7, 0.85, 1., 1.5])
   @pytest.mark.parametrize('stage', [2, 3])

@@ -139,6 +139,10 @@ class AugmentedRoadView(CameraView):
       _t = time.monotonic() if timing.enabled else 0.0
       timing.call('model', self.model_renderer.render, self._content_rect)
       model_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
+    alert_visible = self.alert_renderer.get_alert(ui_state.sm) is not None
+    self._hud_renderer.set_driving_feedback_mode(
+      centered=self._suppress_camera_for_cluster and not self._fov_preview.active, warning=alert_visible,
+    )
     _t = time.monotonic() if timing.enabled else 0.0
     timing.call('hud', self._hud_renderer.render, self._content_rect)  # includes plot when enabled
     hud_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
@@ -146,8 +150,7 @@ class AugmentedRoadView(CameraView):
     timing.call('alert', self.alert_renderer.render, self._content_rect)
     alert_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
     _t = time.monotonic() if timing.enabled else 0.0
-    timing.call('driver_state', self.driver_state_renderer.draw_onroad, self._content_rect,
-                self.alert_renderer.get_alert(ui_state.sm) is not None)
+    timing.call('driver_state', self.driver_state_renderer.draw_onroad, self._content_rect, alert_visible)
     ds_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
 
     # Custom UI extension point - add custom overlays here

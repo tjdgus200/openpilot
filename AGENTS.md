@@ -3,8 +3,11 @@
 - 2026-11-05 PV5 comma driving feedback: both onroad UIs show model confidence,
   signed steering demand and lane-center status from existing messages. Gate
   on PV5 and fresh data; leave steering, model and lane-center control unchanged.
-  Keep the onroad alert layer above these indicators and preserve the full-screen
-  OBD diagnostic view. See docs/pv5_lane_center_assist_20261103.md.
+  Use the large centered gauges when the connected HUD hides the camera, and
+  hide feedback while the onroad alert is visible. Preserve full-screen OBD.
+  Critical comma alerts draw above all widgets, and soundd bypasses ambient
+  and user gain for these alerts with peak-normalized PCM. Preserve normal
+  alert gain and DM stage 2 floor. See docs/pv5_lane_center_assist_20261103.md.
 
 - 2026-11-05 Jetson HUD font startup fix: keep the CFFI glyph array alive
   and pass an explicit int pointer to pyray.load_font_ex for Inter Regular.

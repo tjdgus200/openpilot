@@ -302,6 +302,10 @@ class HudRenderer(Widget):
     else:
       self._torque_filter.update(float(-sm['carOutput'].actuatorsOutput.torque))
 
+  def set_driving_feedback_mode(self, centered: bool, warning: bool) -> None:
+    self._driving_feedback.centered = centered
+    self._driving_feedback.warning = warning
+
   def _render(self, rect: rl.Rectangle) -> None:
     """Render HUD elements to the screen."""
     if self._obd_debug.draw(rect, self._font_semi_bold, ui_state):
@@ -310,12 +314,12 @@ class HudRenderer(Widget):
     key = (state.key if state else None, self._traffic_light_info, self._can_draw_top_icons, self._show_wheel_critical)
     self._overlay.draw(rect, self._paint, key, enabled=state is not None and state.enabled,
                        urgent=state is not None and state.urgent)
+    self._driving_feedback.draw(rect, self._font_display, ui_state)
     self._draw_cruise_speed_animation(rect)
     from openpilot.common.indicator_display import draw as draw_indicator
     badge_width = min(500, rect.width * .62)
     draw_indicator(rect.x + (rect.width-badge_width)/2, rect.y+rect.height*.16,
                    badge_width, self._font_display, 26 if rect.width > 1200 else 19)
-    self._driving_feedback.draw(rect, self._font_display, ui_state)
 
   def _paint(self, rect: rl.Rectangle) -> None:
 
@@ -550,8 +554,18 @@ class HudRenderer(Widget):
     # show_date_time: 0=hide, 1=date+time, 2=time only, 3=date only
     # --------------------------------------------------------------------------
     time_block_right = time_x
+    centered_feedback = self._driving_feedback.centered and self._driving_feedback.visible(ui_state)
 
-    if show_date_time != 0:
+    if show_date_time != 0 and centered_feedback:
+      # Leave the upper center clear without dropping the driver's clock preference.
+      clock_text = now.strftime("%H:%M")
+      date_text = now.strftime("%m-%d")
+      compact_lines = {1: (clock_text, date_text), 2: (clock_text,), 3: (date_text,)}
+      for i, line in enumerate(compact_lines.get(show_date_time, ())):
+        draw_text_ui_style(line, pos_x, pos_y + wheel_txt.height * 0.5 + i * 18, 15, rl.WHITE,
+                           font=self._font_display, border_width=0, shadow_offset=0,
+                           align="center_top", y_offset=0)
+    elif show_date_time != 0:
       weekdays_ko = ["일", "월", "화", "수", "목", "금", "토"]
       # Python weekday(): 월=0 ... 일=6 이라서 C tm_wday 스타일로 변환
       weekday = weekdays_ko[(now.weekday() + 1) % 7]
