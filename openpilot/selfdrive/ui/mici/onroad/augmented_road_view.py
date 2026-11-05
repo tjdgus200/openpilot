@@ -288,7 +288,7 @@ class AugmentedRoadView(CameraView):
 
     self._hud_renderer.set_can_draw_top_icons(alert_to_render is None)
     self._hud_renderer.set_driving_feedback_mode(
-      centered=self._suppress_camera_for_cluster and not self._fov_preview.active, warning=alert_to_render is not None,
+      large=self._suppress_camera_for_cluster and not self._fov_preview.active, warning=alert_to_render is not None,
     )
     self._hud_renderer.set_wheel_critical_icon(alert_to_render is not None and not not_animating_out and
                                                alert_to_render.visual_alert == car.CarControl.HUDControl.VisualAlert.steerRequired)
@@ -313,7 +313,10 @@ class AugmentedRoadView(CameraView):
     # Custom UI extension point - add custom overlays here
     # Use self._content_rect for positioning within camera bounds
     _t = time.monotonic() if timing.enabled else 0.0
-    self._driver_state_renderer.draw_onroad(self.rect, alert_to_render is not None)
+    dm_position = None
+    if self._hud_renderer.large_feedback_visible():
+      dm_position = (self._content_rect.x + self._content_rect.width - 204, self._content_rect.y + 36)
+    self._driver_state_renderer.draw_onroad(self.rect, alert_to_render is not None, position=dm_position)
     ds_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
     _t = time.monotonic() if timing.enabled else 0.0
     self._traffic_light.render(self.rect)

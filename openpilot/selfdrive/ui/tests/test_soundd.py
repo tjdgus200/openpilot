@@ -70,6 +70,30 @@ class TestSoundd:
     soundd.get_audible_alert(sm)
     np.testing.assert_allclose(soundd.get_sound_data(1), 1.0)
 
+  def test_steering_attention_plays_once_and_yields_to_critical_alert(self):
+    soundd = Soundd.__new__(Soundd)
+    soundd.current_alert = AudibleAlert.none
+    soundd.current_sound_frame = 0
+    soundd.current_volume = 0.0
+    soundd.carrot_count_down = 100
+    soundd.loaded_sounds = {AudibleAlert.prompt: np.array([0.5], dtype=np.float32),
+                            AudibleAlert.warningImmediate: np.array([-0.5], dtype=np.float32)}
+    soundd.critical_gains = dict.fromkeys(soundd.loaded_sounds, 2.0)
+    sm = _SoundSubMaster(100, selfdrive_updated=False, carrot_updated=False)
+    soundd.get_audible_alert(sm, steering_attention=True)
+    np.testing.assert_allclose(soundd.get_sound_data(2), [1.0, 0.0])
+    soundd.get_audible_alert(sm, steering_attention=True)
+    np.testing.assert_allclose(soundd.get_sound_data(1), 0.0)
+    soundd.get_audible_alert(sm)
+
+    sm.updated['selfdriveState'] = True
+    sm['selfdriveState'].alertStatus = log.SelfdriveState.AlertStatus.critical
+    soundd.get_audible_alert(sm, steering_attention=True)
+    np.testing.assert_allclose(soundd.get_sound_data(1), -1.0)
+    sm['selfdriveState'].alertStatus = log.SelfdriveState.AlertStatus.normal
+    soundd.get_audible_alert(sm, steering_attention=True)
+    np.testing.assert_allclose(soundd.get_sound_data(1), 1.0)
+
   @pytest.mark.parametrize('name', ['driverDistracted', 'driverUnresponsive'])
   @pytest.mark.parametrize('volume', [0., 0.05, 0.69, 0.7, 0.85, 1., 1.5])
   @pytest.mark.parametrize('stage', [2, 3])

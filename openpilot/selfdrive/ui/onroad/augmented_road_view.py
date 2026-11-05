@@ -141,7 +141,7 @@ class AugmentedRoadView(CameraView):
       model_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
     alert_visible = self.alert_renderer.get_alert(ui_state.sm) is not None
     self._hud_renderer.set_driving_feedback_mode(
-      centered=self._suppress_camera_for_cluster and not self._fov_preview.active, warning=alert_visible,
+      large=self._suppress_camera_for_cluster and not self._fov_preview.active, warning=alert_visible,
     )
     _t = time.monotonic() if timing.enabled else 0.0
     timing.call('hud', self._hud_renderer.render, self._content_rect)  # includes plot when enabled

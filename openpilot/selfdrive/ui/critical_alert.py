@@ -38,7 +38,6 @@ def draw_critical_alert(ui_state) -> bool:
 
   width, height = gui_app.width, gui_app.height
   rl.draw_rectangle(0, 0, width, height, rl.Color(183, 0, 24, 255))
-  yellow = rl.Color(255, 244, 0, 255)
   font = gui_app.font(FontWeight.BOLD)
   title, detail = alert
   title_size = max(12, int(min(width * 0.075, height * 0.21)))
@@ -57,7 +56,7 @@ def draw_critical_alert(ui_state) -> bool:
   y = (height - total_height) / 2
   for lines, size, line_height in ((title_lines, title_size, title_line_height), (detail_lines, detail_size, detail_line_height)):
     for line in lines:
-      draw_text_ui_style(line, width / 2, y, size, yellow, font=font, border_width=0,
+      draw_text_ui_style(line, width / 2, y, size, rl.WHITE, font=font, border_width=0,
                          shadow_offset=0, align='center_top', y_offset=0)
       y += line_height
     if lines is title_lines:

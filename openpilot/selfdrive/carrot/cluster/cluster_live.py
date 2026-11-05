@@ -44,7 +44,7 @@ if OPENPILOT_ROOT is not None:
     package_root = OPENPILOT_ROOT.parent if (OPENPILOT_ROOT / "__init__.py").is_file() else OPENPILOT_ROOT
     sys.path.insert(0, str(package_root))
 
-from openpilot.common.hud_driving_feedback import angle_steering_demand, model_confidence_score
+from openpilot.common.hud_driving_feedback import angle_steering_demand, model_confidence_score, pv5_steering_warning
 from openpilot.selfdrive.carrot.deceleration_source import (
     deceleration_banner_text, deceleration_source_presentation, external_navigation_connected,
 )
@@ -110,6 +110,7 @@ LIVE_SERVICES_BASE = (
     "carrotMan",
     "carrotNavi",
     "wideRoadCameraState",
+    "driverMonitoringState",
 )
 LIVE_CAN_SERVICES = ("can", "sendcan")
 NAVI_TRAFFIC_LIGHT_HOLD_SECONDS = 10.0
@@ -469,7 +470,10 @@ class OpenpilotLiveSource:
         confidence = None
         confidence_score = None
         deceleration_banner = None
+        steering_warning = 0
         if onroad:
+            remote_warning = getattr(self.sm, "steering_warning", None)
+            steering_warning = pv5_steering_warning(self.sm, now) if remote_warning is None else remote_warning
             if self._service_is_fresh("modelV2", now, 0.5):
                 model = self._service_data("modelV2")
                 confidence = str(safe_get(model, "confidence", ""))
@@ -491,6 +495,7 @@ class OpenpilotLiveSource:
             model_confidence=confidence,
             model_confidence_score=confidence_score,
             deceleration_banner=deceleration_banner,
+            steering_warning=steering_warning,
             alert=self._live_cluster_alert(state.alert, onroad),
             egpu_active=getattr(self, "_egpu_active", False),
             external_compute_label=getattr(self, '_external_compute_label', ''),

@@ -1,6 +1,11 @@
 import math
 
 
+STEERING_WARNING_SERVICES = ('carParams', 'carControl', 'controlsState', 'carState',
+                             'liveParameters', 'carOutput', 'driverMonitoringState')
+STEERING_WARNING_TEXT = {1: '조향 요구량 높음', 2: '전방 주시 · 조향 요구량 높음'}
+
+
 LANE_CENTER_STATUS = {
   'waiting': ('중앙 보정 대기', 'Center · Ready'),
   'inactive': ('중앙 · 제어 꺼짐', 'Center · Inactive'),
@@ -40,3 +45,44 @@ def angle_steering_demand(speed: float, desired_curvature: float, roll: float, m
   roll_weight = min(1.0, max(0.0, (speed - 5.0) / 10.0))
   demand = (desired_curvature * speed * speed - roll * 9.80665 * roll_weight) / max_lateral_accel
   return min(1.0, max(-1.0, demand))
+
+
+def pv5_steering_warning(sm, now: float, *, cp=None, started_frame: int | None = None) -> int:
+  """Classify the display/audio advisory using live, active steering demand."""
+  def fresh(name, max_age):
+    return (sm.valid.get(name, False) and sm.alive.get(name, False)
+            and (started_frame is None or sm.recv_frame[name] >= started_frame)
+            and 0 <= now - sm.recv_time[name] <= max_age
+            and 0 <= now - sm.logMonoTime[name] * 1e-9 <= max_age)
+
+  if cp is None:
+    if not sm.valid.get('carParams', False):
+      return 0
+    cp = sm['carParams']
+  if cp.notCar or cp.carFingerprint != 'KIA_PV5':
+    return 0
+  if not (fresh('carControl', 0.3) and sm['carControl'].latActive and fresh('controlsState', 0.3)):
+    return 0
+
+  controls = sm['controlsState']
+  kind = controls.lateralControlState.which()
+  if kind == 'angleState' and fresh('carState', 0.3) and fresh('liveParameters', 0.5):
+    demand = angle_steering_demand(sm['carState'].vEgo, controls.desiredCurvature or controls.curvature,
+                                  sm['liveParameters'].roll, cp.maxLateralAccel)
+  elif kind in ('torqueState', 'pidState') and fresh('carOutput', 0.3):
+    demand = sm['carOutput'].actuatorsOutput.torque
+  else:
+    return 0
+  if demand is None or not math.isfinite(demand):
+    return 0
+  # The source torque and curvature are encoded as Float32.
+  magnitude = abs(demand) + 1e-7
+  if magnitude < 0.8:
+    return 0
+
+  if magnitude >= 0.9 and fresh('driverMonitoringState', 0.5):
+    dm = sm['driverMonitoringState']
+    vision = dm.visionPolicyState
+    if dm.activePolicy == 'vision' and not dm.cameraUnavailable and not dm.dm2Disabled and vision.faceDetected and vision.isDistracted:
+      return 2
+  return 1

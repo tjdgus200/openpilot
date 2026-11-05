@@ -47,6 +47,30 @@ def test_one_json_parse_for_unchanged_atomic_packet(reader, monkeypatch):
   assert protocol.read_snapshot() is None
 
 
+def test_steering_advisory_expires_and_legacy_snapshot_clears_it(reader, monkeypatch):
+  import hud
+
+  clock, write = reader
+  monkeypatch.setattr(hud, 'time', NS(monotonic=lambda: clock[0]))
+  sm = hud.RemoteSubMaster([])
+  record = {'version': 1, 'sent': 100.0, 'steering_warning': 2}
+  write(record)
+  sm.update()
+  assert sm.steering_warning == 2
+
+  clock[0] += .31
+  sm.update()
+  assert sm.steering_warning == 0
+  write(record, clock[0])
+  clock[0] += .03
+  sm.update()
+  assert sm.steering_warning == 2
+  write({'version': 1, 'sent': 100.1}, clock[0])
+  clock[0] += .03
+  sm.update()
+  assert sm.steering_warning == 0
+
+
 @pytest.mark.parametrize('stamp', [float('nan'), float('inf'), 11., 9.])
 def test_replacement_never_reuses_old_valid_cache(reader, stamp):
   clock, write = reader

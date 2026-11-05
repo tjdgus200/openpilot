@@ -100,6 +100,7 @@ class RemoteSubMaster:
     self.logMonoTime = dict.fromkeys(services, 0)
     self.generations = {}
     self.last_received = 0.
+    self.steering_warning = 0
     for name in services:
       self.data[name] = log.Event.new_message(**{name: {}}) if name != 'liveTracks' else log.Event.new_message(liveTracks={})
 
@@ -112,8 +113,11 @@ class RemoteSubMaster:
     if snapshot is None:
       self.valid = dict.fromkeys(self.services, False)
       self.alive = dict.fromkeys(self.services, False)
+      self.steering_warning = 0
       return
     received, value = snapshot
+    warning = value.get('steering_warning')
+    self.steering_warning = warning if type(warning) is int and warning in (1, 2) and 0 <= time.monotonic() - received <= 0.3 else 0
     if received == self.last_received:
       return
     self.last_received = received

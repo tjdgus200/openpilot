@@ -8,6 +8,7 @@ import wave
 from openpilot.cereal import car, log, messaging
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.hud_driving_feedback import STEERING_WARNING_SERVICES, pv5_steering_warning
 from openpilot.common.params import Params
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.utils import retry
@@ -174,6 +175,8 @@ def linear_resample(samples, original_rate, new_rate):
 
 class Soundd:
   current_alert_critical = False
+  steering_attention = False
+  steering_attention_pending = False
   selfdrive_timeout_alert = False
 
   def __init__(self):
@@ -266,6 +269,10 @@ class Soundd:
         ret[written_frames:written_frames+frames_to_write] = sound_data[current_sound_frame:current_sound_frame+frames_to_write]
         written_frames += frames_to_write
         self.current_sound_frame += frames_to_write
+        current_sound_frame += frames_to_write
+        if current_sound_frame == len(sound_data):
+          current_sound_frame = 0
+          loops += 1
 
     if critical:
       return ret * self.critical_gains.get(alert, MAX_VOLUME)
@@ -287,7 +294,8 @@ class Soundd:
       self.current_alert not in self.loaded_sounds or
       self.current_sound_frame >= len(self.loaded_sounds[self.current_alert])
     )
-    if self.current_alert != new_alert and (new_alert != AudibleAlert.none or current_alert_played_once):
+    if ((self.current_alert != new_alert and (new_alert != AudibleAlert.none or current_alert_played_once))
+        or (new_alert != AudibleAlert.none and critical and not self.current_alert_critical)):
       self.current_alert = new_alert
       self.current_sound_frame = 0
       self.current_alert_type = alert_type
@@ -311,7 +319,9 @@ class Soundd:
 
     return new_alert
 
-  def get_audible_alert(self, sm):
+  def get_audible_alert(self, sm, steering_attention=False):
+    self.steering_attention_pending = steering_attention and (self.steering_attention_pending or not self.steering_attention)
+    self.steering_attention = steering_attention
     state_updated = sm.updated['selfdriveState']
     if not state_updated and check_selfdrive_timeout_alert(sm):
       self.update_alert(AudibleAlert.warningImmediate, critical=True)
@@ -323,7 +333,7 @@ class Soundd:
         self.update_alert(AudibleAlert.none)
         return
 
-    if state_updated or sm.updated['carrotMan']:
+    if state_updated or sm.updated['carrotMan'] or self.steering_attention_pending:
       state = sm['selfdriveState']
       state_fresh = state_updated or time.monotonic() - sm.recv_time['selfdriveState'] <= SELFDRIVE_STATE_TIMEOUT
       new_alert = state.alertSound.raw if state_fresh else AudibleAlert.none
@@ -331,7 +341,11 @@ class Soundd:
       if critical and new_alert == AudibleAlert.none:
         new_alert = AudibleAlert.warningImmediate
       alert_type = state.alertType if new_alert != AudibleAlert.none else ""
-      new_alert = self.update_carrot_alert(sm, new_alert)
+      if new_alert == AudibleAlert.none and self.steering_attention_pending:
+        self.steering_attention_pending = False
+        new_alert, alert_type, critical = AudibleAlert.prompt, 'pv5SteeringAttention', True
+      else:
+        new_alert = self.update_carrot_alert(sm, new_alert)
       self.update_alert(new_alert, alert_type, critical=critical)
 
   def calculate_volume(self, weighted_db):
@@ -349,7 +363,7 @@ class Soundd:
     # sounddevice must be imported after forking processes
     import sounddevice as sd
 
-    sm = messaging.SubMaster(['selfdriveState', 'soundPressure', 'carrotMan', 'carState'])
+    sm = messaging.SubMaster(['selfdriveState', 'soundPressure', 'carrotMan', *STEERING_WARNING_SERVICES])
     cruise_main_toggle = CruiseMainOpenpilotToggle(ButtonType.mainCruise)
 
     with self.get_stream(sd) as stream:
@@ -366,11 +380,12 @@ class Soundd:
           self.current_volume = self.calculate_volume(float(self.spl_filter_weighted.x)) * self.soundVolumeAdjust
 
         cruise_toggled = cruise_main_toggle.update(sm['carState'].buttonEvents, sm['selfdriveState'].enabled)
-        if (cruise_toggled and sm['selfdriveState'].alertStatus != log.SelfdriveState.AlertStatus.critical
+        steering_attention = pv5_steering_warning(sm, time.monotonic()) == 2
+        if (cruise_toggled and not steering_attention and sm['selfdriveState'].alertStatus != log.SelfdriveState.AlertStatus.critical
             and not check_selfdrive_timeout_alert(sm)):
           self.update_alert(AudibleAlert.prompt)
         else:
-          self.get_audible_alert(sm)
+          self.get_audible_alert(sm, steering_attention)
 
         rk.keep_time()
 

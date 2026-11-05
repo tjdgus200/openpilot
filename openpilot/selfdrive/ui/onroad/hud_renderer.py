@@ -285,8 +285,8 @@ class HudRenderer(Widget):
     speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
     self.speed = max(0.0, v_ego * speed_conversion)
 
-  def set_driving_feedback_mode(self, centered: bool, warning: bool) -> None:
-    self._driving_feedback.centered = centered
+  def set_driving_feedback_mode(self, large: bool, warning: bool) -> None:
+    self._driving_feedback.large = large
     self._driving_feedback.warning = warning
 
   def _render(self, rect: rl.Rectangle) -> None:
@@ -304,12 +304,13 @@ class HudRenderer(Widget):
     button_x = rect.x + rect.width - UI_CONFIG.border_size - UI_CONFIG.button_size
     button_y = rect.y + UI_CONFIG.border_size
     self._exp_button.render(rl.Rectangle(button_x, button_y, UI_CONFIG.button_size, UI_CONFIG.button_size))
-    self._driving_feedback.draw(rect, self._font_display, ui_state)
+    self._driving_feedback.draw(rect, self._font_display, ui_state, right_reserved=220 if self._show_tpms in (2, 3) else 0)
     self._draw_cruise_speed_animation(rect)
     from openpilot.common.indicator_display import draw as draw_indicator
     badge_width = min(500, rect.width * .62)
     draw_indicator(rect.x + (rect.width-badge_width)/2, rect.y+rect.height*.16,
                    badge_width, self._font_display, 26 if rect.width > 1200 else 19)
+    self._driving_feedback.draw_steering_warning(rect, self._font_display, ui_state)
 
   def _paint(self, rect: rl.Rectangle) -> None:
 

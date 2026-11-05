@@ -3,9 +3,12 @@
 - 2026-11-05 PV5 comma driving feedback: both onroad UIs show model confidence,
   signed steering demand and lane-center status from existing messages. Gate
   on PV5 and fresh data; leave steering, model and lane-center control unchanged.
-  Use the large centered gauges when the connected HUD hides the camera, and
+  Use the large lower-right gauges when the connected HUD hides the camera, and
   hide feedback while the onroad alert is visible. Preserve full-screen OBD.
-  Critical comma alerts draw above all widgets, and soundd bypasses ambient
+  Active PV5 steering demand at 80% shows an amber banner. At 90% with fresh
+  visual DM distraction it shows red and plays one high-gain prompt on comma.
+  Only the advisory level crosses Jetlink. Standard alerts retain priority.
+  Critical comma alerts use bold white on full-screen red above all widgets, and soundd bypasses ambient
   and user gain for these alerts with peak-normalized PCM. Preserve normal
   alert gain and DM stage 2 floor. See docs/pv5_lane_center_assist_20261103.md.
 

@@ -7535,16 +7535,20 @@ class ClusterUiRenderer:
         return GREEN
 
     def _draw_deceleration_banner(self, state: ClusterUiState, screen_mode: int) -> bool:
-        text = state.deceleration_banner
+        from openpilot.common.hud_driving_feedback import STEERING_WARNING_TEXT
+
+        warning = state.steering_warning
+        text = STEERING_WARNING_TEXT.get(warning) or state.deceleration_banner
         if not text or (state.alert is not None and state.alert.size > 0):
             return False
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
-        width, height, top = 330, 54, 4
+        width, height, top = (500 if warning == 2 else 330), 54, 4
         left = center_x - width * 0.5
-        self._rounded_rect(left, top, width, height, 12, (16, 25, 35, 245), (84, 103, 122, 255), 2)
-        self._rounded_rect(left + 14, top + 13, 5, height - 26, 2, AMBER)
+        background = (156, 18, 27, 255) if warning == 2 else (77, 46, 9, 255) if warning else (16, 25, 35, 245)
+        self._rounded_rect(left, top, width, height, 12, background, RED if warning == 2 else (84, 103, 122, 255), 2)
+        self._rounded_rect(left + 14, top + 13, 5, height - 26, 2, RED if warning == 2 else AMBER)
         self._draw_text_with_stroke(text, center_x + 5, top + height * 0.5, 36,
-                                    (255, 241, 211), (5, 9, 12), 2, anchor="center", cache=True)
+                                    WHITE if warning == 2 else (255, 241, 211), (5, 9, 12), 2, anchor="center", cache=True)
         return True
 
     def _draw_model_confidence(self, state: ClusterUiState) -> None:

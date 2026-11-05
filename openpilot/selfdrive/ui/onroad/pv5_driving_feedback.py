@@ -3,7 +3,9 @@ import time
 from dataclasses import dataclass
 
 import pyray as rl
-from openpilot.common.hud_driving_feedback import LANE_CENTER_STATUS, angle_steering_demand, model_confidence_score
+from openpilot.common.hud_driving_feedback import (
+  LANE_CENTER_STATUS, STEERING_WARNING_TEXT, angle_steering_demand, model_confidence_score, pv5_steering_warning,
+)
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
 
@@ -104,16 +106,13 @@ def _draw_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
   bar(data.center, BLUE, signed=True)
 
 
-def _draw_centered_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
+def _draw_large_feedback(rect, font, data: DrivingFeedback, compact: bool, right_reserved: int) -> None:
   """Match the Jetson layout with two vertical gauges and the correction bar below."""
   scale = min(rect.height / 490, rect.width / 900, 1.0)
-  cx = rect.x + rect.width / 2
-  vertical = scale
-  top = rect.y + rect.height / 2 - 173 * scale
-  if compact:
-    # The speed and gear row starts near the middle of the small display.
-    vertical = min(scale, rect.height / 850)
-    top = rect.y + rect.height * .095
+  vertical = min(scale, rect.height / 850) if compact else scale
+  column_offset = 95 if compact else 118
+  cx = rect.x + rect.width - max(right_reserved, (12 if compact else 22) * scale) - max(column_offset + 58, 153) * scale
+  top = rect.y + rect.height - 318 * vertical - 32 * scale
   gauge_width = 116 * scale
   gauge_height = 206 * vertical
   gap = 7 * vertical
@@ -127,7 +126,7 @@ def _draw_centered_feedback(rect, font, data: DrivingFeedback, compact: bool) ->
     if width > 0 and height > 0:
       rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.25, 6, color)
 
-  confidence_x, steer_x = cx - 118 * scale, cx + 118 * scale
+  confidence_x, steer_x = cx - column_offset * scale, cx + column_offset * scale
   confidence_color = GRADE_COLORS.get(data.grade, MUTED)
   steer_color = BLUE if data.steer is not None and data.steer > 0 else MUTED
   if data.steer is not None and data.steer < 0:
@@ -170,7 +169,7 @@ def _draw_centered_feedback(rect, font, data: DrivingFeedback, compact: bool) ->
 class Pv5DrivingFeedbackOverlay:
   def __init__(self, compact: bool = False):
     self.compact = compact
-    self.centered = False
+    self.large = False
     self.warning = False
     self._sampled = float('-inf')
     self._started_frame = -1
@@ -180,7 +179,7 @@ class Pv5DrivingFeedbackOverlay:
     cp = ui_state.CP
     return not self.warning and ui_state.started and cp is not None and not cp.notCar and cp.carFingerprint == 'KIA_PV5'
 
-  def draw(self, rect, font, ui_state) -> None:
+  def draw(self, rect, font, ui_state, *, right_reserved: int = 0) -> None:
     if not self.visible(ui_state):
       return
 
@@ -189,7 +188,20 @@ class Pv5DrivingFeedbackOverlay:
       self._started_frame = ui_state.started_frame
       self._sampled = now
       self._data = sample_driving_feedback(ui_state.sm, self._started_frame, now, ui_state.CP.maxLateralAccel)
-    if self.centered:
-      _draw_centered_feedback(rect, font, self._data, self.compact)
+    if self.large:
+      _draw_large_feedback(rect, font, self._data, self.compact, right_reserved)
     else:
       _draw_feedback(rect, font, self._data, self.compact)
+
+  def draw_steering_warning(self, rect, font, ui_state) -> None:
+    if not self.visible(ui_state):
+      return
+    warning = pv5_steering_warning(ui_state.sm, time.monotonic(), cp=ui_state.CP, started_frame=ui_state.started_frame)
+    if not warning:
+      return
+    width, height, size = (250, 31, 19) if self.compact else (680, 76, 44)
+    x, y = rect.x + (rect.width - width) / 2, rect.y + (4 if self.compact else 20)
+    background = rl.Color(156, 18, 27, 255) if warning == 2 else rl.Color(77, 46, 9, 255)
+    rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.26, 8, background)
+    draw_text_ui_style(STEERING_WARNING_TEXT[warning], x + width / 2, y + height / 2, size, rl.WHITE,
+                       font=font, border_width=0, shadow_offset=0, align='center', y_offset=0)

@@ -302,16 +302,20 @@ class HudRenderer(Widget):
     else:
       self._torque_filter.update(float(-sm['carOutput'].actuatorsOutput.torque))
 
-  def set_driving_feedback_mode(self, centered: bool, warning: bool) -> None:
-    self._driving_feedback.centered = centered
+  def set_driving_feedback_mode(self, large: bool, warning: bool) -> None:
+    self._driving_feedback.large = large
     self._driving_feedback.warning = warning
+
+  def large_feedback_visible(self) -> bool:
+    return self._driving_feedback.large and self._driving_feedback.visible(ui_state)
 
   def _render(self, rect: rl.Rectangle) -> None:
     """Render HUD elements to the screen."""
     if self._obd_debug.draw(rect, self._font_semi_bold, ui_state):
       return
     state = self._overlay_state
-    key = (state.key if state else None, self._traffic_light_info, self._can_draw_top_icons, self._show_wheel_critical)
+    key = (state.key if state else None, self._traffic_light_info, self._can_draw_top_icons, self._show_wheel_critical,
+           self.large_feedback_visible())
     self._overlay.draw(rect, self._paint, key, enabled=state is not None and state.enabled,
                        urgent=state is not None and state.urgent)
     self._driving_feedback.draw(rect, self._font_display, ui_state)
@@ -320,6 +324,7 @@ class HudRenderer(Widget):
     badge_width = min(500, rect.width * .62)
     draw_indicator(rect.x + (rect.width-badge_width)/2, rect.y+rect.height*.16,
                    badge_width, self._font_display, 26 if rect.width > 1200 else 19)
+    self._driving_feedback.draw_steering_warning(rect, self._font_display, ui_state)
 
   def _paint(self, rect: rl.Rectangle) -> None:
 
@@ -554,9 +559,7 @@ class HudRenderer(Widget):
     # show_date_time: 0=hide, 1=date+time, 2=time only, 3=date only
     # --------------------------------------------------------------------------
     time_block_right = time_x
-    centered_feedback = self._driving_feedback.centered and self._driving_feedback.visible(ui_state)
-
-    if show_date_time != 0 and centered_feedback:
+    if show_date_time != 0 and self.large_feedback_visible():
       # Leave the upper center clear without dropping the driver's clock preference.
       clock_text = now.strftime("%H:%M")
       date_text = now.strftime("%m-%d")
@@ -778,6 +781,7 @@ class HudRenderer(Widget):
     ov = self._set_speed_override.compute(ui_state.sm, float(self.set_speed))
 
     # ----- panel placement (bottom-left) -----
+    large_feedback = self.large_feedback_visible()
     bg = self._txt_speed_bg
     panel_w = bg.width
     panel_h = bg.height
@@ -866,13 +870,14 @@ class HudRenderer(Widget):
 
         set_font = 40
         set_size = measure_text_cached(self._font_display, set_text, set_font)
-        set_x = int(panel_x + panel_w * 0.90 - set_size.x * 0.5 + 50)
-        set_y = int(panel_y + panel_h * 0.25 - set_size.y * 0.5)
+        override_center_x = panel_x + (panel_w * 0.64 if large_feedback else panel_w * 0.90 + 50)
+        set_x = int(override_center_x - set_size.x * 0.5)
+        set_y = int(rect.y + 73 if large_feedback else panel_y + panel_h * 0.25 - set_size.y * 0.5)
         draw_text_ui_style(set_text, set_x, set_y, set_font, set_color, font=self._font_display, border_width=1.0, shadow_offset=3.0, align="left_top", y_offset=0.0)
         set_font = 30
         set_size = measure_text_cached(self._font_display, set_label_text, set_font)
-        set_x = int(panel_x + panel_w * 0.90 - set_size.x * 0.5 + 50)
-        set_y = int(panel_y + panel_h * 0.10 - set_size.y * 0.5 - 20)
+        set_x = int(override_center_x - set_size.x * 0.5)
+        set_y = int(rect.y + 45 if large_feedback else panel_y + panel_h * 0.10 - set_size.y * 0.5 - 20)
         draw_text_ui_style(set_label_text, set_x, set_y, set_font, set_color, font=self._font_display, border_width=1.0, shadow_offset=3.0, align="left_top", y_offset=0.0)
 
     # ----- cruise gap (small circle + number, bottom-mid-right) -----
@@ -916,8 +921,8 @@ class HudRenderer(Widget):
     gear = self._get_gear_text()
     box_w = 44
     box_h = 54
-    box_x = int(panel_x + panel_w - box_w - 14 + 70)
-    box_y = int(panel_y + panel_h * 0.50)
+    box_x = int(rect.x + 120 if large_feedback else panel_x + panel_w - box_w - 14 + 70)
+    box_y = int(rect.y + 40 if large_feedback else panel_y + panel_h * 0.50)
 
     # Fill (dark) + border (green)
     rl.draw_rectangle_rounded(rl.Rectangle(box_x, box_y, box_w, box_h), 0.2, 8, rl.Color(0, 0, 0, 120))

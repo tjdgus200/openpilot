@@ -108,10 +108,11 @@ class SnapshotBuilder:
   def __init__(self, nav_map=False, rate_control=False):
     from openpilot.cereal import messaging
     from openpilot.common.params import Params
-    self.sm = messaging.SubMaster(list(SERVICES))
+    self.sm = messaging.SubMaster([*SERVICES, 'driverMonitoringState'])
     self.params = Params()
     self.cached = {}
     self.settings = {}
+    self.steering_car_params = None
     self.next_params = self.next_send = 0.
     self.target_fps, self.requested_fps = 10, 10
     self.rate_control = rate_control
@@ -198,6 +199,7 @@ class SnapshotBuilder:
         setattr(event, name, self.sm[name])
         self.cached[name] = base64.b64encode(event.to_bytes()).decode()
     if now >= self.next_params:
+      previous_car_params = self.settings.get('CarParams')
       self.settings = {}
       for key in PARAMS:
         try:
@@ -208,6 +210,15 @@ class SnapshotBuilder:
             self.settings[key] = base64.b64encode(value if isinstance(value, bytes) else str(value).encode()).decode()
         except Exception:
           pass
+      car_params = self.settings.get('CarParams')
+      if car_params != previous_car_params:
+        self.steering_car_params = None
+        if car_params:
+          from openpilot.cereal import car, messaging
+          try:
+            self.steering_car_params = messaging.log_from_bytes(base64.b64decode(car_params), car.CarParams)
+          except (RuntimeError, ValueError):
+            pass
       self.next_params = now + 1
       try:
         self.requested_fps = RATES[selection(base64.b64decode(self.settings.get(FPS_PARAM, 'MA==')))]
@@ -248,6 +259,10 @@ class SnapshotBuilder:
     # above. Seal the snapshot after sampling/building so fresh services never
     # look future-dated, and slow optional work still counts toward their age.
     record['sent'] = time.monotonic()
+    # Only the advisory crosses the link, never the driver-monitoring event.
+    if self.settings.get('IsOnroad') == 'MQ==':
+      from openpilot.common.hud_driving_feedback import pv5_steering_warning
+      record['steering_warning'] = pv5_steering_warning(self.sm, record['sent'], cp=getattr(self, 'steering_car_params', None))
     from input_fusion import gate, selection as fusion_selection, PARAM as FUSION_PARAM
     try:
       requested = base64.b64decode(self.settings.get(FUSION_PARAM, 'MQ=='))
