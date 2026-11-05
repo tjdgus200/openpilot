@@ -8,11 +8,12 @@ from openpilot.cereal import log
 from openpilot.selfdrive.modeld.constants import Plan
 from openpilot.selfdrive.modeld.fill_model_msg import PublishState, fill_model_msg
 from openpilot.selfdrive.modeld.parse_model_outputs import Parser
+from openpilot.common.big_model_catalog import catalog
 
 
-@pytest.mark.parametrize('name', ['n16', 'md-v3', 'light-speed', 'light-speed-2', 'ctv3m'])
+@pytest.mark.parametrize('name', tuple(catalog()))
 def test_publish_real_schema_orientation_uncertainty_without_changing_predictions(name):
-  spec = json.loads((Path(__file__).parents[1] / 'model_catalog' / f'{name}.json').read_text())
+  spec = json.loads((Path(__file__).parents[1] / 'model_catalog' / catalog()[name]['jetson_spec']).read_text())
   raw = {key: np.zeros((1, stop-start), np.float32) for key, (start, stop) in spec['output_slices'].items()}
   outputs = Parser().parse_outputs(raw)
   outputs['plan'][0, :, Plan.ORIENTATION_RATE] = np.arange(99, dtype=np.float32).reshape(33, 3) / 100

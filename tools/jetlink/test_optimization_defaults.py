@@ -14,15 +14,16 @@ from jetlink import deferred_map, output_projection as projection
 from jetlink.server.session import EngineHost
 from jetlink.spec import ModelSpec
 from openpilot.selfdrive.modeld.jetlink import link, model
+from openpilot.common import big_model_catalog as catalog
 from test_device_state import runtime  # noqa: F401 -- deferred CUDA fixture
 from test_hotplug_resources import joining_model
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.fixture(params=['n16', 'md-v3', 'ctv3m', 'light-speed', 'light-speed-2'])
+@pytest.fixture(params=tuple(catalog.available()))
 def spec(request):
-  path = ROOT / f'openpilot/selfdrive/modeld/model_catalog/{request.param}.json'
+  path = catalog.DIRECTORY / catalog.catalog()[request.param]['jetson_spec']
   return ModelSpec.from_dict(json.loads(path.read_text(encoding='utf-8')))
 
 

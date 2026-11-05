@@ -1,5 +1,24 @@
 # Repository memory
 
+- 2026-11-06 permanent PV5 model release gate: before declaring any model
+  addition/update or carrot-wip sync complete, read
+  docs/pv5_model_preservation_checklist.md and run
+  tools/jetlink/check_pv5_models.py with a source/model-bound JSON report.
+  The machine checklist tools/jetlink/pv5_model_checklist.json is mandatory;
+  missing, failed, skipped or uncollected required suites do not pass.
+  Every available model must retain HUD, live wide-only FOV, center correction,
+  all safety admission, existing battery/BLE/alert/resource/power behavior and
+  model-specific optimization gates. Never enable options or bypass gates just
+  to make a test display a correction. Model changes also require the complete
+  ONNX CPU/FOV/recurrence/reset validator and exact archive native HUD checker;
+  renderer changes require refreshing/rechecking every affected paired bundle.
+  Full-control-loop and physical-device checks remain explicit release stages,
+  not covered by a green PC contract result. These tools run on a PC only and
+  must never be called by modeld, controlsd, the HUD or vehicle boot.
+  CI runs the fast permanent checklist on every push/PR for carrot-nav-pv5
+  and carrot-wip, without path filters that can miss cross-file changes. Keep five current model choices and derive future coverage
+  from the catalog; do not hardcode a four-model preservation count.
+
 - 2026-11-06 Light speed v2 is a separate `light-speed-2` choice, not a
   replacement for Light speed v1 or the N16 default. Official HF revision
   ea306f534159ac9a3caab0ac3bd4a5f82f9cd805; ONNX SHA256

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "scope": "PC contracts; never physical-device or driving approval",
+  "groups": {
+    "identity_and_delivery": {
+      "preserve": "Keep all model choices, N16 default, boot-frozen selection, exact per-model package/hash/size and rollback checks.",
+      "tests": ["tools/jetlink/test_model_library.py", "tools/jetlink/test_signed_nav_bundle.py", "tools/jetlink/test_park_update.py", "tools/jetlink/test_pv5_model_checklist.py"]
+    },
+    "fov_center_hud_integration": {
+      "preserve": "Stock/65/70/75/80 live wide-only FOV; unchanged narrow input; bounded, gated center correction and HUD message freshness on every model.",
+      "tests": ["tools/jetlink/test_pv5_model_integration.py", "openpilot/selfdrive/ui/tests/test_stopped_fov_preview.py", "openpilot/selfdrive/modeld/tests/test_orientation_rate_std.py"]
+    },
+    "hud_and_alerts": {
+      "preserve": "Lane probabilities, steering, correction/wait reason, C3X overlay, alert priority, BSD pulse and existing Q92/FPS choices.",
+      "tests": ["tools/jetlink/test_hud.py", "tools/jetlink/test_hud_health.py", "tools/jetlink/test_hud_bsd.py", "tools/jetlink/test_hud_rate.py", "openpilot/selfdrive/ui/tests/test_pv5_driving_feedback.py"]
+    },
+    "battery_and_ble": {
+      "preserve": "108 voltage channels, 15 temperatures, progressive heatmaps, trip SOC, zero-speed/P/charging view and per-field TTL; sequential BLE requests and recovery.",
+      "tests": ["tools/jetlink/test_battery_heatmap.py", "tools/jetlink/test_battery_retention.py", "tools/jetlink/test_stationary_battery.py", "tools/jetlink/test_obd_priority.py", "tools/jetlink/test_obd_resync.py"]
+    },
+    "resources_and_state": {
+      "preserve": "Diagnostics OFF, independent 1Hz resource footer, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates.",
+      "tests": ["tools/jetlink/test_optimization_defaults.py", "tools/jetlink/test_device_state.py", "tools/jetlink/test_input_overlap.py", "tools/jetlink/test_parsed_output_guard.py", "tools/jetlink/test_hud_runtime_stats.py"]
+    },
+    "power_and_boot": {
+      "preserve": "Jetson USB input-power block, black boot diagnostics, regular W/temperature text and permission-gated Park update/previous-release recovery.",
+      "tests": ["tools/jetlink/test_usb_power.py", "tools/jetlink/test_boot_display.py", "tools/jetlink/test_boot_update.py"]
+    }
+  },
+  "release_checks": [
+    "Verify the complete official ONNX hash/size, actual metadata/dtypes/slices and full graph; compare patched CPU outputs on changed inputs, recurrence and reset.",
+    "Validate the exact published archive alone: both model spec filenames and source commit, server imports, native HUD font initialization and first real render; re-download/hash all public assets.",
+    "Run the full control-loop tests: test_pv5_lane_center.py, test_lateral_startup_control.py and test_lateral_readiness.py in the native PC test environment.",
+    "Before declaring hardware validation: verify physical Orin TensorRT build/output precision, saved FOV routing, sustained inference/HUD timing, USB/BLE reconnection and EPS/CAN behavior under a controlled procedure."
+  ]
+}

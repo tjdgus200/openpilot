@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 from build_host_bundle import export_members, PATHS, ROOT
+from openpilot.common.big_model_catalog import catalog
 
 
 def test_selected_pin_is_exported_under_both_bootstrap_filenames():
@@ -34,10 +35,10 @@ def test_selected_pin_is_exported_under_both_bootstrap_filenames():
     assert archive.extractfile('tools/jetlink/server.py').read() == files['tools/jetlink/server.py']
 
 
-@pytest.mark.parametrize('key', ['n16', 'md-v3', 'ctv3m', 'light-speed', 'light-speed-2'])
+@pytest.mark.parametrize('key', tuple(catalog()))
 def test_catalog_export_selects_both_pins_without_changing_checkout_default(key):
   prefix = 'openpilot/selfdrive/modeld/'
-  path = prefix + 'model_catalog/' + key + '.json'
+  path = prefix + 'model_catalog/' + catalog()[key]['jetson_spec']
   selected = (ROOT / path).read_bytes()
   files = {path: selected, prefix + 'jetlink/cinque_v2.json': b'old',
            prefix + 'jetlink/jetson_model.json': b'default', 'unchanged.txt': b'preserved'}

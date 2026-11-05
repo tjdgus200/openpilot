@@ -1,0 +1,80 @@
+# PV5 모델 변경 시 필수 보존·검증 목록
+
+모델 추가·교체, Jetson 패키지 갱신, carrot-wip 병합 때마다 이 목록을 적용한다.
+기능을 켜거나 안전 조건을 완화해 테스트를 통과시키지 않는다.
+기준 목록은 `tools/jetlink/pv5_model_checklist.json`, 자동 실행기는
+`tools/jetlink/check_pv5_models.py`다. 모델은 카탈로그에서 매번 읽으며 특정 모델만 검사하지 않는다.
+
+## 항상 유지할 항목
+
+| 영역 | 보존해야 하는 동작 |
+| --- | --- |
+| 모델·배포 | N16 기본값, 기존 모델 선택지, 부팅 단위 선택 동결, 모델별 독립 패키지·source commit·SHA·크기, 양쪽 bootstrap spec, 런타임/권한/저장소 검증과 이전 버전 복구 |
+| 입력·출력 | 카메라 두 입력, 텐서 형상·타입·슬라이스·checkpoint, 반복 상태·초기화·출력 finite 검사, 오류 시 기존 fallback/해제 경로 |
+| 광각 | 기본·65·70·75·80도, 250ms 설정 확인, 주행/정차 공통 적용, 일반각 유지, 광각 변환만 변경. 정차 미리보기는 2초 교대. pitch 후보는 미리보기 전용 |
+| 중앙 보정 | 기본 OFF, 실시간 ON/OFF, 실제 lateral admission 기준(AlwaysLateral에서 cruise OFF 가능), 입력 신선도·차선·선행차·레이더·운전자·BSD·기동 조건, dwell/ramp, 0.08m/s² 상한. 별도 최저/최고 속도 조건 복원 금지 |
+| 콤마/HUD | 좌우 차선 인식도와 낮은 쪽 bar, 스티어, 중앙 보정/구체적 대기 원인, C3/3X 배치, 감속/차선변경 대기 알림과 경고 우선순위, 큰 흰색 critical 경고·빨간 전체 배경·critical 음량 |
+| BSD·밝기 | 같은 방향 요청 시 빨간 테두리 2.5Hz, 고정 그라데이션, 이벤트 중 최대 밝기와 종료 후 자동 밝기 복귀, 기존 순정 클러스터 색상 규칙 |
+| 배터리/BLE | 순차 요청·응답 경계/재동기화·복구, 전체 전력 5초/기타 60초 TTL, 회생 음수/초록, 108 전압·15 온도·점진 갱신 히트맵, SOC/이번 운전 사용량, 정차/P/충전 종합 화면 |
+| 성능·자원 | Q92와 저장 FPS, 모델 우선 HUD 전송·밀린 프레임 폐기, diagnostics OFF, 독립 1Hz CPU/MEM/GPU 표시, 일반 두께 W/온도와 임계 색상, 모델별 최적화 자격·유한 버퍼·소유권 검사 |
+| 전원·업데이트 | Jetson USB 입력 전력 차단, 검은 runtime 대기/상태 화면, 허용된 P/오프로드 업데이트, 검증 실패 시 이전 패키지 유지. APP 복구 파티션 갱신은 별도 작업 |
+
+## 자동 검사: 매 변경마다
+
+준비된 Python 3.12 Linux PC 환경에서 저장소 루트 기준으로 실행한다.
+이 명령은 모델을 추론하거나 장치에 접속하지 않는다. 콤마·Jetson에서 실행하지 않는다.
+
+```sh
+PYTHONPATH=.:opendbc_repo:tools/jetlink:third_party/jetlink \
+  python tools/jetlink/check_pv5_models.py --report /tmp/pv5-model-checks.json
+```
+
+- [ ] 여섯 검사 그룹이 모두 수집·실행되고 실패·스킵이 0인지 확인한다.
+- [ ] JSON의 source commit, dirty 상태, 각 모델 SHA와 패키지 source가 검사 대상과 일치하는지 확인한다.
+- [ ] 다섯 모델 각각에 대해 modeld의 실제 FOV polling/calibration 블록과 Warp/JoiningModel 경로를 검사한다. 카메라/GPU/USB 경계는 fixture다.
+- [ ] 각 모델의 parser → 모델 메시지 → 중앙 보정 helper → 실제 controlsState 기록 블록 → HUD 직렬화/수신/표시 경로를 검사한다.
+- [ ] 조건이 맞는 합성 차선에서 양방향 보정과 cruise OFF를, BSD/DM/지연/비활성/차선 모드에서 보정 차단을 검사한다.
+- [ ] carrot-nav-pv5/carrot-wip의 모든 push/PR에서 `Jetson integration checks` CI와 첨부 JSON을 확인한다. 로컬 통과가 원격 CI 통과를 의미하지 않는다.
+
+미실행·수집 오류·스킵을 통과로 취급하지 않는다. `pc_contracts_passed`는 PC 계약 검사 결과이며 아래 배포·실물 검사의 대체가 아니다.
+
+## 모델 추가·가중치 변경 시 추가 검사
+
+```sh
+python tools/jetlink/validate_pv5_model_cpu.py \
+  --model light-speed-2 --onnx /path/to/verified-model.onnx --output /tmp/pv5-model-cpu
+```
+
+- [ ] 전체 파일의 SHA·크기, 실제 입력/출력·metadata·슬라이스와 full ONNX checker를 확인한다.
+- [ ] 기본 → 65 → 70 → 75 → 80 → 기본 순서로 합성 NV12의 CPU reference 입력을 만든다.
+- [ ] 일반각 불변·광각 입력 변화와 12프레임의 원본/입력 패치 출력·반복 상태 완전 일치, finite와 reset 재현성을 확인한다.
+- [ ] CPU reference warp 검사는 실제 QCOM/GPU warp, TensorRT FP16 또는 주행 성능 검증으로 보고하지 않는다.
+- [ ] 네이티브 PC 환경에서 `test_pv5_lane_center.py`, `test_lateral_startup_control.py`, `test_lateral_readiness.py` 전체 제어 루프 검사를 실행한다.
+
+## 실제 배포 아카이브 검사
+
+```sh
+python tools/jetlink/check_pv5_bundle.py \
+  --model light-speed-2 --bundle /path/to/host.tar.gz --output /tmp/pv5-native-check
+```
+
+그래픽 세션이 없는 Linux PC는 Xvfb/Mesa를 사용한다. Windows는 Linux에서 생성한 합성 snapshot을 `--snapshot`으로 전달할 수 있다.
+
+- [ ] 최종 모델별 핀과 아카이브 해시·크기·SOURCE_COMMIT 및 양쪽 spec을 대조한다.
+- [ ] 저장소 import에 의존하지 않는 추출 패키지에서 server를 시작하고 native HUD 첫 프레임·폰트를 실제 렌더링한다.
+- [ ] 차선 인식도·스티어·중앙 보정이 함께 보이고, 자원 footer/W·온도 및 diagnostics OFF가 유지되는지 확인한다.
+- [ ] renderer 변경이면 영향을 받는 모든 모델의 패키지를 새로 만들고 다시 검사한다. 검사 도구·문서만 바뀌면 기존 패키지를 임의 재발행하지 않는다.
+- [ ] 공개 배포 파일 전부를 다시 다운로드해 해시를 확인하고 결과를 남긴다.
+
+## 실물 확인: 미실시 항목을 명시할 것
+
+- [ ] 실제 Orin의 모델/엔진 식별, TensorRT 빌드·FP16 출력과 reset 비교.
+- [ ] 실제 카메라 변환·동기화, FOV 설정 전달 및 stale/fallback 동작.
+- [ ] 추론/HUD 지연·FPS·온도, USB/BLE 끊김과 복구.
+- [ ] 통제된 절차에서 EPS/CAN과 중앙 보정 및 차단 조건 확인.
+
+PC 검사가 모두 통과해도 실물 미실시 항목을 통과로 표시하거나 주행 안전을 보장한다고 쓰지 않는다.
+
+## 2026-11-06 Light speed v2 확인
+
+새 모델을 선택했을 때도 공통 FOV/보정/HUD 경로가 유지됨을 검사했다. PC 체크리스트와 전체 제어 루프의 최종 결과는 아래 검증 기록에 남긴다. 실제 v2 ONNX에 5개 FOV의 합성 입력을 넣은 12프레임도 finite이며 원본/Jetson 입력 패치의 모든 출력·상태가 정확히 같았다. v2 전용 공개 아카이브를 독립적으로 실행해 중앙 보정·차선·스티어 표시를 native 렌더링했다. 실물 Orin/EPS/주행은 미검증이다.
