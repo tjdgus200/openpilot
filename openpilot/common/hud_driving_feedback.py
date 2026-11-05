@@ -24,18 +24,32 @@ LANE_CENTER_STATUS = {
 }
 
 
-def model_confidence_score(model) -> float | None:
-  """Display score before smoothing; it is not a calibrated probability."""
+def _valid_lane_probability(value) -> bool:
+  return type(value) in (int, float) and 0.0 <= value <= 1.0
+
+
+def lane_line_probabilities(model) -> tuple[float | None, float | None]:
+  """Read the current lane's two model probabilities; never substitute a grade."""
   try:
-    predictions = model.meta.disengagePredictions
-    score = 1.0
-    for values in (predictions.brakeDisengageProbs, predictions.steerOverrideProbs):
-      if values is None or len(values) != 5 or not all(isinstance(v, (int, float)) and 0.0 <= v <= 1.0 for v in values):
-        return None
-      score *= 1.0 - max(values)
-    return score
+    values = model.laneLineProbs
+    if len(values) != 4:
+      return None, None
+    return tuple(v if _valid_lane_probability(v) else None for v in (values[1], values[2]))
   except (AttributeError, TypeError):
-    return None
+    return None, None
+
+
+def lane_confidence_score(left: float | None, right: float | None) -> float | None:
+  return min(left, right) if _valid_lane_probability(left) and _valid_lane_probability(right) else None
+
+
+def lane_confidence_grade(score: float | None) -> str:
+  # Display thresholds only; these do not change lateral admission.
+  return '' if not _valid_lane_probability(score) else 'green' if score >= 0.85 else 'yellow' if score >= 0.5 else 'red'
+
+
+def lane_probability_text(probability: float | None) -> str:
+  return f'{probability:.0%}' if _valid_lane_probability(probability) else '--'
 
 
 def angle_steering_demand(speed: float, desired_curvature: float, roll: float, max_lateral_accel: float) -> float | None:

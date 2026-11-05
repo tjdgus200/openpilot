@@ -44,7 +44,7 @@ if OPENPILOT_ROOT is not None:
     package_root = OPENPILOT_ROOT.parent if (OPENPILOT_ROOT / "__init__.py").is_file() else OPENPILOT_ROOT
     sys.path.insert(0, str(package_root))
 
-from openpilot.common.hud_driving_feedback import angle_steering_demand, model_confidence_score, pv5_steering_warning
+from openpilot.common.hud_driving_feedback import angle_steering_demand, lane_line_probabilities, pv5_steering_warning
 from openpilot.selfdrive.carrot.deceleration_source import (
     deceleration_banner_text, deceleration_source_presentation, external_navigation_connected,
 )
@@ -467,8 +467,7 @@ class OpenpilotLiveSource:
                     cruise_override_label, cruise_override_color_mode = deceleration_source_presentation(desired_source)
 
         now = time.monotonic()
-        confidence = None
-        confidence_score = None
+        left_lane_probability = right_lane_probability = None
         deceleration_banner = None
         steering_warning = 0
         if onroad:
@@ -476,8 +475,7 @@ class OpenpilotLiveSource:
             steering_warning = pv5_steering_warning(self.sm, now) if remote_warning is None else remote_warning
             if self._service_is_fresh("modelV2", now, 0.5):
                 model = self._service_data("modelV2")
-                confidence = str(safe_get(model, "confidence", ""))
-                confidence_score = model_confidence_score(model)
+                left_lane_probability, right_lane_probability = lane_line_probabilities(model)
             if (self._service_is_fresh("carControl", now, 0.3)
                     and self._service_is_fresh("longitudinalPlan", now, 0.5)
                     and self._service_is_fresh("carrotMan", now, 1.0)
@@ -492,8 +490,8 @@ class OpenpilotLiveSource:
         return replace(
             state,
             onroad=onroad,
-            model_confidence=confidence,
-            model_confidence_score=confidence_score,
+            left_lane_probability=left_lane_probability,
+            right_lane_probability=right_lane_probability,
             deceleration_banner=deceleration_banner,
             steering_warning=steering_warning,
             alert=self._live_cluster_alert(state.alert, onroad),

@@ -21,15 +21,23 @@ import cluster_live
 from cluster_models import ClusterAlert
 
 
-@pytest.mark.parametrize("brake,steer,score", (
-    (0.0, 0.0, 1.0), (0.2, 0.25, 0.6), (0.6, 0.25, 0.3),
-    (float("nan"), 0.25, None), (0.2, 1.1, None), (0.2, None, None),
-))
-def test_hud_confidence_tracks_predictions_within_a_single_confidence_class(brake, steer, score):
-    predictions = SimpleNamespace(brakeDisengageProbs=[brake, 0., 0., 0., 0.],
-                                  steerOverrideProbs=[] if steer is None else [0., 0., 0., steer, 0.])
-    model = SimpleNamespace(confidence="green", meta=SimpleNamespace(disengagePredictions=predictions))
-    assert cluster_live.model_confidence_score(model) == (pytest.approx(score) if score is not None else None)
+@pytest.mark.parametrize('onroad,fresh', ((True, True), (True, False), (False, True)))
+def test_live_lane_probabilities_require_fresh_onroad_model(onroad, fresh, monkeypatch):
+    source = object.__new__(OpenpilotLiveSource)
+    source._max_lateral_accel = 3.0
+    source._energy_gauge_label = 'battery'
+    source._carrot_navi_media = None
+    source._current_carrot_navi = lambda _now: None
+    source.sm = SimpleNamespace(steering_warning=0)
+    messages = {'deviceState': SimpleNamespace(started=onroad),
+                'modelV2': SimpleNamespace(confidence='red', laneLineProbs=[1., .95, .82, 1.])}
+    source._service_data = messages.get
+    source._service_alive = lambda service: service == 'deviceState'
+    source._service_is_fresh = lambda service, *_: service == 'modelV2' and fresh
+    source._live_cluster_alert = lambda *_: None
+    decorated = source._with_live_hud_state(replace(standby_state(), left_lane_probability=1., right_lane_probability=1.))
+    assert decorated.left_lane_probability == (.95 if onroad and fresh else None)
+    assert decorated.right_lane_probability == (.82 if onroad and fresh else None)
 
 
 @pytest.mark.parametrize(

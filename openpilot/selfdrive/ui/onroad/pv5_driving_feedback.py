@@ -4,7 +4,8 @@ from dataclasses import dataclass
 
 import pyray as rl
 from openpilot.common.hud_driving_feedback import (
-  LANE_CENTER_STATUS, STEERING_WARNING_TEXT, angle_steering_demand, model_confidence_score, pv5_steering_warning,
+  LANE_CENTER_STATUS, STEERING_WARNING_TEXT, angle_steering_demand, lane_line_probabilities,
+  lane_confidence_score, lane_confidence_grade, lane_probability_text, pv5_steering_warning,
 )
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
@@ -22,11 +23,15 @@ GRADE_COLORS = {
 
 @dataclass(frozen=True)
 class DrivingFeedback:
-  confidence: float | None = None
-  grade: str = ''
+  left_lane_probability: float | None = None
+  right_lane_probability: float | None = None
   steer: float | None = None
   center_label: str = '중앙 보정 --'
   center: float | None = None
+
+  @property
+  def lane_confidence(self) -> float | None:
+    return lane_confidence_score(self.left_lane_probability, self.right_lane_probability)
 
 
 def sample_driving_feedback(sm, started_frame: int, now: float, max_lateral_accel: float) -> DrivingFeedback:
@@ -35,10 +40,9 @@ def sample_driving_feedback(sm, started_frame: int, now: float, max_lateral_acce
             and 0.0 <= now - sm.recv_time[name] <= limit)
 
   model = sm['modelV2'] if fresh('modelV2', 0.5) else None
-  confidence = model_confidence_score(model)
-  grade = str(model.confidence) if model is not None else ''
+  left, right = lane_line_probabilities(model)
   if not fresh('controlsState', 0.3):
-    return DrivingFeedback(confidence, grade)
+    return DrivingFeedback(left, right)
 
   controls = sm['controlsState']
   status = str(controls.pv5LaneCenterStatus)
@@ -66,7 +70,7 @@ def sample_driving_feedback(sm, started_frame: int, now: float, max_lateral_acce
     if math.isfinite(torque):
       steer = min(1.0, max(-1.0, torque))
 
-  return DrivingFeedback(confidence, grade, steer, center_label, center)
+  return DrivingFeedback(left, right, steer, center_label, center)
 
 
 def _draw_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
@@ -74,7 +78,7 @@ def _draw_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
   pad = 10 if compact else 18
   x = rect.x + rect.width - width - (20 if compact else 36)
   y = rect.y + max(104 if compact else 250, rect.height * 0.26)
-  rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, row * 3 + pad * 2), 0.16, 8, rl.Color(6, 11, 17, 220))
+  rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, row * 4 + pad * 2), 0.16, 8, rl.Color(6, 11, 17, 220))
   x += pad
   y += pad
   bar_width = width - 2 * pad
@@ -92,11 +96,14 @@ def _draw_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
       length = value * bar_width / (2 if signed else 1)
       rl.draw_rectangle_rec(rl.Rectangle(min(origin, origin + length), bar_y, abs(length), bar_height), color)
 
-  confidence_color = GRADE_COLORS.get(data.grade, MUTED)
-  label('모델 신뢰도', x, 'left_top', rl.WHITE)
-  label(f'{data.confidence:.1%}' if data.confidence is not None else '--',
-        x + bar_width, 'right_top', confidence_color)
-  bar(data.confidence, confidence_color)
+  confidence_color = GRADE_COLORS.get(lane_confidence_grade(data.lane_confidence), MUTED)
+  label('차선 인식', x, 'left_top', rl.WHITE)
+  y += row
+  label(f'좌 {lane_probability_text(data.left_lane_probability)}', x, 'left_top',
+        GRADE_COLORS.get(lane_confidence_grade(data.left_lane_probability), MUTED))
+  label(f'우 {lane_probability_text(data.right_lane_probability)}', x + bar_width, 'right_top',
+        GRADE_COLORS.get(lane_confidence_grade(data.right_lane_probability), MUTED))
+  bar(data.lane_confidence, confidence_color)
   y += row
   label('스티어', x, 'left_top', rl.WHITE)
   label(f'{data.steer:+.0%}' if data.steer is not None else '--', x + bar_width, 'right_top', BLUE)
@@ -127,26 +134,31 @@ def _draw_large_feedback(rect, font, data: DrivingFeedback, compact: bool, right
       rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.25, 6, color)
 
   confidence_x, steer_x = cx - column_offset * scale, cx + column_offset * scale
-  confidence_color = GRADE_COLORS.get(data.grade, MUTED)
+  confidence_color = GRADE_COLORS.get(lane_confidence_grade(data.lane_confidence), MUTED)
   steer_color = BLUE if data.steer is not None and data.steer > 0 else MUTED
   if data.steer is not None and data.steer < 0:
     steer_color = AMBER
   for x, value, name, color in (
-    (confidence_x, f'{data.confidence:.1%}' if data.confidence is not None else '--', '모델 신뢰도', confidence_color),
+    (confidence_x, '', '차선 인식', confidence_color),
     (steer_x, f'{data.steer:+.0%}' if data.steer is not None else '--', '스티어', steer_color),
   ):
     value_y = top - (59 if compact else 48) * vertical
-    label(value, x, value_y, 34, color)
+    if value:
+      label(value, x, value_y, 34, color)
     label(name, x, top + gauge_height + 11 * vertical, 27, rl.WHITE)
     gauge = rl.Rectangle(x - gauge_width / 2, top, gauge_width, gauge_height)
     rl.draw_rectangle_rounded_lines_ex(gauge, 0.22, 8, 2.5 * scale, MUTED)
+
+  for probability, offset, name in ((data.left_lane_probability, 85, '좌'), (data.right_lane_probability, 47, '우')):
+    color = GRADE_COLORS.get(lane_confidence_grade(probability), MUTED)
+    label(f'{name} {lane_probability_text(probability)}', confidence_x, top - offset * vertical, 30, color)
 
   segment_height = (gauge_height - 2 * inset - 2 * gap) / 3
   inner_width = gauge_width - 2 * inset
   for i in range(3):
     x = confidence_x - inner_width / 2
     bottom = top + gauge_height - inset - i * (segment_height + gap)
-    level = min(1.0, max(0.0, (data.confidence or 0.0) * 3 - i))
+    level = min(1.0, max(0.0, (data.lane_confidence or 0.0) * 3 - i))
     fill(x, bottom - segment_height, inner_width, segment_height, TRACK)
     fill(x, bottom - segment_height * level, inner_width, segment_height * level, confidence_color)
 

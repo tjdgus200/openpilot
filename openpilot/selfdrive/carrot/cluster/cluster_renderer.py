@@ -16,6 +16,7 @@ import pyray as rl
 
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
+from openpilot.common.hud_driving_feedback import lane_confidence_score, lane_confidence_grade, lane_probability_text
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
 from openpilot.selfdrive.carrot.signal_display import SignalDisplayReader, project_box
 from openpilot.selfdrive.carrot.lead_brake_lights import BrakeDisplayReader
@@ -4256,8 +4257,8 @@ class ClusterUiRenderer:
                 rl.rl_translatef(side_gauge_offset_x, 0.0, 0.0)
             try:
                 profile_stage = self._profile_start()
-                self._draw_model_confidence(state)
-                self._profile_add("hud.model_confidence", profile_stage)
+                self._draw_lane_confidence(state)
+                self._profile_add("hud.lane_confidence", profile_stage)
                 self._draw_steering_output_block(state)
             finally:
                 if side_gauges_translated:
@@ -7551,19 +7552,14 @@ class ClusterUiRenderer:
                                     WHITE if warning == 2 else (255, 241, 211), (5, 9, 12), 2, anchor="center", cache=True)
         return True
 
-    def _draw_model_confidence(self, state: ClusterUiState) -> None:
+    def _draw_lane_confidence(self, state: ClusterUiState) -> None:
         top, bottom = SIDE_GAUGE_TOP, SIDE_GAUGE_BOTTOM
         center_x = SIDE_GAUGE_LEFT_CENTER_X - 4
         left = center_x - SIDE_GAUGE_WIDTH * 0.5
-        level, label, color = {
-            "green": (3, "높음", GREEN),
-            "yellow": (2, "주의", AMBER),
-            "red": (1, "낮음", RED),
-        }.get(state.model_confidence, (0, "--", self._current_theme().muted))
-        score = state.model_confidence_score
-        if score is not None and 0.0 <= score <= 1.0:
-            level = score * 3.0
-            label = f"{score * 100:.1f}%"
+        score = lane_confidence_score(state.left_lane_probability, state.right_lane_probability)
+        color = {"green": GREEN, "yellow": AMBER, "red": RED}.get(
+            lane_confidence_grade(score), self._current_theme().muted)
+        level = score * 3.0 if score is not None else 0.0
         self._rounded_rect(left, top, SIDE_GAUGE_WIDTH, bottom - top, 18,
                            (0, 0, 0, 0), self._side_gauge_outline(state), 2)
         segment_height = 24
@@ -7576,9 +7572,13 @@ class ClusterUiRenderer:
             if fill_height >= 1.0:
                 self._rounded_rect(left + 8, segment_bottom - fill_height,
                                    SIDE_GAUGE_WIDTH - 16, fill_height, 6, color)
-        self._draw_text_with_stroke(label, center_x, SIDE_GAUGE_VALUE_Y, 20, color,
-                                    (5, 9, 12), 2, anchor="center", cache=True)
-        self._draw_text_with_stroke("모델 신뢰도", center_x, bottom + SIDE_GAUGE_LABEL_OFFSET, 15, WHITE,
+        for probability, offset, name in ((state.left_lane_probability, -12, "좌"), (state.right_lane_probability, 10, "우")):
+            side_color = {"green": GREEN, "yellow": AMBER, "red": RED}.get(
+                lane_confidence_grade(probability), self._current_theme().muted)
+            self._draw_text_with_stroke(f"{name} {lane_probability_text(probability)}", center_x,
+                                        SIDE_GAUGE_VALUE_Y + offset, 17, side_color,
+                                        (5, 9, 12), 2, anchor="center", cache=True)
+        self._draw_text_with_stroke("차선 인식", center_x, bottom + SIDE_GAUGE_LABEL_OFFSET, 15, WHITE,
                                     (5, 9, 12), 2, anchor="center", cache=True)
 
     def _draw_accel_block(self, state: ClusterUiState) -> None:

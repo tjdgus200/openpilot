@@ -68,9 +68,8 @@ def test_steering_warning_requires_active_control_and_live_vision_for_escalation
 def test_feedback_uses_live_model_steering_and_center_status():
   sm = DrivingMessages()
   model = sm['modelV2']
-  model.confidence = 'green'
-  model.meta.disengagePredictions.brakeDisengageProbs = [0.10] * 5
-  model.meta.disengagePredictions.steerOverrideProbs = [0.20] * 5
+  model.confidence = 'red'  # The old disengagement grade must not affect the lane display.
+  model.laneLineProbs = [0.1, 0.95, 0.82, 0.1]
   controls = sm['controlsState']
   controls.lateralControlState.init('angleState')
   controls.desiredCurvature = -0.005
@@ -80,7 +79,9 @@ def test_feedback_uses_live_model_steering_and_center_status():
   sm['carControl'].latActive = True
 
   data = sample_driving_feedback(sm, 10, 100.0, 3.0)
-  assert data.confidence == pytest.approx(0.72)
+  assert data.left_lane_probability == pytest.approx(0.95)
+  assert data.right_lane_probability == pytest.approx(0.82)
+  assert data.lane_confidence == pytest.approx(0.82)
   assert data.steer == pytest.approx(-1 / 6)
   assert data.center_label == '중앙 · 입력 대기'
   assert data.center is None
@@ -90,10 +91,9 @@ def test_feedback_uses_live_model_steering_and_center_status():
 
   controls.pv5LaneCenterStatus = 'correcting'
   controls.pv5LaneCenterFraction = -0.75
-  model.meta.disengagePredictions.steerOverrideProbs = [0.30] * 5
+  model.laneLineProbs = [1., 0.30, 0.92, 1.]
   data = sample_driving_feedback(sm, 10, 100.2, 3.0)
-  assert data.confidence == pytest.approx(0.63)
-  assert data.grade == 'green'
+  assert data.lane_confidence == pytest.approx(0.30)
   assert data.center == -0.75
 
 
@@ -101,10 +101,11 @@ def test_stale_and_previous_drive_samples_are_not_displayed():
   sm = DrivingMessages()
   sm['controlsState'].pv5LaneCenterStatus = 'correcting'
   sm['controlsState'].pv5LaneCenterFraction = 0.75
-  sm['modelV2'].meta.disengagePredictions.brakeDisengageProbs = [0.10] * 5
-  sm['modelV2'].meta.disengagePredictions.steerOverrideProbs = [0.20] * 5
+  sm['modelV2'].laneLineProbs = [1., 0.95, 0.82, 1.]
   for data in (sample_driving_feedback(sm, 11, 100.0, 3.0), sample_driving_feedback(sm, 10, 100.6, 3.0)):
-    assert data.confidence is None
+    assert data.left_lane_probability is None
+    assert data.right_lane_probability is None
+    assert data.lane_confidence is None
     assert data.steer is None
     assert data.center is None
     assert data.center_label == '중앙 보정 --'

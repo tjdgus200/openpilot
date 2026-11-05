@@ -51,3 +51,25 @@ def test_publisher_does_not_replay_stale_or_duplicate_snapshots(tmp_path, monkey
   assert publisher.packet() is None
   publisher.path.write_bytes(p.HEADER.pack(9.99) + b'x' * (96 * 1024 + 1))
   assert publisher.packet() is None
+
+
+def test_lane_probabilities_use_existing_model_snapshot_without_new_wire_fields(monkeypatch):
+  import hud
+  from openpilot.cereal import log
+  from openpilot.common.hud_driving_feedback import lane_line_probabilities
+
+  event = log.Event.new_message(modelV2={})
+  event.modelV2.laneLineProbs = [1., .95, .82, 1.]
+  event.modelV2.confidence = 'red'
+  record = {'sent': 100., 'valid': {'modelV2': True}, 'alive': {'modelV2': True},
+            'received': {'modelV2': 100.}, 'mono': {'modelV2': 100_000_000_000},
+            'events': {'modelV2': base64.b64encode(event.to_bytes()).decode()}}
+  monkeypatch.setattr(hud, 'read_snapshot', lambda: (100., record))
+  remote = hud.RemoteSubMaster(['modelV2'])
+  remote.update()
+  left, right = lane_line_probabilities(remote['modelV2'])
+  assert abs(left - .95) < 1e-6 and abs(right - .82) < 1e-6
+  assert remote.valid['modelV2'] and remote.alive['modelV2']
+  monkeypatch.setattr(hud, 'read_snapshot', lambda: None)
+  remote.update()
+  assert not remote.valid['modelV2'] and not remote.alive['modelV2']

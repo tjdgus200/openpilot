@@ -1,5 +1,17 @@
 # Repository memory
 
+- 2026-11-05 PV5 lane display replaces the disengagement-based "model confidence"
+  gauge on comma 3/3X, compact UI and Jetson HUD. Show current-lane modelV2
+  laneLineProbs[1]/[2] separately as left/right percentages. Fill the common bar
+  with the lower side only when both are valid. Color each percentage and the
+  bar green >=85%, yellow >=50%, red below50%; these are display thresholds.
+  Missing/invalid/stale data is --, never an old confidence-class fallback.
+  Preserve steering/center gauges, critical alert priority, existing freshness,
+  model inputs/outputs and control policy. No extra inference or wire fields.
+  Refresh all four paired Jetson bundles when publishing this renderer.
+  276 focused PC tests passed; native comma3X large/card/missing-side previews
+  were checked. These synthetic tests do not verify physical vehicle operation.
+
 - 2026-11-05 PV5 lane-center correction follows actual CC.latActive admission,
   including AlwaysLateral with cruise disabled. Do not restore a separate cruise
   enabled/active gate. Preserve default OFF, 250ms settings checks, startup and
@@ -9,7 +21,7 @@
   passed with synthetic inputs; physical EPS/CAN behavior is unverified.
   See docs/pv5_lane_center_assist_20261103.md.
 
-- 2026-11-05 PV5 comma driving feedback: both onroad UIs show model confidence,
+- 2026-11-05 PV5 comma driving feedback: both onroad UIs show lane probabilities,
   signed steering demand and lane-center status from existing messages. Gate
   on PV5 and fresh data; leave steering, model and lane-center control unchanged.
   Use the large lower-right gauges when the connected HUD hides the camera, and

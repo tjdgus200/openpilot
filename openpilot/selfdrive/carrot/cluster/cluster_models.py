@@ -428,7 +428,8 @@ class ClusterUiState:
     planned_curvature_m_inv: float | None = None
     should_stop: bool = False
     model_confidence: str | None = None
-    model_confidence_score: float | None = None
+    left_lane_probability: float | None = None
+    right_lane_probability: float | None = None
     model_turn_speed_kph: float | None = None
     engaged_prob: float | None = None
     desire_state: tuple[float, ...] = ()
