@@ -214,10 +214,12 @@ class SnapshotBuilder:
       if car_params != previous_car_params:
         self.steering_car_params = None
         if car_params:
-          from openpilot.cereal import car, messaging
+          from capnp import KjException
+          from openpilot.cereal import car
           try:
-            self.steering_car_params = messaging.log_from_bytes(base64.b64decode(car_params), car.CarParams)
-          except (RuntimeError, ValueError):
+            with car.CarParams.from_bytes(base64.b64decode(car_params)) as cp:
+              self.steering_car_params = cp.as_builder()
+          except (KjException, ValueError):
             pass
       self.next_params = now + 1
       try:

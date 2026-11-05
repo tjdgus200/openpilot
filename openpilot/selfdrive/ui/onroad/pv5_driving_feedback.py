@@ -199,8 +199,9 @@ class Pv5DrivingFeedbackOverlay:
     warning = pv5_steering_warning(ui_state.sm, time.monotonic(), cp=ui_state.CP, started_frame=ui_state.started_frame)
     if not warning:
       return
-    width, height, size = (250, 31, 19) if self.compact else (680, 76, 44)
-    x, y = rect.x + (rect.width - width) / 2, rect.y + (4 if self.compact else 20)
+    width, height, size = (260, 31, 19) if self.compact else (680, 76, 44)
+    x = rect.x + (rect.width - width) / 2 - (15 if self.compact else 0)
+    y = rect.y + (4 if self.compact else 20)
     background = rl.Color(156, 18, 27, 255) if warning == 2 else rl.Color(77, 46, 9, 255)
     rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.26, 8, background)
     draw_text_ui_style(STEERING_WARNING_TEXT[warning], x + width / 2, y + height / 2, size, rl.WHITE,

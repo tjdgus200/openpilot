@@ -103,6 +103,49 @@ def test_rate_metadata_is_private_and_reconnect_drops_old_or_oversized_packets(t
   assert publisher.packet() == b'legacy'
 
 
+@pytest.mark.parametrize('valid_params', [True, False])
+def test_steering_advisory_uses_current_params_and_keeps_dm_event_local(monkeypatch, valid_params):
+  import hud_protocol as protocol
+  from openpilot.cereal import car, log
+
+  messages = {
+    'carControl': log.Event.new_message(carControl={'latActive': True}),
+    'controlsState': log.Event.new_message(controlsState={'lateralControlState': {'torqueState': {}}}),
+    'carOutput': log.Event.new_message(carOutput={'actuatorsOutput': {'torque': -.95}}),
+    'driverMonitoringState': log.Event.new_message(driverMonitoringState={
+      'activePolicy': 'vision', 'visionPolicyState': {'faceDetected': True, 'isDistracted': True},
+    }),
+  }
+
+  class SM:
+    updated = dict.fromkeys([*protocol.SERVICES, 'driverMonitoringState'], False)
+    updated['driverMonitoringState'] = True
+    valid = alive = dict.fromkeys(messages, True)
+    recv_time = dict.fromkeys(messages, 99.99)
+    logMonoTime = dict.fromkeys(messages, 99_990_000_000)
+
+    def update(self, _):
+      pass
+
+    def __getitem__(self, service):
+      return getattr(messages[service], service)
+
+  cp = car.CarParams.new_message(carFingerprint='KIA_PV5').to_bytes() if valid_params else b'bad'
+  builder = object.__new__(protocol.SnapshotBuilder)
+  builder.sm = SM()
+  builder.next_send = builder.next_params = 0.
+  builder.cached, builder.settings = {}, {}
+  builder.host_release = builder.nav_map = None
+  builder.params = {'IsOnroad': True, 'CarParams': cp}
+  builder.network = NS(address=lambda: '')
+  builder.camera_previews = lambda snapshot=None: {}
+  builder.battery_snapshot = lambda now: None
+  monkeypatch.setattr(protocol.time, 'monotonic', lambda: 100.)
+  packet = json.loads(builder.packet())
+  assert packet['steering_warning'] == (2 if valid_params else 0)
+  assert 'driverMonitoringState' not in packet['events']
+
+
 def test_idle_admission_reserves_next_request_and_backs_off_after_slow_usb():
   budget = IdleBudget()
   assert budget.allowed(1.)

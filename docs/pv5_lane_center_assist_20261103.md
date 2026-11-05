@@ -45,6 +45,9 @@ PV5 조향 제어가 활성화된 동안 조향 요구량 절댓값이 80% 이�
 기존 주행 경고가 우선합니다. 조향 요구량 100%는 표시 지표의 상한이며, 실제 핸들
 각도나 물리적 한계를 나타내지 않습니다. Jetson에는 경고 단계만 전달합니다.
 
+조향 경고를 포함한 Jetson 패키지 4종은 PC에서 빨간 배너를 렌더링하고
+게시된 다운로드의 SHA-256을 확인했습니다. [N16](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-steering-advisory-n16-20261105-3ddf85da), [Flip Flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-steering-advisory-flip-flop-20261105-32c70f38), [CTV3M](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-steering-advisory-ctv3m-20261105-75ee44ff), [Light speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-steering-advisory-light-speed-20261105-61bcd321)
+
 합성 입력으로 기존 조향 루프를 검증합니다. 공사 차선과 인식하지 못한
 장애물은 보정 허용 조건을 통과할 수 있습니다. 이때 의도하지 않은 조향의
 결과는 심각할 수 있으며, 실차 위험 발생률과 안전성은 확인되지 않았습니다.
