@@ -9,8 +9,12 @@
   Preserve steering/center gauges, critical alert priority, existing freshness,
   model inputs/outputs and control policy. No extra inference or wire fields.
   Refresh all four paired Jetson bundles when publishing this renderer.
+  Four lane-probability bundles passed standalone/native-frame/model-queue
+  checks; all16 public assets matched local SHA-256. Current package identities:
+  n16 b9664f8c, flip-flop 4c8d5ab0, ctv3m 3450c51b, light-speed 0b4fc4f2.
   276 focused PC tests passed; native comma3X large/card/missing-side previews
-  were checked. These synthetic tests do not verify physical vehicle operation.
+  were checked. 67 additional package-selection/bundle/boot-update regressions
+  passed after pinning. These tests do not verify physical vehicle operation.
 
 - 2026-11-05 PV5 lane-center correction follows actual CC.latActive admission,
   including AlwaysLateral with cruise disabled. Do not restore a separate cruise

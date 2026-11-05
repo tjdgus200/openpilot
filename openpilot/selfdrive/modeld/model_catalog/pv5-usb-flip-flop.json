@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-steering-advisory-flip-flop-20261105-32c70f38",
-  "source_commit": "32c70f38eaf07bb76469f7fd8d1f81fca5d2585e",
+  "profile": "pv5-lane-probability-flip-flop-20261105-4c8d5ab0",
+  "source_commit": "4c8d5ab00603ccddbc2a1215506ca8e0e9c6bb0f",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-steering-advisory-flip-flop-20261105-32c70f38/host.tar.gz",
-    "sha256": "ff6e866e5c4d9848a2946a0085446048868206fabba11261853cb352f55d79ca",
-    "size": 65242868
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-probability-flip-flop-20261105-4c8d5ab0/host.tar.gz",
+    "sha256": "e27917b3ce71ca219e846e3f05d2f47439e61af9bec0f68f5f98be1ef7944bdf",
+    "size": 65244573
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",

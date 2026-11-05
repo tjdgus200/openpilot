@@ -90,3 +90,13 @@ The next package revision fixes a pyray CFFI glyph pointer that aborted HUD star
 - [flip-flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-startup-flip-flop-20261105-ca85307b), source `ca85307b`.
 - [ctv3m](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-startup-ctv3m-20261105-03a8375f), source `03a8375f`.
 - [light-speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-startup-light-speed-20261105-1c63c3e0), source `1c63c3e0`.
+
+## 2026-11-05 차선 인식 표시 패키지
+
+N16·Flip Flop·CTV3M·Light speed 모두 좌우 차선 확률 표시를 포함합니다. 각 패키지의 독립 실행·네이티브 HUD 첫 프레임·모델 입력 큐 계약·기존 HUD20 설정 검사를 통과했습니다. 공개 다운로드 16개를 다시 받아 로컬 SHA-256과 일치함을 확인했습니다. 기존 모델 파일, 부팅 시 모델 선택, 업데이트 허용 조건과 롤백은 유지합니다. 실기기 검증은 별도입니다.
+패키지 참조 변경 후 모델 선택·번들·부팅 업데이트 회귀 테스트 67개도 통과했습니다.
+
+- [n16](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-lane-probability-n16-20261105-b9664f8c), source `b9664f8c`.
+- [flip-flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-lane-probability-flip-flop-20261105-4c8d5ab0), source `4c8d5ab0`.
+- [ctv3m](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-lane-probability-ctv3m-20261105-3450c51b), source `3450c51b`.
+- [light-speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-lane-probability-light-speed-20261105-0b4fc4f2), source `0b4fc4f2`.
