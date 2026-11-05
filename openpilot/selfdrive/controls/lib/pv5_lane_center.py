@@ -70,7 +70,7 @@ class Pv5LaneCenter:
     self.status = status
     return 0.0
 
-  def update(self, sm, cs, model, now, *, active, engaged, lane_mode):
+  def update(self, sm, cs, model, now, *, active, lane_mode):
     if now >= self.next_settings_check:
       self.next_settings_check = now + 0.25
       self.enabled = self.params.get_bool(PARAM)
@@ -81,7 +81,8 @@ class Pv5LaneCenter:
     speed = cs.vEgo
     if cs.gearShifter != 'drive' or cs.standstill or not math.isfinite(speed) or speed <= 0.0:
       return self._reset('stopped')
-    if not active or not engaged:
+    # Follow actual lateral admission, including AlwaysLateral without cruise.
+    if not active:
       return self._reset('inactive')
     if lane_mode:
       return self._reset('laneMode')

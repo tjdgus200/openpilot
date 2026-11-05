@@ -1,5 +1,14 @@
 # Repository memory
 
+- 2026-11-05 PV5 lane-center correction follows actual CC.latActive admission,
+  including AlwaysLateral with cruise disabled. Do not restore a separate cruise
+  enabled/active gate. Preserve default OFF, 250ms settings checks, startup and
+  steering admission, all input/lane/BSD/driver/maneuver/radar checks, the
+  0.08m/s² correction cap, eligibility dwell and ramp. Do not force lateral or
+  longitudinal activation. 148 focused PC control-loop/readiness regressions
+  passed with synthetic inputs; physical EPS/CAN behavior is unverified.
+  See docs/pv5_lane_center_assist_20261103.md.
+
 - 2026-11-05 PV5 comma driving feedback: both onroad UIs show model confidence,
   signed steering demand and lane-center status from existing messages. Gate
   on PV5 and fresh data; leave steering, model and lane-center control unchanged.

@@ -213,7 +213,6 @@ class Controls:
     if self.pv5_lane_center is not None:
       correction = self.pv5_lane_center.update(
         self.sm, CS, model_v2, time.monotonic(), active=CC.latActive,
-        engaged=CC.enabled and self.sm['selfdriveState'].active,
         lane_mode=lat_plan.useLaneLines,
       )
 

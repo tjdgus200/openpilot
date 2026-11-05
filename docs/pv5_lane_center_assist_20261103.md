@@ -2,13 +2,19 @@
 
 캐럿웹 **설정 → PV5 → 주행 보조 → 차로 중앙 보정 (실험)**에서 선택합니다. 기본값은 꺼짐입니다.
 켜기와 끄기는 기어와 무관하게 반영됩니다. 제어기의 설정 확인 주기는 250ms입니다.
+크루즈가 꺼져 있어도 AlwaysLateral 등 기존 조건에 따라 실제 조향 제어가 활성화되어 있으면 보정합니다.
+조향 제어가 꺼져 있으면 보정하지 않습니다. 차선·BSD·운전자·입력 유효성 조건과 보정 상한은 유지합니다.
+2026-11-05 PC 회귀 테스트 148개가 통과했습니다. 크루즈 OFF/ON 좌우 보정, 비활성화 시 기존 출력과의
+일치, 조향 허용·오류·운전자 중지·재부팅 차단 및 기존 보정 거부 조건을 합성 입력으로 확인했습니다.
+실제 차량과 EPS/CAN 안전 계층의 동작은 이 테스트 범위에 포함되지 않습니다.
 
 In CarrotWeb, open **Settings → PV5 → Driving Assist → Lane Center Assist (Experimental)**.
 It defaults to off. Both settings apply in any gear on the next settings check,
 which runs every 250 ms.
 
 The PV5 fork applies a small additive lateral acceleration request before the existing
-curvature smoothing and limiting. It requires active driving control, valid Drive
+curvature smoothing and limiting. It requires active lateral control (including
+AlwaysLateral with cruise disabled), valid Drive
 gear while moving forward, gentle curvature, two confident lane lines and agreement
 between the lane center and the model path. It yields to existing lane-line
 mode, driver steering or braking, turn signals, maneuver intent, blind spots,
@@ -23,7 +29,7 @@ conversion uses a bounded denominator to limit correction at low speed.
 
 Jetson HUD는 기존 ‘대기’를 제어 비활성, 정차, 입력 대기, 운전자 개입, 방향 전환,
 앞차, 레이더, 차선 신뢰도, 경로 조건, 연속 조건 확인 및 보정 불필요로 구분합니다.
-기존 레인모드와 BSD 표시는 유지합니다. 기존 보정 허용 조건과 보정량 계산은 같습니다.
+기존 레인모드와 BSD 표시는 유지합니다. 별도 크루즈 활성 조건 외의 보정 허용 조건과 보정량 계산은 유지합니다.
 새 대기 사유는 기존 상태 필드와 별도로 전송되며, 이전 버전은 기존 ‘대기’를 표시합니다.
 
 모델 신뢰도 바의 높이와 숫자는 콤마 신뢰도 표시와 같은
