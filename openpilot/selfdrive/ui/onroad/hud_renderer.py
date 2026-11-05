@@ -5,6 +5,7 @@ from openpilot.common.constants import CV
 from openpilot.selfdrive.carrot.deceleration_source import deceleration_source_presentation
 from openpilot.selfdrive.ui.onroad.exp_button import ExpButton
 from openpilot.selfdrive.ui.onroad.obd_debug import ObdDebugOverlay
+from openpilot.selfdrive.ui.onroad.pv5_driving_feedback import Pv5DrivingFeedbackOverlay
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.system.hardware.usbgpu import usbgpu_badge_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -148,6 +149,7 @@ class HudRenderer(Widget):
     super().__init__()
     self._overlay = OverlayLayer(1)
     self._obd_debug = ObdDebugOverlay()
+    self._driving_feedback = Pv5DrivingFeedbackOverlay()
     self._overlay_state = None
     self._display_clock = DisplayClock()
     self._blink_phase = 0.0
@@ -303,6 +305,7 @@ class HudRenderer(Widget):
     badge_width = min(500, rect.width * .62)
     draw_indicator(rect.x + (rect.width-badge_width)/2, rect.y+rect.height*.16,
                    badge_width, self._font_display, 26 if rect.width > 1200 else 19)
+    self._driving_feedback.draw(rect, self._font_display, ui_state)
 
   def _paint(self, rect: rl.Rectangle) -> None:
 

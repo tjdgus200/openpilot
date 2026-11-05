@@ -44,6 +44,7 @@ if OPENPILOT_ROOT is not None:
     package_root = OPENPILOT_ROOT.parent if (OPENPILOT_ROOT / "__init__.py").is_file() else OPENPILOT_ROOT
     sys.path.insert(0, str(package_root))
 
+from openpilot.common.hud_driving_feedback import angle_steering_demand, model_confidence_score
 from openpilot.selfdrive.carrot.deceleration_source import (
     deceleration_banner_text, deceleration_source_presentation, external_navigation_connected,
 )
@@ -51,7 +52,6 @@ from openpilot.selfdrive.carrot.deceleration_source import (
 LIVE_NAV_ROUTE_MAX_POINTS = 4096
 LIVE_NAVI_IMAGE_BASE64_MAX_CHARS = 2 * 1024 * 1024
 LIVE_NAVI_IMAGE_MAX_DIMENSION = 2048
-ACCELERATION_DUE_TO_GRAVITY = 9.80665
 DEFAULT_MAX_LATERAL_ACCEL = 3.0
 SELFDRIVE_STATE_TIMEOUT_SECONDS = 5.0
 SELFDRIVE_UNRESPONSIVE_TIMEOUT_SECONDS = 10.0
@@ -59,18 +59,6 @@ SELFDRIVE_UNRESPONSIVE_TIMEOUT_SECONDS = 10.0
 
 def deceleration_source_display_label(source: str | None) -> str:
     return deceleration_source_presentation(source)[0]
-
-
-def model_confidence_score(model: Any) -> float | None:
-    """Match the comma confidence indicator's model signal before smoothing."""
-    predictions = safe_get(safe_get(model, "meta"), "disengagePredictions")
-    score = 1.0
-    for field in ("brakeDisengageProbs", "steerOverrideProbs"):
-        values = safe_get(predictions, field)
-        if values is None or len(values) != 5 or not all(isinstance(value, (int, float)) and 0.0 <= value <= 1.0 for value in values):
-            return None
-        score *= 1.0 - max(values)
-    return score
 
 
 def _limited_items(items: Any, max_items: int):
@@ -408,17 +396,11 @@ class OpenpilotLiveSource:
                 desired_curvature = safe_optional_float(controls_state, "desiredCurvature") or curvature
                 live_parameters = self._service_data("liveParameters")
                 roll = safe_optional_float(live_parameters, "roll") or 0.0
-                roll_weight = clamp((v_ego - 5.0) / 10.0, 0.0, 1.0)
-                desired_lateral_accel = desired_curvature * v_ego * v_ego
-                roll_compensation = roll * ACCELERATION_DUE_TO_GRAVITY * roll_weight
-                steering_output_normalized = clamp(
-                    (desired_lateral_accel - roll_compensation) / self._max_lateral_accel,
-                    -1.0,
-                    1.0,
-                )
+                steering_output_normalized = angle_steering_demand(v_ego, desired_curvature, roll, self._max_lateral_accel)
             else:
                 steering_output_normalized = 0.0
-            steering_output = steering_output_normalized * 100.0
+            if steering_output_normalized is not None:
+                steering_output = steering_output_normalized * 100.0
             steering_output_kind = "angle"
         elif lateral_kind in ("torqueState", "pidState"):
             actuator_torque = safe_optional_float(actuators_output, "torque")

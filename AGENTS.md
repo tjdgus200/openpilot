@@ -1,5 +1,11 @@
 # Repository memory
 
+- 2026-11-05 PV5 comma driving feedback: both onroad UIs show model confidence,
+  signed steering demand and lane-center status from existing messages. Gate
+  on PV5 and fresh data; leave steering, model and lane-center control unchanged.
+  Keep the onroad alert layer above these indicators and preserve the full-screen
+  OBD diagnostic view. See docs/pv5_lane_center_assist_20261103.md.
+
 - 2026-11-05 Jetson HUD font startup fix: keep the CFFI glyph array alive
   and pass an explicit int pointer to pyray.load_font_ex for Inter Regular.
   The raw array causes a startup TypeError before the first HUD frame. Cover
