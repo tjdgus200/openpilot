@@ -11,6 +11,10 @@
   Actual ONNX shapes/dtypes/metadata and full graph checks passed; original
   versus TRT input patch CPU outputs/next states matched exactly on four
   changing/recurrent/reset frames. Physical Orin/FP16/USB/driving unverified.
+  Fifth package source 6e9983286deeb1763243ab44ea6cada8e00e17ec; four public assets
+  re-downloaded/hash checked and standalone/native HUD/model-queue checks passed.
+  Final PC regression counts: Linux242, Windows9, web13 passed; four actual
+  CPU output frames also parse/publish through current cereal without error.
   Keep this fifth model and matching package during future carrot-wip syncs.
   See docs/pv5_light_speed_v2_20261106.md.
 

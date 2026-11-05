@@ -49,3 +49,18 @@ PC CPU equivalence does not establish Orin TensorRT/FP16 correctness, throughput
 P99, thermal stability, physical USB delivery or vehicle safety. No physical device
 was installed, rebooted or road-tested. The companion eGPU PKL metadata is retained
 from upstream; PC ONNX tests are not eGPU artifact execution tests.
+
+## Published PV5 package
+
+- [Light speed v2 runtime](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-light-speed-v2-light-speed-2-20261106-6e998328); source `6e9983286deeb1763243ab44ea6cada8e00e17ec`.
+- Bundle: 65,245,692 bytes; SHA-256 `ca61ec519a87aa3f6d37d18814a06324e15d9e38bad587218696fe76bce42a0a`.
+- All four public release assets were re-downloaded anonymously and matched local hashes.
+- Isolated server/HUD imports, first native HUD render, boot screen, model queues and
+  diagnostics-off defaults passed for the exact archive. The four older model pins
+  and global N16 model/package defaults remain byte-for-byte unchanged.
+
+Final PC regressions: 242 Linux tests (including actual model-output publication,
+model-specific selection and real memfd/socket checks), 9 Windows state-buffer
+tests and 13 web tests passed. The portable PC Python needed sealing constants
+from the same OS system Python for these memfd tests; real kernel calls were used.
+No product code or vehicle admission was changed for the test environment.

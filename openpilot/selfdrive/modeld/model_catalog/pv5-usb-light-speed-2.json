@@ -1,0 +1,23 @@
+{
+  "format": 2,
+  "delivery": "usb",
+  "integrity": "sha256",
+  "profile": "pv5-light-speed-v2-light-speed-2-20261106-6e998328",
+  "source_commit": "6e9983286deeb1763243ab44ea6cada8e00e17ec",
+  "runtime": {
+    "arch": "aarch64",
+    "l4t": "36.4.7",
+    "tensorrt": "10.3.0"
+  },
+  "storage_format": 1,
+  "bundle": {
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-light-speed-v2-light-speed-2-20261106-6e998328/host.tar.gz",
+    "sha256": "ca61ec519a87aa3f6d37d18814a06324e15d9e38bad587218696fe76bce42a0a",
+    "size": 65245692
+  },
+  "model": {
+    "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/ea306f534159ac9a3caab0ac3bd4a5f82f9cd805/ea2f516f-f758-42be-a245-913bb818a64f/32768/big_driving_supercombo.onnx",
+    "sha256": "909a140019050a9d7f00db22dd4f4085928d2af9474a82244672ddab964f95a8",
+    "size": 768749892
+  }
+}
