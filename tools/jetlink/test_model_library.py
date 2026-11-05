@@ -24,7 +24,7 @@ def pv5_manifest(key='n16'):
   spec = C.model_spec(key)
   value['model'].update(sha256=spec['sha256'], size=spec['nbytes'])
   value['profile'] = 'test-' + key
-  value['source_commit'] = {'n16': 'a', 'flip-flop': 'b', 'ctv3m': 'c', 'light-speed': 'd'}[key] * 40
+  value['source_commit'] = {'n16': 'a', 'flip-flop': 'b', 'ctv3m': 'c', 'light-speed': 'd', 'light-speed-2': 'e'}[key] * 40
   return value
 
 
@@ -91,15 +91,15 @@ def test_model_choice_does_not_use_retired_or_arbitrary_paths(store):
       C.usb_release(key)
 
 
-@pytest.mark.parametrize('key', ['ctv3m', 'light-speed'])
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2'])
 def test_pv5_model_requires_pv5_package_and_stays_frozen_until_reboot(store, monkeypatch, key):
   assert key not in C.available()  # Require our matching PV5 package, not an official host.
   with pytest.raises(ValueError, match='not available'):
     C.select(key)
   C.USB_PIN.write_text(json.dumps(pv5_manifest()))
-  for model in ('n16', 'flip-flop', 'ctv3m', 'light-speed'):
+  for model in ('n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2'):
     (C.USB_DIRECTORY / ('pv5-usb-' + model + '.json')).write_text(json.dumps(pv5_manifest(model)))
-  assert set(C.available()) == {'n16', 'flip-flop', 'ctv3m', 'light-speed'}
+  assert set(C.available()) == {'n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2'}
   assert C.freeze_boot() == 'n16'
   C.select(key)
   assert C.freeze_boot() == C.effective_id() == 'n16'
@@ -111,7 +111,7 @@ def test_pv5_model_requires_pv5_package_and_stays_frozen_until_reboot(store, mon
   assert C.effective_id() == key
 
 
-@pytest.mark.parametrize('key', ['ctv3m', 'light-speed'])
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2'])
 @pytest.mark.parametrize('fault', ['model', 'source'])
 def test_pv5_model_rejects_other_models_package_and_duplicate_runtime_id(store, fault, key):
   C.USB_PIN.write_text(json.dumps(pv5_manifest()))
@@ -170,7 +170,7 @@ def test_official_inputs_and_retired_legacy_alias():
     assert model_name(spec) == C.catalog()[label]['display_name']
   from openpilot.selfdrive.modeld.generic_model_runtime import model_metadata
 
-  for key, fixture in [('md-v3', 'md_v3_metadata.json'), ('flip-flop', 'flip_flop_metadata.json'), ('light-speed', 'light_speed_metadata.json')]:
+  for key, fixture in [('md-v3', 'md_v3_metadata.json'), ('flip-flop', 'flip_flop_metadata.json'), ('light-speed', 'light_speed_metadata.json'), ('light-speed-2', 'light_speed_2_metadata.json')]:
     raw = json.loads((C.ROOT / 'openpilot/selfdrive/modeld/tests/fixtures' / fixture).read_text())
     checkpoint, slices, states, count = model_metadata(raw)
     expected = C.model_spec(key)
@@ -280,7 +280,7 @@ def test_catalog_releases_are_signed_and_match_exact_onnx_contracts():
   from update_host import validate_manifest, verify_signature
   for key, entry in C.catalog().items():
     if entry.get('requires_pv5_usb'):
-      assert key in ('ctv3m', 'light-speed') and 'jetson_release' not in entry
+      assert key in ('ctv3m', 'light-speed', 'light-speed-2') and 'jetson_release' not in entry
       continue  # USB owner policy is separate; never fabricate an official signature.
     release = json.loads((C.DIRECTORY / entry['jetson_release']).read_text())
     validate_manifest(release)
@@ -355,7 +355,38 @@ def test_light_speed_contract_and_parser_use_matching_metadata():
   assert output['plan'].shape == (1, 33, 15)
 
 
-@pytest.mark.parametrize('key', ['ctv3m', 'light-speed'])
+def test_light_speed_v2_has_its_own_identity_and_matching_state_contract():
+  import numpy as np
+  from jetlink.spec import ModelSpec
+  from jetlink.queues import StatefulQueues
+  from jetlink.output_projection import eligible
+  from openpilot.selfdrive.modeld.jetlink.contracts import validate_model_spec, parse_outputs, model_name
+  from openpilot.selfdrive.modeld.parse_model_outputs import Parser
+
+  spec = ModelSpec.from_dict(C.model_spec('light-speed-2'))
+  assert validate_model_spec(spec) is spec
+  assert spec.sha256 == '909a140019050a9d7f00db22dd4f4085928d2af9474a82244672ddab964f95a8'
+  assert spec.nbytes == 768749892 and not eligible(spec)
+  assert spec.checkpoint.endswith('ea2f516f-f758-42be-a245-913bb818a64f')
+  assert model_name(spec) == 'Light speed v2 (ea2f516f)' and not C.noo('light-speed-2')
+  assert C.DEFAULT == 'n16' and C.model_spec('light-speed')['sha256'] != spec.sha256
+  for field in ('input_shapes', 'output_shapes', 'output_slices', 'frame_skip'):
+    assert spec.to_dict()[field] == C.model_spec('light-speed')[field]
+  assert parse_outputs(Parser(), spec, np.zeros(spec.output_nelem, np.float32))['plan'].shape == (1, 33, 15)
+  destination = {name: np.zeros(shape, np.float16 if name in ('new_img', 'state_img_q') else np.float32)
+                 for name, shape in spec.input_shapes.items()}
+  queues = StatefulQueues(spec, destination)
+  image = np.arange(spec.warped_nbytes, dtype=np.uint8).reshape(spec.warped_shape)
+  queues.step_into(image, np.zeros(spec.packed_nelem, np.float32), destination)
+  np.testing.assert_array_equal(destination['new_img'], image.astype(np.float16))
+  queues.feedback({name: np.ones(shape, destination[name.removeprefix('next_')].dtype
+                    if name.startswith('next_') else np.float32) for name, shape in spec.output_shapes.items()})
+  assert all(np.all(value == 1) for value in queues.state.values())
+  queues.reset()
+  assert all(not np.any(value) for value in queues.state.values())
+
+
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2'])
 def test_missing_pv5_pin_does_not_fall_back_to_another_models_signed_host(store, key):
   import os
   import subprocess
@@ -423,7 +454,7 @@ assert C.effective_id() == 'n16'
   subprocess.run([sys.executable, '-P', '-c', code], env=dict(os.environ, PYTHONPATH=str(C.ROOT)), check=True)
 
 
-@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m', 'light-speed'])
+@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2'])
 def test_published_pv5_selection_uses_frozen_models_own_usb_release(store, key):
   import os
   import subprocess
@@ -432,7 +463,7 @@ import sys
 from pathlib import Path
 from openpilot.common import big_model_catalog as C
 key=sys.argv[1]
-assert set(C.available()) == {'n16','flip-flop','ctv3m','light-speed'}
+assert set(C.available()) == {'n16','flip-flop','ctv3m','light-speed','light-speed-2'}
 C.select(key)
 assert C.freeze_boot() == key
 original=Path.is_file

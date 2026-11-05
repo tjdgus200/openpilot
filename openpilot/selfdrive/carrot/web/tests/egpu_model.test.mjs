@@ -50,3 +50,7 @@ test("retrained Mountain Dew uses the version-free family name", () => {
 test("Light speed has its own model title", () => {
   assert.equal(modelDisplayName({ model_id: "comma-light-speed-c7cbe5de-33ba0928" }), "Light speed");
 });
+
+test("Light speed v2 title takes precedence over the first version", () => {
+  assert.equal(modelDisplayName({ model_id: "comma-light-speed-2-b92fc482-b4dead3e" }), "Light speed v2");
+});

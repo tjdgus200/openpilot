@@ -10,7 +10,7 @@ from openpilot.selfdrive.modeld.fill_model_msg import PublishState, fill_model_m
 from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 
 
-@pytest.mark.parametrize('name', ['n16', 'md-v3', 'light-speed', 'ctv3m'])
+@pytest.mark.parametrize('name', ['n16', 'md-v3', 'light-speed', 'light-speed-2', 'ctv3m'])
 def test_publish_real_schema_orientation_uncertainty_without_changing_predictions(name):
   spec = json.loads((Path(__file__).parents[1] / 'model_catalog' / f'{name}.json').read_text())
   raw = {key: np.zeros((1, stop-start), np.float32) for key, (start, stop) in spec['output_slices'].items()}

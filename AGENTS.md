@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-11-06 Light speed v2 is a separate `light-speed-2` choice, not a
+  replacement for Light speed v1 or the N16 default. Official HF revision
+  ea306f534159ac9a3caab0ac3bd4a5f82f9cd805; ONNX SHA256
+  909a140019050a9d7f00db22dd4f4085928d2af9474a82244672ddab964f95a8,
+  768749892 bytes. Checkpoint ends ea2f516f-f758-42be-a245-913bb818a64f.
+  Require its own model-paired PV5 USB package and distinct source identity.
+  Preserve the four older release pins, all PV5 custom behavior, diagnostics
+  OFF and exact N16 optimization gates. Boot-frozen selection still applies.
+  Actual ONNX shapes/dtypes/metadata and full graph checks passed; original
+  versus TRT input patch CPU outputs/next states matched exactly on four
+  changing/recurrent/reset frames. Physical Orin/FP16/USB/driving unverified.
+  Keep this fifth model and matching package during future carrot-wip syncs.
+  See docs/pv5_light_speed_v2_20261106.md.
+
 - 2026-11-05 PV5 lane display replaces the disengagement-based "model confidence"
   gauge on comma 3/3X, compact UI and Jetson HUD. Show current-lane modelV2
   laneLineProbs[1]/[2] separately as left/right percentages. Fill the common bar
