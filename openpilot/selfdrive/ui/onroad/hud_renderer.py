@@ -304,7 +304,7 @@ class HudRenderer(Widget):
     button_x = rect.x + rect.width - UI_CONFIG.border_size - UI_CONFIG.button_size
     button_y = rect.y + UI_CONFIG.border_size
     self._exp_button.render(rl.Rectangle(button_x, button_y, UI_CONFIG.button_size, UI_CONFIG.button_size))
-    self._driving_feedback.draw(rect, self._font_display, ui_state, right_reserved=220 if self._show_tpms in (2, 3) else 0)
+    self._driving_feedback.draw(rect, self._font_display, ui_state, right_reserved=280 if self._show_tpms in (2, 3) else 0)
     self._draw_cruise_speed_animation(rect)
     from openpilot.common.indicator_display import draw as draw_indicator
     badge_width = min(500, rect.width * .62)

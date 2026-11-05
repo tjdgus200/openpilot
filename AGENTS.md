@@ -5,6 +5,8 @@
   on PV5 and fresh data; leave steering, model and lane-center control unchanged.
   Use the large lower-right gauges when the connected HUD hides the camera, and
   hide feedback while the onroad alert is visible. Preserve full-screen OBD.
+  C3/3X uses 30% larger gauges with a narrower inter-gauge gap, a larger camera
+  feedback card, and an 880x104px advisory popup with 58px text.
   Active PV5 steering demand at 80% shows an amber banner. At 90% with fresh
   visual DM distraction it shows red and plays one high-gain prompt on comma.
   Only the advisory level crosses Jetlink. Standard alerts retain priority.

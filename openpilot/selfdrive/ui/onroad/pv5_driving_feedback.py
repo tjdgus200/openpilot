@@ -70,15 +70,15 @@ def sample_driving_feedback(sm, started_frame: int, now: float, max_lateral_acce
 
 
 def _draw_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
-  width, row, size = (204, 25, 17) if compact else (286, 37, 24)
-  pad = 10 if compact else 14
+  width, row, size = (204, 25, 17) if compact else (348, 46, 29)
+  pad = 10 if compact else 18
   x = rect.x + rect.width - width - (20 if compact else 36)
   y = rect.y + max(104 if compact else 250, rect.height * 0.26)
   rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, row * 3 + pad * 2), 0.16, 8, rl.Color(6, 11, 17, 220))
   x += pad
   y += pad
   bar_width = width - 2 * pad
-  bar_height = 3 if compact else 4
+  bar_height = 3 if compact else 5
 
   def label(text, label_x, align, color):
     draw_text_ui_style(text, label_x, y, size, color, font=font, border_width=0, shadow_offset=0,
@@ -108,9 +108,9 @@ def _draw_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
 
 def _draw_large_feedback(rect, font, data: DrivingFeedback, compact: bool, right_reserved: int) -> None:
   """Match the Jetson layout with two vertical gauges and the correction bar below."""
-  scale = min(rect.height / 490, rect.width / 900, 1.0)
+  scale = min(rect.height / 490, rect.width / 900, 1.0 if compact else 1.30)
   vertical = min(scale, rect.height / 850) if compact else scale
-  column_offset = 95 if compact else 118
+  column_offset = 95
   cx = rect.x + rect.width - max(right_reserved, (12 if compact else 22) * scale) - max(column_offset + 58, 153) * scale
   top = rect.y + rect.height - 318 * vertical - 32 * scale
   gauge_width = 116 * scale
@@ -199,7 +199,7 @@ class Pv5DrivingFeedbackOverlay:
     warning = pv5_steering_warning(ui_state.sm, time.monotonic(), cp=ui_state.CP, started_frame=ui_state.started_frame)
     if not warning:
       return
-    width, height, size = (260, 31, 19) if self.compact else (680, 76, 44)
+    width, height, size = (260, 31, 19) if self.compact else (880, 104, 58)
     x = rect.x + (rect.width - width) / 2 - (15 if self.compact else 0)
     y = rect.y + (4 if self.compact else 20)
     background = rl.Color(156, 18, 27, 255) if warning == 2 else rl.Color(77, 46, 9, 255)
