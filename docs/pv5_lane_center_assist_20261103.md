@@ -48,3 +48,12 @@ Focused PC tests passed on Windows (713) and Linux (318). The four isolated bund
 - [flip-flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-feedback-flip-flop-20261104-524b908d), source `524b908d`.
 - [ctv3m](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-feedback-ctv3m-20261104-a9786765), source `a9786765`.
 - [light-speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-feedback-light-speed-20261104-313d94bd), source `313d94bd`.
+
+## Jetson HUD startup hotfix
+
+The next package revision fixes a pyray CFFI glyph pointer that aborted HUD startup before its first frame. All four archives passed native PC renderer startup and first-frame checks, and all 16 public assets matched their SHA-256 digests. Physical HUD verification is pending.
+
+- [n16](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-startup-n16-20261105-d98223c7), source `d98223c7`.
+- [flip-flop](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-startup-flip-flop-20261105-ca85307b), source `ca85307b`.
+- [ctv3m](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-startup-ctv3m-20261105-03a8375f), source `03a8375f`.
+- [light-speed](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-hud-startup-light-speed-20261105-1c63c3e0), source `1c63c3e0`.

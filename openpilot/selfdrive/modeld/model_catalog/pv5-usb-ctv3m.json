@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-hud-feedback-ctv3m-20261104-a9786765",
-  "source_commit": "a9786765235d4689c9011897cdad6559fb2cc10d",
+  "profile": "pv5-hud-startup-ctv3m-20261105-03a8375f",
+  "source_commit": "03a8375fb11818241093da37d661137be5de29e7",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-feedback-ctv3m-20261104-a9786765/host.tar.gz",
-    "sha256": "15c54b28bb756c9946ad54dcc90bf811167144b81728bd081e06d373092b1c62",
-    "size": 65240344
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-startup-ctv3m-20261105-03a8375f/host.tar.gz",
+    "sha256": "2aca0513d1737c0865615ee2bbed022235ec5850839213af07a8032d568a265c",
+    "size": 65241036
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
