@@ -61,7 +61,7 @@ python tools/jetlink/check_pv5_bundle.py \
 그래픽 세션이 없는 Linux PC는 Xvfb/Mesa를 사용한다. Windows는 Linux에서 생성한 합성 snapshot을 `--snapshot`으로 전달할 수 있다.
 
 - [ ] 최종 모델별 핀과 아카이브 해시·크기·SOURCE_COMMIT 및 양쪽 spec을 대조한다.
-- [ ] 저장소 import에 의존하지 않는 추출 패키지에서 server를 시작하고 native HUD 첫 프레임·폰트를 실제 렌더링한다.
+- [ ] 저장소 import에 의존하지 않는 추출 패키지에서 server import를 확인하고 native HUD 첫 프레임·폰트를 실제 렌더링한다.
 - [ ] 차선 인식도·스티어·중앙 보정이 함께 보이고, 자원 footer/W·온도 및 diagnostics OFF가 유지되는지 확인한다.
 - [ ] renderer 변경이면 영향을 받는 모든 모델의 패키지를 새로 만들고 다시 검사한다. 검사 도구·문서만 바뀌면 기존 패키지를 임의 재발행하지 않는다.
 - [ ] 공개 배포 파일 전부를 다시 다운로드해 해시를 확인하고 결과를 남긴다.
@@ -77,4 +77,25 @@ PC 검사가 모두 통과해도 실물 미실시 항목을 통과로 표시하�
 
 ## 2026-11-06 Light speed v2 확인
 
-새 모델을 선택했을 때도 공통 FOV/보정/HUD 경로가 유지됨을 검사했다. PC 체크리스트와 전체 제어 루프의 최종 결과는 아래 검증 기록에 남긴다. 실제 v2 ONNX에 5개 FOV의 합성 입력을 넣은 12프레임도 finite이며 원본/Jetson 입력 패치의 모든 출력·상태가 정확히 같았다. v2 전용 공개 아카이브를 독립적으로 실행해 중앙 보정·차선·스티어 표시를 native 렌더링했다. 실물 Orin/EPS/주행은 미검증이다.
+새 모델을 선택했을 때도 공통 FOV/보정/HUD 경로가 유지됨을 검사했다.
+검증 도구 기준 소스는 `c92e4d6f639d109cfd34e486d16f0346e82fc6f8`이며,
+최종 체크리스트 실행 시 작업 트리는 clean이었다.
+
+| 검사 | 확인 결과 |
+| --- | --- |
+| 모델·배포 보존 | 129 passed |
+| FOV·중앙 보정·HUD 연동 | 101 passed; 이 중 모델별 새 통합 검사 90건 |
+| HUD·경고 | 227 passed |
+| 배터리·BLE | 197 passed |
+| 자원·반복 상태 | 97 passed |
+| 전원·부팅 | 84 passed |
+| 필수 PC 검사 합계 | **835 passed, 0 failed, 0 skipped** |
+| 전체 제어 루프 추가 검사 | 기존 중앙 보정·lateral 시작/준비 검사 **148 passed**; 새 통합 검사 90건과 snapshot fixture 1건을 합친 별도 실행은 239 passed |
+| 실제 v2 ONNX | 기본/65/70/75/80/기본, 12프레임의 모든 출력·상태 finite 및 원본/Jetson 입력 패치 정확히 일치, reset 재현 |
+| 공개 v2 패키지 | 핀·해시·SOURCE_COMMIT 일치, 독립 import, native HUD 1920×480·폰트·차선/스티어/보정 표시 확인 |
+| 설정·실행 경계 | 일반각 불변, 주행/정차 FOV 전달, 양방향 보정·실시간 OFF·차단 조건 확인; 카메라/GPU/USB/CAN은 PC fixture 또는 CPU reference |
+| 미실시 | 원격 CI 결과, 실제 Orin TensorRT/FP16·카메라 warp·EPS/CAN·주행 검증 |
+
+기존 v2 런타임 패키지의 소스는 `6e9983286deeb1763243ab44ea6cada8e00e17ec`다.
+이번 변경은 PC 검증 도구·검사·문서·CI만 추가했으며, 런타임 패키지를 재발행하거나
+차량 옵션/제어 조건을 변경하지 않았다. PC 결과는 실차 안전 판정이 아니다.
