@@ -49,11 +49,21 @@ assert boot_status.model_name(read_spec(server.ROOT)['sha256'])!='--'
 hud_health._fresh=lambda *_:{'severity':'ok','thermal_severity':'ok','temp_c':59.,'power_w':12.4}
 signal_mode.signal_mode=lambda:0
 ui=hud_health.HealthRenderer(theme_mode='dark',screen_mode=8)
+ui._host_metrics=lambda:{'timing':{'window_s':10.,'count':200,'last_frame_age_s':.1,
+ 'infer_ms':{'mean':25.,'p99':28.,'max':31.},'server_ms':{'mean':27.,'p99':30.,'max':33.}}}
+lines={}
+draw=ui._draw_runtime_line
+def capture(segments,*layout):
+ lines[layout[-1]]=''.join(text for text,_ in segments)
+ draw(segments,*layout)
+ui._draw_runtime_line=capture
 try:
  ui.open(hidden=True)
  assert ui._telemetry_font is not None
  assert ui._telemetry_font.texture.id!=hud_health.rl.get_font_default().texture.id
  ui.render_to_file(state,Path(sys.argv[2]))
+ assert 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms' in lines['infer']
+ assert '| COMMA 40.0 ms' in lines['infer']
  from PIL import Image
  picture=Image.open(sys.argv[2]).convert('RGB')
  assert picture.size==(1920,480) and len(picture.getcolors(1000000))>50
@@ -141,7 +151,7 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-native.png', args.output / 'hud.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, diagnostics_off=True, physical_device_tested=False,
+                center_and_lane_snapshot=True, inference_readout=True, diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
   print(json.dumps(report))

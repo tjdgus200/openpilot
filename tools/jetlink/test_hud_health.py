@@ -169,6 +169,13 @@ def test_freshness_and_vehicle_alert_precedence(monkeypatch, tmp_path):
   calls.clear()
   renderer._draw_alert_overlay(None)
   assert calls == ['strip', 'text', 'vehicle']
+  calls.clear()
+  renderer.host_health = {'severity': 'ok'}
+  renderer._vehicle_data_current = True
+  renderer._host_metrics = lambda: {}
+  renderer._draw_runtime_line = lambda *a: calls.append(a[-1])
+  renderer._draw_alert_overlay(None)
+  assert calls == ['infer', 'vehicle']
 
 
 @pytest.mark.parametrize(
@@ -296,5 +303,5 @@ def test_resource_footer_stays_visible_when_performance_diagnostics_are_off(monk
   lines = []
   renderer._draw_runtime_line = lambda segments, *_: lines.append(''.join(text for text, _ in segments))
   renderer._draw_cluster_core_usage(None)
-  assert options == [{'timing_enabled': False}]
+  assert options == [{'timing_enabled': True, 'compare_quality': False}]
   assert lines == ['COMMA CPU:12% MEM:49% | ORIN CPU:8% MEM:27% GPU:54%']

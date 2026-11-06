@@ -53,10 +53,10 @@ def valid_timing(value):
 
 
 class RuntimeFooterSampler:
-  def __init__(self, *, timing_enabled=False):
+  def __init__(self, *, timing_enabled=False, compare_quality=False):
     self.timing_enabled = timing_enabled
     self.comparison = None
-    if timing_enabled:
+    if timing_enabled and compare_quality:
       from hud_quality import RUN_PROFILE, RUN_FPS
       if RUN_PROFILE is not None:
         from hud_quality_compare import Comparison
@@ -75,7 +75,13 @@ class RuntimeFooterSampler:
   def sample(self):
     with self.lock:
       value = dict(self.value)
-    return value if 0 <= time.monotonic() - value.get('updated', -1e10) < 3 else {}
+    age = time.monotonic() - value.get('updated', -1e10)
+    if not 0 <= age < 3:
+      return {}
+    timing = value.get('timing')
+    if timing and age + timing['last_frame_age_s'] >= 2:
+      value['timing'] = None
+    return value
 
   def _disconnect(self):
     if self.sock is not None:
@@ -182,22 +188,51 @@ def footer_segments(vehicle, host, language='ko'):
   return tuple(result)
 
 
-def inference_segments(host):
+def inference_segments(host, *, comma_ms=None, include_comma=False):
   from hud_quality import SHORT_NAMES
   quality = host.get('quality') or {}
   if quality.get('kind') == 'fps-q92':
     from hud_rate import SHORT_NAMES
   active = quality.get('effective')
-  result = [(f'{SHORT_NAMES[active]} 10s ' if type(active) is int and 0 <= active < 8 else 'Inf10s ', TEXT)]
+  result = [(f'{SHORT_NAMES[active]} 10s ' if type(active) is int and 0 <= active < 8 else 'TRT 10s ', TEXT)]
   timing = valid_timing(host.get('timing'))
   for label, key in (('AVG:', 'mean'), (' P99:', 'p99'), (' MAX:', 'max')):
     value = timing['infer_ms'][key] if timing else None
     result.extend(((label, TEXT), ('--' if value is None else f'{value:.1f}', metric_color(value, 'infer'))))
-  result.append(('ms', TEXT))
+  result.append((' ms', TEXT))
   best = quality.get('best')
   if type(best) is int and 0 <= best < 8:
     result.append((f' B:{SHORT_NAMES[best]}', NORMAL))
+  if include_comma:
+    result.extend(((' | COMMA ', TEXT), ('--' if comma_ms is None else f'{comma_ms:.1f}', metric_color(comma_ms, 'infer')),
+                   (' ms', TEXT)))
   return tuple(result)
+
+
+def model_call_sample(snapshot, now):
+  """Read the existing comma model event and its local expiry."""
+  if snapshot is None:
+    return None
+  from capnp import KjException
+  from hud_protocol import snapshot_event_bytes
+  from openpilot.cereal import log
+
+  packet_time, record = snapshot
+  try:
+    name = 'modelV2'
+    if not (record['valid'][name] and record['alive'][name]):
+      return None
+    source_age = record['sent'] - record['received'][name]
+    received = packet_time - source_age
+    if not (0 <= source_age < .5 and 0 <= now - packet_time and now - received < .5):
+      return None
+    with log.Event.from_bytes(snapshot_event_bytes(record, name)) as event:
+      seconds = event.modelV2.modelExecutionTime if event.which() == name and event.valid else 0.
+    if 0 < seconds <= 10:
+      return seconds * 1000, received + 1.5
+  except (KjException, KeyError, TypeError, ValueError):
+    pass
+  return None
 
 
 def footer_lines(vehicle, host, language='ko'):

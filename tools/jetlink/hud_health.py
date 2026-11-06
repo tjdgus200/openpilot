@@ -155,7 +155,7 @@ class HealthRenderer(ClusterUiRenderer):
   def _host_metrics(self):
     from hud_runtime_stats import RuntimeFooterSampler
     if not hasattr(self, '_runtime_footer'):
-      self._runtime_footer = RuntimeFooterSampler(timing_enabled=PERF_DIAGNOSTICS)
+      self._runtime_footer = RuntimeFooterSampler(timing_enabled=True, compare_quality=PERF_DIAGNOSTICS)
     return self._runtime_footer.sample()
 
   def _draw_runtime_line(self, segments, right_x, y, max_width, size, key):
@@ -194,14 +194,6 @@ class HealthRenderer(ClusterUiRenderer):
                                       NAVI_LIVE_PANEL_W * .5 - 48), right, 169, 28,
                     NORMAL if used is not None and used < 0 else self._current_theme().muted,
                     anchor='right')
-    if not PERF_DIAGNOSTICS:
-      return
-    from hud_runtime_stats import inference_segments
-    right = self._information_panel_x(NAVI_LIVE_PANEL_X) + NAVI_LIVE_PANEL_W - 20
-    if right > DESIGN_WIDTH - 130:
-      right = DESIGN_WIDTH - 135  # Leave the independent host-temperature badge clear.
-    self._draw_runtime_line(inference_segments(self._host_metrics()), right, 32,
-                            NAVI_LIVE_PANEL_W * .5 - 32, 18, 'infer')
 
   def _draw_battery_status(self, text, left, width, color):
     # Keep the complete availability message clear of the diagnostic footer.
@@ -247,11 +239,13 @@ class HealthRenderer(ClusterUiRenderer):
     snapshot = read_snapshot()
     self._vehicle_data_current = vehicle_data_ready(snapshot)
     now = time.monotonic()
-    # Keep the existing low-priority sampler alive in layouts that omit its
-    # visible footer too; quality observations must not depend on screen mode.
-    from hud_quality import RUN_PROFILE
-    if PERF_DIAGNOSTICS and RUN_PROFILE is not None:
-      self._host_metrics()
+    if not self._vehicle_data_current:
+      self._model_call = None
+      self._next_model_call = 0.
+    elif now >= getattr(self, '_next_model_call', 0.):
+      from hud_runtime_stats import model_call_sample
+      self._model_call = model_call_sample(snapshot, now)
+      self._next_model_call = now + 1.
     self._bsd_warning = warning_sides(state, snapshot, now)
     if not hasattr(self, '_bsd_pulse'):
       self._bsd_pulse = WarningPulse()
@@ -360,6 +354,12 @@ class HealthRenderer(ClusterUiRenderer):
         if color != ERROR:
           color = WARNING
       vehicle_alert = alert is not None and alert.size > 0 and (alert.text1 or alert.text2)
+      if not message and not vehicle_alert:
+        from hud_runtime_stats import inference_segments
+        call = getattr(self, '_model_call', None)
+        comma_ms = call[0] if call and time.monotonic() < call[1] else None
+        self._draw_runtime_line(inference_segments(self._host_metrics(), comma_ms=comma_ms, include_comma=True),
+                                DESIGN_WIDTH - 208, 28, 520, 18, 'infer')
       if message and not vehicle_alert:
         rl.draw_rectangle(0, 0, int(DESIGN_WIDTH), 32, rl_color((0, 0, 0), 220))
         self._draw_text(self._ellipsize_text(message, 22, DESIGN_WIDTH - 40),

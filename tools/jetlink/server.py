@@ -92,6 +92,7 @@ class CarrotSession(Session):
     return super()._error(seq, error, detail)
 
   def __init__(self, *args, **kwargs):
+    self.hud_inference_timing = Path('/etc/nv_tegra_release').is_file()
     super().__init__(*args, **kwargs)
     self.request_chunks = request_chunks.Receiver()
     self.deferred_maps = deferred_map.Receiver()
@@ -112,6 +113,11 @@ class CarrotSession(Session):
     self.navi = HostForwarder() if sys.platform == 'linux' and self.usb_display else None
     self.hud_wifi = None
     self.power_lease = SessionLease(self.t.transport if isinstance(self.t, ReadAheadTransport) else self.t)
+
+  def _reset(self, seq):
+    super()._reset(seq)
+    if self.hud_inference_timing:
+      self.host.frame_stats.samples.clear()
 
   def _send_json(self, msg_type, seq, obj, flags=0):
     if msg_type == P.Msg.ENGINE_RESP and obj.get('state') == 'failed' and self.telemetry.health is not None:
@@ -343,6 +349,8 @@ class CarrotSession(Session):
     return flags, context
 
   def close(self):
+    if self.hud_inference_timing:
+      self.host.frame_stats.samples.clear()
     try:
       if getattr(self, 'input_comparison', None) is not None:
         self.input_comparison.close()

@@ -19,8 +19,8 @@
       "tests": ["tools/jetlink/test_battery_heatmap.py", "tools/jetlink/test_battery_retention.py", "tools/jetlink/test_stationary_battery.py", "tools/jetlink/test_obd_priority.py", "tools/jetlink/test_obd_resync.py"]
     },
     "resources_and_state": {
-      "preserve": "Diagnostics OFF, independent 1Hz resource footer, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates.",
-      "tests": ["tools/jetlink/test_optimization_defaults.py", "tools/jetlink/test_device_state.py", "tools/jetlink/test_input_overlap.py", "tools/jetlink/test_parsed_output_guard.py", "tools/jetlink/test_hud_runtime_stats.py"]
+      "preserve": "Full diagnostics OFF, 1Hz HUD resource and inference timing readouts, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates.",
+      "tests": ["tools/jetlink/test_optimization_defaults.py", "tools/jetlink/test_device_state.py", "tools/jetlink/test_input_overlap.py", "tools/jetlink/test_parsed_output_guard.py", "tools/jetlink/test_hud_runtime_stats.py", "tools/jetlink/test_performance_diagnostics.py"]
     },
     "power_and_boot": {
       "preserve": "Jetson USB input-power block, black boot diagnostics, regular W/temperature text and permission-gated Park update/previous-release recovery.",

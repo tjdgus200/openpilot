@@ -1,3 +1,4 @@
+import base64
 import json
 from pathlib import Path
 import socket
@@ -8,7 +9,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'tools/jetlink'), str(ROOT / 'third_party/jetlink'), str(ROOT / 'openpilot/selfdrive/carrot/cluster')]
-from hud_runtime_stats import gpu_percent, footer_lines, valid_timing, RuntimeFooterSampler, metric_color, NORMAL, CAUTION, HIGH, UNKNOWN
+from hud_runtime_stats import (
+  gpu_percent, footer_lines, inference_segments, model_call_sample, valid_timing,
+  RuntimeFooterSampler, metric_color, NORMAL, CAUTION, HIGH, UNKNOWN,
+)
 from jetlink.server.session import FrameStats
 from jetlink.server.control import ControlServer
 
@@ -110,3 +114,34 @@ def test_sampler_accepts_real_top_level_control_reply_and_skips_events():
   finally:
     a.close()
     b.close()
+
+
+def test_timing_readout_separates_host_window_from_latest_comma_sample():
+  text = ''.join(text for text, _ in inference_segments({'timing': timing()}, comma_ms=48.9, include_comma=True))
+  assert text == 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms | COMMA 48.9 ms'
+  text = ''.join(text for text, _ in inference_segments({}, include_comma=True))
+  assert text == 'TRT 10s AVG:-- P99:-- MAX:-- ms | COMMA -- ms'
+
+
+def test_comma_timing_uses_fresh_existing_model_event():
+  from openpilot.cereal import log
+
+  event = log.Event.new_message(valid=True, modelV2={'modelExecutionTime': .0415})
+  record = {'sent': 8., 'received': {'modelV2': 7.9}, 'valid': {'modelV2': True},
+            'alive': {'modelV2': True}, 'events': {'modelV2': base64.b64encode(event.to_bytes()).decode()}}
+  assert model_call_sample((100., record), 100.1) == pytest.approx((41.5, 101.4))
+  assert model_call_sample((100., record), 100.5) is None
+  record['valid']['modelV2'] = False
+  assert model_call_sample((100., record), 100.1) is None
+
+
+def test_cached_host_timing_expires_before_other_resources(monkeypatch):
+  import threading
+  import hud_runtime_stats as stats
+
+  sampler = object.__new__(RuntimeFooterSampler)
+  sampler.lock = threading.Lock()
+  sampler.value = {'updated': 100., 'timing': {**timing(), 'last_frame_age_s': .9}, 'gpu_percent': 20.}
+  monkeypatch.setattr(stats.time, 'monotonic', lambda: 101.2)
+  assert sampler.sample()['timing'] is None
+  assert sampler.sample()['gpu_percent'] == 20.

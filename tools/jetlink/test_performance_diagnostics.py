@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.parametrize('value,enabled', [(None, False), ('0', False), ('1', True), ('true', False)])
 def test_only_explicit_private_opt_in_enables_diagnostics(value, enabled):
   env = os.environ.copy()
+  env['PYTHONPATH'] = os.pathsep.join(filter(None, (str(ROOT / 'third_party/jetlink'), env.get('PYTHONPATH'))))
   env.pop('CARROT_PERF_DIAGNOSTICS', None)
   if value is not None:
     env['CARROT_PERF_DIAGNOSTICS'] = value
@@ -64,13 +65,13 @@ def test_no_stats_thread_or_samples_but_qualified_park_switch_still_works(monkey
   collector.close()
 
 
-def test_disabled_hud_keeps_resources_without_enabling_performance_sampling(monkeypatch):
+def test_hud_uses_only_the_shared_resource_and_inference_sampler(monkeypatch):
   import hud_health as hud
   import hud_runtime_stats as stats
   monkeypatch.setattr(hud, 'PERF_DIAGNOSTICS', False)
   created = []
-  def sampler(*, timing_enabled):
-    created.append(timing_enabled)
+  def sampler(*, timing_enabled, compare_quality):
+    created.append((timing_enabled, compare_quality))
     return NS(sample=lambda: {})
   monkeypatch.setattr(stats, 'RuntimeFooterSampler', sampler)
   renderer = object.__new__(hud.HealthRenderer)
@@ -80,7 +81,7 @@ def test_disabled_hud_keeps_resources_without_enabling_performance_sampling(monk
   renderer._draw_runtime_line = lambda *args: drawn.append(args)
   assert renderer._host_metrics() == {}
   renderer._draw_cluster_core_usage('')
-  assert created == [False]  # One resource sampler; no timing collection.
+  assert created == [(True, False)]
   assert len(drawn) == 1 and drawn[0][-1] == 'resources'
   text = ''.join(segment[0] for segment in drawn[0][0])
   assert 'CPU' in text and 'MEM' in text
@@ -106,13 +107,14 @@ def test_transport_keeps_packet_identical_without_tx_observation(monkeypatch):
   assert not hasattr(plain, 'last_send_ready') and measured.last_send_ready[1] == 1
 
 
-@pytest.mark.parametrize('enabled', [False, True])
-def test_actual_session_feedback_and_outputs_identical_without_sample_collection(monkeypatch, enabled):
+@pytest.mark.parametrize('enabled,hud_timing', [(False, False), (True, False), (False, True)])
+def test_actual_session_feedback_and_outputs_identical_with_timing(monkeypatch, enabled, hud_timing):
   import numpy as np
   from jetlink.server import session
   from test_output_projection import pair, infer
   monkeypatch.setattr(session, 'PERF_DIAGNOSTICS', enabled)
   client, server, loaded, outputs = pair()
+  server.hud_inference_timing = hud_timing
   server.host.frame_stats = session.FrameStats()
   rng = np.random.default_rng(211)
   for frame in range(8):
@@ -122,4 +124,10 @@ def test_actual_session_feedback_and_outputs_identical_without_sample_collection
     np.testing.assert_array_equal(result, outputs['outputs'].reshape(-1))
     for name, source in loaded.spec.state_pairs.items():
       assert loaded.host_inputs[name].tobytes() == outputs[source].tobytes()
-  assert bool(server.host.frame_stats.samples) is enabled
+  assert len(server.host.frame_stats.samples) == (8 if enabled or hud_timing else 0)
+  if hud_timing:
+    from jetlink.transport.base import LinkError
+    outputs['outputs'].flat[0] = np.nan
+    with pytest.raises(LinkError):
+      infer(client, 9)
+    assert len(server.host.frame_stats.samples) == 8

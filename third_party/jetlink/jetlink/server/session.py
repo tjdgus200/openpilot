@@ -604,6 +604,8 @@ def _check_shapes(engine, spec: ModelSpec) -> None:
 
 
 class Session:
+  hud_inference_timing = False
+
   def __init__(self, transport: Transport, host: EngineHost):
     self.t = transport
     self.host = host
@@ -920,7 +922,7 @@ class Session:
       # frame by its own stages; together they place a slow frame.
       log.warning("slow frame %d: gpu %.1f queue %.1f total %.1f send %.1f ms", frame_id,
                   loaded.engine.last_gpu_us / 1e3, queue_us / 1e3, total_us / 1e3, send_us / 1e3)
-    if PERF_DIAGNOSTICS:
+    if PERF_DIAGNOSTICS or (self.hud_inference_timing and status == P.Status.OK):
       self.host.frame_stats.record(total_us, loaded.engine.last_gpu_us)
 
   def on_shutdown(self, msg: Message) -> None:

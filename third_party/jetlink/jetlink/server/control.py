@@ -40,7 +40,7 @@ from pathlib import Path
 
 from jetlink.registry import CATALOG_URL, DEFAULT_BIG_MODEL_REF
 from jetlink.server.cache import LAST_LOADED, _SHA256, EngineCache
-from jetlink.server.session import EngineHost, Request
+from jetlink.server.session import EngineHost, PERF_DIAGNOSTICS, Request
 from jetlink.spec import DEFAULT_FRAME_SKIP
 
 log = logging.getLogger('jetlink.control')
@@ -151,7 +151,8 @@ class ControlServer:
     self._downloads = ThreadPoolExecutor(max_workers=1, thread_name_prefix='jetlink-download')
     self.host.subscribe(self._on_host)
     self._spawn('jetlink-control', self._accept_loop)
-    self._spawn('jetlink-stats', self._stats_loop)
+    if PERF_DIAGNOSTICS:
+      self._spawn('jetlink-stats', self._stats_loop)
     log.info("control channel listening on %s", self.address)
 
   def _listen(self) -> socket.socket:

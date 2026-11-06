@@ -1,5 +1,12 @@
 # Repository memory
 
+- 2026-11-06 Jetson HUD inference readout: display TRT AVG/P99/MAX over
+  10 seconds and the latest comma model call in milliseconds. Reuse the
+  1 Hz HUD resource sampler, successful inference reply timings and existing
+  modelV2 events. Expire missing data and preserve alert priority. Keep
+  full performance diagnostics and comparison sampling off by default.
+  Preserve this readout in every model-paired PV5 package.
+
 - 2026-11-06 permanent PV5 model release gate: before declaring any model
   addition/update or carrot-wip sync complete, read
   docs/pv5_model_preservation_checklist.md and run
