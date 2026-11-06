@@ -72,10 +72,12 @@ class DrivingNoticeTracker:
 def driving_notice_events(sm, now: float, *, started_frame: int | None = None) -> tuple[str, ...]:
   """Read existing perception and planner states for display only."""
   def current(service, limit):
+    # Jetlink translates a floating-point receive timestamp and an integer
+    # event timestamp into the same monotonic clock. Allow rounding at zero age.
     if (sm.valid.get(service, False) and sm.alive.get(service, False)
         and (started_frame is None or sm.recv_frame.get(service, -1) >= started_frame)
-        and 0 <= now - sm.recv_time.get(service, 0.) <= limit
-        and 0 <= now - sm.logMonoTime.get(service, 0) * 1e-9 <= limit):
+        and -1e-6 <= now - sm.recv_time.get(service, 0.) <= limit
+        and -1e-6 <= now - sm.logMonoTime.get(service, 0) * 1e-9 <= limit):
       return sm[service]
     return None
 

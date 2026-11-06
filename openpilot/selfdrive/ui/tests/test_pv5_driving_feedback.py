@@ -170,6 +170,11 @@ def test_notices_use_fresh_confirmed_states_and_keep_detection_separate_from_bra
   radar.leadCutInRisk.dRel = 10.
   sm['carrotMan'].vTurnSpeed = -65
   assert driving_notice_events(sm, 100., started_frame=10) == ('cutin', 'curve')
+  sm.logMonoTime['radarState'] += 200
+  assert driving_notice_events(sm, 100.) == ('cutin', 'curve')
+  sm.logMonoTime['radarState'] += 1_000_000
+  assert driving_notice_events(sm, 100.) == ('curve',)
+  sm.logMonoTime['radarState'] = 100_000_000_000
 
   sm['carControl'].latActive = True
   sm['modelV2'].meta.laneChangeDirection = 'left'
