@@ -514,6 +514,7 @@ class ClusterUiState:
     deceleration_banner: str | None = None
     steering_warning: int = 0
     driving_notices: tuple[str, ...] = ()
+    driving_lane_change_direction: str | None = None
     curve_approach_speed_kph: float | None = None
     cruise_override_label: str | None = None
     cruise_override_color_mode: int = 0

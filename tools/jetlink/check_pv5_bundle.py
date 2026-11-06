@@ -66,6 +66,7 @@ assert abs(state.pv5_lane_center_fraction-.75)<1e-6
 assert abs(state.left_lane_probability-.99)<1e-6 and abs(state.right_lane_probability-.99)<1e-6
 assert state.steering_output_normalized is not None
 assert state.driving_notices==('cutin','laneChange')
+assert state.driving_lane_change_direction=='left'
 notices=state.driving_notices
 state=replace(state,driving_notices=())
 assert boot_status.model_name(read_spec(server.ROOT)['sha256'])!='--'
@@ -108,7 +109,7 @@ try:
  ui._popup_slide.top(time.monotonic()-1.,82,76,urgent=True)
  ui.render_to_file(replace(state,deceleration_banner='방지턱 감속'),popup_path)
  pixel=Image.open(popup_path).convert('RGB').getpixel(anchor)
- assert max(abs(a-b) for a,b in zip(pixel,(16,25,35),strict=True))<=2
+ assert max(abs(a-b) for a,b in zip(pixel,(31,70,143),strict=True))<=2
  texts=[]
  draw_text=ui._draw_text_with_stroke
  def capture_text(text,*args,**kwargs):
@@ -140,11 +141,20 @@ try:
  ui.render_to_file(replace(braking,driving_notices=()),camera_path)
  assert camera_title in texts
  with Image.open(camera_path) as camera:
-  assert max(abs(a-b) for a,b in zip(camera.convert('RGB').getpixel((315,175)),(16,25,35),strict=True))<=2
+  rgb=camera.convert('RGB')
+  assert max(abs(a-b) for a,b in zip(rgb.getpixel((315,175)),(31,70,143),strict=True))<=2
+  assert (177,220,255) in rgb.crop((205,100,275,175)).getdata()
  add_event('carrotMan',log.Event.new_message(carrotMan={'desiredSource':'vturn','desiredSpeed':60}))
  record['mono']['carrotMan']+=1
  remote.update()
  assert source._with_live_hud_state(cruise).deceleration_banner=='커브 감속 중\\n목표 60 km/h'
+ attention_path=popup_path.with_name('hud-driver-attention.png')
+ attention=ClusterAlert('전방을 주시하세요','운전자 부주의',size=3,status=2,alert_type='driverDistracted3/permanent')
+ texts.clear()
+ ui.render_to_file(replace(braking,alert=attention),attention_path)
+ assert attention.text1 in texts and attention.text2 in texts and camera_title not in texts
+ with Image.open(attention_path) as frame:
+  assert (255,225,91) in frame.convert('RGB').crop((470,55,650,175)).getdata()
 finally:
  ui.close()
 assert ui._telemetry_font is None and not ui._window_open
@@ -229,10 +239,11 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-native.png', args.output / 'hud.png')
     shutil.copyfile(root / 'hud-popup.png', args.output / 'hud-popup.png')
     shutil.copyfile(root / 'hud-camera-decel.png', args.output / 'hud-camera-decel.png')
+    shutil.copyfile(root / 'hud-driver-attention.png', args.output / 'hud-driver-attention.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
                 center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
-                deceleration_details=True,
+                deceleration_details=True, driver_attention_icon=True,
                 diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

@@ -14,10 +14,12 @@ from pathlib import Path
 import numpy as np
 import pyray as rl
 
+from openpilot.common.hud_attention_icon import DriverAttentionIcon, draw_driver_attention_icon
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.common.hud_driving_feedback import (
-    DRIVING_POPUP_COLORS, STEERING_WARNING_TEXT, DrivingNoticeTracker, DrivingPopupSlide, driving_notice_text,
+    STEERING_WARNING_TEXT, DrivingNoticeTracker, DrivingPopupSlide,
+    driving_notice_text, driving_popup_colors, driving_popup_motion,
     lane_confidence_score, lane_confidence_grade, lane_probability_text,
 )
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
@@ -931,6 +933,7 @@ class ClusterUiRenderer:
         self.is_metric = bool(is_metric)
         self._theme = current_cluster_theme(self.theme_mode)
         self._popup_slide = DrivingPopupSlide()
+        self._attention_icon = DriverAttentionIcon()
         self._driving_notices = DrivingNoticeTracker()
         self.hidden = False
         self._nav_model_texture = None
@@ -4165,7 +4168,9 @@ class ClusterUiRenderer:
 
     def _draw_alert_overlay(self, alert: ClusterAlert | None) -> None:
         if alert is None or alert.size <= 0 or not (alert.text1 or alert.text2):
+            self._attention_icon.reset()
             return
+        icon_scale = self._attention_icon.scale(alert.alert_type, time.monotonic())
 
         sx = self.width / DESIGN_WIDTH
         sy = self.height / DESIGN_HEIGHT
@@ -4201,6 +4206,9 @@ class ClusterUiRenderer:
             title, title_size = self._fit_alert_text(title, title_size, max_text_w, 30.0)
             detail, detail_size = self._fit_alert_text(detail, detail_size, max_text_w, 20.0)
             center_y = DESIGN_HEIGHT * 0.5
+            if icon_scale:
+                icon_height = 118 if alert.size >= CLUSTER_ALERT_SIZE_FULL else 96
+                draw_driver_attention_icon(panel_center_x, center_y - 126, icon_height * icon_scale)
             title_color = CLUSTER_ALERT_TEXT_COLORS.get(alert.status, CLUSTER_ALERT_TEXT_COLORS[0])
             if detail:
                 if lane_change_wait:
@@ -7557,24 +7565,36 @@ class ClusterUiRenderer:
         if not text or vehicle_alert:
             self._popup_slide.reset()
             return False
+        decel_label = state.cruise_override_label if state.deceleration_banner else None
+        motion = driving_popup_motion(notice, decel_label, state.driving_lane_change_direction) if not warning else None
+        dots = self._popup_slide.motion_dots(motion, now)
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
         title, _, detail = text.partition("\n")
         width, height, settled_top = (660 if detail else 620 if warning == 2 else 500), (112 if detail else 76), 82
+        icon_space = 68 if dots else 0
+        width += icon_space
         top = self._popup_slide.top(now, settled_top, height, urgent=warning == 2)
         left = center_x - width * 0.5
-        background, accent = DRIVING_POPUP_COLORS[warning if warning in STEERING_WARNING_TEXT else 0]
+        background, accent = driving_popup_colors(warning, motion)
         # Reveal below the clock and status row while the popup is moving.
         entering = top < settled_top
         if entering:
             clip_y = round(settled_top * self.height / DESIGN_HEIGHT)
             rl.begin_scissor_mode(0, clip_y, self.width, self.height - clip_y)
         try:
-            self._rounded_rect(left, top, width, height, 16, background, accent, 2)
-            self._rounded_rect(left + 14, top + 17, 5, height - 34, 2, accent)
-            self._draw_text_with_stroke(title, center_x + 5, top + height * (0.34 if detail else 0.5), 40 if detail else 46,
+            self._rounded_rect(left, top, width, height, 16, background, accent, 2 if warning else 3)
+            if dots:
+                ink = rl_color(accent)
+                for dot_x, dot_y in dots:
+                    position = rl.Vector2(left + 39 + dot_x * 20, top + height / 2 + dot_y * 20)
+                    rl.draw_circle_v(position, 2.4, ink)
+            else:
+                self._rounded_rect(left + 14, top + 17, 5, height - 34, 2, accent)
+            text_center = center_x + (icon_space / 2 if dots else 5)
+            self._draw_text_with_stroke(title, text_center, top + height * (0.34 if detail else 0.5), 40 if detail else 46,
                                         WHITE, (5, 9, 12), 2, anchor="center", cache=True)
             if detail:
-                self._draw_text(detail, center_x + 5, top + height * 0.73, 32, WHITE, anchor="center")
+                self._draw_text(detail, text_center, top + height * 0.73, 32, WHITE, anchor="center")
         finally:
             if entering:
                 rl.end_scissor_mode()

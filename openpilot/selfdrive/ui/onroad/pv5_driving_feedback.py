@@ -5,11 +5,12 @@ from dataclasses import dataclass
 import pyray as rl
 from openpilot.common.constants import CV
 from openpilot.common.hud_driving_feedback import (
-  DRIVING_POPUP_COLORS, DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_notice_text,
+  DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_notice_text,
+  driving_popup_colors, driving_popup_motion,
   LANE_CENTER_STATUS, STEERING_WARNING_TEXT, angle_steering_demand, lane_line_probabilities,
   lane_confidence_score, lane_confidence_grade, lane_probability_text, pv5_steering_warning,
 )
-from openpilot.selfdrive.carrot.deceleration_source import deceleration_banner_text
+from openpilot.selfdrive.carrot.deceleration_source import deceleration_banner_text, deceleration_source_presentation
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
 
@@ -253,21 +254,36 @@ class Pv5DrivingFeedbackOverlay:
     if not text:
       self.popup_slide.reset()
       return
+    direction = str(sm['modelV2'].meta.laneChangeDirection) if notice == 'laneChange' else None
+    decel_label = deceleration_source_presentation(sm['carrotMan'].desiredSource)[0] if deceleration else None
+    motion = driving_popup_motion(notice, decel_label, direction) if not warning else None
+    dots = self.popup_slide.motion_dots(motion, now)
     title, _, detail = text.partition('\n')
     if detail:
       width, height, size = (346, 67, 21) if self.compact else (1160, 176, 60)
     else:
       width, height, size = (330, 42, 24) if self.compact else (1080, 136, 70)
+    icon_space = (40 if self.compact else 84) if dots else 0
+    width += icon_space
     scale = min(1., rect.width / (width + 40))
     width, height, size = width * scale, height * scale, size * scale
     x = rect.x + (rect.width - width) / 2 - (15 if self.compact else 0)
+    # Leave space at the right for the Jetson badge on the wide display.
+    if not self.compact and dots and getattr(ui_state, 'jetlink_badge', None):
+      x = max(rect.x, x - 44 * scale)
     y = self.popup_slide.top(now, rect.y + (6 if self.compact else 24), height, urgent=warning == 2)
-    background, accent = (rl.Color(*color) for color in DRIVING_POPUP_COLORS[warning])
+    background, accent = (rl.Color(*color) for color in driving_popup_colors(warning, motion))
     box = rl.Rectangle(x, y, width, height)
     rl.draw_rectangle_rounded(box, 0.26, 8, background)
-    rl.draw_rectangle_rounded_lines_ex(box, 0.26, 8, 2 * scale, accent)
-    draw_text_ui_style(title, x + width / 2, y + height * (.34 if detail else .5), size, rl.WHITE,
+    rl.draw_rectangle_rounded_lines_ex(box, 0.26, 8, (2 if warning else 3) * scale, accent)
+    if dots:
+      radius = (10 if self.compact else 24) * scale
+      for dot_x, dot_y in dots:
+        position = rl.Vector2(x + icon_space * .63 * scale + dot_x * radius, y + height / 2 + dot_y * radius)
+        rl.draw_circle_v(position, radius * .12, accent)
+    text_center = x + (width + icon_space * scale) / 2
+    draw_text_ui_style(title, text_center, y + height * (.34 if detail else .5), size, rl.WHITE,
                        font=font, border_width=0, shadow_offset=0, align='center', y_offset=0)
     if detail:
-      draw_text_ui_style(detail, x + width / 2, y + height * .73, size * .8, rl.WHITE,
+      draw_text_ui_style(detail, text_center, y + height * .73, size * .8, rl.WHITE,
                          font=font, border_width=0, shadow_offset=0, align='center', y_offset=0)

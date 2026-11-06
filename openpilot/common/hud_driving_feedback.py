@@ -5,11 +5,14 @@ STEERING_WARNING_SERVICES = ('carParams', 'carControl', 'controlsState', 'carSta
                              'liveParameters', 'carOutput', 'driverMonitoringState')
 STEERING_WARNING_TEXT = {1: '조향 요구량 높음', 2: '전방 주시, 조향 요구량 높음'}
 DRIVING_POPUP_COLORS = {
-  0: ((16, 25, 35, 250), (84, 103, 122, 255)),
+  0: ((31, 70, 143, 255), (177, 220, 255, 255)),
   1: ((77, 46, 9, 255), (255, 184, 66, 255)),
   2: ((156, 18, 27, 255), (255, 78, 85, 255)),
 }
+_TRAFFIC_POPUP_COLORS = ((80, 46, 126, 255), (221, 190, 255, 255))
+_LANE_POPUP_COLORS = ((7, 89, 86, 255), (115, 251, 224, 255))
 DRIVING_POPUP_ENTER_SECONDS = 0.22
+DRIVING_POPUP_MOTION_SECONDS = 0.48
 DRIVING_NOTICE_SECONDS = 2.0
 DRIVING_NOTICE_REARM_SECONDS = 0.75
 DRIVING_NOTICE_TEXT = {
@@ -20,6 +23,47 @@ DRIVING_NOTICE_TEXT = {
 }
 DRIVING_NOTICE_PRIORITY = {name: rank for rank, name in enumerate(DRIVING_NOTICE_TEXT)}
 DRIVING_NOTICE_OVER_DECEL = ('cutin', 'laneChange')
+
+# Coordinates are normalized to the icon radius. Precompute the static shapes
+# so the popup does no interpolation after the entrance settles.
+_MOTION_RING = tuple((math.cos(i * math.tau / 12), math.sin(i * math.tau / 12)) for i in range(12))
+_LANE_ARROW = ((-.9, -.6), (-.65, -.3), (-.4, 0), (-.65, .3), (-.9, .6),
+               (0., -.8), (.35, -.5), (.65, -.25), (.95, 0.), (.65, .25), (.35, .5), (0., .8))
+_MOTION_DOTS = {
+  'camera': tuple((.88 * x, .88 * y) for x, y in _MOTION_RING[:8]) +
+            ((-.6, -.10), (-.2, -.10), (.2, -.10), (.6, -.10)),
+  'cutin': ((-.95, -.85), (-.7, -.55), (-.45, -.28), (-.23, 0.),
+            (.95, -.85), (.7, -.55), (.45, -.28), (.23, 0.),
+            (-.23, .34), (.23, .34), (-.23, .72), (.23, .72)),
+  'laneRight': _LANE_ARROW,
+  'laneLeft': tuple((-x, y) for x, y in _LANE_ARROW),
+  'leadBrake': tuple((x, y) for y in (-.68, 0., .68) for x in (-.82, -.27, .27, .82)),
+  'curve': tuple((.56 * math.sin(i * math.tau / 11), .95 - 1.9 * i / 11) for i in range(12)),
+  'bump': tuple((-1. + 2. * i / 11, -.75 * math.sin(i * math.pi / 11)) for i in range(12)),
+  'section': tuple((x, y) for x in (-.67, .67) for y in (-.85, -.51, -.17, .17, .51, .85)),
+}
+_DECELERATION_MOTION = {
+  'cam': 'camera', 'waze': 'camera', 'vturn': 'curve', 'route': 'curve',
+  'turn': 'curve', 'model': 'curve', 'bump': 'bump', 'section': 'section', 'school': 'section',
+}
+
+
+def driving_popup_colors(warning: int, motion: str | None):
+  if warning in STEERING_WARNING_TEXT:
+    return DRIVING_POPUP_COLORS[warning]
+  if motion in ('cutin', 'leadBrake'):
+    return _TRAFFIC_POPUP_COLORS
+  if motion in ('laneLeft', 'laneRight'):
+    return _LANE_POPUP_COLORS
+  return DRIVING_POPUP_COLORS[0]
+
+
+def driving_popup_motion(notice: str | None, deceleration_label: str | None, lane_direction: str | None) -> str | None:
+  if notice == 'laneChange':
+    return {'left': 'laneLeft', 'right': 'laneRight'}.get(lane_direction)
+  if notice is not None:
+    return notice if notice in _MOTION_DOTS else None
+  return _DECELERATION_MOTION.get(deceleration_label)
 
 
 def driving_notice_text(notice: str | None, curve_speed: float | None) -> str | None:
@@ -35,6 +79,22 @@ class DrivingPopupSlide:
 
   def reset(self) -> None:
     self._entered = None
+    self._motion_key = None
+    self._motion_started = 0.
+
+  def motion_dots(self, key: str | None, now: float) -> tuple[tuple[float, float], ...]:
+    if key != self._motion_key:
+      self._motion_key = key
+      self._motion_started = now
+    if key is None:
+      return ()
+    target = _MOTION_DOTS[key]
+    elapsed = now - self._motion_started
+    if elapsed >= DRIVING_POPUP_MOTION_SECONDS:
+      return target
+    progress = 1. - (1. - max(0., elapsed) / DRIVING_POPUP_MOTION_SECONDS) ** 3
+    return tuple((x + (end_x - x) * progress, y + (end_y - y) * progress)
+                 for (x, y), (end_x, end_y) in zip(_MOTION_RING, target, strict=True))
 
   def top(self, now: float, top: float, height: float, *, urgent: bool) -> float:
     if urgent:

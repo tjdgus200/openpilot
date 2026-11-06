@@ -1,5 +1,16 @@
 # Repository memory
 
+- Existing driver-distraction and unresponsive alerts show an opaque triangle
+  with an exclamation mark in comma 3/3X and Jetson HUD. Draw it on the first
+  frame and settle it once in 360 ms. Keep the original warning text, sound,
+  severity, full-screen critical overlay and alert priority.
+
+- PV5 popup glyphs use a single 480 ms, 12-dot transition driven by the
+  existing fresh display event. Follow the reported lane change direction,
+  keep the icon settled when speed/distance changes, and skip glyph motion
+  for vehicle alerts and steering warnings. Use the same opaque blue road,
+  purple traffic and teal lane-change popup palettes on both native renderers.
+
 - PV5 camera and curve popups on comma and Jetson show the selected camera's
   final target and remaining distance, or the applied curve speed. Keep camera
   distance tied to the selected event, omit it when absent or passed, and show
@@ -16,7 +27,7 @@
 - 2026-11-06 PV5 driving popup: both Jetson HUD and comma 3/3X show larger
   deceleration and steering advisories with a 220 ms entrance. Keep the
   red driver-attention advisory immediate, vehicle alerts above popups,
-  stale or inactive deceleration hidden, and animation off during alerts.
+  stale or inactive deceleration hidden, and driving popup animation off during vehicle alerts.
   Preserve the HUD status row and inference timing readout.
 
 - 2026-11-06 Jetson HUD inference readout: display TRT AVG/P99/MAX over

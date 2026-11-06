@@ -2,6 +2,7 @@ import time
 import pyray as rl
 from dataclasses import dataclass
 from openpilot.cereal import messaging, log
+from openpilot.common.hud_attention_icon import DriverAttentionIcon, draw_driver_attention_icon
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.hardware import TICI
 from openpilot.system.ui.lib.application import gui_app, FontWeight, TextAlignment, TextAlignmentVertical
@@ -44,6 +45,7 @@ class Alert:
   text2: str = ""
   size: int = 0
   status: int = 0
+  alert_type: str = ""
 
 
 # Pre-defined alert instances
@@ -74,6 +76,7 @@ class AlertRenderer(Widget):
     super().__init__()
     self.font_regular: rl.Font = gui_app.font(FontWeight.NORMAL)
     self.font_bold: rl.Font = gui_app.font(FontWeight.BOLD)
+    self._attention_icon = DriverAttentionIcon()
 
     # font size is set dynamically
     self._full_text1_label = Label("", font_size=0, font_weight=FontWeight.BOLD, text_alignment=TextAlignment.CENTER,
@@ -112,10 +115,13 @@ class AlertRenderer(Widget):
       return None
 
     # Return current alert
-    return Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw)
+    return Alert(text1=ss.alertText1, text2=ss.alertText2, size=ss.alertSize.raw, status=ss.alertStatus.raw,
+                 alert_type=ss.alertType)
 
   def _render(self, rect: rl.Rectangle):
     alert = self.get_alert(ui_state.sm)
+    alert_type = alert.alert_type if alert is not None and alert.status != AlertStatus.critical else ''
+    icon_scale = self._attention_icon.scale(alert_type, time.monotonic())
     if not alert:
       return
 
@@ -128,6 +134,13 @@ class AlertRenderer(Widget):
       alert_rect.width - 2 * ALERT_PADDING,
       alert_rect.height - 2 * ALERT_PADDING
     )
+    if icon_scale:
+      icon_height = min(alert_rect.height * .60, alert_rect.width * .13, 176.)
+      text_left = text_rect.x + icon_height * 1.16 + 30
+      draw_driver_attention_icon(text_rect.x + icon_height * .58, alert_rect.y + alert_rect.height / 2,
+                                 icon_height * icon_scale)
+      text_rect.width -= text_left - text_rect.x
+      text_rect.x = text_left
     self._draw_text(text_rect, alert)
 
   def _get_alert_rect(self, rect: rl.Rectangle, size: int) -> rl.Rectangle:

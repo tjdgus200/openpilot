@@ -70,6 +70,7 @@ def test_road_camera_radar_point_uses_simple_source_colored_square(monkeypatch):
 
 def test_cluster_alert_is_centered_in_swapped_camera_panel(monkeypatch) -> None:
   renderer = object.__new__(ClusterUiRenderer)
+  renderer._attention_icon = cluster_renderer.DriverAttentionIcon()
   renderer.width = cluster_renderer.DESIGN_WIDTH
   renderer.height = cluster_renderer.DESIGN_HEIGHT
   renderer.panel_layout = CLUSTER_PANEL_LAYOUT_DRIVING_RIGHT

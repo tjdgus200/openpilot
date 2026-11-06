@@ -5,8 +5,11 @@ import pytest
 import pyray as rl
 
 from openpilot.cereal import log
+from openpilot.common.hud_attention_icon import DriverAttentionIcon
 from openpilot.common.hud_driving_feedback import (
-  DRIVING_POPUP_ENTER_SECONDS, STEERING_WARNING_SERVICES, DrivingNoticeTracker, driving_notice_events, pv5_steering_warning,
+  DRIVING_POPUP_ENTER_SECONDS, DRIVING_POPUP_MOTION_SECONDS, STEERING_WARNING_SERVICES,
+  DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_popup_colors, driving_popup_motion,
+  pv5_steering_warning,
 )
 from openpilot.selfdrive.ui.onroad import pv5_driving_feedback as feedback
 from openpilot.selfdrive.ui.onroad.pv5_driving_feedback import (
@@ -217,6 +220,44 @@ def test_notice_onset_priority_expiry_and_no_replay_behind_alerts():
   assert tracker.update(('laneChange',), 103.5) is None
 
 
+@pytest.mark.parametrize('name', ('driverDistracted', 'driverUnresponsive'))
+def test_driver_attention_icon_is_immediate_and_animates_once_per_stage(name):
+  icon = DriverAttentionIcon()
+  assert icon.scale('controlsMismatch/immediateDisable', 99.) == 0.
+  assert icon.scale(f'{name}1/permanent', 100.) == pytest.approx(.82)
+  assert .82 < icon.scale(f'{name}1/permanent', 100.16) < 1.
+  assert icon.scale(f'{name}1/permanent', 100.6) == icon.scale(f'{name}1/permanent', 104.) == 1.
+  assert icon.scale(f'{name}2/permanent', 104.1) == pytest.approx(.82)
+  assert icon.scale(f'{name}3/permanent', 104.2) == pytest.approx(.82)
+  assert icon.scale('', 104.4) == 0.
+  assert icon.scale(f'{name}3/permanent', 105.) == pytest.approx(.82)
+
+
+def test_popup_motion_settles_and_uses_actual_lane_change_direction():
+  slide = DrivingPopupSlide()
+  start = slide.motion_dots('camera', 100.)
+  halfway = slide.motion_dots('camera', 100. + DRIVING_POPUP_MOTION_SECONDS / 2)
+  settled = slide.motion_dots('camera', 101.)
+  assert start != halfway != settled and len(settled) == 12
+  assert slide.motion_dots('camera', 102.) is settled
+  assert slide.motion_dots('cutin', 103.) == start
+  assert slide.motion_dots(None, 103.1) == ()
+  assert slide.motion_dots('cutin', 104.) == start
+  assert driving_popup_motion(None, 'road', None) is None
+  assert driving_popup_motion(None, 'bump', None) == 'bump'
+  assert driving_popup_motion('laneChange', 'cam', None) is None
+  left = driving_popup_motion('laneChange', 'cam', 'left')
+  right = driving_popup_motion('laneChange', 'cam', 'right')
+  slide.motion_dots(left, 105.)
+  left_dots = slide.motion_dots(left, 106.)
+  slide.motion_dots(right, 107.)
+  assert slide.motion_dots(right, 108.) == tuple((-x, y) for x, y in left_dots)
+  assert driving_popup_colors(0, left) == driving_popup_colors(0, right)
+  assert len({driving_popup_colors(0, motion) for motion in ('camera', 'cutin', left)}) == 3
+  assert driving_popup_colors(1, 'cutin') == ((77, 46, 9, 255), (255, 184, 66, 255))
+  assert driving_popup_colors(2, left) == ((156, 18, 27, 255), (255, 78, 85, 255))
+
+
 def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):
   sm = braking_messages()
   state = SimpleNamespace(CP=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
@@ -231,6 +272,7 @@ def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):
   monkeypatch.setattr(feedback, 'pv5_steering_warning', lambda *args, **kwargs: 0)
   monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda *_: None)
   monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
+  monkeypatch.setattr(feedback.rl, 'draw_circle_v', lambda *_: None)
   rect = rl.Rectangle(30, 30, 2100, 1020)
   with patch.object(feedback, 'draw_text_ui_style') as label:
     overlay.draw_popup(rect, None, state, None)
@@ -267,16 +309,19 @@ def test_camera_popup_uses_final_camera_target_and_live_distance(source, monkeyp
   carrot.decelCameraTargetKph = 50
   carrot.decelCameraDistanceM = 250
   state = SimpleNamespace(CP=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
-                          started=True, started_frame=10, sm=sm)
+                          started=True, started_frame=10, sm=sm, jetlink_badge=('jetSON', 'active'))
   monkeypatch.setattr(feedback.time, 'monotonic', lambda: 100.)
-  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda *_: None)
+  right_edges = []
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda box, *_: right_edges.append(box.x + box.width))
   monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
+  monkeypatch.setattr(feedback.rl, 'draw_circle_v', lambda *_: None)
   overlay = Pv5DrivingFeedbackOverlay()
   with patch.object(feedback, 'draw_text_ui_style') as draw:
     overlay.draw_popup(rl.Rectangle(30, 30, 2100, 1020), None, state, 80.)
     title, detail = (call.args for call in draw.call_args_list)
     assert title[0] == '과속카메라 단속 50 km/h 감속 중'
     assert detail[0] == '250 m 남음' and detail[2] > title[2]
+    assert right_edges[0] < 1680
   carrot.decelCameraDistanceM = 120
   assert sample_deceleration_popup(sm, 10, 100., 80.).endswith('120 m 남음')
   carrot.decelCameraDistanceM = 0
@@ -301,13 +346,16 @@ def test_popup_slides_once_and_urgent_or_vehicle_alert_takes_priority(monkeypatc
   rect = rl.Rectangle(30, 30, 2100, 1020)
   now, warning = 100., 0
   frames = []
+  dots = []
   monkeypatch.setattr(feedback.time, 'monotonic', lambda: now)
   monkeypatch.setattr(feedback, 'pv5_steering_warning', lambda *args, **kwargs: warning)
   monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda box, *_: frames.append((box.y, box.width, box.height)))
   monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
+  monkeypatch.setattr(feedback.rl, 'draw_circle_v', lambda *args: dots.append(args))
   with patch.object(feedback, 'draw_text_ui_style') as label:
     overlay.draw_popup(rect, None, state, 80.)
-    assert frames[-1] == (-48., 1080., 136.)
+    assert frames[-1] == (-48., 1164., 136.)
+    assert len(dots) == 12
     assert label.call_args.args[0] == '방지턱 감속'
     now += DRIVING_POPUP_ENTER_SECONDS / 2
     warning = 1
@@ -318,6 +366,7 @@ def test_popup_slides_once_and_urgent_or_vehicle_alert_takes_priority(monkeypatc
     overlay.draw_popup(rect, None, state, 80.)
     assert frames[-1][0] == 54.
     assert label.call_args.args[0] == '전방 주시, 조향 요구량 높음'
+    assert len(dots) == 12
     overlay.warning = True
     overlay.draw_popup(rect, None, state, 80.)
     assert len(frames) == 3

@@ -474,11 +474,14 @@ class OpenpilotLiveSource:
         steering_warning = 0
         notices = ()
         curve_speed = None
+        lane_change_direction = None
         if onroad:
             cp = self._service_data("carParams")
             if (self._service_valid("carParams") and safe_get(cp, "carFingerprint") == "KIA_PV5"
                     and not safe_get(cp, "notCar", True)):
                 notices = driving_notice_events(self.sm, now)
+                if 'laneChange' in notices:
+                    lane_change_direction = str(self.sm['modelV2'].meta.laneChangeDirection)
                 if 'curve' in notices:
                     curve_speed = safe_optional_float(carrot_man, "vTurnSpeed")
             remote_warning = getattr(self.sm, "steering_warning", None)
@@ -506,6 +509,7 @@ class OpenpilotLiveSource:
             deceleration_banner=deceleration_banner,
             steering_warning=steering_warning,
             driving_notices=notices,
+            driving_lane_change_direction=lane_change_direction,
             curve_approach_speed_kph=curve_speed,
             alert=self._live_cluster_alert(state.alert, onroad),
             egpu_active=getattr(self, "_egpu_active", False),
