@@ -19,17 +19,36 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # Executes in a child with only the extracted package on its source import path.
 PROBE = '''
-import json,sys,time
+import base64,json,sys,time
 from pathlib import Path
 from dataclasses import replace
 import server,hud,hud_health,hud_protocol,boot_status
 from model_pin import read_spec
 from cluster_live import OpenpilotLiveSource,standby_state
 from cluster_models import ClusterAlert
+from openpilot.cereal import log
+from openpilot.common.hud_driving_feedback import DRIVING_NOTICE_TEXT
 from openpilot.selfdrive.carrot import signal_mode
 from openpilot.common.performance_diagnostics import ENABLED
 assert not ENABLED and not server.PERF_DIAGNOSTICS
 record=json.loads(Path(sys.argv[1]).read_text())
+def add_event(name,event):
+ record['events'][name]=base64.b64encode(event.to_bytes()).decode()
+ record['received'][name]=record['sent']
+ record['mono'][name]=int(record['sent']*1e9)
+ record['valid'][name]=record['alive'][name]=True
+with log.Event.from_bytes(base64.b64decode(record['events']['carState'])) as event:
+ car_event=event.as_builder()
+car_event.carState.canValid=True
+car_event.carState.gearShifter='drive'
+add_event('carState',car_event)
+with log.Event.from_bytes(base64.b64decode(record['events']['modelV2'])) as event:
+ model_event=event.as_builder()
+model_event.modelV2.meta.laneChangeState='laneChangeStarting'
+model_event.modelV2.meta.laneChangeDirection='left'
+add_event('modelV2',model_event)
+add_event('carParams',log.Event.new_message(carParams={'carFingerprint':'KIA_PV5'}))
+add_event('radarState',log.Event.new_message(radarState={'leadCutInRisk':{'status':True,'radar':True,'dRel':18.}}))
 hud.read_snapshot=lambda:(time.monotonic(),record)
 hud_protocol.read_snapshot=hud.read_snapshot
 remote=hud.RemoteSubMaster(list(record['events']))
@@ -46,6 +65,9 @@ assert state.pv5_lane_center_status=='correcting'
 assert abs(state.pv5_lane_center_fraction-.75)<1e-6
 assert abs(state.left_lane_probability-.99)<1e-6 and abs(state.right_lane_probability-.99)<1e-6
 assert state.steering_output_normalized is not None
+assert state.driving_notices==('cutin','laneChange')
+notices=state.driving_notices
+state=replace(state,driving_notices=())
 assert boot_status.model_name(read_spec(server.ROOT)['sha256'])!='--'
 hud_health._fresh=lambda *_:{'severity':'ok','thermal_severity':'ok','temp_c':59.,'power_w':12.4}
 signal_mode.signal_mode=lambda:0
@@ -87,6 +109,18 @@ try:
  ui.render_to_file(replace(state,deceleration_banner='방지턱 감속'),popup_path)
  pixel=Image.open(popup_path).convert('RGB').getpixel(anchor)
  assert max(abs(a-b) for a,b in zip(pixel,(16,25,35),strict=True))<=2
+ texts=[]
+ draw_text=ui._draw_text_with_stroke
+ def capture_text(text,*args,**kwargs):
+  texts.append(text)
+  draw_text(text,*args,**kwargs)
+ ui._draw_text_with_stroke=capture_text
+ ui.render_to_file(replace(state,driving_notices=notices),popup_path)
+ assert DRIVING_NOTICE_TEXT['cutin'] in texts and DRIVING_NOTICE_TEXT['laneChange'] not in texts
+ ui._driving_notices.reset()
+ texts.clear()
+ ui.render_to_file(replace(state,driving_notices=('laneChange',)),popup_path)
+ assert DRIVING_NOTICE_TEXT['laneChange'] in texts
 finally:
  ui.close()
 assert ui._telemetry_font is None and not ui._window_open
@@ -172,7 +206,7 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-popup.png', args.output / 'hud-popup.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, inference_readout=True, driving_popup=True,
+                center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
                 diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

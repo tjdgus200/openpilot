@@ -5,7 +5,9 @@ import pytest
 import pyray as rl
 
 from openpilot.cereal import log
-from openpilot.common.hud_driving_feedback import DRIVING_POPUP_ENTER_SECONDS, STEERING_WARNING_SERVICES, pv5_steering_warning
+from openpilot.common.hud_driving_feedback import (
+  DRIVING_POPUP_ENTER_SECONDS, STEERING_WARNING_SERVICES, DrivingNoticeTracker, driving_notice_events, pv5_steering_warning,
+)
 from openpilot.selfdrive.ui.onroad import pv5_driving_feedback as feedback
 from openpilot.selfdrive.ui.onroad.pv5_driving_feedback import (
   Pv5DrivingFeedbackOverlay, sample_deceleration_popup, sample_driving_feedback,
@@ -14,7 +16,7 @@ from openpilot.selfdrive.ui.onroad.pv5_driving_feedback import (
 
 class DrivingMessages:
   def __init__(self):
-    services = ('modelV2', 'longitudinalPlan', 'carrotMan', *STEERING_WARNING_SERVICES)
+    services = ('modelV2', 'longitudinalPlan', 'carrotMan', 'radarState', *STEERING_WARNING_SERVICES)
     self.messages = {name: log.Event.new_message().init(name) for name in services}
     self.seen = dict.fromkeys(services, True)
     self.alive = self.seen.copy()
@@ -151,6 +153,90 @@ def braking_messages():
   sm['longitudinalPlan'].cruiseTarget = 55.
   sm['longitudinalPlan'].aTarget = -.2
   return sm
+
+
+def test_notices_use_fresh_confirmed_states_and_keep_detection_separate_from_braking():
+  sm = braking_messages()
+  sm['carState'].canValid = True
+  sm['carState'].gearShifter = 'drive'
+  radar = sm['radarState']
+  radar.leadLeft.status = True
+  radar.leadLeft.dRel = 10.
+  radar.leadLeft.radar = True
+  assert driving_notice_events(sm, 100., started_frame=10) == ()
+
+  radar.leadCutInRisk.status = True
+  radar.leadCutInRisk.radar = True
+  radar.leadCutInRisk.dRel = 10.
+  sm['carrotMan'].vTurnSpeed = -65
+  assert driving_notice_events(sm, 100., started_frame=10) == ('cutin', 'curve')
+
+  sm['carControl'].latActive = True
+  sm['modelV2'].meta.laneChangeDirection = 'left'
+  sm['modelV2'].meta.laneChangeState = 'preLaneChange'
+  assert driving_notice_events(sm, 100.) == ('cutin', 'curve')
+  sm['modelV2'].meta.laneChangeState = 'laneChangeStarting'
+  assert driving_notice_events(sm, 100.) == ('cutin', 'laneChange', 'curve')
+
+  sm['longitudinalPlan'].longitudinalPlanSource = 'lead1'
+  radar.leadTwo.status = True
+  radar.leadTwo.dRel = 22.
+  radar.leadTwo.aLeadK = -.6
+  assert driving_notice_events(sm, 100.) == ('cutin', 'laneChange', 'leadBrake', 'curve')
+  sm['carState'].gasPressed = True
+  assert 'leadBrake' not in driving_notice_events(sm, 100.)
+  sm['carState'].gasPressed = False
+  sm['modelV2'].meta.laneChangeState = 'laneChangeFinishing'
+  assert 'laneChange' in driving_notice_events(sm, 100.)
+  sm['carControl'].latActive = False
+  assert 'laneChange' not in driving_notice_events(sm, 100.)
+  sm.logMonoTime['radarState'] -= 700_000_000
+  assert driving_notice_events(sm, 100.) == ('curve',)
+  assert driving_notice_events(sm, 100., started_frame=11) == ()
+  sm['carState'].gearShifter = 'park'
+  assert driving_notice_events(sm, 100.) == ()
+
+
+def test_notice_onset_priority_expiry_and_no_replay_behind_alerts():
+  tracker = DrivingNoticeTracker()
+  assert tracker.update(('curve',), 100.) == 'curve'
+  assert tracker.update(('cutin', 'laneChange', 'curve'), 100.1, decelerating=True) == 'cutin'
+  assert tracker.update(('laneChange', 'curve'), 100.2) is None
+  assert tracker.update(('laneChange', 'curve'), 100.3, blocked=True) is None
+  assert tracker.update(('laneChange', 'curve'), 100.4) is None
+  assert tracker.update((), 101.) is None
+  assert tracker.update(('laneChange',), 101.2) == 'laneChange'
+  for now in (101.6, 102., 102.4, 102.8, 103.1):
+    assert tracker.update(('laneChange',), now) == 'laneChange'
+  assert tracker.update(('laneChange',), 103.3) is None
+  assert tracker.update(('laneChange',), 103.5) is None
+
+
+def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):
+  sm = braking_messages()
+  state = SimpleNamespace(CP=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
+                          started=True, started_frame=10, sm=sm)
+  sm['carState'].canValid = True
+  sm['carState'].gearShifter = 'drive'
+  sm['carControl'].latActive = True
+  sm['modelV2'].meta.laneChangeDirection = 'left'
+  sm['modelV2'].meta.laneChangeState = 'preLaneChange'
+  overlay = Pv5DrivingFeedbackOverlay()
+  monkeypatch.setattr(feedback.time, 'monotonic', lambda: 100.)
+  monkeypatch.setattr(feedback, 'pv5_steering_warning', lambda *args, **kwargs: 0)
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda *_: None)
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
+  rect = rl.Rectangle(30, 30, 2100, 1020)
+  with patch.object(feedback, 'draw_text_ui_style') as label:
+    overlay.draw_popup(rect, None, state, None)
+    label.assert_not_called()
+    sm['modelV2'].meta.laneChangeState = 'laneChangeStarting'
+    overlay.draw_popup(rect, None, state, None)
+    assert label.call_args.args[0] == '자동 차선 변경 중'
+    sm['modelV2'].meta.laneChangeState = 'off'
+    label.reset_mock()
+    overlay.draw_popup(rect, None, state, None)
+    label.assert_not_called()
 
 
 def test_comma_deceleration_uses_active_plan_and_fresh_inputs():

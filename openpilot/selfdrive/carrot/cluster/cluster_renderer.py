@@ -17,7 +17,7 @@ import pyray as rl
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.common.hud_driving_feedback import (
-    DRIVING_POPUP_COLORS, STEERING_WARNING_TEXT, DrivingPopupSlide,
+    DRIVING_NOTICE_TEXT, DRIVING_POPUP_COLORS, STEERING_WARNING_TEXT, DrivingNoticeTracker, DrivingPopupSlide,
     lane_confidence_score, lane_confidence_grade, lane_probability_text,
 )
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
@@ -931,6 +931,7 @@ class ClusterUiRenderer:
         self.is_metric = bool(is_metric)
         self._theme = current_cluster_theme(self.theme_mode)
         self._popup_slide = DrivingPopupSlide()
+        self._driving_notices = DrivingNoticeTracker()
         self.hidden = False
         self._nav_model_texture = None
         self._nav_model_checked = 0.
@@ -3954,7 +3955,10 @@ class ClusterUiRenderer:
         self._profile_add("hud.push_scale", profile_stage)
         try:
             screen_mode = self._effective_screen_mode(state)
-            if self._charging_dashboard_visible(state):
+            charging_dashboard = self._charging_dashboard_visible(state)
+            if charging_dashboard or screen_mode in (CLUSTER_SCREEN_MODE_NAVI, CLUSTER_SCREEN_MODE_DEBUG_GRAPH):
+                self._driving_notices.update(getattr(state, "driving_notices", ()), time.monotonic(), blocked=True)
+            if charging_dashboard:
                 self._popup_slide.reset()
                 self._draw_battery_panel(state)
                 self._draw_charging_detail(state)
@@ -7543,14 +7547,18 @@ class ClusterUiRenderer:
         return GREEN
 
     def _draw_driving_popup(self, state: ClusterUiState, screen_mode: int) -> bool:
+        now = time.monotonic()
         warning = state.steering_warning
-        text = STEERING_WARNING_TEXT.get(warning) or state.deceleration_banner
-        if not text or (state.alert is not None and state.alert.size > 0):
+        vehicle_alert = state.alert is not None and state.alert.size > 0
+        notice = self._driving_notices.update(state.driving_notices, now, blocked=bool(warning or vehicle_alert),
+                                              decelerating=bool(state.deceleration_banner))
+        text = STEERING_WARNING_TEXT.get(warning) or DRIVING_NOTICE_TEXT.get(notice) or state.deceleration_banner
+        if not text or vehicle_alert:
             self._popup_slide.reset()
             return False
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
         width, height, settled_top = (620 if warning == 2 else 500), 76, 82
-        top = self._popup_slide.top(time.monotonic(), settled_top, height, urgent=warning == 2)
+        top = self._popup_slide.top(now, settled_top, height, urgent=warning == 2)
         left = center_x - width * 0.5
         background, accent = DRIVING_POPUP_COLORS[warning if warning in STEERING_WARNING_TEXT else 0]
         # Reveal below the clock and status row while the popup is moving.

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pyray as rl
 from openpilot.common.constants import CV
 from openpilot.common.hud_driving_feedback import (
-  DRIVING_POPUP_COLORS, DrivingPopupSlide,
+  DRIVING_NOTICE_TEXT, DRIVING_POPUP_COLORS, DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events,
   LANE_CENTER_STATUS, STEERING_WARNING_TEXT, angle_steering_demand, lane_line_probabilities,
   lane_confidence_score, lane_confidence_grade, lane_probability_text, pv5_steering_warning,
 )
@@ -209,10 +209,15 @@ class Pv5DrivingFeedbackOverlay:
     self._started_frame = -1
     self._data = DrivingFeedback()
     self.popup_slide = DrivingPopupSlide()
+    self._driving_notices = DrivingNoticeTracker()
+    self._popup_started_frame = -1
+
+  def _pv5_started(self, ui_state) -> bool:
+    cp = ui_state.CP
+    return ui_state.started and cp is not None and not cp.notCar and cp.carFingerprint == 'KIA_PV5'
 
   def visible(self, ui_state) -> bool:
-    cp = ui_state.CP
-    return not self.warning and ui_state.started and cp is not None and not cp.notCar and cp.carFingerprint == 'KIA_PV5'
+    return not self.warning and self._pv5_started(ui_state)
 
   def draw(self, rect, font, ui_state, *, right_reserved: int = 0) -> None:
     if not self.visible(ui_state):
@@ -229,13 +234,25 @@ class Pv5DrivingFeedbackOverlay:
       _draw_feedback(rect, font, self._data, self.compact)
 
   def draw_popup(self, rect, font, ui_state, set_speed_kph: float | None) -> None:
-    if not self.visible(ui_state):
+    if not self._pv5_started(ui_state):
       self.popup_slide.reset()
+      self._driving_notices.reset()
       return
     now = time.monotonic()
     sm, started_frame = ui_state.sm, ui_state.started_frame
+    if started_frame != self._popup_started_frame:
+      self._popup_started_frame = started_frame
+      self._driving_notices.reset()
+      self.popup_slide.reset()
+    events = driving_notice_events(sm, now, started_frame=started_frame)
+    if self.warning:
+      self._driving_notices.update(events, now, blocked=True)
+      self.popup_slide.reset()
+      return
     warning = pv5_steering_warning(sm, now, cp=ui_state.CP, started_frame=started_frame)
-    text = STEERING_WARNING_TEXT.get(warning) or sample_deceleration_popup(sm, started_frame, now, set_speed_kph)
+    deceleration = None if warning else sample_deceleration_popup(sm, started_frame, now, set_speed_kph)
+    notice = self._driving_notices.update(events, now, blocked=bool(warning), decelerating=bool(deceleration))
+    text = STEERING_WARNING_TEXT.get(warning) or DRIVING_NOTICE_TEXT.get(notice) or deceleration
     if not text:
       self.popup_slide.reset()
       return

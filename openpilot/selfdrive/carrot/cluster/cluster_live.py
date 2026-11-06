@@ -44,7 +44,9 @@ if OPENPILOT_ROOT is not None:
     package_root = OPENPILOT_ROOT.parent if (OPENPILOT_ROOT / "__init__.py").is_file() else OPENPILOT_ROOT
     sys.path.insert(0, str(package_root))
 
-from openpilot.common.hud_driving_feedback import angle_steering_demand, lane_line_probabilities, pv5_steering_warning
+from openpilot.common.hud_driving_feedback import (
+    angle_steering_demand, driving_notice_events, lane_line_probabilities, pv5_steering_warning,
+)
 from openpilot.selfdrive.carrot.deceleration_source import (
     deceleration_banner_text, deceleration_source_presentation, external_navigation_connected,
 )
@@ -470,7 +472,12 @@ class OpenpilotLiveSource:
         left_lane_probability = right_lane_probability = None
         deceleration_banner = None
         steering_warning = 0
+        notices = ()
         if onroad:
+            cp = self._service_data("carParams")
+            if (self._service_valid("carParams") and safe_get(cp, "carFingerprint") == "KIA_PV5"
+                    and not safe_get(cp, "notCar", True)):
+                notices = driving_notice_events(self.sm, now)
             remote_warning = getattr(self.sm, "steering_warning", None)
             steering_warning = pv5_steering_warning(self.sm, now) if remote_warning is None else remote_warning
             if self._service_is_fresh("modelV2", now, 0.5):
@@ -494,6 +501,7 @@ class OpenpilotLiveSource:
             right_lane_probability=right_lane_probability,
             deceleration_banner=deceleration_banner,
             steering_warning=steering_warning,
+            driving_notices=notices,
             alert=self._live_cluster_alert(state.alert, onroad),
             egpu_active=getattr(self, "_egpu_active", False),
             external_compute_label=getattr(self, '_external_compute_label', ''),

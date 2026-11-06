@@ -10,6 +10,16 @@ DRIVING_POPUP_COLORS = {
   2: ((156, 18, 27, 255), (255, 78, 85, 255)),
 }
 DRIVING_POPUP_ENTER_SECONDS = 0.22
+DRIVING_NOTICE_SECONDS = 2.0
+DRIVING_NOTICE_REARM_SECONDS = 0.75
+DRIVING_NOTICE_TEXT = {
+  'cutin': '옆차 끼어들기 경계 중',
+  'laneChange': '자동 차선 변경 중',
+  'leadBrake': '앞차 감속 반영',
+  'curve': '전방 커브 접근',
+}
+DRIVING_NOTICE_PRIORITY = {name: rank for rank, name in enumerate(DRIVING_NOTICE_TEXT)}
+DRIVING_NOTICE_OVER_DECEL = ('cutin', 'laneChange')
 
 
 class DrivingPopupSlide:
@@ -27,6 +37,80 @@ class DrivingPopupSlide:
       self._entered = now
     remaining = max(0., 1. - (now - self._entered) / DRIVING_POPUP_ENTER_SECONDS)
     return top - height * .75 * remaining ** 3
+
+
+class DrivingNoticeTracker:
+  """Display one fresh event per onset and discard suppressed events."""
+  def __init__(self):
+    self.last_seen: dict[str, float] = {}
+    self.active: str | None = None
+    self.reset()
+
+  def reset(self) -> None:
+    self.last_seen.clear()
+    self.active = None
+    self.expires = 0.
+
+  def update(self, events: tuple[str, ...], now: float, *, blocked=False, decelerating=False) -> str | None:
+    visible = events
+    if blocked:
+      visible = ()
+    elif decelerating:
+      visible = tuple(event for event in events if event in DRIVING_NOTICE_OVER_DECEL)
+    if self.active not in visible or now >= self.expires:
+      self.active = None
+    for event in events:
+      last_seen = self.last_seen.get(event, -math.inf)
+      self.last_seen[event] = now
+      if (event in visible and now - last_seen >= DRIVING_NOTICE_REARM_SECONDS
+          and (self.active is None or DRIVING_NOTICE_PRIORITY[event] < DRIVING_NOTICE_PRIORITY[self.active])):
+        self.active = event
+        self.expires = now + DRIVING_NOTICE_SECONDS
+    return self.active
+
+
+def driving_notice_events(sm, now: float, *, started_frame: int | None = None) -> tuple[str, ...]:
+  """Read existing perception and planner states for display only."""
+  def current(service, limit):
+    if (sm.valid.get(service, False) and sm.alive.get(service, False)
+        and (started_frame is None or sm.recv_frame.get(service, -1) >= started_frame)
+        and 0 <= now - sm.recv_time.get(service, 0.) <= limit
+        and 0 <= now - sm.logMonoTime.get(service, 0) * 1e-9 <= limit):
+      return sm[service]
+    return None
+
+  car = current('carState', .3)
+  if car is None or not car.canValid or str(car.gearShifter) != 'drive':
+    return ()
+  radar = current('radarState', .5)
+  control = current('carControl', .3)
+  model = current('modelV2', .5)
+  events = []
+  if radar is not None:
+    def in_front(lead):
+      return lead.status and math.isfinite(lead.dRel) and lead.dRel > 0
+
+    risk = radar.leadCutInRisk
+    if (risk.radar and in_front(risk)) or any(lead.radar and in_front(lead) for lead in radar.leadsCutIn):
+      events.append('cutin')
+  if control is not None and control.latActive and model is not None:
+    if (str(model.meta.laneChangeState) in ('laneChangeStarting', 'laneChangeFinishing')
+        and str(model.meta.laneChangeDirection) in ('left', 'right')):
+      events.append('laneChange')
+  if radar is not None and control is not None and control.longActive and not car.gasPressed:
+    plan = current('longitudinalPlan', .5)
+    if plan is not None and math.isfinite(plan.aTarget) and plan.aTarget < -.1:
+      source = str(plan.longitudinalPlanSource)
+      lead = radar.leadOne if source == 'lead0' else radar.leadTwo if source == 'lead1' else None
+      if lead is not None and in_front(lead) and math.isfinite(lead.aLeadK) and lead.aLeadK < -.2:
+        events.append('leadBrake')
+  carrot = current('carrotMan', 1.)
+  if model is not None and carrot is not None and math.isfinite(car.vEgo):
+    ratio = car.vCluRatio if .5 < car.vCluRatio <= 1.2 else 1.
+    curve_kph = abs(carrot.vTurnSpeed)
+    if 0 < curve_kph < 250 and car.vEgo * 3.6 / ratio >= curve_kph + 5.:
+      events.append('curve')
+  return tuple(events)
 
 
 LANE_CENTER_STATUS = {

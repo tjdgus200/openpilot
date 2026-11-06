@@ -1,5 +1,12 @@
 # Repository memory
 
+- 2026-11-06 PV5 driving notices on Jetson HUD and comma 3/3X use existing
+  fresh radar, model, Carrot, and planner messages. Keep cut-in observation,
+  active assisted lane change, lead braking response, and curve approach
+  separate. Show one two-second notice per onset and discard suppressed
+  events. Require current valid D-gear data, preserve vehicle and steering
+  alert priority, and keep all notices out of control and model inputs.
+
 - 2026-11-06 PV5 driving popup: both Jetson HUD and comma 3/3X show larger
   deceleration and steering advisories with a 220 ms entrance. Keep the
   red driver-attention advisory immediate, vehicle alerts above popups,
