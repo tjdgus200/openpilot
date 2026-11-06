@@ -4,6 +4,29 @@ import math
 STEERING_WARNING_SERVICES = ('carParams', 'carControl', 'controlsState', 'carState',
                              'liveParameters', 'carOutput', 'driverMonitoringState')
 STEERING_WARNING_TEXT = {1: '조향 요구량 높음', 2: '전방 주시 · 조향 요구량 높음'}
+DRIVING_POPUP_COLORS = {
+  0: ((16, 25, 35, 250), (84, 103, 122, 255)),
+  1: ((77, 46, 9, 255), (255, 184, 66, 255)),
+  2: ((156, 18, 27, 255), (255, 78, 85, 255)),
+}
+DRIVING_POPUP_ENTER_SECONDS = 0.22
+
+
+class DrivingPopupSlide:
+  def __init__(self):
+    self.reset()
+
+  def reset(self) -> None:
+    self._entered = None
+
+  def top(self, now: float, top: float, height: float, *, urgent: bool) -> float:
+    if urgent:
+      self._entered = now - DRIVING_POPUP_ENTER_SECONDS
+      return top
+    if self._entered is None:
+      self._entered = now
+    remaining = max(0., 1. - (now - self._entered) / DRIVING_POPUP_ENTER_SECONDS)
+    return top - height * .75 * remaining ** 3
 
 
 LANE_CENTER_STATUS = {

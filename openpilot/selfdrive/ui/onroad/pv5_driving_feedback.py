@@ -3,10 +3,13 @@ import time
 from dataclasses import dataclass
 
 import pyray as rl
+from openpilot.common.constants import CV
 from openpilot.common.hud_driving_feedback import (
+  DRIVING_POPUP_COLORS, DrivingPopupSlide,
   LANE_CENTER_STATUS, STEERING_WARNING_TEXT, angle_steering_demand, lane_line_probabilities,
   lane_confidence_score, lane_confidence_grade, lane_probability_text, pv5_steering_warning,
 )
+from openpilot.selfdrive.carrot.deceleration_source import deceleration_banner_text, deceleration_source_presentation
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
 
@@ -34,10 +37,14 @@ class DrivingFeedback:
     return lane_confidence_score(self.left_lane_probability, self.right_lane_probability)
 
 
+def _fresh(sm, name, started_frame: int, now: float, limit: float) -> bool:
+  return (sm.seen[name] and sm.alive[name] and sm.valid[name] and sm.recv_frame[name] >= started_frame
+          and 0.0 <= now - sm.recv_time[name] <= limit)
+
+
 def sample_driving_feedback(sm, started_frame: int, now: float, max_lateral_accel: float) -> DrivingFeedback:
   def fresh(name, limit):
-    return (sm.seen[name] and sm.alive[name] and sm.valid[name] and sm.recv_frame[name] >= started_frame
-            and 0.0 <= now - sm.recv_time[name] <= limit)
+    return _fresh(sm, name, started_frame, now, limit)
 
   model = sm['modelV2'] if fresh('modelV2', 0.5) else None
   left, right = lane_line_probabilities(model)
@@ -71,6 +78,21 @@ def sample_driving_feedback(sm, started_frame: int, now: float, max_lateral_acce
       steer = min(1.0, max(-1.0, torque))
 
   return DrivingFeedback(left, right, steer, center_label, center)
+
+
+def sample_deceleration_popup(sm, started_frame: int, now: float, set_speed_kph: float | None) -> str | None:
+  if set_speed_kph is None or not _fresh(sm, 'carControl', started_frame, now, .3) or not sm['carControl'].longActive:
+    return None
+  if not all(_fresh(sm, name, started_frame, now, limit)
+             for name, limit in (('carState', .3), ('longitudinalPlan', .5), ('carrotMan', 1.))):
+    return None
+  carrot, plan = sm['carrotMan'], sm['longitudinalPlan']
+  desired_speed = carrot.desiredSpeed
+  if not 0 < desired_speed < 200:
+    return None
+  label, _ = deceleration_source_presentation(carrot.desiredSource)
+  return deceleration_banner_text(label, sm['carState'].vEgo * CV.MS_TO_KPH, set_speed_kph,
+                                  desired_speed, plan.cruiseTarget, plan.aTarget)
 
 
 def _draw_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
@@ -186,6 +208,7 @@ class Pv5DrivingFeedbackOverlay:
     self._sampled = float('-inf')
     self._started_frame = -1
     self._data = DrivingFeedback()
+    self.popup_slide = DrivingPopupSlide()
 
   def visible(self, ui_state) -> bool:
     cp = ui_state.CP
@@ -205,16 +228,25 @@ class Pv5DrivingFeedbackOverlay:
     else:
       _draw_feedback(rect, font, self._data, self.compact)
 
-  def draw_steering_warning(self, rect, font, ui_state) -> None:
+  def draw_popup(self, rect, font, ui_state, set_speed_kph: float | None) -> None:
     if not self.visible(ui_state):
+      self.popup_slide.reset()
       return
-    warning = pv5_steering_warning(ui_state.sm, time.monotonic(), cp=ui_state.CP, started_frame=ui_state.started_frame)
-    if not warning:
+    now = time.monotonic()
+    sm, started_frame = ui_state.sm, ui_state.started_frame
+    warning = pv5_steering_warning(sm, now, cp=ui_state.CP, started_frame=started_frame)
+    text = STEERING_WARNING_TEXT.get(warning) or sample_deceleration_popup(sm, started_frame, now, set_speed_kph)
+    if not text:
+      self.popup_slide.reset()
       return
-    width, height, size = (260, 31, 19) if self.compact else (880, 104, 58)
+    width, height, size = (330, 42, 24) if self.compact else (1080, 136, 70)
+    scale = min(1., rect.width / (width + 40))
+    width, height, size = width * scale, height * scale, size * scale
     x = rect.x + (rect.width - width) / 2 - (15 if self.compact else 0)
-    y = rect.y + (4 if self.compact else 20)
-    background = rl.Color(156, 18, 27, 255) if warning == 2 else rl.Color(77, 46, 9, 255)
-    rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, height), 0.26, 8, background)
-    draw_text_ui_style(STEERING_WARNING_TEXT[warning], x + width / 2, y + height / 2, size, rl.WHITE,
+    y = self.popup_slide.top(now, rect.y + (6 if self.compact else 24), height, urgent=warning == 2)
+    background, accent = (rl.Color(*color) for color in DRIVING_POPUP_COLORS[warning])
+    box = rl.Rectangle(x, y, width, height)
+    rl.draw_rectangle_rounded(box, 0.26, 8, background)
+    rl.draw_rectangle_rounded_lines_ex(box, 0.26, 8, 2 * scale, accent)
+    draw_text_ui_style(text, x + width / 2, y + height / 2, size, rl.WHITE,
                        font=font, border_width=0, shadow_offset=0, align='center', y_offset=0)

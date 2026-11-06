@@ -16,7 +16,10 @@ import pyray as rl
 
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
-from openpilot.common.hud_driving_feedback import lane_confidence_score, lane_confidence_grade, lane_probability_text
+from openpilot.common.hud_driving_feedback import (
+    DRIVING_POPUP_COLORS, STEERING_WARNING_TEXT, DrivingPopupSlide,
+    lane_confidence_score, lane_confidence_grade, lane_probability_text,
+)
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
 from openpilot.selfdrive.carrot.signal_display import SignalDisplayReader, project_box
 from openpilot.selfdrive.carrot.lead_brake_lights import BrakeDisplayReader
@@ -927,6 +930,7 @@ class ClusterUiRenderer:
         self.language = normalize_cluster_language(language, default=CLUSTER_LANGUAGE_KO)
         self.is_metric = bool(is_metric)
         self._theme = current_cluster_theme(self.theme_mode)
+        self._popup_slide = DrivingPopupSlide()
         self.hidden = False
         self._nav_model_texture = None
         self._nav_model_checked = 0.
@@ -3951,6 +3955,7 @@ class ClusterUiRenderer:
         try:
             screen_mode = self._effective_screen_mode(state)
             if self._charging_dashboard_visible(state):
+                self._popup_slide.reset()
                 self._draw_battery_panel(state)
                 self._draw_charging_detail(state)
                 self._draw_status_footer(state)
@@ -3961,6 +3966,7 @@ class ClusterUiRenderer:
                 self._draw_status_footer(state)
                 return
             if screen_mode == CLUSTER_SCREEN_MODE_NAVI:
+                self._popup_slide.reset()
                 self._draw_navi_dashboard(state)
                 self._draw_status_footer(state)
                 return
@@ -3971,6 +3977,7 @@ class ClusterUiRenderer:
                 or (screen_mode == CLUSTER_SCREEN_MODE_DEFAULT and state.navi_dashboard is not None)
             )
             if screen_mode == CLUSTER_SCREEN_MODE_DEBUG_GRAPH:
+                self._popup_slide.reset()
                 profile_stage = self._profile_start()
                 self._draw_speed_block(state)
                 self._profile_add("hud.speed_block", profile_stage)
@@ -4305,8 +4312,8 @@ class ClusterUiRenderer:
                 )
                 self._profile_add("hud.navi_traffic", profile_stage)
             profile_stage = self._profile_start()
-            banner_visible = self._draw_deceleration_banner(state, screen_mode)
-            if not banner_visible or screen_mode != CLUSTER_SCREEN_MODE_FULLSCREEN_3D:
+            popup_visible = self._draw_driving_popup(state, screen_mode)
+            if not popup_visible or screen_mode != CLUSTER_SCREEN_MODE_FULLSCREEN_3D:
                 self._draw_center_clock(state, center_x=self._center_clock_x(screen_mode))
             self._profile_add("hud.center_clock", profile_stage)
         finally:
@@ -7535,21 +7542,30 @@ class ClusterUiRenderer:
             return theme.muted
         return GREEN
 
-    def _draw_deceleration_banner(self, state: ClusterUiState, screen_mode: int) -> bool:
-        from openpilot.common.hud_driving_feedback import STEERING_WARNING_TEXT
-
+    def _draw_driving_popup(self, state: ClusterUiState, screen_mode: int) -> bool:
         warning = state.steering_warning
         text = STEERING_WARNING_TEXT.get(warning) or state.deceleration_banner
         if not text or (state.alert is not None and state.alert.size > 0):
+            self._popup_slide.reset()
             return False
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
-        width, height, top = (500 if warning == 2 else 330), 54, 4
+        width, height, settled_top = (620 if warning == 2 else 500), 76, 82
+        top = self._popup_slide.top(time.monotonic(), settled_top, height, urgent=warning == 2)
         left = center_x - width * 0.5
-        background = (156, 18, 27, 255) if warning == 2 else (77, 46, 9, 255) if warning else (16, 25, 35, 245)
-        self._rounded_rect(left, top, width, height, 12, background, RED if warning == 2 else (84, 103, 122, 255), 2)
-        self._rounded_rect(left + 14, top + 13, 5, height - 26, 2, RED if warning == 2 else AMBER)
-        self._draw_text_with_stroke(text, center_x + 5, top + height * 0.5, 36,
-                                    WHITE if warning == 2 else (255, 241, 211), (5, 9, 12), 2, anchor="center", cache=True)
+        background, accent = DRIVING_POPUP_COLORS[warning if warning in STEERING_WARNING_TEXT else 0]
+        # Reveal below the clock and status row while the popup is moving.
+        entering = top < settled_top
+        if entering:
+            clip_y = round(settled_top * self.height / DESIGN_HEIGHT)
+            rl.begin_scissor_mode(0, clip_y, self.width, self.height - clip_y)
+        try:
+            self._rounded_rect(left, top, width, height, 16, background, accent, 2)
+            self._rounded_rect(left + 14, top + 17, 5, height - 34, 2, accent)
+            self._draw_text_with_stroke(text, center_x + 5, top + height * 0.5, 46,
+                                        WHITE, (5, 9, 12), 2, anchor="center", cache=True)
+        finally:
+            if entering:
+                rl.end_scissor_mode()
         return True
 
     def _draw_lane_confidence(self, state: ClusterUiState) -> None:

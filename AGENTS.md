@@ -1,5 +1,11 @@
 # Repository memory
 
+- 2026-11-06 PV5 driving popup: both Jetson HUD and comma 3/3X show larger
+  deceleration and steering advisories with a 220 ms entrance. Keep the
+  red driver-attention advisory immediate, vehicle alerts above popups,
+  stale or inactive deceleration hidden, and animation off during alerts.
+  Preserve the HUD status row and inference timing readout.
+
 - 2026-11-06 Jetson HUD inference readout: display TRT AVG/P99/MAX over
   10 seconds and the latest comma model call in milliseconds. Reuse the
   1 Hz HUD resource sampler, successful inference reply timings and existing

@@ -2,17 +2,19 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import pyray as rl
 
 from openpilot.cereal import log
-from openpilot.common.hud_driving_feedback import STEERING_WARNING_SERVICES, pv5_steering_warning
+from openpilot.common.hud_driving_feedback import DRIVING_POPUP_ENTER_SECONDS, STEERING_WARNING_SERVICES, pv5_steering_warning
+from openpilot.selfdrive.ui.onroad import pv5_driving_feedback as feedback
 from openpilot.selfdrive.ui.onroad.pv5_driving_feedback import (
-  Pv5DrivingFeedbackOverlay, sample_driving_feedback,
+  Pv5DrivingFeedbackOverlay, sample_deceleration_popup, sample_driving_feedback,
 )
 
 
 class DrivingMessages:
   def __init__(self):
-    services = ('modelV2', *STEERING_WARNING_SERVICES)
+    services = ('modelV2', 'longitudinalPlan', 'carrotMan', *STEERING_WARNING_SERVICES)
     self.messages = {name: log.Event.new_message().init(name) for name in services}
     self.seen = dict.fromkeys(services, True)
     self.alive = self.seen.copy()
@@ -138,3 +140,62 @@ def test_overlay_is_visible_only_onroad_on_a_real_pv5():
       overlay.draw(None, None, ui_state)
       large.assert_called_once()
       draw.assert_called_once()
+
+
+def braking_messages():
+  sm = DrivingMessages()
+  sm['carControl'].longActive = True
+  sm['carState'].vEgo = 20.
+  sm['carrotMan'].desiredSource = 'hda_bump'
+  sm['carrotMan'].desiredSpeed = 55.
+  sm['longitudinalPlan'].cruiseTarget = 55.
+  sm['longitudinalPlan'].aTarget = -.2
+  return sm
+
+
+def test_comma_deceleration_uses_active_plan_and_fresh_inputs():
+  sm = braking_messages()
+  assert sample_deceleration_popup(sm, 10, 100., 80.) == '방지턱 감속'
+  assert sample_deceleration_popup(sm, 10, 100., None) is None
+  assert sample_deceleration_popup(sm, 11, 100., 80.) is None
+  sm.recv_time['carrotMan'] = 98.
+  assert sample_deceleration_popup(sm, 10, 100., 80.) is None
+  sm.recv_time['carrotMan'] = 100.
+  sm['longitudinalPlan'].cruiseTarget = 50.
+  assert sample_deceleration_popup(sm, 10, 100., 80.) is None
+  sm['longitudinalPlan'].cruiseTarget = 55.
+  sm['carControl'].longActive = False
+  assert sample_deceleration_popup(sm, 10, 100., 80.) is None
+
+
+def test_popup_slides_once_and_urgent_or_vehicle_alert_takes_priority(monkeypatch):
+  state = SimpleNamespace(CP=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
+                          started=True, started_frame=10, sm=braking_messages())
+  overlay = Pv5DrivingFeedbackOverlay()
+  rect = rl.Rectangle(30, 30, 2100, 1020)
+  now, warning = 100., 0
+  frames = []
+  monkeypatch.setattr(feedback.time, 'monotonic', lambda: now)
+  monkeypatch.setattr(feedback, 'pv5_steering_warning', lambda *args, **kwargs: warning)
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda box, *_: frames.append((box.y, box.width, box.height)))
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
+  with patch.object(feedback, 'draw_text_ui_style') as label:
+    overlay.draw_popup(rect, None, state, 80.)
+    assert frames[-1] == (-48., 1080., 136.)
+    assert label.call_args.args[0] == '방지턱 감속'
+    now += DRIVING_POPUP_ENTER_SECONDS / 2
+    warning = 1
+    overlay.draw_popup(rect, None, state, 80.)
+    assert frames[-1][0] == pytest.approx(41.25)
+    assert label.call_args.args[0] == '조향 요구량 높음'
+    warning = 2
+    overlay.draw_popup(rect, None, state, 80.)
+    assert frames[-1][0] == 54.
+    assert label.call_args.args[0] == '전방 주시 · 조향 요구량 높음'
+    overlay.warning = True
+    overlay.draw_popup(rect, None, state, 80.)
+    assert len(frames) == 3
+    overlay.warning = False
+    warning = 1
+    overlay.draw_popup(rect, None, state, 80.)
+    assert frames[-1][0] == -48.

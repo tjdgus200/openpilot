@@ -25,6 +25,7 @@ from dataclasses import replace
 import server,hud,hud_health,hud_protocol,boot_status
 from model_pin import read_spec
 from cluster_live import OpenpilotLiveSource,standby_state
+from cluster_models import ClusterAlert
 from openpilot.selfdrive.carrot import signal_mode
 from openpilot.common.performance_diagnostics import ENABLED
 assert not ENABLED and not server.PERF_DIAGNOSTICS
@@ -68,6 +69,24 @@ try:
  from PIL import Image
  picture=Image.open(sys.argv[2]).convert('RGB')
  assert picture.size==(1920,480) and len(picture.getcolors(1000000))>50
+ popup_path=Path(sys.argv[2]).with_name('hud-popup.png')
+ popup=replace(state,deceleration_banner='방지턱 감속',steering_warning=1)
+ anchor=(340,148)
+ ui.render_to_file(popup,popup_path)
+ assert Image.open(popup_path).convert('RGB').getpixel(anchor)!=(77,46,9)
+ ui._popup_slide.top(time.monotonic()-1.,82,76,urgent=True)
+ ui.render_to_file(popup,popup_path)
+ assert Image.open(popup_path).convert('RGB').getpixel(anchor)==(77,46,9)
+ ui._popup_slide.reset()
+ ui.render_to_file(replace(popup,steering_warning=2),popup_path)
+ assert Image.open(popup_path).convert('RGB').getpixel(anchor)==(156,18,27)
+ ui.render_to_file(replace(popup,steering_warning=2,alert=ClusterAlert('Vehicle warning',size=2)),popup_path)
+ assert Image.open(popup_path).convert('RGB').getpixel(anchor)!=(156,18,27)
+ ui.render_to_file(replace(state,deceleration_banner='방지턱 감속'),popup_path)
+ ui._popup_slide.top(time.monotonic()-1.,82,76,urgent=True)
+ ui.render_to_file(replace(state,deceleration_banner='방지턱 감속'),popup_path)
+ pixel=Image.open(popup_path).convert('RGB').getpixel(anchor)
+ assert max(abs(a-b) for a,b in zip(pixel,(16,25,35),strict=True))<=2
 finally:
  ui.close()
 assert ui._telemetry_font is None and not ui._window_open
@@ -150,9 +169,11 @@ def main(argv=None):
                            result.stderr.decode('utf-8', errors='replace')[-2000:])
     # Native raylib cannot export to all Unicode paths on Windows.
     shutil.copyfile(root / 'hud-native.png', args.output / 'hud.png')
+    shutil.copyfile(root / 'hud-popup.png', args.output / 'hud-popup.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, inference_readout=True, diagnostics_off=True, physical_device_tested=False,
+                center_and_lane_snapshot=True, inference_readout=True, driving_popup=True,
+                diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
   print(json.dumps(report))

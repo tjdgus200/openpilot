@@ -312,6 +312,7 @@ class HudRenderer(Widget):
   def _render(self, rect: rl.Rectangle) -> None:
     """Render HUD elements to the screen."""
     if self._obd_debug.draw(rect, self._font_semi_bold, ui_state):
+      self._driving_feedback.popup_slide.reset()
       return
     state = self._overlay_state
     key = (state.key if state else None, self._traffic_light_info, self._can_draw_top_icons, self._show_wheel_critical,
@@ -324,7 +325,8 @@ class HudRenderer(Widget):
     badge_width = min(500, rect.width * .62)
     draw_indicator(rect.x + (rect.width-badge_width)/2, rect.y+rect.height*.16,
                    badge_width, self._font_display, 26 if rect.width > 1200 else 19)
-    self._driving_feedback.draw_steering_warning(rect, self._font_display, ui_state)
+    self._driving_feedback.draw_popup(rect, self._font_display, ui_state,
+                                      self.set_speed if self._engaged and self.is_cruise_set else None)
 
   def _paint(self, rect: rl.Rectangle) -> None:
 
