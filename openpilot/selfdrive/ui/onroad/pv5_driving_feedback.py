@@ -5,9 +5,8 @@ from dataclasses import dataclass
 import pyray as rl
 from openpilot.common.constants import CV
 from openpilot.common.hud_driving_feedback import (
-  DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_notice_text,
-  driving_popup_colors, driving_popup_motion,
-  LANE_CENTER_STATUS, STEERING_WARNING_TEXT, angle_steering_demand, lane_line_probabilities,
+  DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_popup_colors,
+  LANE_CENTER_STATUS, angle_steering_demand, lane_line_probabilities,
   lane_confidence_score, lane_confidence_grade, lane_probability_text, pv5_steering_warning,
 )
 from openpilot.selfdrive.carrot.deceleration_source import deceleration_banner_text, deceleration_source_presentation
@@ -250,13 +249,13 @@ class Pv5DrivingFeedbackOverlay:
     deceleration = None if warning else sample_deceleration_popup(sm, started_frame, now, set_speed_kph)
     notice = self._driving_notices.update(events, now, blocked=bool(warning), decelerating=bool(deceleration))
     curve_speed = sm['carrotMan'].vTurnSpeed if notice == 'curve' else None
-    text = STEERING_WARNING_TEXT.get(warning) or driving_notice_text(notice, curve_speed) or deceleration
-    if not text:
-      self.popup_slide.reset()
-      return
     direction = str(sm['modelV2'].meta.laneChangeDirection) if notice == 'laneChange' else None
     decel_label = deceleration_source_presentation(sm['carrotMan'].desiredSource)[0] if deceleration else None
-    motion = driving_popup_motion(notice, decel_label, direction) if not warning else None
+    popup = self.popup_slide.update(now, warning=warning, notice=notice, curve_speed=curve_speed,
+                                   deceleration=deceleration, decel_label=decel_label, lane_direction=direction)
+    if popup is None:
+      return
+    text, warning, motion = popup.text, popup.warning, popup.motion
     dots = self.popup_slide.motion_dots(motion, now)
     title, _, detail = text.partition('\n')
     if detail:

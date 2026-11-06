@@ -18,8 +18,7 @@ from openpilot.common.hud_attention_icon import DriverAttentionIcon, draw_driver
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.common.hud_driving_feedback import (
-    STEERING_WARNING_TEXT, DrivingNoticeTracker, DrivingPopupSlide,
-    driving_notice_text, driving_popup_colors, driving_popup_motion,
+    DrivingNoticeTracker, DrivingPopupSlide, driving_popup_colors,
     lane_confidence_score, lane_confidence_grade, lane_probability_text,
 )
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
@@ -7557,16 +7556,18 @@ class ClusterUiRenderer:
     def _draw_driving_popup(self, state: ClusterUiState, screen_mode: int) -> bool:
         now = time.monotonic()
         warning = state.steering_warning
-        vehicle_alert = state.alert is not None and state.alert.size > 0
-        notice = self._driving_notices.update(state.driving_notices, now, blocked=bool(warning or vehicle_alert),
+        blocked = not state.onroad or (state.alert is not None and state.alert.size > 0)
+        notice = self._driving_notices.update(state.driving_notices, now, blocked=bool(warning or blocked),
                                               decelerating=bool(state.deceleration_banner))
-        text = (STEERING_WARNING_TEXT.get(warning) or driving_notice_text(notice, state.curve_approach_speed_kph)
-                or state.deceleration_banner)
-        if not text or vehicle_alert:
+        if blocked:
             self._popup_slide.reset()
             return False
-        decel_label = state.cruise_override_label if state.deceleration_banner else None
-        motion = driving_popup_motion(notice, decel_label, state.driving_lane_change_direction) if not warning else None
+        popup = self._popup_slide.update(now, warning=warning, notice=notice, curve_speed=state.curve_approach_speed_kph,
+                                        deceleration=state.deceleration_banner, decel_label=state.cruise_override_label,
+                                        lane_direction=state.driving_lane_change_direction)
+        if popup is None:
+            return False
+        text, warning, motion = popup.text, popup.warning, popup.motion
         dots = self._popup_slide.motion_dots(motion, now)
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
         title, _, detail = text.partition("\n")

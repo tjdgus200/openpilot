@@ -8,7 +8,7 @@ from openpilot.cereal import log
 from openpilot.common.hud_attention_icon import DriverAttentionIcon
 from openpilot.common.hud_driving_feedback import (
   DRIVING_POPUP_ENTER_SECONDS, DRIVING_POPUP_MOTION_SECONDS, STEERING_WARNING_SERVICES,
-  DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_popup_colors, driving_popup_motion,
+  DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_notice_text, driving_popup_colors, driving_popup_motion,
   pv5_steering_warning,
 )
 from openpilot.selfdrive.ui.onroad import pv5_driving_feedback as feedback
@@ -268,7 +268,8 @@ def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):
   sm['modelV2'].meta.laneChangeDirection = 'left'
   sm['modelV2'].meta.laneChangeState = 'preLaneChange'
   overlay = Pv5DrivingFeedbackOverlay()
-  monkeypatch.setattr(feedback.time, 'monotonic', lambda: 100.)
+  now = 100.
+  monkeypatch.setattr(feedback.time, 'monotonic', lambda: now)
   monkeypatch.setattr(feedback, 'pv5_steering_warning', lambda *args, **kwargs: 0)
   monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda *_: None)
   monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
@@ -281,6 +282,14 @@ def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):
     overlay.draw_popup(rect, None, state, None)
     assert label.call_args.args[0] == '자동 차선 변경 중'
     sm['modelV2'].meta.laneChangeState = 'off'
+    now = 100.30
+    overlay.draw_popup(rect, None, state, None)
+    assert label.call_args.args[0] == '자동 차선 변경 중'
+    assert label.call_args.args[2] == 122.
+    now = 101.29
+    overlay.draw_popup(rect, None, state, None)
+    assert label.call_args.args[0] == '자동 차선 변경 중'
+    now = 101.30
     label.reset_mock()
     overlay.draw_popup(rect, None, state, None)
     label.assert_not_called()
@@ -336,7 +345,7 @@ def test_curve_popup_uses_applied_plan_target(source):
   sm['carrotMan'].desiredSource = source
   sm['carrotMan'].vTurnSpeed = -45
   assert sample_deceleration_popup(sm, 10, 100., 80.) == '커브 감속 중\n목표 55 km/h'
-  assert feedback.driving_notice_text('curve', -45) == '전방 커브 접근\n예상 45 km/h'
+  assert driving_notice_text('curve', -45) == '전방 커브 접근\n예상 45 km/h'
 
 
 def test_popup_slides_once_and_urgent_or_vehicle_alert_takes_priority(monkeypatch):
@@ -367,10 +376,26 @@ def test_popup_slides_once_and_urgent_or_vehicle_alert_takes_priority(monkeypatc
     assert frames[-1][0] == 54.
     assert label.call_args.args[0] == '전방 주시, 조향 요구량 높음'
     assert len(dots) == 12
-    overlay.warning = True
-    overlay.draw_popup(rect, None, state, 80.)
-    assert len(frames) == 3
-    overlay.warning = False
     warning = 1
     overlay.draw_popup(rect, None, state, 80.)
+    assert label.call_args.args[0] == '전방 주시, 조향 요구량 높음'
+    overlay.warning = True
+    overlay.draw_popup(rect, None, state, 80.)
+    assert len(frames) == 4
+    overlay.warning = False
+    overlay.draw_popup(rect, None, state, 80.)
     assert frames[-1][0] == -48.
+
+
+def test_popup_hold_does_not_restart_for_updated_distance_or_queue_lower_priority():
+  slide = DrivingPopupSlide()
+  slide.update(100., deceleration='카메라 감속 중\n250 m 남음', decel_label='cam')
+  assert slide.top(100., 24., 100., urgent=False) < 24.
+  assert slide.update(100.1, deceleration='카메라 감속 중\n240 m 남음', decel_label='cam').text.endswith('240 m 남음')
+  assert slide.update(100.12, notice='curve').motion == 'camera'
+  assert slide.top(100.3, 24., 100., urgent=False) == 24.
+  assert slide.update(101., deceleration='카메라 감속 중\n200 m 남음', decel_label='cam').text.endswith('200 m 남음')
+  assert slide.top(101., 24., 100., urgent=False) == 24.
+  assert slide.update(101.29).motion == 'camera'
+  assert slide.update(101.30) is None
+  assert slide.update(101.40) is None

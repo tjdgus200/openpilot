@@ -1,5 +1,9 @@
 # Repository memory
 
+- Keep PV5 driving popups visible for one second from the first fully
+  settled frame. Higher-priority popups and vehicle alerts preempt immediately.
+  Clear held popups offroad, and refresh text within the hold without extending it.
+
 - Existing driver-distraction and unresponsive alerts show an opaque triangle
   with an exclamation mark in comma 3/3X and Jetson HUD. Draw it on the first
   frame and settle it once in 360 ms. Keep the original warning text, sound,

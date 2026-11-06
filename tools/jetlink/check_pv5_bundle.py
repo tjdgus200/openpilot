@@ -119,6 +119,7 @@ try:
  ui.render_to_file(replace(state,driving_notices=notices),popup_path)
  assert DRIVING_NOTICE_TEXT['cutin'] in texts and DRIVING_NOTICE_TEXT['laneChange'] not in texts
  ui._driving_notices.reset()
+ ui._popup_slide.reset()
  texts.clear()
  ui.render_to_file(replace(state,driving_notices=('laneChange',)),popup_path)
  assert DRIVING_NOTICE_TEXT['laneChange'] in texts
@@ -137,6 +138,8 @@ try:
  assert braking.deceleration_banner==camera_title+'\\n250 m 남음'
  assert ui._measure_text(camera_title,40)[0] < 620
  ui._driving_notices.reset()
+ ui._popup_slide.reset()
+ ui._popup_slide.top(time.monotonic()-1.,82,112,urgent=True)
  texts.clear()
  ui.render_to_file(replace(braking,driving_notices=()),camera_path)
  assert camera_title in texts
@@ -155,6 +158,16 @@ try:
  assert attention.text1 in texts and attention.text2 in texts and camera_title not in texts
  with Image.open(attention_path) as frame:
   assert (255,225,91) in frame.convert('RGB').crop((470,55,650,175)).getdata()
+ from unittest.mock import patch
+ camera_state=replace(braking,driving_notices=())
+ expired_state=replace(camera_state,deceleration_banner=None)
+ with patch('time.monotonic',return_value=1000.):
+  ui.render_to_file(camera_state,popup_path)
+ for now,visible in ((1000.10,True),(1000.30,True),(1001.29,True),(1001.31,False)):
+  texts.clear()
+  with patch('time.monotonic',return_value=now):
+   ui.render_to_file(expired_state,popup_path)
+  assert (camera_title in texts)==visible, (now,texts)
 finally:
  ui.close()
 assert ui._telemetry_font is None and not ui._window_open
@@ -243,7 +256,7 @@ def main(argv=None):
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
                 center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
-                deceleration_details=True, driver_attention_icon=True,
+                deceleration_details=True, driver_attention_icon=True, popup_hold=True,
                 diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
