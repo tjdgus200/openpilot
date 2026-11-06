@@ -191,7 +191,7 @@ def test_popup_slides_once_and_urgent_or_vehicle_alert_takes_priority(monkeypatc
     warning = 2
     overlay.draw_popup(rect, None, state, 80.)
     assert frames[-1][0] == 54.
-    assert label.call_args.args[0] == '전방 주시 · 조향 요구량 높음'
+    assert label.call_args.args[0] == '전방 주시, 조향 요구량 높음'
     overlay.warning = True
     overlay.draw_popup(rect, None, state, 80.)
     assert len(frames) == 3

@@ -3,7 +3,7 @@ import math
 
 STEERING_WARNING_SERVICES = ('carParams', 'carControl', 'controlsState', 'carState',
                              'liveParameters', 'carOutput', 'driverMonitoringState')
-STEERING_WARNING_TEXT = {1: '조향 요구량 높음', 2: '전방 주시 · 조향 요구량 높음'}
+STEERING_WARNING_TEXT = {1: '조향 요구량 높음', 2: '전방 주시, 조향 요구량 높음'}
 DRIVING_POPUP_COLORS = {
   0: ((16, 25, 35, 250), (84, 103, 122, 255)),
   1: ((77, 46, 9, 255), (255, 184, 66, 255)),
