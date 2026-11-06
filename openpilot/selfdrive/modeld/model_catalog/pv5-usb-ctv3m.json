@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-popup-hold-ctv3m-20261107-d14e64bc",
-  "source_commit": "d14e64bceab7caef50b46a694b81a94ff015476a",
+  "profile": "jetson-pv5-popup-exit-ctv3m-20261107-069bd377",
+  "source_commit": "069bd37788cd0052349232d925698af1e3b619d5",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-popup-hold-ctv3m-20261107-d14e64bc/host.tar.gz",
-    "sha256": "3647550c245c90dce3d7b36b962da93d3322d29bcf07a6d0f86508384ca9d35d",
-    "size": 65270900
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-popup-exit-ctv3m-20261107-069bd377/host.tar.gz",
+    "sha256": "2a53930ce43865c2c7b1419c86c8e41104990a228d91bb2f2e748801433ffa8c",
+    "size": 65270869
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",

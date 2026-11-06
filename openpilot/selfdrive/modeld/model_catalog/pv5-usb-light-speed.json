@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-popup-hold-light-speed-20261107-410d4802",
-  "source_commit": "410d480225c6823774316e106eab03a6148d6826",
+  "profile": "jetson-pv5-popup-exit-light-speed-20261107-05823cab",
+  "source_commit": "05823cabfc79232bdce14292df11163a9e4d83bd",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-popup-hold-light-speed-20261107-410d4802/host.tar.gz",
-    "sha256": "0da0660e2dfe9b13114222e6b3babbae2d985b162fdc12840efdf7e3f8a03f19",
-    "size": 65270175
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-popup-exit-light-speed-20261107-05823cab/host.tar.gz",
+    "sha256": "af2ca64cb15245c72d3e19f844c3262e3137cebfc5a79d4734f354d1fe3b249c",
+    "size": 65270960
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
