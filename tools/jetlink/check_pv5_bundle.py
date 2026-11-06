@@ -64,6 +64,7 @@ try:
  ui.render_to_file(state,Path(sys.argv[2]))
  assert 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms' in lines['infer']
  assert '| COMMA 40.0 ms' in lines['infer']
+ assert sum(ui._runtime_line_layouts['infer'][2]) < 520
  from PIL import Image
  picture=Image.open(sys.argv[2]).convert('RGB')
  assert picture.size==(1920,480) and len(picture.getcolors(1000000))>50

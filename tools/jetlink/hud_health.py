@@ -358,8 +358,9 @@ class HealthRenderer(ClusterUiRenderer):
         from hud_runtime_stats import inference_segments
         call = getattr(self, '_model_call', None)
         comma_ms = call[0] if call and time.monotonic() < call[1] else None
+        right_margin = 208 if self._panel_swap_active() else 24
         self._draw_runtime_line(inference_segments(self._host_metrics(), comma_ms=comma_ms, include_comma=True),
-                                DESIGN_WIDTH - 208, 28, 520, 18, 'infer')
+                                DESIGN_WIDTH - right_margin, 28, 520, 18, 'infer')
       if message and not vehicle_alert:
         rl.draw_rectangle(0, 0, int(DESIGN_WIDTH), 32, rl_color((0, 0, 0), 220))
         self._draw_text(self._ellipsize_text(message, 22, DESIGN_WIDTH - 40),
