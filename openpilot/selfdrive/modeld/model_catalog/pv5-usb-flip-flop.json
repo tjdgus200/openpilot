@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-decel-popups-flip-flop-20261106-a8deb718",
-  "source_commit": "a8deb71898f9c20bf8be4396a68382466c0ba048",
+  "profile": "jetson-pv5-driver-attention-flip-flop-20261106-eeb1ffc6",
+  "source_commit": "eeb1ffc6e7c3f6f1ee9cd3207df9d92f30ef368f",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-decel-popups-flip-flop-20261106-a8deb718/host.tar.gz",
-    "sha256": "7d132c68a16334aa37fdf0840ac0c68c7db3e7835476201a5f65c0cc6c2c9ddf",
-    "size": 65265978
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-driver-attention-flip-flop-20261106-eeb1ffc6/host.tar.gz",
+    "sha256": "755b09d301069563986dfcee7f61bb282977338cc634689c2f8900aecc57531e",
+    "size": 65269803
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",

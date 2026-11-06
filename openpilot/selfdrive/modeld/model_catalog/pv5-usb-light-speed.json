@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-decel-popups-light-speed-20261106-fc0e3bd9",
-  "source_commit": "fc0e3bd9c613c1f572d45f822b6646ebdc373f26",
+  "profile": "jetson-pv5-driver-attention-light-speed-20261106-a81f6708",
+  "source_commit": "a81f6708b541f67b928fcec6196b9d895e1b4fb1",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-decel-popups-light-speed-20261106-fc0e3bd9/host.tar.gz",
-    "sha256": "99e41634e499ab6f7889172a153832d2ed97ac71939e88969c4470b4124744eb",
-    "size": 65266235
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-driver-attention-light-speed-20261106-a81f6708/host.tar.gz",
+    "sha256": "eee3735d2eb0df25143e3766628772fb3e0e1a621d37e8a5868d98d0c5bc3ed6",
+    "size": 65268975
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
