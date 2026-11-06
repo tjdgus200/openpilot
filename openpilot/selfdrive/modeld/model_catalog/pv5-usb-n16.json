@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-driver-attention-n16-20261106-262d422e",
-  "source_commit": "262d422ec377f81b9b480cc9c89eae6d7c57dd07",
+  "profile": "jetson-pv5-popup-hold-n16-20261107-e0f91348",
+  "source_commit": "e0f91348a66e42668f9d1d7c70e9ec4471fe8aa7",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-driver-attention-n16-20261106-262d422e/host.tar.gz",
-    "sha256": "cf4753aa80bd753654bce3b13cf1522812feffbda10ec006283bc3c3360a63e0",
-    "size": 65269739
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-popup-hold-n16-20261107-e0f91348/host.tar.gz",
+    "sha256": "d8b3dbf7d89458e9119e41373800c4ee6c72fdfcf3e0061f7d132fd030414ed7",
+    "size": 65270807
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

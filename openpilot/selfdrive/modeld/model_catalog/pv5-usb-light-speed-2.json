@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-driver-attention-light-speed-2-20261106-05d2b5e7",
-  "source_commit": "05d2b5e7fa21d117cdabe006984a5c242656de29",
+  "profile": "jetson-pv5-popup-hold-light-speed-2-20261107-fac8ec36",
+  "source_commit": "fac8ec361309eb1b4bf3f18e91c23172cc8debc2",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-driver-attention-light-speed-2-20261106-05d2b5e7/host.tar.gz",
-    "sha256": "24754fe37319748bdfe11a14887e0e5e5c31f0142f6dd15070a1222b76cb86f1",
-    "size": 65269215
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-popup-hold-light-speed-2-20261107-fac8ec36/host.tar.gz",
+    "sha256": "caf933cbb29cb5ef52ab285c26a01781370e27e0fca885dd8cc3956b7b22e293",
+    "size": 65270886
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/ea306f534159ac9a3caab0ac3bd4a5f82f9cd805/ea2f516f-f758-42be-a245-913bb818a64f/32768/big_driving_supercombo.onnx",
