@@ -1,3 +1,6 @@
+import math
+
+
 EXTERNAL_NAVI_SOURCES = frozenset((
   "cam", "section", "bump", "police", "waze", "road", "atc", "atc2", "route",
 ))
@@ -67,14 +70,27 @@ DECELERATION_BANNER_LABELS = {
 }
 
 
-def deceleration_banner_text(label, speed, set_speed, desired_speed, plan_target, acceleration):
+def deceleration_banner_text(carrot, speed, set_speed, plan_target, acceleration):
+  label, _ = deceleration_source_presentation(carrot.desiredSource)
   text = DECELERATION_BANNER_LABELS.get(label)
-  if text is None or None in (set_speed, desired_speed, plan_target, acceleration):
+  desired_speed = carrot.desiredSpeed
+  if text is None or not all(value is not None and math.isfinite(value)
+                             for value in (speed, set_speed, desired_speed, plan_target, acceleration)):
     return None
-  if (0 < desired_speed < set_speed - 0.5 and abs(plan_target - desired_speed) <= 0.5
-      and speed > plan_target + 0.5 and acceleration < -0.05):
-    return text
-  return None
+  if not (0 < desired_speed < min(200, set_speed - 0.5) and abs(plan_target - desired_speed) <= 0.5
+          and speed > plan_target + 0.5 and acceleration < -0.05):
+    return None
+
+  if label in ("cam", "waze"):
+    target = getattr(carrot, "decelCameraTargetKph", 0)
+    if 0 < target < 200:
+      distance = getattr(carrot, "decelCameraDistanceM", 0)
+      if distance > 0:
+        return f"과속카메라 단속 {target:.0f} km/h 감속 중\n{distance:.0f} m 남음"
+      return f"과속카메라 감속 중\n목표 {target:.0f} km/h"
+  elif label in ("vturn", "route"):
+    text = f"커브 감속 중\n목표 {desired_speed:.0f} km/h"
+  return text
 
 
 def navigation_status_presentation(vehicle_available: bool, external_active: bool) -> tuple[str, int] | None:

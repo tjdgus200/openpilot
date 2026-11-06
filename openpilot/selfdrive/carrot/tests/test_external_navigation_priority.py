@@ -66,6 +66,7 @@ def test_rear_camera_holds_through_pass_and_releases_by_traveled_distance(naviga
   result = update(20)
   assert result.xSpdDist == 0  # Countdown ends at the camera, not at hold release.
   assert (result.desiredSource, result.desiredSpeed) == ("cam", 50)
+  assert (result.decelCameraTargetKph, result.decelCameraDistanceM) == (50, 0)
   assert "100m" in result.szSdiDescr
   for _ in range(10):
     assert update(20).desiredSpeed == 50  # Stopping does not consume the hold.
@@ -99,6 +100,7 @@ def test_rear_hold_disconnect_resumes_stock_control(navigation_update):
   serv.active_count = 1
   result = update(20)
   assert (result.desiredSource, result.desiredSpeed) == ("hda", 30)
+  assert (result.decelCameraTargetKph, result.decelCameraDistanceM) == (30, 10)
   assert not serv.rear_camera_events
 
 
@@ -183,3 +185,18 @@ def test_connected_external_camera_wins_over_closer_stock_bump(navigation_update
   assert (result.desiredSource, result.desiredSpeed) == ("cam", 60)
   assert result.xSpdCountDown == 2
   assert result.nRoadLimitSpeed == 30
+
+
+def test_camera_display_uses_the_selected_endpoint_and_clears_on_source_change(navigation_update):
+  serv, CS, update = navigation_update
+  serv.active_count, serv.active_sdi_count = 80, 200
+  serv.xSpdType, serv.xSpdLimit, serv.xSpdDist = 1, 50, 250
+  CS.speedLimit, CS.speedLimitDistance = 30, 10
+  result = update()
+  assert result.desiredSource == "cam" and result.desiredSpeed > 50
+  assert (result.decelCameraTargetKph, result.decelCameraDistanceM) == (50, 250)
+  assert update(10).decelCameraDistanceM == 240
+  serv.xSpdType, serv.xSpdLimit, serv.xSpdDist = 22, 22, 30
+  result = update(10)
+  assert result.desiredSource == "bump"
+  assert (result.decelCameraTargetKph, result.decelCameraDistanceM) == (0, 0)

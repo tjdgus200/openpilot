@@ -5,11 +5,11 @@ from dataclasses import dataclass
 import pyray as rl
 from openpilot.common.constants import CV
 from openpilot.common.hud_driving_feedback import (
-  DRIVING_NOTICE_TEXT, DRIVING_POPUP_COLORS, DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events,
+  DRIVING_POPUP_COLORS, DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_notice_text,
   LANE_CENTER_STATUS, STEERING_WARNING_TEXT, angle_steering_demand, lane_line_probabilities,
   lane_confidence_score, lane_confidence_grade, lane_probability_text, pv5_steering_warning,
 )
-from openpilot.selfdrive.carrot.deceleration_source import deceleration_banner_text, deceleration_source_presentation
+from openpilot.selfdrive.carrot.deceleration_source import deceleration_banner_text
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
 
@@ -87,12 +87,8 @@ def sample_deceleration_popup(sm, started_frame: int, now: float, set_speed_kph:
              for name, limit in (('carState', .3), ('longitudinalPlan', .5), ('carrotMan', 1.))):
     return None
   carrot, plan = sm['carrotMan'], sm['longitudinalPlan']
-  desired_speed = carrot.desiredSpeed
-  if not 0 < desired_speed < 200:
-    return None
-  label, _ = deceleration_source_presentation(carrot.desiredSource)
-  return deceleration_banner_text(label, sm['carState'].vEgo * CV.MS_TO_KPH, set_speed_kph,
-                                  desired_speed, plan.cruiseTarget, plan.aTarget)
+  return deceleration_banner_text(carrot, sm['carState'].vEgo * CV.MS_TO_KPH, set_speed_kph,
+                                  plan.cruiseTarget, plan.aTarget)
 
 
 def _draw_feedback(rect, font, data: DrivingFeedback, compact: bool) -> None:
@@ -252,11 +248,16 @@ class Pv5DrivingFeedbackOverlay:
     warning = pv5_steering_warning(sm, now, cp=ui_state.CP, started_frame=started_frame)
     deceleration = None if warning else sample_deceleration_popup(sm, started_frame, now, set_speed_kph)
     notice = self._driving_notices.update(events, now, blocked=bool(warning), decelerating=bool(deceleration))
-    text = STEERING_WARNING_TEXT.get(warning) or DRIVING_NOTICE_TEXT.get(notice) or deceleration
+    curve_speed = sm['carrotMan'].vTurnSpeed if notice == 'curve' else None
+    text = STEERING_WARNING_TEXT.get(warning) or driving_notice_text(notice, curve_speed) or deceleration
     if not text:
       self.popup_slide.reset()
       return
-    width, height, size = (330, 42, 24) if self.compact else (1080, 136, 70)
+    title, _, detail = text.partition('\n')
+    if detail:
+      width, height, size = (346, 67, 21) if self.compact else (1160, 176, 60)
+    else:
+      width, height, size = (330, 42, 24) if self.compact else (1080, 136, 70)
     scale = min(1., rect.width / (width + 40))
     width, height, size = width * scale, height * scale, size * scale
     x = rect.x + (rect.width - width) / 2 - (15 if self.compact else 0)
@@ -265,5 +266,8 @@ class Pv5DrivingFeedbackOverlay:
     box = rl.Rectangle(x, y, width, height)
     rl.draw_rectangle_rounded(box, 0.26, 8, background)
     rl.draw_rectangle_rounded_lines_ex(box, 0.26, 8, 2 * scale, accent)
-    draw_text_ui_style(text, x + width / 2, y + height / 2, size, rl.WHITE,
+    draw_text_ui_style(title, x + width / 2, y + height * (.34 if detail else .5), size, rl.WHITE,
                        font=font, border_width=0, shadow_offset=0, align='center', y_offset=0)
+    if detail:
+      draw_text_ui_style(detail, x + width / 2, y + height * .73, size * .8, rl.WHITE,
+                         font=font, border_width=0, shadow_offset=0, align='center', y_offset=0)

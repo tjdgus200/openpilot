@@ -121,6 +121,30 @@ try:
  texts.clear()
  ui.render_to_file(replace(state,driving_notices=('laneChange',)),popup_path)
  assert DRIVING_NOTICE_TEXT['laneChange'] in texts
+ camera_path=popup_path.with_name('hud-camera-decel.png')
+ camera_title='과속카메라 단속 50 km/h 감속 중'
+ for name,payload in (
+  ('carrotMan',{'desiredSource':'cam','desiredSpeed':60,'decelCameraTargetKph':50,'decelCameraDistanceM':250}),
+  ('carControl',{'longActive':True}),('longitudinalPlan',{'cruiseTarget':60.,'aTarget':-.2}),
+ ):
+  add_event(name,log.Event.new_message(**{name:payload}))
+ remote=hud.RemoteSubMaster(list(record['events']))
+ remote.update()
+ source.sm=remote
+ cruise=replace(standby_state(),speed_kph=72.,gear_text='D',cruise_kph=80.,cruise_display_state='engaged')
+ braking=source._with_live_hud_state(cruise)
+ assert braking.deceleration_banner==camera_title+'\\n250 m 남음'
+ assert ui._measure_text(camera_title,40)[0] < 620
+ ui._driving_notices.reset()
+ texts.clear()
+ ui.render_to_file(replace(braking,driving_notices=()),camera_path)
+ assert camera_title in texts
+ with Image.open(camera_path) as camera:
+  assert max(abs(a-b) for a,b in zip(camera.convert('RGB').getpixel((315,175)),(16,25,35),strict=True))<=2
+ add_event('carrotMan',log.Event.new_message(carrotMan={'desiredSource':'vturn','desiredSpeed':60}))
+ record['mono']['carrotMan']+=1
+ remote.update()
+ assert source._with_live_hud_state(cruise).deceleration_banner=='커브 감속 중\\n목표 60 km/h'
 finally:
  ui.close()
 assert ui._telemetry_font is None and not ui._window_open
@@ -204,9 +228,11 @@ def main(argv=None):
     # Native raylib cannot export to all Unicode paths on Windows.
     shutil.copyfile(root / 'hud-native.png', args.output / 'hud.png')
     shutil.copyfile(root / 'hud-popup.png', args.output / 'hud-popup.png')
+    shutil.copyfile(root / 'hud-camera-decel.png', args.output / 'hud-camera-decel.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
                 center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
+                deceleration_details=True,
                 diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

@@ -473,24 +473,28 @@ class OpenpilotLiveSource:
         deceleration_banner = None
         steering_warning = 0
         notices = ()
+        curve_speed = None
         if onroad:
             cp = self._service_data("carParams")
             if (self._service_valid("carParams") and safe_get(cp, "carFingerprint") == "KIA_PV5"
                     and not safe_get(cp, "notCar", True)):
                 notices = driving_notice_events(self.sm, now)
+                if 'curve' in notices:
+                    curve_speed = safe_optional_float(carrot_man, "vTurnSpeed")
             remote_warning = getattr(self.sm, "steering_warning", None)
             steering_warning = pv5_steering_warning(self.sm, now) if remote_warning is None else remote_warning
             if self._service_is_fresh("modelV2", now, 0.5):
                 model = self._service_data("modelV2")
                 left_lane_probability, right_lane_probability = lane_line_probabilities(model)
-            if (self._service_is_fresh("carControl", now, 0.3)
+            if (cruise_override_label is not None and cruise_override_label != "eco"
+                    and self._service_is_fresh("carState", now, 0.3)
+                    and self._service_is_fresh("carControl", now, 0.3)
                     and self._service_is_fresh("longitudinalPlan", now, 0.5)
                     and self._service_is_fresh("carrotMan", now, 1.0)
                     and bool(safe_get(self._service_data("carControl"), "longActive", False))):
                 plan = self._service_data("longitudinalPlan")
                 deceleration_banner = deceleration_banner_text(
-                    cruise_override_label, state.speed_kph, state.cruise_kph,
-                    safe_optional_float(carrot_man, "desiredSpeed"),
+                    carrot_man, state.speed_kph, state.cruise_kph,
                     safe_optional_float(plan, "cruiseTarget"), safe_optional_float(plan, "aTarget"),
                 )
 
@@ -502,6 +506,7 @@ class OpenpilotLiveSource:
             deceleration_banner=deceleration_banner,
             steering_warning=steering_warning,
             driving_notices=notices,
+            curve_approach_speed_kph=curve_speed,
             alert=self._live_cluster_alert(state.alert, onroad),
             egpu_active=getattr(self, "_egpu_active", False),
             external_compute_label=getattr(self, '_external_compute_label', ''),

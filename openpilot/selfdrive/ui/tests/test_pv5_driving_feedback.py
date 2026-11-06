@@ -259,6 +259,41 @@ def test_comma_deceleration_uses_active_plan_and_fresh_inputs():
   assert sample_deceleration_popup(sm, 10, 100., 80.) is None
 
 
+@pytest.mark.parametrize('source', ('cam', 'hda', 'waze'))
+def test_camera_popup_uses_final_camera_target_and_live_distance(source, monkeypatch):
+  sm = braking_messages()
+  carrot = sm['carrotMan']
+  carrot.desiredSource = source
+  carrot.decelCameraTargetKph = 50
+  carrot.decelCameraDistanceM = 250
+  state = SimpleNamespace(CP=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
+                          started=True, started_frame=10, sm=sm)
+  monkeypatch.setattr(feedback.time, 'monotonic', lambda: 100.)
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda *_: None)
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
+  overlay = Pv5DrivingFeedbackOverlay()
+  with patch.object(feedback, 'draw_text_ui_style') as draw:
+    overlay.draw_popup(rl.Rectangle(30, 30, 2100, 1020), None, state, 80.)
+    title, detail = (call.args for call in draw.call_args_list)
+    assert title[0] == '과속카메라 단속 50 km/h 감속 중'
+    assert detail[0] == '250 m 남음' and detail[2] > title[2]
+  carrot.decelCameraDistanceM = 120
+  assert sample_deceleration_popup(sm, 10, 100., 80.).endswith('120 m 남음')
+  carrot.decelCameraDistanceM = 0
+  assert sample_deceleration_popup(sm, 10, 100., 80.) == '과속카메라 감속 중\n목표 50 km/h'
+  carrot.decelCameraTargetKph = 0
+  assert sample_deceleration_popup(sm, 10, 100., 80.) in ('단속 구간 감속', '제한속도 적용')
+
+
+@pytest.mark.parametrize('source', ('vturn', 'route'))
+def test_curve_popup_uses_applied_plan_target(source):
+  sm = braking_messages()
+  sm['carrotMan'].desiredSource = source
+  sm['carrotMan'].vTurnSpeed = -45
+  assert sample_deceleration_popup(sm, 10, 100., 80.) == '커브 감속 중\n목표 55 km/h'
+  assert feedback.driving_notice_text('curve', -45) == '전방 커브 접근\n예상 45 km/h'
+
+
 def test_popup_slides_once_and_urgent_or_vehicle_alert_takes_priority(monkeypatch):
   state = SimpleNamespace(CP=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
                           started=True, started_frame=10, sm=braking_messages())

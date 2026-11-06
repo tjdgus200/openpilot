@@ -11,7 +11,7 @@
       "tests": ["tools/jetlink/test_pv5_model_integration.py", "openpilot/selfdrive/ui/tests/test_stopped_fov_preview.py", "openpilot/selfdrive/modeld/tests/test_orientation_rate_std.py"]
     },
     "hud_and_alerts": {
-      "preserve": "Lane probabilities, steering, correction/wait reason, animated C3X/Jetson notices with onset, freshness and alert priority, BSD pulse and existing Q92/FPS choices.",
+      "preserve": "Lane probabilities, steering, correction/wait reason, camera target/distance and curve speeds, animated C3X/Jetson notices with onset, freshness and alert priority, BSD pulse and existing Q92/FPS choices.",
       "tests": ["tools/jetlink/test_hud.py", "tools/jetlink/test_hud_health.py", "tools/jetlink/test_hud_bsd.py", "tools/jetlink/test_hud_rate.py", "openpilot/selfdrive/ui/tests/test_pv5_driving_feedback.py"]
     },
     "battery_and_ble": {

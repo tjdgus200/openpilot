@@ -22,6 +22,13 @@ DRIVING_NOTICE_PRIORITY = {name: rank for rank, name in enumerate(DRIVING_NOTICE
 DRIVING_NOTICE_OVER_DECEL = ('cutin', 'laneChange')
 
 
+def driving_notice_text(notice: str | None, curve_speed: float | None) -> str | None:
+  text = DRIVING_NOTICE_TEXT.get(notice)
+  if notice == 'curve' and curve_speed is not None and 0 < abs(curve_speed) < 250:
+    return f'{text}\n예상 {abs(curve_speed):.0f} km/h'
+  return text
+
+
 class DrivingPopupSlide:
   def __init__(self):
     self.reset()

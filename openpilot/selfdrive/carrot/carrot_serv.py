@@ -1553,6 +1553,20 @@ class CarrotServ:
     msg.carrotMan.szTBTMainText = self.szTBTMainText
     msg.carrotMan.desiredSpeed = int(desired_speed)
     msg.carrotMan.desiredSource = source
+    # Publish the endpoint of the selected camera's speed profile for display.
+    camera_target, camera_distance = 0., 0.
+    if source == "hda" and vehicle_speed_camera_active:
+      camera_target = CS.speedLimit * self.autoNaviSpeedSafetyFactor
+      camera_distance = CS.speedLimitDistance
+    elif source == "cam" and rear_camera_holding:
+      camera_target = rear_camera_speed
+      camera_distance = rear_camera_remaining - self.autoNaviRearCameraHoldDistance
+    elif source in ("cam", "waze") and legacy_sdi_active:
+      camera_target, camera_distance = self.xSpdLimit, self.xSpdDist
+    if 0 < camera_target < 200:
+      msg.carrotMan.decelCameraTargetKph = int(camera_target)
+      if 0 < camera_distance <= 2**31 - 1:
+        msg.carrotMan.decelCameraDistanceM = math.ceil(camera_distance)
     vehicle_navi_active, vehicle_navi_speed, vehicle_navi_section_active = self._vehicle_navigation_display(CS)
     msg.carrotMan.vehicleNaviActive = vehicle_navi_active
     msg.carrotMan.vehicleNaviSpeed = vehicle_navi_speed

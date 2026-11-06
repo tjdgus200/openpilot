@@ -17,7 +17,7 @@ import pyray as rl
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.common.hud_driving_feedback import (
-    DRIVING_NOTICE_TEXT, DRIVING_POPUP_COLORS, STEERING_WARNING_TEXT, DrivingNoticeTracker, DrivingPopupSlide,
+    DRIVING_POPUP_COLORS, STEERING_WARNING_TEXT, DrivingNoticeTracker, DrivingPopupSlide, driving_notice_text,
     lane_confidence_score, lane_confidence_grade, lane_probability_text,
 )
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
@@ -7552,12 +7552,14 @@ class ClusterUiRenderer:
         vehicle_alert = state.alert is not None and state.alert.size > 0
         notice = self._driving_notices.update(state.driving_notices, now, blocked=bool(warning or vehicle_alert),
                                               decelerating=bool(state.deceleration_banner))
-        text = STEERING_WARNING_TEXT.get(warning) or DRIVING_NOTICE_TEXT.get(notice) or state.deceleration_banner
+        text = (STEERING_WARNING_TEXT.get(warning) or driving_notice_text(notice, state.curve_approach_speed_kph)
+                or state.deceleration_banner)
         if not text or vehicle_alert:
             self._popup_slide.reset()
             return False
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
-        width, height, settled_top = (620 if warning == 2 else 500), 76, 82
+        title, _, detail = text.partition("\n")
+        width, height, settled_top = (660 if detail else 620 if warning == 2 else 500), (112 if detail else 76), 82
         top = self._popup_slide.top(now, settled_top, height, urgent=warning == 2)
         left = center_x - width * 0.5
         background, accent = DRIVING_POPUP_COLORS[warning if warning in STEERING_WARNING_TEXT else 0]
@@ -7569,8 +7571,10 @@ class ClusterUiRenderer:
         try:
             self._rounded_rect(left, top, width, height, 16, background, accent, 2)
             self._rounded_rect(left + 14, top + 17, 5, height - 34, 2, accent)
-            self._draw_text_with_stroke(text, center_x + 5, top + height * 0.5, 46,
+            self._draw_text_with_stroke(title, center_x + 5, top + height * (0.34 if detail else 0.5), 40 if detail else 46,
                                         WHITE, (5, 9, 12), 2, anchor="center", cache=True)
+            if detail:
+                self._draw_text(detail, center_x + 5, top + height * 0.73, 32, WHITE, anchor="center")
         finally:
             if entering:
                 rl.end_scissor_mode()

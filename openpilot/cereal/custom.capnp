@@ -49,6 +49,8 @@ struct CarrotMan @0x81c2f05a394cf4af {
 	positionMonoTime @34 : UInt64; # time of the fused/predicted position
 	positionSource @35 :Text;
 	positionHeadingValid @36 :Bool;
+	decelCameraTargetKph @37 :Int32; # final camera target for the selected speed source, 0 if unavailable
+	decelCameraDistanceM @38 :Int32; # distance to that camera, 0 if unavailable or passed
 }
 
 struct CarrotNaviState @0xaedffd8f31e7b55d {

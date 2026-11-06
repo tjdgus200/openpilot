@@ -1,5 +1,11 @@
 # Repository memory
 
+- PV5 camera and curve popups on comma and Jetson show the selected camera's
+  final target and remaining distance, or the applied curve speed. Keep camera
+  distance tied to the selected event, omit it when absent or passed, and show
+  a separate estimated speed for the curve-approach notice. These are display
+  fields only. Preserve warning priority and all model and control behavior.
+
 - 2026-11-06 PV5 driving notices on Jetson HUD and comma 3/3X use existing
   fresh radar, model, Carrot, and planner messages. Keep cut-in observation,
   active assisted lane change, lead braking response, and curve approach
