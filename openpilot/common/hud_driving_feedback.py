@@ -14,6 +14,7 @@ _TRAFFIC_POPUP_COLORS = ((80, 46, 126, 255), (221, 190, 255, 255))
 _LANE_POPUP_COLORS = ((7, 89, 86, 255), (115, 251, 224, 255))
 DRIVING_POPUP_ENTER_SECONDS = 0.22
 DRIVING_POPUP_HOLD_SECONDS = 1.0
+DRIVING_POPUP_EXIT_SECONDS = 0.22
 DRIVING_POPUP_MOTION_SECONDS = 0.48
 DRIVING_NOTICE_SECONDS = 2.0
 DRIVING_NOTICE_REARM_SECONDS = 0.75
@@ -91,6 +92,7 @@ class DrivingPopupSlide:
     self._popup = None
     self._hold_until = None
     self._entered = None
+    self._exit_started = None
     self._motion_key = None
     self._motion_started = 0.
 
@@ -99,12 +101,14 @@ class DrivingPopupSlide:
              lane_direction: str | None = None) -> DrivingPopup | None:
     warning_text = STEERING_WARNING_TEXT.get(warning)
     text = warning_text or driving_notice_text(notice, curve_speed) or deceleration
+    if self._exit_started is not None and now >= self._exit_started + DRIVING_POPUP_EXIT_SECONDS:
+      self.reset()
     current = self._popup
     if text:
       priority = -warning if warning_text else _POPUP_PRIORITY[notice or 'deceleration']
       motion = None if warning_text else driving_popup_motion(notice, decel_label, lane_direction)
       # Distance and target updates refresh the current popup without restarting its hold.
-      if current is not None and (priority, motion) == (current.priority, current.motion):
+      if current is not None and self._exit_started is None and (priority, motion) == (current.priority, current.motion):
         if text != current.text:
           self._popup = DrivingPopup(text, warning, motion, priority)
         return self._popup
@@ -112,10 +116,12 @@ class DrivingPopupSlide:
         and (self._hold_until is None or now < self._hold_until)):
       return current
     if not text:
-      self.reset()
-      return None
+      if current is not None and self._exit_started is None:
+        self._exit_started = now
+      return current
     self._popup = DrivingPopup(text, warning, motion, priority)
     self._hold_until = None
+    self._exit_started = None
     return self._popup
 
   def motion_dots(self, key: str | None, now: float) -> tuple[tuple[float, float], ...]:
@@ -132,7 +138,11 @@ class DrivingPopupSlide:
     return tuple((x + (end_x - x) * progress, y + (end_y - y) * progress)
                  for (x, y), (end_x, end_y) in zip(_MOTION_RING, target, strict=True))
 
-  def top(self, now: float, top: float, height: float, *, urgent: bool) -> float:
+  def top(self, now: float, top: float, height: float, *, urgent: bool, clip_top: float | None = None) -> float:
+    if self._exit_started is not None:
+      progress = min(1., max(0., (now - self._exit_started) / DRIVING_POPUP_EXIT_SECONDS))
+      distance = height if clip_top is None else height + top - clip_top
+      return top - distance * progress ** 3
     if urgent:
       self._entered = now - DRIVING_POPUP_ENTER_SECONDS
     if self._entered is None:

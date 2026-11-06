@@ -7,7 +7,7 @@ import pyray as rl
 from openpilot.cereal import log
 from openpilot.common.hud_attention_icon import DriverAttentionIcon
 from openpilot.common.hud_driving_feedback import (
-  DRIVING_POPUP_ENTER_SECONDS, DRIVING_POPUP_MOTION_SECONDS, STEERING_WARNING_SERVICES,
+  DRIVING_POPUP_ENTER_SECONDS, DRIVING_POPUP_EXIT_SECONDS, DRIVING_POPUP_MOTION_SECONDS, STEERING_WARNING_SERVICES,
   DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_notice_text, driving_popup_colors, driving_popup_motion,
   pv5_steering_warning,
 )
@@ -290,6 +290,12 @@ def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):
     overlay.draw_popup(rect, None, state, None)
     assert label.call_args.args[0] == '자동 차선 변경 중'
     now = 101.30
+    overlay.draw_popup(rect, None, state, None)
+    assert label.call_args.args[2] == 122.
+    now += DRIVING_POPUP_EXIT_SECONDS / 2
+    overlay.draw_popup(rect, None, state, None)
+    assert label.call_args.args[2] == pytest.approx(102.)
+    now = 101.30 + DRIVING_POPUP_EXIT_SECONDS
     label.reset_mock()
     overlay.draw_popup(rect, None, state, None)
     label.assert_not_called()
@@ -397,5 +403,26 @@ def test_popup_hold_does_not_restart_for_updated_distance_or_queue_lower_priorit
   assert slide.update(101., deceleration='카메라 감속 중\n200 m 남음', decel_label='cam').text.endswith('200 m 남음')
   assert slide.top(101., 24., 100., urgent=False) == 24.
   assert slide.update(101.29).motion == 'camera'
-  assert slide.update(101.30) is None
-  assert slide.update(101.40) is None
+  assert slide.update(101.30).motion == 'camera'
+  assert slide.top(101.30, 24., 100., urgent=False) == 24.
+  assert slide.update(101.41).motion == 'camera'
+  assert slide.top(101.41, 24., 100., urgent=False) == pytest.approx(11.5)
+  assert slide.update(101.30 + DRIVING_POPUP_EXIT_SECONDS) is None
+
+
+def test_popup_exit_is_interrupted_and_same_event_gets_a_fresh_hold():
+  slide = DrivingPopupSlide()
+  assert slide.update(100., warning=1).warning == 1
+  slide.top(100., 24., 100., urgent=False)
+  assert slide.top(100.25, 24., 100., urgent=False) == 24.
+  assert slide.update(101.25).warning == 1
+  assert slide.update(101.35, warning=1).warning == 1
+  assert slide.top(101.35, 24., 100., urgent=False) == 24.
+  assert slide.update(102.34).warning == 1
+  assert slide.top(102.34, 24., 100., urgent=False) == 24.
+  assert slide.update(102.35).warning == 1
+  assert slide.top(102.45, 24., 100., urgent=False) < 24.
+  assert slide.update(102.45, warning=2).warning == 2
+  assert slide.top(102.45, 24., 100., urgent=True) == 24.
+  slide.reset()
+  assert slide.update(102.46) is None

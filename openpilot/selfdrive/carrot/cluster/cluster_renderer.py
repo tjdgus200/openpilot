@@ -7577,9 +7577,9 @@ class ClusterUiRenderer:
         top = self._popup_slide.top(now, settled_top, height, urgent=warning == 2)
         left = center_x - width * 0.5
         background, accent = driving_popup_colors(warning, motion)
-        # Reveal below the clock and status row while the popup is moving.
-        entering = top < settled_top
-        if entering:
+        # Keep the moving popup below the clock and status row.
+        sliding = top < settled_top
+        if sliding:
             clip_y = round(settled_top * self.height / DESIGN_HEIGHT)
             rl.begin_scissor_mode(0, clip_y, self.width, self.height - clip_y)
         try:
@@ -7597,7 +7597,7 @@ class ClusterUiRenderer:
             if detail:
                 self._draw_text(detail, text_center, top + height * 0.73, 32, WHITE, anchor="center")
         finally:
-            if entering:
+            if sliding:
                 rl.end_scissor_mode()
         return True
 

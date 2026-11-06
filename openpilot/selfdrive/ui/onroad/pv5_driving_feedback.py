@@ -270,7 +270,7 @@ class Pv5DrivingFeedbackOverlay:
     # Leave space at the right for the Jetson badge on the wide display.
     if not self.compact and dots and getattr(ui_state, 'jetlink_badge', None):
       x = max(rect.x, x - 44 * scale)
-    y = self.popup_slide.top(now, rect.y + (6 if self.compact else 24), height, urgent=warning == 2)
+    y = self.popup_slide.top(now, rect.y + (6 if self.compact else 24), height, urgent=warning == 2, clip_top=rect.y)
     background, accent = (rl.Color(*color) for color in driving_popup_colors(warning, motion))
     box = rl.Rectangle(x, y, width, height)
     rl.draw_rectangle_rounded(box, 0.26, 8, background)

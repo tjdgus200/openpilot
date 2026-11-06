@@ -1,7 +1,8 @@
 # Repository memory
 
 - Keep PV5 driving popups visible for one second from the first fully
-  settled frame. Higher-priority popups and vehicle alerts preempt immediately.
+  settled frame, then slide them upward in 220 ms when the event clears.
+  Higher-priority popups and vehicle alerts preempt immediately.
   Clear held popups offroad, and refresh text within the hold without extending it.
 
 - Existing driver-distraction and unresponsive alerts show an opaque triangle

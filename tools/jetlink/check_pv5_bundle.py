@@ -163,11 +163,15 @@ try:
  expired_state=replace(camera_state,deceleration_banner=None)
  with patch('time.monotonic',return_value=1000.):
   ui.render_to_file(camera_state,popup_path)
- for now,visible in ((1000.10,True),(1000.30,True),(1001.29,True),(1001.31,False)):
+ for now,visible,at_rest in ((1000.05,True,False),(1000.30,True,True),(1001.29,True,True),
+                             (1001.30,True,True),(1001.44,True,False),(1001.53,False,False)):
   texts.clear()
   with patch('time.monotonic',return_value=now):
    ui.render_to_file(expired_state,popup_path)
   assert (camera_title in texts)==visible, (now,texts)
+  with Image.open(popup_path) as frame:
+   pixel=frame.convert('RGB').getpixel((315,175))
+   assert (max(abs(a-b) for a,b in zip(pixel,(31,70,143),strict=True))<=2)==at_rest, (now,pixel)
 finally:
  ui.close()
 assert ui._telemetry_font is None and not ui._window_open
@@ -256,7 +260,7 @@ def main(argv=None):
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
                 center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
-                deceleration_details=True, driver_attention_icon=True, popup_hold=True,
+                deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
