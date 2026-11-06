@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-inference-light-speed-2-20261106-d4bc5011",
-  "source_commit": "d4bc50117cfed0622921313240360fae6d7ae1d8",
+  "profile": "jetson-pv5-hud-popup-light-speed-2-20261106-22dc1c26",
+  "source_commit": "22dc1c26f55340bf299f7fba2bb45ee92c77126e",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-inference-light-speed-2-20261106-d4bc5011/host.tar.gz",
-    "sha256": "853a1ae7d303a31ffa2ba2af853257ad3cb238c2cf34abeaace05f31f947c22f",
-    "size": 65260140
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-popup-light-speed-2-20261106-22dc1c26/host.tar.gz",
+    "sha256": "656ff17cb7510b69c971fa040ab26639435daff83eae62fdc8beee7ea177f659",
+    "size": 65261747
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/ea306f534159ac9a3caab0ac3bd4a5f82f9cd805/ea2f516f-f758-42be-a245-913bb818a64f/32768/big_driving_supercombo.onnx",

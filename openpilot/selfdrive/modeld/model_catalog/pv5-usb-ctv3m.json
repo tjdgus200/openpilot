@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-inference-ctv3m-20261106-62853c3e",
-  "source_commit": "62853c3e59f77a0753767a7e164f55d52879051d",
+  "profile": "jetson-pv5-hud-popup-ctv3m-20261106-fc52a222",
+  "source_commit": "fc52a22240423d2ebe3bb1ef4a76e22bc0095ca2",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-inference-ctv3m-20261106-62853c3e/host.tar.gz",
-    "sha256": "d7e0ad7fe2a1af03a116e808ad12f9230d6563b66f369eebfc012e5346087195",
-    "size": 65260372
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-popup-ctv3m-20261106-fc52a222/host.tar.gz",
+    "sha256": "92acd16d5c2e442011695d14cfbc778167dab28f6a703903aa457cc0a94cb718",
+    "size": 65261344
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
