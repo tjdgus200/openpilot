@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-notices-light-speed-20261106-7ef05678",
-  "source_commit": "7ef0567850a342074857787634b71a32e5e78d4b",
+  "profile": "jetson-pv5-decel-popups-light-speed-20261106-fc0e3bd9",
+  "source_commit": "fc0e3bd9c613c1f572d45f822b6646ebdc373f26",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-notices-light-speed-20261106-7ef05678/host.tar.gz",
-    "sha256": "ae84a62808e065d6807bba617d52c305f965801f5983fac184fe9bd877f581a8",
-    "size": 65264071
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-decel-popups-light-speed-20261106-fc0e3bd9/host.tar.gz",
+    "sha256": "99e41634e499ab6f7889172a153832d2ed97ac71939e88969c4470b4124744eb",
+    "size": 65266235
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",

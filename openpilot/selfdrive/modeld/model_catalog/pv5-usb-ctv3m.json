@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-notices-ctv3m-20261106-e5855851",
-  "source_commit": "e58558511f3f8899eb0e345640c5350e7e0539d8",
+  "profile": "jetson-pv5-decel-popups-ctv3m-20261106-de6a4791",
+  "source_commit": "de6a479154128751e65b20278781b82e3d389c32",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-notices-ctv3m-20261106-e5855851/host.tar.gz",
-    "sha256": "369868af35877e040b7e1e0a28579a9d4b4fec913ec7e0302d5e905243aa8942",
-    "size": 65263810
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-decel-popups-ctv3m-20261106-de6a4791/host.tar.gz",
+    "sha256": "94cdc1156032e0f5ebb5a6156cece840bb5b08dce03cb78aec9ebda487261225",
+    "size": 65265747
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
