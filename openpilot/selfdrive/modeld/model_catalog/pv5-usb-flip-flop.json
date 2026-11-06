@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-lane-probability-flip-flop-20261105-4c8d5ab0",
-  "source_commit": "4c8d5ab00603ccddbc2a1215506ca8e0e9c6bb0f",
+  "profile": "jetson-pv5-hud-inference-flip-flop-20261106-d0aaa9ea",
+  "source_commit": "d0aaa9ea6c385251ef2e48e4ebfd72c7a780b778",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-probability-flip-flop-20261105-4c8d5ab0/host.tar.gz",
-    "sha256": "e27917b3ce71ca219e846e3f05d2f47439e61af9bec0f68f5f98be1ef7944bdf",
-    "size": 65244573
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-inference-flip-flop-20261106-d0aaa9ea/host.tar.gz",
+    "sha256": "494f22146d5893331864456db2104966fd087334c3028e71e27f1f45bba22817",
+    "size": 65260632
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",

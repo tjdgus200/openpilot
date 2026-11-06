@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "pv5-lane-probability-light-speed-20261105-0b4fc4f2",
-  "source_commit": "0b4fc4f2b7a8e1aedc3a4b50300cc18be517b3c7",
+  "profile": "jetson-pv5-hud-inference-light-speed-20261106-b91978f6",
+  "source_commit": "b91978f6946c151dd73531831c194a62904935af",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-probability-light-speed-20261105-0b4fc4f2/host.tar.gz",
-    "sha256": "e6e89bbae386f8cf06b12116f924f138be3c7735b434f03d7c499f801cc8ab36",
-    "size": 65245280
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-inference-light-speed-20261106-b91978f6/host.tar.gz",
+    "sha256": "b1093b09368d7a5250902c8302e72d5067cc4af47526031aa701f7c481b4adaa",
+    "size": 65260572
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
