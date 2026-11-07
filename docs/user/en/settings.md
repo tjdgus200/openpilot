@@ -458,6 +458,8 @@ camera supplies 20fps. Reduced processing overhead does not establish sustained
 
 ## Retained carrot-nav-pv5 features (2026-10-24)
 
+Driving popups on comma 3/3X and the Jetson HUD remain visible while fresh cut-in, assisted lane-change, lead-braking or curve-approach conditions persist. They stay for at least one second after settling, then slide upward over 220ms once the condition clears or its data expires. Higher-priority warnings take precedence, and a still-active situation returns after the warning ends.
+
 In CarrotWeb Settings → PV5 → Model Wide FOV (Experimental), choose stock (about 59°), 65°, 70°, 75°, or 80°. With a calibrated wide camera in use, changes apply to model input within about 0.25 seconds in any gear, on comma and Jetson. The model retains its prior frames and state across a change, so acceleration and steering may differ. Stock uses the original projection. Vehicle behavior is unvalidated.
 
 When the PV5 stops onroad with valid CAN speed and calibration, the comma screen alternates the live wide and road cameras every two seconds when both feeds are available. The cyan outline shows the corresponding model input. In CarrotWeb Settings → PV5, FOV Preview Pitch moves a separate yellow outline for both cameras by up to 3° in either direction. Positive values move the yellow outline down. A value of 0° shows only the cyan outline. The preview pitch leaves model input and calibration unchanged. BLE cell requests for the voltage heatmap refresh at standstill in any gear when vehicle speed is fresh.

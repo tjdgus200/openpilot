@@ -205,19 +205,45 @@ def test_notices_use_fresh_confirmed_states_and_keep_detection_separate_from_bra
   assert driving_notice_events(sm, 100.) == ()
 
 
-def test_notice_onset_priority_expiry_and_no_replay_behind_alerts():
+def test_notice_priority_resumes_only_current_conditions_after_alerts():
   tracker = DrivingNoticeTracker()
   assert tracker.update(('curve',), 100.) == 'curve'
   assert tracker.update(('cutin', 'laneChange', 'curve'), 100.1, decelerating=True) == 'cutin'
-  assert tracker.update(('laneChange', 'curve'), 100.2) is None
+  assert tracker.update(('laneChange', 'curve'), 100.2) == 'laneChange'
   assert tracker.update(('laneChange', 'curve'), 100.3, blocked=True) is None
-  assert tracker.update(('laneChange', 'curve'), 100.4) is None
+  assert tracker.update(('laneChange', 'curve'), 100.4) == 'laneChange'
   assert tracker.update((), 101.) is None
   assert tracker.update(('laneChange',), 101.2) == 'laneChange'
   for now in (101.6, 102., 102.4, 102.8, 103.1):
     assert tracker.update(('laneChange',), now) == 'laneChange'
-  assert tracker.update(('laneChange',), 103.3) is None
-  assert tracker.update(('laneChange',), 103.5) is None
+  assert tracker.update(('laneChange',), 103.3) == 'laneChange'
+  assert tracker.update(('laneChange',), 103.5) == 'laneChange'
+  assert tracker.update(('curve',), 103.6, decelerating=True) is None
+  assert tracker.update(('curve',), 103.7) == 'curve'
+  assert tracker.update((), 103.8, blocked=True) is None
+  assert tracker.update((), 103.9) is None
+
+
+@pytest.mark.parametrize('notice', ('cutin', 'laneChange', 'leadBrake', 'curve'))
+def test_notice_stays_for_entire_condition_and_exits_only_when_it_ends(notice):
+  tracker, slide = DrivingNoticeTracker(), DrivingPopupSlide()
+  assert slide.update(100., notice=tracker.update((notice,), 100.), lane_direction='left') is not None
+  assert slide.top(100., 24., 100., urgent=False) < 24.
+  for now in (100.3, 102.1, 105., 130.):
+    active = tracker.update((notice,), now)
+    assert active == notice
+    popup = slide.update(now, notice=active, lane_direction='left')
+    assert popup is not None
+    assert slide.top(now, 24., 100., urgent=False) == 24.
+  assert tracker.update((), 130.1) is None
+  assert slide.update(130.1) is popup
+  assert slide.top(130.1, 24., 100., urgent=False) == 24.
+  assert slide.update(130.21) is popup
+  assert slide.top(130.21, 24., 100., urgent=False) == pytest.approx(11.5)
+  assert slide.update(130.1 + DRIVING_POPUP_EXIT_SECONDS) is None
+  assert tracker.update((notice,), 130.4) == notice
+  tracker.reset()
+  assert tracker.update((), 130.5) is None
 
 
 @pytest.mark.parametrize('name', ('driverDistracted', 'driverUnresponsive'))

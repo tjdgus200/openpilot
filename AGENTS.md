@@ -1,9 +1,11 @@
 # Repository memory
 
-- Keep PV5 driving popups visible for one second from the first fully
-  settled frame, then slide them upward in 220 ms when the event clears.
-  Higher-priority popups and vehicle alerts preempt immediately.
-  Clear held popups offroad, and refresh text within the hold without extending it.
+- Keep PV5 driving popups visible throughout the fresh active source condition,
+  with a minimum one-second hold from the first fully settled frame and a
+  220 ms upward exit after the condition clears. Do not expire ongoing notices
+  after two seconds or require a rearm delay. Higher-priority popups and vehicle
+  alerts preempt immediately; resume only situations still active afterward.
+  Clear held popups offroad, and refresh text without restarting the entrance.
 
 - Existing driver-distraction and unresponsive alerts show an opaque triangle
   with an exclamation mark in comma 3/3X and Jetson HUD. Draw it on the first
@@ -25,8 +27,8 @@
 - 2026-11-06 PV5 driving notices on Jetson HUD and comma 3/3X use existing
   fresh radar, model, Carrot, and planner messages. Keep cut-in observation,
   active assisted lane change, lead braking response, and curve approach
-  separate. Show one two-second notice per onset and discard suppressed
-  events. Require current valid D-gear data, preserve vehicle and steering
+  separate. Display each notice while its fresh condition remains active and
+  resume current conditions after preemption. Require current valid D-gear data, preserve vehicle and steering
   alert priority, and keep all notices out of control and model inputs.
 
 - 2026-11-06 PV5 driving popup: both Jetson HUD and comma 3/3X show larger

@@ -22,6 +22,7 @@ PROBE = '''
 import base64,json,sys,time
 from pathlib import Path
 from dataclasses import replace
+from unittest.mock import patch
 import server,hud,hud_health,hud_protocol,boot_status
 from model_pin import read_spec
 from cluster_live import OpenpilotLiveSource,standby_state
@@ -123,6 +124,22 @@ try:
  texts.clear()
  ui.render_to_file(replace(state,driving_notices=('laneChange',)),popup_path)
  assert DRIVING_NOTICE_TEXT['laneChange'] in texts
+ ui._driving_notices.reset()
+ ui._popup_slide.reset()
+ lane_state=replace(state,driving_notices=('laneChange',))
+ for now in (1000.,1000.3,1003.,1030.):
+  texts.clear()
+  with patch('time.monotonic',return_value=now):
+   ui.render_to_file(lane_state,popup_path)
+  assert DRIVING_NOTICE_TEXT['laneChange'] in texts
+  if now>1000.:
+   with Image.open(popup_path) as frame:
+    assert frame.convert('RGB').getpixel(anchor)==(7,89,86)
+ for now,visible in ((1030.1,True),(1030.21,True),(1030.33,False)):
+  texts.clear()
+  with patch('time.monotonic',return_value=now):
+   ui.render_to_file(state,popup_path)
+  assert (DRIVING_NOTICE_TEXT['laneChange'] in texts)==visible
  camera_path=popup_path.with_name('hud-camera-decel.png')
  camera_title='과속카메라 단속 50 km/h 감속 중'
  for name,payload in (
@@ -158,7 +175,6 @@ try:
  assert attention.text1 in texts and attention.text2 in texts and camera_title not in texts
  with Image.open(attention_path) as frame:
   assert (255,225,91) in frame.convert('RGB').crop((470,55,650,175)).getdata()
- from unittest.mock import patch
  camera_state=replace(braking,driving_notices=())
  expired_state=replace(camera_state,deceleration_banner=None)
  with patch('time.monotonic',return_value=1000.):
@@ -261,6 +277,7 @@ def main(argv=None):
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
                 center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
+                condition_driven_popups=True,
                 diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

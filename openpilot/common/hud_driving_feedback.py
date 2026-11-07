@@ -16,8 +16,6 @@ DRIVING_POPUP_ENTER_SECONDS = 0.22
 DRIVING_POPUP_HOLD_SECONDS = 1.0
 DRIVING_POPUP_EXIT_SECONDS = 0.22
 DRIVING_POPUP_MOTION_SECONDS = 0.48
-DRIVING_NOTICE_SECONDS = 2.0
-DRIVING_NOTICE_REARM_SECONDS = 0.75
 DRIVING_NOTICE_TEXT = {
   'cutin': '옆차 끼어들기 경계 중',
   'laneChange': '자동 차선 변경 중',
@@ -156,16 +154,12 @@ class DrivingPopupSlide:
 
 
 class DrivingNoticeTracker:
-  """Display one fresh event per onset and discard suppressed events."""
+  """Select the highest-priority notice while its fresh source remains active."""
   def __init__(self):
-    self.last_seen: dict[str, float] = {}
-    self.active: str | None = None
     self.reset()
 
   def reset(self) -> None:
-    self.last_seen.clear()
-    self.active = None
-    self.expires = 0.
+    self.active: str | None = None
 
   def update(self, events: tuple[str, ...], now: float, *, blocked=False, decelerating=False) -> str | None:
     visible = events
@@ -173,15 +167,7 @@ class DrivingNoticeTracker:
       visible = ()
     elif decelerating:
       visible = tuple(event for event in events if event in DRIVING_NOTICE_OVER_DECEL)
-    if self.active not in visible or now >= self.expires:
-      self.active = None
-    for event in events:
-      last_seen = self.last_seen.get(event, -math.inf)
-      self.last_seen[event] = now
-      if (event in visible and now - last_seen >= DRIVING_NOTICE_REARM_SECONDS
-          and (self.active is None or _POPUP_PRIORITY[event] < _POPUP_PRIORITY[self.active])):
-        self.active = event
-        self.expires = now + DRIVING_NOTICE_SECONDS
+    self.active = min(visible, key=_POPUP_PRIORITY.__getitem__, default=None)
     return self.active
 
 
