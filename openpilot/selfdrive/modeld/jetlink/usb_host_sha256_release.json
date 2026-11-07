@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-stability-n16-20261107-6a223b06",
-  "source_commit": "6a223b065ac6d8bc7d64df99f19e9be9a925391e",
+  "profile": "jetson-pv5-steering-angle-n16-20261107-eda42b92",
+  "source_commit": "eda42b92865ff00b050d14f3a507fd96003085f7",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-stability-n16-20261107-6a223b06/host.tar.gz",
-    "sha256": "af363c7fac6d03fcbaf2a6fe53d2f40c5014d3ac6d4d1dd4241a4732b02c3ee9",
-    "size": 65275739
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-steering-angle-n16-20261107-eda42b92/host.tar.gz",
+    "sha256": "fc27b9799de150d37cfa0c6fe794ca224981e65d537fb8ab3fe93b4629a8272a",
+    "size": 65278076
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

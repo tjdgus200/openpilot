@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-stability-light-speed-20261107-6d866e4b",
-  "source_commit": "6d866e4bcff65159b953d5f15744149b9b69ea63",
+  "profile": "jetson-pv5-steering-angle-light-speed-20261107-24363193",
+  "source_commit": "24363193799d1c3afecc85c02d10fd64a12eebe0",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-stability-light-speed-20261107-6d866e4b/host.tar.gz",
-    "sha256": "aa3b6106521bd900a0a33b5cb2c5339bbc89a4c39109c419b2850fbf08b81d7d",
-    "size": 65275045
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-steering-angle-light-speed-20261107-24363193/host.tar.gz",
+    "sha256": "bcb764e29065f0ed21e0b692740cfedd075b7ee97fdaf7650ce040f1a362c288",
+    "size": 65277667
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
