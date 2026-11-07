@@ -80,11 +80,10 @@ def send_ready_during_inference(client, publisher, sent_at, *, clock=time.monoto
   return 0
 
 
-def send_ready_after_reply(client, publisher, *, fast_receiver=False, clock=time.monotonic):
+def send_ready_after_reply(client, publisher, *, fast_receiver=False, clock=time.monotonic, admit=None):
   """Use the idle tail only after modeld has its inference result.
 
-  Retain the single fragment during GPU execution, then send at most two
-  additional ready fragments (64 KiB), or eight (256 KiB) when the host
+  Send at most two ready fragments (64 KiB), or eight (256 KiB) when the host
   advertises its independent receiver pump, after replying to modeld. Never wait for
   the producer. The 2 ms admission budget is checked before each send; a single
   USB write still uses the existing transport watchdog, not a hard 2 ms timeout.
@@ -96,10 +95,19 @@ def send_ready_after_reply(client, publisher, *, fast_receiver=False, clock=time
   deadline = started + .002
   sent = 0
   for _ in range(8 if fast_receiver else 2):
-    if clock() >= deadline:
+    if clock() >= deadline or (admit is not None and not admit()):
       break
-    packet = publisher.media_packet()
+    pending = getattr(publisher, '_idle_media_pending', None)
+    publisher._idle_media_pending = None
+    if pending and not 0 <= clock() - pending[0] < EVENT_SEND_TIMEOUT:
+      pending = None
+    packet = pending[1] if pending else publisher.media_packet()
     if not packet:
+      break
+    if clock() >= deadline or (admit is not None and not admit()):
+      # A request can arrive while reading the nonblocking producer socket.
+      # Retain exactly one unsent fragment; never drop part of an H.264 unit.
+      publisher._idle_media_pending = (pending[0] if pending else clock(), packet)
       break
     client.t.send(MESSAGE, client._next_seq(), [packet])
     sent += 1

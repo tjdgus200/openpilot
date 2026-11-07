@@ -44,6 +44,7 @@ class IdleBudget:
     self.period = .05
     self.pause_until = 0.
     self.send_budget = .002
+    self.window_until = 0.
 
   def model_started(self, now):
     if self.last_model is not None:
@@ -56,6 +57,13 @@ class IdleBudget:
     if exchange_s >= .045:
       self.pause_until = now + 2.
 
+  def open_window(self, now):
+    # One bounded slice after polling IPC, never a burst/catch-up queue.
+    self.window_until = now + .002
+
+  def within_window(self, now):
+    return now < self.window_until and self.allowed(now)
+
   def allowed(self, now):
     if now < self.pause_until:
       return False
@@ -64,9 +72,11 @@ class IdleBudget:
     return self.last_model + self.period - now > .004 + self.send_budget
 
   def observe(self, now, metrics):
-    duration = metrics.get('display_hud_send_ms', 0.) / 1000.
+    duration = sum(metrics.get(key, 0.) for key in (
+      'display_snapshot_read_ms', 'display_hud_send_ms',
+      'display_media_read_ms', 'display_media_send_ms')) / 1000.
     if math.isfinite(duration) and duration >= 0:
-      self.send_budget = max(.002, min(.02, duration))
+      self.send_budget = max(.002, min(.02, duration), self.send_budget * .95)
       if duration > .002:
         self.pause_until = now + 2.
 

@@ -317,9 +317,7 @@ Battery heatmaps show the lowest available value in green and distinguish higher
 
 The Tools Jetlink card no longer displays HUD frame-rate or input-path performance comparisons, including reports from older hosts. Saved Q92, FPS and input-fusion settings are unchanged. Disabling Jetson FPS/inference sampling and numeric overlays requires the updated diagnostics-off package. Connection health, temperature and errors remain visible.
 
-ESP32-S3 Wi-Fi display support has been removed. Connect the USB display to Jetson. Comma sends HUD and navigation data over the dedicated Wi-Fi connection, without falling back to USB display transport. The comma-to-Jetson USB link carries model inference and connection provisioning. Both ends require the updated software.
-
-ESP32-S3 Wi-Fi display support has been removed. Connect the USB display to Jetson. Supported receivers accept HUD, navigation and signal information over bounded USB transfers during inference; older receivers keep Wi-Fi until updated. Update through Git Pull and reboot both devices when the Jetson runtime changes.
+ESP32-S3 Wi-Fi display support has been removed. Connect the USB display to Jetson. Supported receivers accept HUD, navigation and signal information over USB during idle time after comma receives its model result. Display updates are skipped when another model request is pending or there is insufficient headroom. Older Wi-Fi receivers retain their negotiated path without an automatic USB fallback. Update through Git Pull and reboot both devices when the Jetson runtime changes.
 
 
 
@@ -457,6 +455,8 @@ camera supplies 20fps. Reduced processing overhead does not establish sustained
 20Hz detection; this change does not promise 20Hz or 50Hz detection.
 
 ## Retained carrot-nav-pv5 features (2026-10-24)
+
+Jetson HUD retains Q92 and the saved FPS setting. Model results return to comma first; HUD and map data use available idle time. Updates are skipped when another model request is pending or processing slows, so actual FPS may fall below the selected ceiling. This change is on comma and keeps the existing model-paired Jetson packages. It cannot eliminate a wait caused by a write already started on the shared USB link.
 
 Driving popups on comma 3/3X and the Jetson HUD remain visible while fresh cut-in, assisted lane-change, lead-braking or curve-approach conditions persist. They stay for at least one second after settling, then slide upward over 220ms once the condition clears or its data expires. Higher-priority warnings take precedence, and a still-active situation returns after the warning ends.
 

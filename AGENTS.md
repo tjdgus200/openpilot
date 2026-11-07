@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-07 PV5 inference has priority over HUD USB traffic. Never send HUD
+  snapshots or navigation fragments between infer_begin and the IPC reply to
+  modeld. After replying, and while polling for requests, admit display only
+  with no queued IPC bytes, enough predicted model headroom and a 2ms admission
+  window. Recheck before each send/fragment; skip late snapshots, preserve media
+  ordering, and back off after slow inference or display I/O. Include snapshot
+  reads and media sends in backoff. Do not shorten partial IPC/model deadlines,
+  cancel partially written USB frames, or alter model/map/reset/control contracts.
+  Shared synchronous USB is still best effort: an already-started write can
+  delay a new request. Do not claim hard zero interference or force Wi-Fi/AIO
+  changes. Keep the mandatory priority/timing/media regression suites during
+  carrot-wip syncs. See docs/pv5_hud_inference_priority_20261107.md.
+
 - Keep PV5 driving popups visible throughout the fresh active source condition,
   with a minimum one-second hold from the first fully settled frame and a
   220 ms upward exit after the condition clears. Do not expire ongoing notices

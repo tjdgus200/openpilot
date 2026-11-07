@@ -10,7 +10,8 @@ import pytest
 @pytest.mark.parametrize('fast_receiver', [False, True])
 @pytest.mark.parametrize('usb', [False, True])
 @pytest.mark.parametrize('projection_request', [False, True])
-def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, navigation, fast_receiver, usb, projection_request, map_staging):
+@pytest.mark.parametrize('response_s', [.008, .080])
+def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, navigation, fast_receiver, usb, projection_request, map_staging, response_s):
   if sys.platform == 'win32':
     monkeypatch.setitem(sys.modules, 'fcntl', NS())
   from openpilot.selfdrive.modeld.jetlink import daemon, link
@@ -35,6 +36,8 @@ def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, 
   monkeypatch.setattr(daemon, 'update_affinity', lambda: None)
   monkeypatch.setattr(daemon, 'publish', lambda *a, **kw: None)
   monkeypatch.setattr(daemon, 'send', lambda *a: None)
+  # Receive the ready model request; afterward there is no queued successor.
+  monkeypatch.setattr(daemon, 'request_ready', lambda connection, timeout: timeout > 0)
 
   request = (daemon.REQUEST.pack(42, (3 if projection_request else 1) | (4 if map_staging is not None else 0), 123) + bytes(link.SPEC.warped_nbytes) + bytes(link.SPEC.packed_nbytes))
 
@@ -66,7 +69,7 @@ def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, 
 
   def end(seq):
     assert seq == 99
-    step('usb_response', .08)
+    step('usb_response', response_s)
     return output
 
   def reply(conn, header, result):
@@ -75,9 +78,11 @@ def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, 
     step('reply', .002)
 
   monkeypatch.setattr(daemon, 'send_parts', reply)
-  monkeypatch.setattr(daemon, 'publish_hud', lambda *a: step('hud', .004))
+  def hud(*a, **kw):
+    step('hud', .004)  # Slow HUD write must occur strictly AFTER the IPC reply.
+    return {'display_hud_send_ms': 4.}
+  monkeypatch.setattr(daemon, 'publish_hud', hud)
   monkeypatch.setattr(daemon, 'send_ready_after_reply', lambda *a, **kw: step('tail', .006))
-  monkeypatch.setattr(daemon, 'send_ready_during_inference', lambda *a, **kw: step('early_media', .006) or 123)
   client = NS(deferred_map_available=True, flush_map=lambda: step('map_stage', .001) or map_staging, last_map_used=True, spec=link.SPEC, output_projection_available=projection_request, last_state=None, last_timings=(20000, 1000, 22000), infer_begin=begin, infer_end=end,
               t=NS(last_receive={'prepare': .002, 'read_wait': .025, 'handoff': .009}))
   peer = {'carrot_host': 'jetson', daemon.NAVI_CAPABILITY: navigation, daemon.PUMP_CAPABILITY: fast_receiver,
@@ -86,9 +91,9 @@ def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, 
                       NS(sent=lambda sof: step('phase', .001)), NS(send=lambda _: step('wifi', .007)))
 
   assert replies == [(42, 20000, 1000, 22000)]
-  early = ['hud'] + (['early_media'] if fast_receiver and not map_staging else []) if usb and navigation else []
-  tail = (['hud'] if not navigation else ['tail'] if not fast_receiver else []) if usb else []
-  assert calls == ['receive', 'usb_send', 'phase', *(['map_stage'] if map_staging is not None else []), *early, 'usb_response', 'reply', *tail, 'wifi']
+  tail = ['hud'] if usb and response_s < .045 else []
+  # Slow inference suppresses display. A slow display cannot postpone the reply.
+  assert calls == ['receive', 'usb_send', 'phase', *(['map_stage'] if map_staging is not None else []), 'usb_response', 'reply', *tail, 'wifi']
   assert len(events) == 1 and events[0]['component'] == 'jetlinkd'
   assert events[0]['frame_id'] == 42 and events[0]['usb_seq'] == 99
   metrics = events[0]['metrics']
@@ -98,14 +103,14 @@ def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, 
   assert peak['context'] == {'frame_id': 42, 'usb_seq': 99}
   assert peak['metrics']['usb_send_ms'] == pytest.approx(3.)
   assert peak['metrics']['server_total_ms'] == pytest.approx(22.)
-  hud_ms = ((4. + (6. if fast_receiver and not map_staging else 0.)) if usb and navigation else 0.) + (1. if map_staging is not None else 0.)
-  tail_ms = (4. if not navigation else 6. if not fast_receiver else 0.) if usb else 0.
-  for key, value in {'ipc_receive_ms': 1000., 'usb_send_ms': 3., 'usb_response_ms': 80.,
+  hud_ms = 1. if map_staging is not None else 0.
+  tail_ms = 4. if tail else 0.
+  for key, value in {'ipc_receive_ms': 1000., 'usb_send_ms': 3., 'usb_response_ms': response_s * 1000,
                      'ipc_reply_ms': 2., 'hud_ms': hud_ms,
-                     'usb_exchange_ms': 84. + hud_ms,
-                     'submit_to_response_ms': 81. + hud_ms,
-                     'display_early_media_ms': 6. if usb and navigation and fast_receiver and not map_staging else 0.,
-                     'display_early_media_bytes': 123 if usb and navigation and fast_receiver and not map_staging else 0,
+                     'usb_exchange_ms': 4. + response_s * 1000 + hud_ms,
+                     'submit_to_response_ms': 1. + response_s * 1000 + hud_ms,
+                     'display_early_media_ms': 0.,
+                     'display_early_media_bytes': 0,
                      'response_reader_prepare_max_ms': 2., 'response_reader_read_wait_max_ms': 25.,
                      'response_reader_handoff_max_ms': 9.,
                      'display_tail_ms': tail_ms, 'wifi_tail_ms': 7.,

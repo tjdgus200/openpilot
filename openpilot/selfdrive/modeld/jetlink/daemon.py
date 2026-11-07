@@ -42,7 +42,7 @@ from hud_protocol import Publisher, HUD_MESSAGE
 from hud_rate import IdleBudget, request_ready
 from hud_wifi import publisher as display_publisher, USB_CAPABILITY as HUD_USB_CAPABILITY
 from hud_navi import CAPABILITY as NAVI_CAPABILITY, MESSAGE as NAVI_MESSAGE
-from hud_navi import send_ready_after_reply, send_ready_during_inference, PUMP_CAPABILITY
+from hud_navi import send_ready_after_reply, PUMP_CAPABILITY
 from wifi_protocol import CAPABILITY as WIFI_CAPABILITY, Publisher as WifiPublisher
 
 
@@ -62,12 +62,12 @@ def update_affinity():
       pass
 
 
-def publish_hud(client, publisher, *, include_media=True):
+def publish_hud(client, publisher, *, include_media=True, admit=None):
   # Packet construction/Cap'n Proto encoding is in the publisher child. These
   # scopes measure only snapshot access and synchronous writes on the USB owner.
   metrics = {'display_snapshot_read_ms': 0., 'display_hud_send_ms': 0., 'display_media_read_ms': 0.,
              'display_media_send_ms': 0., 'display_hud_bytes': 0, 'display_media_bytes': 0}
-  if publisher is not None:
+  if publisher is not None and (admit is None or admit()):
     started = time.monotonic()
     try:
       packet = publisher.packet()
@@ -76,20 +76,41 @@ def publish_hud(client, publisher, *, include_media=True):
       return metrics
     ready = time.monotonic()
     metrics['display_snapshot_read_ms'] = (ready - started) * 1000
-    if packet:
+    if packet and (admit is None or admit()):
       client.t.send(HUD_MESSAGE, client._next_seq(), [packet])
       metrics['display_hud_bytes'] = len(packet)
     sent = time.monotonic()
     metrics['display_hud_send_ms'] = (sent - ready) * 1000
-    # At most one small fragment per inference window. No video
+    # At most one small fragment per call. No video
     # decoding or unbounded stream draining occurs on the USB owner's thread.
-    media = publisher.media_packet() if include_media else None
+    media = publisher.media_packet() if include_media and (admit is None or admit()) else None
     ready = time.monotonic()
     metrics['display_media_read_ms'] = (ready - sent) * 1000
     if media:
       client.t.send(NAVI_MESSAGE, client._next_seq(), [media])
       metrics['display_media_bytes'] = len(media)
     metrics['display_media_send_ms'] = (time.monotonic() - ready) * 1000
+  return metrics
+
+
+def publish_idle_hud(client, publisher, budget, connection, *, navigation=False, fast_receiver=False):
+  """Admit expendable display work only while no model request is ready.
+
+  This is admission control, not a hard USB deadline. Never cancel a partly
+  written framed message: doing so corrupts the shared inference stream.
+  """
+  def admit():
+    return budget.within_window(time.monotonic()) and not request_ready(connection, 0.)
+
+  budget.open_window(time.monotonic())
+  if not admit():
+    return {}
+  metrics = publish_hud(client, publisher, include_media=False, admit=admit) or {}
+  budget.observe(time.monotonic(), metrics)
+  if navigation and admit():
+    started = time.monotonic()
+    send_ready_after_reply(client, publisher, fast_receiver=fast_receiver, admit=admit)
+    budget.observe(time.monotonic(), {'display_media_send_ms': (time.monotonic() - started) * 1000})
   return metrics
 
 
@@ -290,6 +311,14 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
   requested = True
   follows_app = peer.get('protocol') == 3 and may_provision(peer, session_mode())
   idle_budget = IdleBudget()
+
+  def display_idle(connection):
+    if not usb_display:
+      return {}
+    return publish_idle_hud(client, publisher, idle_budget, connection,
+                            navigation=bool(peer.get(NAVI_CAPABILITY)),
+                            fast_receiver=peer.get(PUMP_CAPABILITY) is True)
+
   while host_attached():
     park_update.tick(client)
     if follows_app and requested and params.get_bool('IsOffroad') and not params.get_bool('IsOnroad'):
@@ -312,8 +341,7 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
         blinker.send(client)
       if wifi is not None:
         wifi.send(client)
-      if usb_display:
-        publish_hud(client, publisher)
+      display_idle(listener)
       if time.monotonic() - last_ping > 2:
         client.last_state = client.state()
         check_loaded(client, client.last_state)
@@ -361,12 +389,10 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
           receive_started = time.monotonic()
           try:
             target_fps = getattr(publisher, 'target_fps', 10)
-            if usb_display and target_fps > 10 and not request_ready(connection, 1. / (2 * target_fps)):
+            if usb_display and not request_ready(connection, 1. / (2 * target_fps)):
               # A ready model request always wins. Poll before the original
               # complete-packet read: never shorten its partial-read deadline.
-              if idle_budget.allowed(time.monotonic()) and not request_ready(connection, 0.):
-                metrics = publish_hud(client, publisher, include_media=False) or {}
-                idle_budget.observe(time.monotonic(), metrics)
+              display_idle(connection)
               if (time.monotonic() - last_ping > 2
                   and (idle_budget.last_model is None or time.monotonic() - idle_budget.last_model > .5)
                   and not request_ready(connection, 0.)):
@@ -381,8 +407,7 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
               blinker.send(client)
             if wifi is not None:
               wifi.send(client)
-            if usb_display:
-              publish_hud(client, publisher)
+            display_idle(connection)
             if time.monotonic() - last_ping > 2:
               client.last_state = client.state()
               check_loaded(client, client.last_state)
@@ -433,14 +458,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
           map_bytes = client.flush_map() if nav_meta is not None else 0
           map_done = time.monotonic()
           display_metrics = {}
-          early_media_ms = 0.
-          early_media_bytes = 0
-          if usb_display and peer.get(NAVI_CAPABILITY):
-            display_metrics = publish_hud(client, publisher) or {}
-            if peer.get('carrot_host') == 'jetson' and peer.get(PUMP_CAPABILITY) is True and not map_bytes:
-              early_started = time.monotonic()
-              early_media_bytes = send_ready_during_inference(client, publisher, sent)
-              early_media_ms = (time.monotonic() - early_started) * 1000
+          # Nothing display-only may run between submit and reply to modeld.
+          # A faster GPU must never wait behind a slow HUD snapshot/media write.
           hud_done = time.monotonic()
           previous_state = client.last_state
           output = client.infer_end(seq)
@@ -463,12 +482,9 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
           replied = time.monotonic()
           if blinker is not None:
             blinker.send(client)
-          if usb_display and not peer.get(NAVI_CAPABILITY):
-            display_metrics = publish_hud(client, publisher) or {}
-          elif usb_display and not (peer.get('carrot_host') == 'jetson' and peer.get(PUMP_CAPABILITY) is True):
-            # modeld already has its reply. Drain only a bounded ready tail;
-            # never add these fragments before infer_end or delay its reply.
-            send_ready_after_reply(client, publisher, fast_receiver=peer.get(PUMP_CAPABILITY) is True)
+          # Reply first. If the next model request is already queued, or this
+          # exchange used its budget, skip display work altogether.
+          display_metrics = display_idle(connection)
           tail_done = time.monotonic()
           if wifi is not None:
             wifi.send(client)
@@ -491,12 +507,12 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
               map_deferred_used=int(nav_meta is not None and getattr(client, 'last_map_used', False)),
               hud_ms=(hud_done-phase_done)*1000,
               usb_response_ms=(completed-hud_done)*1000,
-              # Same-frame totals: HUD overlaps server execution, so separate
-              # aggregate maxima must never be added to estimate response latency.
+              # Display runs only after this frame's IPC reply. Its idle tail
+              # must not be attributed to this frame's inference exchange.
               usb_exchange_ms=(completed-started)*1000,
               submit_to_response_ms=(completed-sent)*1000,
-              display_early_media_ms=early_media_ms,
-              display_early_media_bytes=early_media_bytes,
+              display_early_media_ms=0.,
+              display_early_media_bytes=0,
               ipc_reply_ms=(replied-completed)*1000,
               display_tail_ms=(tail_done-replied)*1000,
               wifi_tail_ms=(finished-tail_done)*1000,
