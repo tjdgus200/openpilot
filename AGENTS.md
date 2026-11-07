@@ -1,5 +1,17 @@
 # Repository memory
 
+- 2026-11-07 HUD dropout stability: packet freshness must never be treated as
+  an encoder change. Keep the open Jetson panel/renderer on short or long
+  telemetry gaps; invalidate vehicle values/BSD/alerts as before and display
+  the existing unavailable-data strip in place. Wait for valid data before
+  the first acquisition. Real FPS changes, ignition OFF, transport/encoder
+  failures and updater shutdown retain their original lifecycle. Model-priority
+  display backoff is one observed model period (at most50ms), not two seconds;
+  retain all idle headroom/IPC checks and never send HUD before model replies.
+  Every paired runtime must pass packaged watcher and native dropout rendering
+  checks plus the mandatory 60-second admission/lifecycle regressions. See
+  docs/pv5_hud_stability_20261107.md. Physical-device verification is separate.
+
 - 2026-11-07 PV5 inference has priority over HUD USB traffic. Never send HUD
   snapshots or navigation fragments between infer_begin and the IPC reply to
   modeld. After replying, and while polling for requests, admit display only

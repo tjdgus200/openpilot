@@ -12,7 +12,7 @@
     },
     "hud_and_alerts": {
       "preserve": "Lane probabilities, steering, correction/wait reason, camera target/distance and curve speeds, C3X/Jetson notices throughout each fresh active condition with no timed expiry, a one-second minimum settled hold and upward exit after the condition clears, immediate driver-attention glyph and alert priority, BSD pulse and existing Q92/FPS choices.",
-      "tests": ["tools/jetlink/test_hud.py", "tools/jetlink/test_hud_health.py", "tools/jetlink/test_hud_bsd.py", "tools/jetlink/test_hud_rate.py", "openpilot/selfdrive/ui/tests/test_pv5_driving_feedback.py"]
+      "tests": ["tools/jetlink/test_hud.py", "tools/jetlink/test_hud_health.py", "tools/jetlink/test_hud_bsd.py", "tools/jetlink/test_hud_rate.py", "tools/jetlink/test_hud_fps_transition.py", "tools/jetlink/test_hud_hotplug.py", "tools/jetlink/test_hud_stability.py", "openpilot/selfdrive/ui/tests/test_pv5_driving_feedback.py"]
     },
     "battery_and_ble": {
       "preserve": "108 voltage channels, 15 temperatures, progressive heatmaps, trip SOC, zero-speed/P/charging view and per-field TTL; sequential BLE requests and recovery.",

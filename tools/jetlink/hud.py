@@ -307,7 +307,11 @@ def main():
   class QualityWatch:
     def read(self):
       target = selection(settings.get_int(PARAM))
-      return int(not dashboard_ready() or (override is None and target != requested))
+      # Packet freshness is a DATA state, not an encoder/USB lifecycle change.
+      # HealthRenderer clears stale values and draws the waiting strip in place.
+      # Reopening here turns any telemetry gap into brightness-off -> boot screen
+      # -> USB initialization, and can repeat even while inference is healthy.
+      return int(override is None and target != requested)
   # Reuse the renderer's clean, main-loop exit instead of throwing from a USB
   # sender thread. This adapter is private to the host and does not change the
   # comma's ClusterHudEncoder behavior. A zero sentinel means unchanged.

@@ -55,7 +55,7 @@ class IdleBudget:
 
   def completed(self, now, exchange_s):
     if exchange_s >= .045:
-      self.pause_until = now + 2.
+      self.pause_until = max(self.pause_until, now + self.period)
 
   def open_window(self, now):
     # One bounded slice after polling IPC, never a burst/catch-up queue.
@@ -78,7 +78,10 @@ class IdleBudget:
     if math.isfinite(duration) and duration >= 0:
       self.send_budget = max(.002, min(.02, duration), self.send_budget * .95)
       if duration > .002:
-        self.pause_until = now + 2.
+        # Skip a model period, not two seconds of vehicle telemetry. A slow
+        # display write must not force the receiver past its 500ms data TTL.
+        # The normal headroom/IPC gates still apply after this retry delay.
+        self.pause_until = max(self.pause_until, now + self.period)
 
 
 class FrameRate:

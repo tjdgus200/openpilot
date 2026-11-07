@@ -456,6 +456,8 @@ camera supplies 20fps. Reduced processing overhead does not establish sustained
 
 ## Retained carrot-nav-pv5 features (2026-10-24)
 
+The 2026-11-07 stability update keeps the HUD open during telemetry gaps, showing the existing connection-wait message and `--` in place. Fresh data resumes the dashboard immediately. FPS changes, ignition OFF and actual device errors retain their existing handling. This fix also requires the new model-paired Jetson package; after updating comma, use the existing stationary Park/offroad update procedure to apply it to Jetson.
+
 Jetson HUD retains Q92 and the saved FPS setting. Model results return to comma first; HUD and map data use available idle time. Updates are skipped when another model request is pending or processing slows, so actual FPS may fall below the selected ceiling. This change is on comma and keeps the existing model-paired Jetson packages. It cannot eliminate a wait caused by a write already started on the shared USB link.
 
 Driving popups on comma 3/3X and the Jetson HUD remain visible while fresh cut-in, assisted lane-change, lead-braking or curve-approach conditions persist. They stay for at least one second after settling, then slide upward over 220ms once the condition clears or its data expires. Higher-priority warnings take precedence, and a still-active situation returns after the warning ends.

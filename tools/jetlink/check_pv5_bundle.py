@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # Executes in a child with only the extracted package on its source import path.
 PROBE = '''
-import base64,json,sys,time
+import ast,base64,json,sys,time
 from pathlib import Path
 from dataclasses import replace
 from unittest.mock import patch
@@ -32,6 +32,19 @@ from openpilot.common.hud_driving_feedback import DRIVING_NOTICE_TEXT
 from openpilot.selfdrive.carrot import signal_mode
 from openpilot.common.performance_diagnostics import ENABLED
 assert not ENABLED and not server.PERF_DIAGNOSTICS
+# Check the packaged lifecycle watcher itself, not a checkout replacement.
+from types import SimpleNamespace
+from hud_rate import PARAM,RATES,selection
+main_ast=next(n for n in ast.parse(Path(hud.__file__).read_text(encoding='utf-8')).body
+              if isinstance(n,ast.FunctionDef) and n.name=='main')
+watch_ast=next(n for n in main_ast.body if isinstance(n,ast.ClassDef) and n.name=='QualityWatch')
+choice=[2]
+watch_env={'settings':SimpleNamespace(get_int=lambda _:choice[0]),'PARAM':PARAM,
+ 'selection':selection,'override':None,'requested':2,'dashboard_ready':lambda:False}
+exec(compile(ast.Module(body=[watch_ast],type_ignores=[]),hud.__file__,'exec'),watch_env)
+assert watch_env['QualityWatch']().read()==0
+choice[0]=3
+assert watch_env['QualityWatch']().read()==1
 record=json.loads(Path(sys.argv[1]).read_text())
 def add_event(name,event):
  record['events'][name]=base64.b64encode(event.to_bytes()).decode()
@@ -90,6 +103,29 @@ try:
  assert 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms' in lines['infer']
  assert '| COMMA 40.0 ms' in lines['infer']
  assert sum(ui._runtime_line_layouts['infer'][2]) < 520
+ # A telemetry gap is an in-place unavailable dashboard, never a panel reopen.
+ window_font=ui._telemetry_font.texture.id
+ draw_text=ui._draw_text
+ gap_text=[]
+ def gap_draw(text,*args,**kwargs):
+  gap_text.append(text)
+  return draw_text(text,*args,**kwargs)
+ ui._draw_text=gap_draw
+ saved_snapshot=hud.read_snapshot
+ for gap in (.6,2.1,10.):
+  hud.read_snapshot=hud_protocol.read_snapshot=lambda:None
+  remote.update()
+  assert not any(remote.alive.values()) and not any(remote.valid.values())
+  gap_text.clear()
+  with patch('time.monotonic',return_value=record['sent']+gap):
+   ui.render_to_file(standby_state(),Path(sys.argv[2]).with_name('hud-gap.png'))
+  assert ui._window_open and ui._telemetry_font.texture.id==window_font
+  assert not ui._vehicle_data_current and '--' in gap_text
+  assert any('Waiting for comma data' in text or '콤마 데이터 연결 대기' in text for text in gap_text)
+ hud.read_snapshot=hud_protocol.read_snapshot=saved_snapshot
+ ui._draw_text=draw_text
+ ui.render_to_file(state,Path(sys.argv[2]))
+ assert ui._vehicle_data_current and ui._window_open
  from PIL import Image
  picture=Image.open(sys.argv[2]).convert('RGB')
  assert picture.size==(1920,480) and len(picture.getcolors(1000000))>50
@@ -278,6 +314,7 @@ def main(argv=None):
                 center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True,
+                telemetry_gap_in_place=True,
                 diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')
   (args.output / 'bundle-check.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
