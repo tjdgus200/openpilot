@@ -94,6 +94,45 @@ class TestSoundd:
     soundd.get_audible_alert(sm, steering_attention=True)
     np.testing.assert_allclose(soundd.get_sound_data(1), 1.0)
 
+  def test_angle_limit_sound_without_dm_and_escalation_from_attention(self):
+    soundd = Soundd.__new__(Soundd)
+    soundd.current_alert = AudibleAlert.none
+    soundd.current_sound_frame = 0
+    soundd.current_volume = 0.
+    soundd.carrot_count_down = 100
+    soundd.loaded_sounds = {AudibleAlert.prompt: np.array([0.5], dtype=np.float32)}
+    soundd.critical_gains = {AudibleAlert.prompt: 2.}
+    sm = _SoundSubMaster(100, carrot_updated=False)
+    soundd.get_audible_alert(sm, steering_limit=True)
+    assert soundd.current_alert_type == 'pv5SteeringAngleLimit'
+    np.testing.assert_allclose(soundd.get_sound_data(1), 1.)
+    soundd.get_audible_alert(sm, steering_limit=True)
+    np.testing.assert_allclose(soundd.get_sound_data(1), 0.)
+    soundd.get_audible_alert(sm)
+    sm.updated['selfdriveState'] = True
+    soundd.get_audible_alert(sm, steering_attention=True)
+    np.testing.assert_allclose(soundd.get_sound_data(1), 1.)
+    soundd.get_audible_alert(sm, steering_limit=True)
+    np.testing.assert_allclose(soundd.get_sound_data(1), 1.)
+
+  def test_angle_limit_sound_yields_to_critical_and_cancels_stale_pending(self):
+    soundd = Soundd.__new__(Soundd)
+    soundd.current_alert = AudibleAlert.none
+    soundd.current_sound_frame = 0
+    soundd.current_volume = 0.
+    soundd.carrot_count_down = 100
+    soundd.loaded_sounds = {AudibleAlert.prompt: np.array([0.5], dtype=np.float32),
+                            AudibleAlert.warningImmediate: np.array([-0.5], dtype=np.float32)}
+    soundd.critical_gains = dict.fromkeys(soundd.loaded_sounds, 2.)
+    sm = _SoundSubMaster(100, selfdrive_updated=True)
+    sm['selfdriveState'].alertStatus = log.SelfdriveState.AlertStatus.critical
+    soundd.get_audible_alert(sm, steering_limit=True)
+    np.testing.assert_allclose(soundd.get_sound_data(1), -1.)
+    sm['selfdriveState'].alertStatus = log.SelfdriveState.AlertStatus.normal
+    soundd.get_audible_alert(sm)  # No delayed steering beep after its source disappears.
+    assert not soundd.steering_attention_pending
+    assert soundd.current_alert == AudibleAlert.none
+
   @pytest.mark.parametrize('name', ['driverDistracted', 'driverUnresponsive'])
   @pytest.mark.parametrize('volume', [0., 0.05, 0.69, 0.7, 0.85, 1., 1.5])
   @pytest.mark.parametrize('stage', [2, 3])

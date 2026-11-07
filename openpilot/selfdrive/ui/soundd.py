@@ -284,7 +284,7 @@ class Soundd:
 
     data_out[:frames, 0] = self.get_sound_data(frames)
 
-  def update_alert(self, new_alert, alert_type="", *, critical=False):
+  def update_alert(self, new_alert, alert_type="", *, critical=False, restart=False):
     if new_alert != AudibleAlert.none and new_alert not in self.loaded_sounds:
       cloudlog.error(f"soundd received unsupported alert {new_alert}")
       new_alert = AudibleAlert.none
@@ -295,7 +295,7 @@ class Soundd:
       self.current_sound_frame >= len(self.loaded_sounds[self.current_alert])
     )
     if ((self.current_alert != new_alert and (new_alert != AudibleAlert.none or current_alert_played_once))
-        or (new_alert != AudibleAlert.none and critical and not self.current_alert_critical)):
+        or (new_alert != AudibleAlert.none and (restart or critical and not self.current_alert_critical))):
       self.current_alert = new_alert
       self.current_sound_frame = 0
       self.current_alert_type = alert_type
@@ -319,9 +319,13 @@ class Soundd:
 
     return new_alert
 
-  def get_audible_alert(self, sm, steering_attention=False):
-    self.steering_attention_pending = steering_attention and (self.steering_attention_pending or not self.steering_attention)
-    self.steering_attention = steering_attention
+  def get_audible_alert(self, sm, steering_attention=False, *, steering_limit=False):
+    # Distinguish a new angle-limit escalation from an ongoing DM advisory.
+    # Emit one prompt per episode; vehicle/timeout sounds always take priority.
+    steering_level = 3 if steering_limit else 2 if steering_attention else 0
+    self.steering_attention_pending = bool(steering_level and (
+      self.steering_attention_pending or steering_level > self.steering_attention))
+    self.steering_attention = steering_level
     state_updated = sm.updated['selfdriveState']
     if not state_updated and check_selfdrive_timeout_alert(sm):
       self.update_alert(AudibleAlert.warningImmediate, critical=True)
@@ -341,12 +345,15 @@ class Soundd:
       if critical and new_alert == AudibleAlert.none:
         new_alert = AudibleAlert.warningImmediate
       alert_type = state.alertType if new_alert != AudibleAlert.none else ""
+      restart = False
       if new_alert == AudibleAlert.none and self.steering_attention_pending:
         self.steering_attention_pending = False
-        new_alert, alert_type, critical = AudibleAlert.prompt, 'pv5SteeringAttention', True
+        alert_type = 'pv5SteeringAngleLimit' if steering_limit else 'pv5SteeringAttention'
+        new_alert, critical = AudibleAlert.prompt, True
+        restart = True
       else:
         new_alert = self.update_carrot_alert(sm, new_alert)
-      self.update_alert(new_alert, alert_type, critical=critical)
+      self.update_alert(new_alert, alert_type, critical=critical, restart=restart)
 
   def calculate_volume(self, weighted_db):
     volume = ((weighted_db - AMBIENT_DB) / DB_SCALE) * (MAX_VOLUME - MIN_VOLUME) + MIN_VOLUME
@@ -380,12 +387,12 @@ class Soundd:
           self.current_volume = self.calculate_volume(float(self.spl_filter_weighted.x)) * self.soundVolumeAdjust
 
         cruise_toggled = cruise_main_toggle.update(sm['carState'].buttonEvents, sm['selfdriveState'].enabled)
-        steering_attention = pv5_steering_warning(sm, time.monotonic()) == 2
-        if (cruise_toggled and not steering_attention and sm['selfdriveState'].alertStatus != log.SelfdriveState.AlertStatus.critical
+        steering_warning = pv5_steering_warning(sm, time.monotonic())
+        if (cruise_toggled and steering_warning < 2 and sm['selfdriveState'].alertStatus != log.SelfdriveState.AlertStatus.critical
             and not check_selfdrive_timeout_alert(sm)):
           self.update_alert(AudibleAlert.prompt)
         else:
-          self.get_audible_alert(sm, steering_attention)
+          self.get_audible_alert(sm, steering_warning == 2, steering_limit=steering_warning == 3)
 
         rk.keep_time()
 

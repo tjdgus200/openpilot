@@ -72,6 +72,60 @@ def test_steering_warning_requires_active_control_and_live_vision_for_escalation
   assert pv5_steering_warning(sm, 100.0) == 0
 
 
+@pytest.mark.parametrize('direction', (-1, 1))
+def test_angle_limit_warning_is_separate_from_lateral_acceleration_and_dm(direction):
+  from opendbc.car.hyundai.values import CarControllerParams
+  sm = DrivingMessages()
+  cp, cs = sm['carParams'], sm['carState']
+  cp.carFingerprint, cp.steerControlType = 'KIA_PV5', 'angle'
+  sm['carControl'].latActive = True
+  sm['controlsState'].lateralControlState.init('angleState')
+  limit = CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX
+  cs.canValid = True
+  cs.steeringAngleDeg = direction * (limit - 1)
+  sm['carOutput'].actuatorsOutput.steeringAngleDeg = direction * limit
+  sm['carControl'].actuators.steeringAngleDeg = direction * (limit + 10)
+  # No lateral-acceleration or DM prerequisite: this is an angle-cap warning.
+  assert pv5_steering_warning(sm, 100.0) == 3
+  for name in ('carState', 'carControl', 'controlsState', 'carOutput'):
+    sm.logMonoTime[name] -= 400_000_000
+    assert pv5_steering_warning(sm, 100.0) == 0
+    sm.logMonoTime[name] += 400_000_000
+  for field in ('steeringPressed', 'steerFaultTemporary', 'steerFaultPermanent'):
+    setattr(cs, field, True)
+    assert pv5_steering_warning(sm, 100.0) == 0
+    setattr(cs, field, False)
+  cs.canValid = False
+  assert pv5_steering_warning(sm, 100.0) == 0
+  cs.canValid = True
+  cp.carFingerprint = 'OTHER'
+  assert pv5_steering_warning(sm, 100.0) == 0
+
+
+@pytest.mark.parametrize('direction', (-1, 1))
+@pytest.mark.parametrize('requested,applied,actual,expected', (
+  (185, 175, 174, True), (178, 175, 175, False),
+  (185, 170, 175, False), (185, 175, 160, False),
+  (185, 175, 190, False), (185, 180, 174, False),
+  (-185, 175, 175, False), (185, -175, 175, False),
+  (185, 175, -175, False), (float('nan'), 175, 175, False),
+  (185, float('inf'), 175, False), (185, 175, float('nan'), False),
+))
+def test_angle_limit_does_not_confuse_rate_limits_or_unwinding(direction, requested, applied, actual, expected):
+  from openpilot.common.hud_driving_feedback import pv5_angle_limit_exceeded
+  assert pv5_angle_limit_exceeded(direction * requested, direction * applied, direction * actual) is expected
+
+
+def test_angle_limit_popup_preempts_lower_notices_and_is_red():
+  slide = DrivingPopupSlide()
+  slide.update(100., warning=2)
+  popup = slide.update(100.1, warning=3)
+  assert popup.warning == 3 and '조향각 한계' in popup.text
+  assert slide.top(100.1, 24, 176, urgent=True) == 24
+  assert driving_popup_colors(3, None) == driving_popup_colors(2, None)
+  assert slide.update(105., warning=3).warning == 3
+
+
 def test_feedback_uses_live_model_steering_and_center_status():
   sm = DrivingMessages()
   model = sm['modelV2']

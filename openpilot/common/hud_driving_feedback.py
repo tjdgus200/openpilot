@@ -4,11 +4,13 @@ from dataclasses import dataclass
 
 STEERING_WARNING_SERVICES = ('carParams', 'carControl', 'controlsState', 'carState',
                              'liveParameters', 'carOutput', 'driverMonitoringState')
-STEERING_WARNING_TEXT = {1: '조향 요구량 높음', 2: '전방 주시, 조향 요구량 높음'}
+STEERING_WARNING_TEXT = {1: '조향 요구량 높음', 2: '전방 주시, 조향 요구량 높음',
+                         3: '조향각 한계\n직접 조향하세요'}
 DRIVING_POPUP_COLORS = {
   0: ((31, 70, 143, 255), (177, 220, 255, 255)),
   1: ((77, 46, 9, 255), (255, 184, 66, 255)),
   2: ((156, 18, 27, 255), (255, 78, 85, 255)),
+  3: ((156, 18, 27, 255), (255, 78, 85, 255)),
 }
 _TRAFFIC_POPUP_COLORS = ((80, 46, 126, 255), (221, 190, 255, 255))
 _LANE_POPUP_COLORS = ((7, 89, 86, 255), (115, 251, 224, 255))
@@ -291,6 +293,13 @@ def pv5_steering_warning(sm, now: float, *, cp=None, started_frame: int | None =
 
   controls = sm['controlsState']
   kind = controls.lateralControlState.which()
+  if (kind == 'angleState' and cp.steerControlType == 'angle'
+      and fresh('carState', 0.3) and fresh('carOutput', 0.3)):
+    cs = sm['carState']
+    if (cs.canValid and not cs.steeringPressed and not cs.steerFaultTemporary and not cs.steerFaultPermanent
+        and pv5_angle_limit_exceeded(sm['carControl'].actuators.steeringAngleDeg,
+                                    sm['carOutput'].actuatorsOutput.steeringAngleDeg, cs.steeringAngleDeg)):
+      return 3
   if kind == 'angleState' and fresh('carState', 0.3) and fresh('liveParameters', 0.5):
     demand = angle_steering_demand(sm['carState'].vEgo, controls.desiredCurvature or controls.curvature,
                                   sm['liveParameters'].roll, cp.maxLateralAccel)
@@ -311,3 +320,26 @@ def pv5_steering_warning(sm, now: float, *, cp=None, started_frame: int | None =
     if dm.activePolicy == 'vision' and not dm.cameraUnavailable and not dm.dm2Disabled and vision.faceDetected and vision.isDistracted:
       return 2
   return 1
+
+
+def pv5_angle_limit_exceeded(requested: float, applied: float, measured: float) -> bool:
+  """Read-only check of a planned angle beyond the configured Hyundai command cap.
+
+  The request already comes from the lateral controller's model-based target.
+  Do not equate the lateral-acceleration gauge or a rate-limited command with
+  a steering-angle stop. Require both the applied and measured angles near
+  the cap, plus a larger same-direction request; ignore manual override above.
+  """
+  if not all(math.isfinite(v) for v in (requested, applied, measured)):
+    return False
+  # This runs on comma. Jetson receives only the classified integer, not DM
+  # data or a second controller. Missing vehicle code must fail closed.
+  try:
+    from opendbc.car.hyundai.values import CarControllerParams
+  except ImportError:
+    return False
+  limit = CarControllerParams.ANGLE_LIMITS.STEER_ANGLE_MAX
+  return (math.isfinite(limit) and limit > 3.0
+          and abs(requested) > max(limit, abs(measured)) + 3.0
+          and abs(abs(applied) - limit) <= 0.5 and abs(measured) >= limit - 3.0
+          and requested * applied > 0 and requested * measured > 0)

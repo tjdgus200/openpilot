@@ -47,16 +47,17 @@ def test_one_json_parse_for_unchanged_atomic_packet(reader, monkeypatch):
   assert protocol.read_snapshot() is None
 
 
-def test_steering_advisory_expires_and_legacy_snapshot_clears_it(reader, monkeypatch):
+@pytest.mark.parametrize('warning', (1, 2, 3))
+def test_steering_advisory_expires_and_legacy_snapshot_clears_it(reader, monkeypatch, warning):
   import hud
 
   clock, write = reader
   monkeypatch.setattr(hud, 'time', NS(monotonic=lambda: clock[0]))
   sm = hud.RemoteSubMaster([])
-  record = {'version': 1, 'sent': 100.0, 'steering_warning': 2}
+  record = {'version': 1, 'sent': 100.0, 'steering_warning': warning}
   write(record)
   sm.update()
-  assert sm.steering_warning == 2
+  assert sm.steering_warning == warning
 
   clock[0] += .31
   sm.update()
@@ -64,7 +65,7 @@ def test_steering_advisory_expires_and_legacy_snapshot_clears_it(reader, monkeyp
   write(record, clock[0])
   clock[0] += .03
   sm.update()
-  assert sm.steering_warning == 2
+  assert sm.steering_warning == warning
   write({'version': 1, 'sent': 100.1}, clock[0])
   clock[0] += .03
   sm.update()

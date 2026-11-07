@@ -117,7 +117,7 @@ class RemoteSubMaster:
       return
     received, value = snapshot
     warning = value.get('steering_warning')
-    self.steering_warning = warning if type(warning) is int and warning in (1, 2) and 0 <= time.monotonic() - received <= 0.3 else 0
+    self.steering_warning = warning if type(warning) is int and warning in (1, 2, 3) and 0 <= time.monotonic() - received <= 0.3 else 0
     if received == self.last_received:
       return
     self.last_received = received

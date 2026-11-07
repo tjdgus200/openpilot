@@ -7571,10 +7571,10 @@ class ClusterUiRenderer:
         dots = self._popup_slide.motion_dots(motion, now)
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
         title, _, detail = text.partition("\n")
-        width, height, settled_top = (660 if detail else 620 if warning == 2 else 500), (112 if detail else 76), 82
+        width, height, settled_top = (660 if detail else 620 if warning >= 2 else 500), (112 if detail else 76), 82
         icon_space = 68 if dots else 0
         width += icon_space
-        top = self._popup_slide.top(now, settled_top, height, urgent=warning == 2)
+        top = self._popup_slide.top(now, settled_top, height, urgent=warning >= 2)
         left = center_x - width * 0.5
         background, accent = driving_popup_colors(warning, motion)
         # Keep the moving popup below the clock and status row.

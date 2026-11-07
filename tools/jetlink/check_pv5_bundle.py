@@ -148,6 +148,13 @@ try:
  assert Image.open(popup_path).convert('RGB').getpixel(anchor)==(156,18,27)
  ui.render_to_file(replace(popup,steering_warning=2,alert=ClusterAlert('Vehicle warning',size=2)),popup_path)
  assert Image.open(popup_path).convert('RGB').getpixel(anchor)!=(156,18,27)
+ ui._popup_slide.reset()
+ ui.render_to_file(replace(popup,steering_warning=3),popup_path)
+ assert Image.open(popup_path).convert('RGB').getpixel(anchor)==(156,18,27)
+ assert ui._popup_slide._popup.warning==3
+ assert '조향각 한계' in ui._popup_slide._popup.text
+ ui.render_to_file(replace(popup,steering_warning=3,alert=ClusterAlert('Vehicle warning',size=2)),popup_path)
+ assert Image.open(popup_path).convert('RGB').getpixel(anchor)!=(156,18,27)
  ui.render_to_file(replace(state,deceleration_banner='방지턱 감속'),popup_path)
  ui._popup_slide.top(time.monotonic()-1.,82,76,urgent=True)
  ui.render_to_file(replace(state,deceleration_banner='방지턱 감속'),popup_path)
@@ -319,7 +326,7 @@ def main(argv=None):
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
                 center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
-                condition_driven_popups=True,
+                condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,
                 diagnostics_off=True, physical_device_tested=False,
                 fixture_scope='synthetic eligible lane/control state; real schema, remote adapter and native renderer')

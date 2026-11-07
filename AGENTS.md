@@ -1,5 +1,21 @@
 # Repository memory
 
+- 2026-11-07 PV5 angle-limit advisory is separate from the steering-demand
+  gauge. Angle-mode percent is requested lateral acceleration / CP.maxLateralAccel,
+  not percent of a mechanical steering stop. Preserve the existing 80%/90%+DM
+  notices. New level3 uses fresh active angle-mode CC, controls, valid CAN CS
+  and applied carOutput: applied command within0.5deg of the configured Hyundai
+  cap, measured angle within3deg, and a same-direction target over the cap and
+  measured angle by more than3deg. Read the controller's cap; do not widen it,
+  rate/jerk/acceleration/EPS torque limits or safety admission. No second model
+  inference/prediction is added. Display an immediate red two-line angle-limit
+  popup on C3/3X and Jetson, and one full-gain comma prompt per episode without
+  a DM prerequisite, below existing vehicle/timeout sounds. Forward only the
+  advisory integer, never DM data; expire it as before. Check sign/unwinding,
+  rate-only lag, missing/stale/override/fault inputs, audio escalation/rearm and
+  priority, plus all five exact model-paired native renderers. Physical EPS,
+  actual speaker loudness and warning timing remain unverified on a PC.
+
 - 2026-11-07 HUD dropout stability: packet freshness must never be treated as
   an encoder change. Keep the open Jetson panel/renderer on short or long
   telemetry gaps; invalidate vehicle values/BSD/alerts as before and display
