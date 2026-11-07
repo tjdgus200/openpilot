@@ -106,11 +106,16 @@ try:
  # A telemetry gap is an in-place unavailable dashboard, never a panel reopen.
  window_font=ui._telemetry_font.texture.id
  draw_text=ui._draw_text
+ draw_stroke=ui._draw_text_with_stroke
  gap_text=[]
  def gap_draw(text,*args,**kwargs):
   gap_text.append(text)
   return draw_text(text,*args,**kwargs)
+ def gap_stroke(text,*args,**kwargs):
+  gap_text.append(text)
+  return draw_stroke(text,*args,**kwargs)
  ui._draw_text=gap_draw
+ ui._draw_text_with_stroke=gap_stroke
  saved_snapshot=hud.read_snapshot
  for gap in (.6,2.1,10.):
   hud.read_snapshot=hud_protocol.read_snapshot=lambda:None
@@ -124,6 +129,7 @@ try:
   assert any('Waiting for comma data' in text or '콤마 데이터 연결 대기' in text for text in gap_text)
  hud.read_snapshot=hud_protocol.read_snapshot=saved_snapshot
  ui._draw_text=draw_text
+ ui._draw_text_with_stroke=draw_stroke
  ui.render_to_file(state,Path(sys.argv[2]))
  assert ui._vehicle_data_current and ui._window_open
  from PIL import Image
