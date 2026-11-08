@@ -423,6 +423,20 @@ Mode `2` gradually requests acceleration toward approximately −0.5m/s² after 
 
 Preparation releases when red evidence disappears or conflicts with green. The existing driving model still controls stopping toward the stop line; this trial does not guarantee deceleration or stopping at every red signal.
 
+## PV5 simple steering authority recovery
+
+Open **Settings → PV5 → Driving Assist → Simple Steering Authority Recovery (Experimental)**.
+`Pv5SimpleSteerRecovery` defaults off, retaining combined recovery. On confirms low
+driver effort for 0.2 seconds, then uses a 1.5-second full-range authority ramp.
+Actual recovery time depends on starting authority and driver effort. Model uncertainty
+and repeated-override history do not set its recovery rate; existing model freshness
+and validity admission remain. Existing driver and pre-override yielding are retained.
+The existing 50-frame settings poll applies in any gear or cruise state; live transitions
+start from the preceding output without an abrupt authority increase. Deactivation clears
+authority and state. Other vehicles and torque steering ignore this option. Steering
+angle/rate, lateral acceleration/jerk, authority limits, Panda safety and model inputs
+are unchanged. Physical vehicle response and benefit are unvalidated.
+
 ## PV5 camera and exposure
 
 Open **Settings → PV5 → Camera & Exposure** in Carrot Web. Model input/exposure settings

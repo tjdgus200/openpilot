@@ -20,7 +20,7 @@
     },
     "resources_and_state": {
       "preserve": "Full diagnostics OFF, 1Hz HUD resource and inference timing readouts, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates.",
-      "tests": ["tools/jetlink/test_optimization_defaults.py", "tools/jetlink/test_device_state.py", "tools/jetlink/test_input_overlap.py", "tools/jetlink/test_parsed_output_guard.py", "tools/jetlink/test_hud_runtime_stats.py", "tools/jetlink/test_performance_diagnostics.py", "tools/jetlink/test_hud_inference_priority.py", "tools/jetlink/test_daemon_timing.py", "tools/jetlink/test_hud_media.py", "tools/jetlink/test_pv5_drive_report.py"]
+      "tests": ["tools/jetlink/test_optimization_defaults.py", "tools/jetlink/test_device_state.py", "tools/jetlink/test_input_overlap.py", "tools/jetlink/test_parsed_output_guard.py", "tools/jetlink/test_hud_runtime_stats.py", "tools/jetlink/test_performance_diagnostics.py", "tools/jetlink/test_hud_inference_priority.py", "tools/jetlink/test_daemon_timing.py", "tools/jetlink/test_hud_media.py", "tools/jetlink/test_pv5_drive_report.py", "opendbc_repo/opendbc/car/hyundai/tests/test_steering_recovery.py"]
     },
     "power_and_boot": {
       "preserve": "Jetson USB input-power block, black boot diagnostics, regular W/temperature text and permission-gated Park update/previous-release recovery.",
@@ -31,6 +31,7 @@
     "Verify the complete official ONNX hash/size, actual metadata/dtypes/slices and full graph; compare patched CPU outputs on changed inputs, recurrence and reset.",
     "Validate the exact published archive alone: both model spec filenames and source commit, server imports, native HUD font initialization and first real render; re-download/hash all public assets.",
     "Run the full control-loop tests: test_pv5_lane_center.py, test_lateral_startup_control.py and test_lateral_readiness.py in the native PC test environment.",
+    "Run PV5 steering recovery/controller and angle-limit tests, including OFF full-CAN replay equivalence, live switching, driver priority, stale/fault inputs and non-PV5 exclusion.",
     "Before declaring hardware validation: verify physical Orin TensorRT build/output precision, saved FOV routing, sustained inference/HUD timing, USB/BLE reconnection and EPS/CAN behavior under a controlled procedure."
   ]
 }

@@ -661,7 +661,7 @@
           "ko": "주행 보조",
           "en": "Driving Assist",
           "zh": "驾驶辅助",
-          "params": ["Pv5LaneCenterAssist"]
+          "params": ["Pv5LaneCenterAssist", "Pv5SimpleSteerRecovery"]
         },
         {
           "id": "PV5_CAMERA",
@@ -689,6 +689,24 @@
     }
   ],
   "params": [
+    {
+      "group": "PV5",
+      "name": "Pv5SimpleSteerRecovery",
+      "title": "단순 조향 보조력 복귀 (실험)",
+      "descr": "PV5 앵글 조향 전용입니다. 기본 끔은 기존 복귀 방식입니다. 켜면 운전자 힘이 낮은 상태를 0.2초 확인한 뒤 기존 보조력 상한으로 1.5초 기준 점진 복귀합니다. 복귀 속도에는 모델 불확실성과 반복 개입 횟수를 쓰지 않지만, 기존 입력 유효성·운전자 양보·각도와 보조력 한계는 유지합니다. 켜기/끄기는 약 0.5초 주기로 읽고 전환 시 보조력이 갑자기 증가하지 않게 합니다. 실제 복귀 시간은 초기 보조력과 운전자 힘에 따라 다릅니다. 실차 효과는 미검증입니다.",
+      "egroup": "PV5",
+      "etitle": "Simple Steering Authority Recovery (Experimental)",
+      "edescr": "PV5 angle steering only, default off. On confirms low driver effort for 0.2 seconds then restores the existing authority ceiling with a 1.5-second full-range ramp. Recovery rate excludes model uncertainty and repeated-override history; existing input validity, yielding, angle and authority limits remain. Settings are read about every 0.5 seconds and transitions cannot abruptly increase authority. Actual recovery time depends on starting authority and driver effort. Vehicle effects are unvalidated.",
+      "cgroup": "PV5",
+      "ctitle": "简化转向助力恢复（实验）",
+      "cdescr": "仅用于 PV5 角度转向，默认关闭。开启后确认驾驶员低施力 0.2 秒，再按全范围 1.5 秒逐渐恢复原助力上限。恢复速度不使用模型不确定性或重复干预次数，保留输入有效性、驾驶员接管及原角度和助力限制。约每 0.5 秒读取设置，切换时不会突然增加助力。实际恢复时间取决于起始助力和驾驶员施力。实车效果尚未验证。",
+      "control": "toggle",
+      "risk": "high",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
     {
       "group": "PV5",
       "name": "Pv5ModelFovExposure",

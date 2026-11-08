@@ -1,5 +1,16 @@
 # Repository memory
 
+- 2026-11-09 PV5 steering follow-up: preserve default-OFF Pv5SimpleSteerRecovery
+  in PV5 > Driving Assist, read at the existing50-frame poll only for PV5 angle
+  steering. ON uses existing driver/pre-override yielding and0.2s low-force
+  confirmation with a fixed1.5s full-range authority ramp; model freshness and
+  validity remain mandatory. Keep legacy state independent, seed live changes
+  from actual prior authority and bound return increases; deactivate to zero.
+  The consolidated comfort-rate budget preserves every existing model/speed/
+  large-error/unwind bound and physics/angle limits. No safety/model/HUD change.
+  Require helper/controller/CAN replay, default-OFF parity and full PV5 checks.
+  See docs/pv5_steering_recovery_20261109.md; PC results are not road validation.
+
 - 2026-11-09 FOV AE fallback diagnostics: FrameData @33 UInt8 reason and
   @34 UInt16 warmup-ms are read-only telemetry. Keep stable codes in
   model_fov_meter.h and exposure.py; code0 means legacy/unknown. Forward worker,

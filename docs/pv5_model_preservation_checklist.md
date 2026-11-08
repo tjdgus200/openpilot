@@ -54,6 +54,12 @@ Flip Flop `0f109e38`, CTV3M `bce23ae5`, Light speed `24363193`, v2 `1e17a124`를
 
 ## 자동 검사: 매 변경마다
 
+PV5 단순 보조력 복귀 토글은 기본 OFF와 PV5 angle 전용 범위를 보존한다.
+조향 변경 시 `test_steering_recovery.py`, `test_pv5_steering_recovery.py`,
+`test_pv5_angle_limits.py`와 기존 handover 컨트롤러 검사를 추가 실행한다.
+기본 OFF 전체 CAN 재생 동일성, live 전환·운전자 재개입·입력 만료·비활성화를
+확인하고, 한계 정리는 기존 한계값을 높이지 않는다.
+
 준비된 Python 3.12 Linux PC 환경에서 저장소 루트 기준으로 실행한다.
 이 명령은 모델을 추론하거나 장치에 접속하지 않는다. 콤마·Jetson에서 실행하지 않는다.
 

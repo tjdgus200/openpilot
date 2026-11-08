@@ -150,6 +150,21 @@ test("live geometry is one directly adjustable setting with zero as vehicle defa
   assert.deepEqual(model.getItemEntriesForGroup("STEER").map((e) => e.item.name), [ratio.name]);
 });
 
+test("PV5 simple authority recovery is a default-off assist toggle", () => {
+  const catalog = JSON.parse(readFileSync(new URL("../../carrot_settings.json", root), "utf8"));
+  const item = catalog.params.find((entry) => entry.name === "Pv5SimpleSteerRecovery");
+  const pv5 = catalog.menu.find((entry) => entry.id === "PV5");
+  const assist = pv5.groups.find((entry) => entry.id === "PV5_ASSIST");
+  assert.ok(assist.params.includes(item.name));
+  assert.equal(item.control, "toggle");
+  assert.equal(item.default, 0);
+  assert.equal(item.min, 0);
+  assert.equal(item.max, 1);
+  assert.equal(item.risk, "high");
+  assert.match(item.descr, /1\.5초/);
+  assert.match(item.edescr, /PV5 angle steering only/);
+});
+
 test("geometry numeric entry and step buttons skip the unsupported gap in both directions", () => {
   const context = vm.createContext({});
   vm.runInContext(functionSource(settings, "normalizeSettingNumericValue"), context);

@@ -9,6 +9,7 @@ from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.stopping import CanfdStopping
 from opendbc.car.hyundai.steering_handover import SteeringHandover
+from opendbc.car.hyundai.steering_recovery import SimpleSteeringRecovery
 from opendbc.car.carlog import carlog
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
@@ -108,6 +109,25 @@ def calculate_canfd_jerk_limits(accel: float, jerk: float, tracking_error: float
   jerk_l = np.clip(max(jerk_l_mpc, jerk_l_assist), 1.0, CANFD_JERK_LIMIT_MAX)
   return float(jerk_u), float(jerk_l)
 
+def angle_comfort_rate_limit(target_sw, last_sw_deg, v_ego, model_v2):
+  """One steering-wheel rate budget from the unchanged independent bounds."""
+  y_std_1s = 0.1
+  if model_v2 is not None and len(model_v2.position.yStd) > 10:
+    value = float(model_v2.position.yStd[10])
+    if np.isfinite(value) and value >= 0.0:
+      y_std_1s = value
+  model_rate = float(np.interp(y_std_1s, [0.1, 0.2, 0.4], [2.0, 1.5, 0.8]))
+  speed_rate = (float(np.interp(v_ego,
+                              [0.0, LOW_SPEED_ANGLE_RATE_RAMP_SPEED, MID_SPEED_ANGLE_RATE_LIMIT_SPEED],
+                              [0.8, 1.1, 0.8]))
+                if v_ego < MID_SPEED_ANGLE_RATE_LIMIT_SPEED else model_rate)
+  error_rate = 1.0 if abs(target_sw - last_sw_deg) > 20.0 else model_rate
+  budget = min(model_rate, speed_rate, error_rate)
+  if abs(last_sw_deg) >= MAX_ANGLE and last_sw_deg * (target_sw - last_sw_deg) < 0.0:
+    budget = max(budget, LARGE_ANGLE_UNWIND_RATE)
+  return budget
+
+
 def apply_steer_angle_limits_physics(desired_sw_deg: float,
                                      last_sw_deg: float,
                                      v_ego: float,
@@ -119,23 +139,10 @@ def apply_steer_angle_limits_physics(desired_sw_deg: float,
                                      model_v2=None) -> float:
   max_lat_accel = 8.5   # m/s^2
   max_lat_jerk  = 4.0   # m/s^3
-  y_std_1s = 0.1
-  if model_v2 is not None and len(model_v2.position.yStd) > 10:
-    model_y_std_1s = float(model_v2.position.yStd[10])
-    if np.isfinite(model_y_std_1s) and model_y_std_1s >= 0.0:
-      y_std_1s = model_y_std_1s
-  max_sw_rate_deg_per_tick = float(np.interp(y_std_1s, [0.1, 0.2, 0.4], [2.0, 1.5, 0.8]))
   v = max(float(v_ego), 1.0)
 
   target_sw = clip_float(desired_sw_deg, -steer_sw_max_deg, steer_sw_max_deg)
-  if v_ego < MID_SPEED_ANGLE_RATE_LIMIT_SPEED:
-    # Keep low/mid-speed angle commands quieter without reducing LKAS_ANGLE_MAX_TORQUE.
-    # Allow the angle, but slow the arrival: 0~15 kph ramps 0.8->1.1 deg/tick,
-    # then 15~40 kph tapers 1.1->0.8 deg/tick. Above 40 kph, physics limits take over.
-    low_mid_speed_cap = float(np.interp(v_ego,
-                                        [0.0, LOW_SPEED_ANGLE_RATE_RAMP_SPEED, MID_SPEED_ANGLE_RATE_LIMIT_SPEED],
-                                        [0.8, 1.1, 0.8]))
-    max_sw_rate_deg_per_tick = min(max_sw_rate_deg_per_tick, low_mid_speed_cap)
+  max_sw_rate_deg_per_tick = angle_comfort_rate_limit(target_sw, last_sw_deg, v_ego, model_v2)
 
   target_rw = target_sw / steer_ratio
   last_rw   = float(last_sw_deg) / steer_ratio
@@ -149,17 +156,6 @@ def apply_steer_angle_limits_physics(desired_sw_deg: float,
   max_drw_dt = (max_lat_jerk * wheelbase_m) / (v * v * sec2)     # rad/s
   max_drw_per_tick = max_drw_dt * DT_CTRL                        # rad/tick
   max_drw_per_tick_deg = float(np.degrees(max_drw_per_tick))
-
-  err = abs(target_sw - last_sw_deg)
-  if err > 20.0:
-    max_sw_rate_deg_per_tick = min(max_sw_rate_deg_per_tick, 1.0)
-
-  # Once steering is in the large-angle region, do not make the return toward center wait on
-  # the normal low-speed/large-error cap. This only relaxes unwinding; winding farther into the
-  # turn keeps all existing limits.
-  unwinding_large_angle = abs(last_sw_deg) >= MAX_ANGLE and last_sw_deg * (target_sw - last_sw_deg) < 0.0
-  if unwinding_large_angle:
-    max_sw_rate_deg_per_tick = max(max_sw_rate_deg_per_tick, LARGE_ANGLE_UNWIND_RATE)
 
   max_drw_per_tick_deg = min(
     max_drw_per_tick_deg,
@@ -233,6 +229,9 @@ class CarController(CarControllerBase):
     self.steer_handover = SteeringHandover()
     self.handover_model_frame = None
     self.handover_model_time = 0
+    self.simple_steer_recovery = SimpleSteeringRecovery()
+    self.simple_steer_recovery_enabled = False
+    self.previous_steering_authority = 0.0
 
     self.lkas11_active = False
 
@@ -264,6 +263,9 @@ class CarController(CarControllerBase):
 
     if self.frame % 50 == 0:
       params = Params()
+      self.simple_steer_recovery_enabled = bool(
+        self.CP.carFingerprint == CAR.KIA_PV5 and self.CP.flags & HyundaiFlags.ANGLE_CONTROL
+        and params.get_bool("Pv5SimpleSteerRecovery"))
       self.max_angle_frames = params.get_int("MaxAngleFrames")
       steerMax = params.get_int("CustomSteerMax")
       steerDeltaUp = params.get_int("CustomSteerDeltaUp")
@@ -483,10 +485,23 @@ class CarController(CarControllerBase):
         wheelbase=self.CP.wheelbase, steer_ratio=self.CP.steerRatio, active=CC.latActive,
         valid=bool(CS.out.canValid and not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and model_valid),
       )
+      if self.CP.carFingerprint == CAR.KIA_PV5:
+        steering_authority = self.simple_steer_recovery.update(
+          enabled=self.simple_steer_recovery_enabled, now=now_nanos * 1e-9,
+          legacy=steering_authority, previous=self.previous_steering_authority,
+          minimum=self.params.ANGLE_MIN_TORQUE, maximum=self.angle_max_torque,
+          active=CC.latActive, valid=bool(CS.out.canValid and not CS.out.canTimeout
+                                        and not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent
+                                        and model_valid),
+          pressed=CS.out.steeringPressed, driver_ratio=torque_ratio,
+          pre_override_yield=pre_override_yield,
+        )
       if self.frame % 100 == 0 or previous_handover_state != self.steer_handover.state:
-        carlog.info("SteeringHandover mode=3 state=%s effort=%.3f error=%.3f legacy=%.1f cap=%.1f",
+        carlog.info("SteeringHandover mode=3 state=%s effort=%.3f error=%.3f legacy=%.1f cap=%.1f simple=%s",
                     self.steer_handover.state, self.steer_handover.effort or 0.0,
-                    self.steer_handover.error, self.lkas_max_torque, steering_authority)
+                    self.steer_handover.error, self.lkas_max_torque, steering_authority,
+                    self.simple_steer_recovery_enabled)
+    self.previous_steering_authority = steering_authority
 
     self.apply_angle_last = apply_angle
 
