@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-internal-update-n16-20261108-4f61ca12",
-  "source_commit": "4f61ca1245639146bf91b0d2a8208c53665fc689",
+  "profile": "jetson-pv5-drive-feedback-n16-20261108-d7ebf7a0",
+  "source_commit": "d7ebf7a040299e4c007f54961270c37ddf378635",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-internal-update-n16-20261108-4f61ca12/host.tar.gz",
-    "sha256": "a2209375b6257011759f791eb4adb892f9e19cd6c169875991564de6d486833f",
-    "size": 65287718
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-drive-feedback-n16-20261108-d7ebf7a0/host.tar.gz",
+    "sha256": "10cd59bdd9949e3b9d5e7bbeaf6729543f487fd8a6ad8c2ff19a6077461b9f6b",
+    "size": 65298899
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

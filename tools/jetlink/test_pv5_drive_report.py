@@ -119,3 +119,13 @@ def test_tegrastats_is_offline_and_comparison_does_not_rank_probability_as_accur
   assert len(report['reports']) == 5
   assert report['accuracy_ranking'] is None and not report['same_image_sequence_verified']
   assert main(['--compare', *map(str, paths), '--output', str(tmp_path / 'comparison')]) == 0
+
+
+def test_disabled_kernel_scheduler_statistics_are_unavailable_not_zero_wait():
+  report = DriveReport()
+  report.feed('logMessage', 10., {'text': json.dumps({'msg': 'runtimeTiming', 'component': 'modeld',
+             'metrics': {}, 'schedstats_enabled': False, 'scheduler': {'runqueue_wait_ms': 0., 'cpu_ms': 20.}})})
+  result = report.result()
+  assert 'modeld.scheduler_interval_runqueue_wait_ms' not in result['metrics']
+  assert result['coverage']['modeld.scheduler_wait_unavailable'] == 1
+  assert result['metrics']['modeld.scheduler_interval_cpu_ms']['mean'] == 20.

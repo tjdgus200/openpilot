@@ -197,6 +197,9 @@ class DriveReport:
     scheduler = value.get('scheduler')
     if isinstance(scheduler, dict):
       for key in ('runqueue_wait_ms', 'cpu_ms'):
+        if key == 'runqueue_wait_ms' and value.get('schedstats_enabled') is not True:
+          self.coverage[component + '.scheduler_wait_unavailable'] += 1
+          continue
         amount = scheduler.get(key)
         if finite(amount) and 0 <= amount < 100000:
           self.metric(component + '.scheduler_interval_' + key, amount)

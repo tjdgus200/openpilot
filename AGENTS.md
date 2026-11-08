@@ -13,6 +13,10 @@
   changes. Probabilities/reports are not ground-truth accuracy or proof of
   bottlenecks; real night-image/model replay and Orin/C3X timing remain separate.
   See docs/pv5_drive_improvements_20261108.md and the permanent checklist.
+  Paired sources: n16 d7ebf7a0, flip-flop3a090b86, ctv3m a97e7257,
+  light-speed ae966c9f, v2 c606ca01. All five isolated native bundles and
+  twenty public asset hashes verified. Offline reports must mark scheduler
+  runqueue wait unavailable when kernel schedstats is disabled, never zero.
 
 - 2026-11-08 release: native-owned maintenance plus HUD headroom sources
   N16 4f61ca12, Flip Flop af142946, CTV3M 8fffe52c, Light speed aeb8ef1d,

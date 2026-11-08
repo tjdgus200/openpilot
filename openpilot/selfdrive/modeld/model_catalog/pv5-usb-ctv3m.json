@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-internal-update-ctv3m-20261108-8fffe52c",
-  "source_commit": "8fffe52c622ad9fcab14cc1b245055f629d161d3",
+  "profile": "jetson-pv5-drive-feedback-ctv3m-20261108-a97e7257",
+  "source_commit": "a97e725712c2665fdaaf98c6e738852e1e884780",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-internal-update-ctv3m-20261108-8fffe52c/host.tar.gz",
-    "sha256": "c357049e7fc905ee2b836916a102e97429e556b2135bac59d6d0c53fc85c9eb9",
-    "size": 65287959
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-drive-feedback-ctv3m-20261108-a97e7257/host.tar.gz",
+    "sha256": "f9d24f2590844348ae2d22bee9eecc154a122960a5a9bbe01578fb709915dc42",
+    "size": 65298822
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
