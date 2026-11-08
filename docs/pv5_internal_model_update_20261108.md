@@ -43,3 +43,14 @@ PC에서 실제 ownership, JoiningModel의 내부 입력·출력 전달, lease �
 PC 합성 검사는 실제 USB hotplug, Orin TensorRT 빌드 시간, 주행 중 콤마 CPU·I/O
 경합 또는 장치 재부팅 내구성을 증명하지 않는다. 공유 자원이 있으므로 추론 지연이
 물리적으로 0이라고 보장하지 않는다. 기존 bulk CPU affinity/일반 스케줄링을 유지한다.
+
+## 2026-11-08 배포 기록
+
+최종 PC 회귀 1,243건, 실패·스킵 0건. 다섯 모델의 실제 아카이브를 격리 추출해
+server import와 네이티브 HUD 표시를 검사했고 공개 파일 20개를 재다운로드해
+해시·크기를 대조했다. 실차·물리 USB·Orin 타이밍 검증은 하지 않았다.
+모델별 source는 다음과 같다: n16 `4f61ca12`, flip-flop `af142946`, ctv3m `8fffe52c`, light-speed `aeb8ef1d`, light-speed-2 `eed1abaf`.
+
+HUD 개선도 같은 패키지에 포함한다. 10/15/20/25/30 설정과 세 여유 시간 조합의
+60초 PC 재생에서 HUD 갱신 간격 300ms 미만 및 모델 시점 전 4ms 여유를 검사했다.
+원격의 2026-11-08 임시 내비게이션·ADB 진단 변경(3ad45b12)도 보존해 통합했다.

@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-steering-angle-flip-flop-20261107-0f109e38",
-  "source_commit": "0f109e3843b219179b7a059d7669765202a4abb4",
+  "profile": "jetson-pv5-internal-update-flip-flop-20261108-af142946",
+  "source_commit": "af1429460b4bc4988715b70788c57a27133d65d1",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-steering-angle-flip-flop-20261107-0f109e38/host.tar.gz",
-    "sha256": "32653531aabdc3fc70cc5d8995c89fbf62381d79cfdd1de1c2941876db5b7bbb",
-    "size": 65278068
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-internal-update-flip-flop-20261108-af142946/host.tar.gz",
+    "sha256": "7c0c26065e800ee93b23a172f59357059a36a2da8df22d726194039d9f937674",
+    "size": 65287902
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",

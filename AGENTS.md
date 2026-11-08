@@ -1,5 +1,10 @@
 # Repository memory
 
+- 2026-11-08 release: native-owned maintenance plus HUD headroom sources
+  N16 4f61ca12, Flip Flop af142946, CTV3M 8fffe52c, Light speed aeb8ef1d,
+  v2 eed1abaf. PC1243 pass/0fail/0skip, five isolated native archives and
+  twenty public asset hashes verified; no physical/Orin latency claim.
+
 - 2026-11-08 HUD progress with model headroom: keep IPC replies first and
   poll queued/partial model requests before each display operation. Snapshot
   admission uses remaining model time (4ms reserve), measured read plus write

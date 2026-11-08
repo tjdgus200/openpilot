@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-steering-angle-ctv3m-20261107-bce23ae5",
-  "source_commit": "bce23ae5246df9e57deca2f2560ad0eb17f0ab95",
+  "profile": "jetson-pv5-internal-update-ctv3m-20261108-8fffe52c",
+  "source_commit": "8fffe52c622ad9fcab14cc1b245055f629d161d3",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-steering-angle-ctv3m-20261107-bce23ae5/host.tar.gz",
-    "sha256": "cb7bcf780f064f98640dfe23e91e037b8b066f1a678cb5c3a0cbb3fb8b567fe1",
-    "size": 65278045
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-internal-update-ctv3m-20261108-8fffe52c/host.tar.gz",
+    "sha256": "c357049e7fc905ee2b836916a102e97429e556b2135bac59d6d0c53fc85c9eb9",
+    "size": 65287959
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",

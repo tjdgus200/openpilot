@@ -180,3 +180,5 @@ Light speed `7ef05678`, Light speed v2 `8d5275f3`이다.
 패키지 소스는 N16 `4314e70d`, Flip Flop `977156eb`, CTV3M `deb86ac4`,
 Light speed `c6aa66cc`, Light speed v2 `8cd1fce2`다. 각 아카이브의 독립 검사 결과에는
 `condition_driven_popups=true`를 기록한다.
+
+2026-11-08 내부 모델 소유권 기반 업데이트와 HUD 여유 시간 갱신 패키지: n16 `4f61ca12`, flip-flop `af142946`, ctv3m `8fffe52c`, light-speed `aeb8ef1d`, light-speed-2 `eed1abaf`. PC 회귀 1,243건/실패·스킵 0건, 다섯 격리 네이티브 아카이브와 공개 파일 20개 해시 검사 완료. 실물 검증은 별도다.
