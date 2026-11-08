@@ -1,5 +1,19 @@
 # Repository memory
 
+- 2026-11-08 PV5 follow-up1-5: preserve PC-only pv5_drive_report.py for
+  full-schema rlogs, bounded trace/percentiles, time-weighted center reasons,
+  exact camera frame joins and honestly scoped EOF-to-publication timing.
+  Existing runtimeTiming/tegrastats files are optional offline inputs; never
+  enable profiling or run this analyzer in vehicle processes. Keep C3/C3X
+  stopped FOV AE-meter overlay read-only, known geometry only, <=2Hz exposure
+  telemetry and original2s lens switching. Preserve cutin risk -> same selected
+  radarTrackId tracking -> planned+measured deceleration feedback,150ms stage
+  confirmation, source freshness and vehicle/steering alert priority on comma
+  and all five HUD packages. No PID/EPS/center gates/AE/model preprocessing
+  changes. Probabilities/reports are not ground-truth accuracy or proof of
+  bottlenecks; real night-image/model replay and Orin/C3X timing remain separate.
+  See docs/pv5_drive_improvements_20261108.md and the permanent checklist.
+
 - 2026-11-08 release: native-owned maintenance plus HUD headroom sources
   N16 4f61ca12, Flip Flop af142946, CTV3M 8fffe52c, Light speed aeb8ef1d,
   v2 eed1abaf. PC1243 pass/0fail/0skip, five isolated native archives and

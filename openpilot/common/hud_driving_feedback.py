@@ -20,12 +20,14 @@ DRIVING_POPUP_EXIT_SECONDS = 0.22
 DRIVING_POPUP_MOTION_SECONDS = 0.48
 DRIVING_NOTICE_TEXT = {
   'cutin': '옆차 끼어들기 경계 중',
+  'cutinTrack': '끼어들기 차량\n선행차로 추적 중',
+  'cutinBrake': '끼어들기 차량\n감속 반영 중',
   'laneChange': '자동 차선 변경 중',
   'leadBrake': '앞차 감속 반영',
   'curve': '전방 커브 접근',
 }
-DRIVING_NOTICE_OVER_DECEL = ('cutin', 'laneChange')
-_POPUP_PRIORITY = {name: rank for rank, name in enumerate(('cutin', 'laneChange', 'deceleration', 'leadBrake', 'curve'))}
+DRIVING_NOTICE_OVER_DECEL = ('cutinBrake', 'cutinTrack', 'cutin', 'laneChange')
+_POPUP_PRIORITY = {name: rank for rank, name in enumerate((*DRIVING_NOTICE_OVER_DECEL, 'deceleration', 'leadBrake', 'curve'))}
 
 # Coordinates are normalized to the icon radius. Precompute the static shapes
 # so the popup does no interpolation after the entrance settles.
@@ -49,12 +51,14 @@ _DECELERATION_MOTION = {
   'cam': 'camera', 'waze': 'camera', 'vturn': 'curve', 'route': 'curve',
   'turn': 'curve', 'model': 'curve', 'bump': 'bump', 'section': 'section', 'school': 'section',
 }
+_MOTION_DOTS['cutinTrack'] = _MOTION_DOTS['cutin']
+_MOTION_DOTS['cutinBrake'] = _MOTION_DOTS['leadBrake']
 
 
 def driving_popup_colors(warning: int, motion: str | None):
   if warning in STEERING_WARNING_TEXT:
     return DRIVING_POPUP_COLORS[warning]
-  if motion in ('cutin', 'leadBrake'):
+  if motion in ('cutin', 'cutinTrack', 'cutinBrake', 'leadBrake'):
     return _TRAFFIC_POPUP_COLORS
   if motion in ('laneLeft', 'laneRight'):
     return _LANE_POPUP_COLORS
@@ -162,8 +166,17 @@ class DrivingNoticeTracker:
 
   def reset(self) -> None:
     self.active: str | None = None
+    self._stage = None
+    self._stage_since = 0.
 
   def update(self, events: tuple[str, ...], now: float, *, blocked=False, decelerating=False) -> str | None:
+    stage = next((e for e in events if e in ('cutinBrake', 'cutinTrack')), None)
+    if blocked or stage != self._stage or now < self._stage_since:
+      self._stage, self._stage_since = stage, now
+    # Confirm stage changes, not the initial risk warning. Never retain a stage
+    # after its fresh predicate disappears or a vehicle alert preempts it.
+    if stage is not None and (blocked or now - self._stage_since < .15):
+      events = tuple('cutin' if e == stage else e for e in events)
     visible = events
     if blocked:
       visible = ()
@@ -186,7 +199,7 @@ def driving_notice_events(sm, now: float, *, started_frame: int | None = None) -
     return None
 
   car = current('carState', .3)
-  if car is None or not car.canValid or str(car.gearShifter) != 'drive':
+  if car is None or not car.canValid or car.canTimeout or str(car.gearShifter) != 'drive':
     return ()
   radar = current('radarState', .5)
   control = current('carControl', .3)
@@ -197,8 +210,19 @@ def driving_notice_events(sm, now: float, *, started_frame: int | None = None) -
       return lead.status and math.isfinite(lead.dRel) and lead.dRel > 0
 
     risk = radar.leadCutInRisk
-    if (risk.radar and in_front(risk)) or any(lead.radar and in_front(lead) for lead in radar.leadsCutIn):
-      events.append('cutin')
+    risks = tuple(lead for lead in (risk, *radar.leadsCutIn) if lead.radar and in_front(lead))
+    if risks:
+      stage = 'cutin'
+      plan = current('longitudinalPlan', .5)
+      if control is not None and control.longActive and not car.gasPressed and plan is not None:
+        source = str(plan.longitudinalPlanSource)
+        lead = radar.leadOne if source == 'lead0' else radar.leadTwo if source == 'lead1' else None
+        if (lead is not None and lead.radar and in_front(lead) and lead.radarTrackId >= 0
+            and any(lead.radarTrackId == other.radarTrackId for other in risks)):
+          stage = 'cutinTrack'
+          if math.isfinite(plan.aTarget) and plan.aTarget < -.1 and math.isfinite(car.aEgo) and car.aEgo < -.1:
+            stage = 'cutinBrake'
+      events.append(stage)
   if control is not None and control.latActive and model is not None:
     if (str(model.meta.laneChangeState) in ('laneChangeStarting', 'laneChangeFinishing')
         and str(model.meta.laneChangeDirection) in ('left', 'right')):

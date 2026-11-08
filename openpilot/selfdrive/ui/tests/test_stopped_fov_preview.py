@@ -35,6 +35,7 @@ def preview():
              params=NS(get_int=settings.__getitem__, get_float=settings.__getitem__,
                        get=lambda key, **_: settings[key]))
   viewer = namespace["StoppedFovPreview"]()
+  viewer._test_state = state
 
   def update(now, road=True, wide=True, age=0.):
     namespace["time"] = NS(monotonic=lambda: now)
@@ -89,6 +90,29 @@ def test_stopped_preview_keeps_available_camera(preview):
   settings["UseWideCamera"] = False
   update(12.3)
   assert viewer.active and not viewer.wide
+
+
+def test_c3x_exposure_overlay_uses_fresh_correct_lens_and_never_changes_warp(preview):
+  viewer, update, _, _, polygon = preview
+  state = viewer._test_state
+  sm = state.sm
+  sm['deviceState'].deviceType = 'tizi'
+  sm['roadCameraState'].sensor = 'ox03c10'
+  for name, grey in (('roadCameraState', .2), ('wideRoadCameraState', .05)):
+    sm[name] = NS(sensor='ox03c10', measuredGreyFraction=grey, targetGreyFraction=.1, gain=2.)
+    sm.valid[name] = sm.alive[name] = True
+    sm.recv_time[name] = 10.
+  update(10.)
+  assert viewer._exposure_rect == (97, 400, 1734, 524)
+  assert viewer._exposure_text == 'AE grey 0.05/0.10 | gain 2.0'
+  camera = DEVICE_CAMERAS['tizi', 'ox03c10']
+  np.testing.assert_allclose(viewer._polygon, polygon(wider_model_warp(get_warp_matrix(np.zeros(3), camera.ecam.intrinsics, True), 80)), atol=1e-5)
+  update(12.)
+  assert viewer._exposure_rect == (97, 160, 1734, 986)
+  assert viewer._exposure_text == 'AE --'  # old telemetry never labels the new lens
+  sm.recv_time['roadCameraState'] = 12.6
+  update(12.6)
+  assert viewer._exposure_text == 'AE grey 0.20/0.10 | gain 2.0'
 
 
 @pytest.mark.parametrize("layout", ("onroad", "mici/onroad"))

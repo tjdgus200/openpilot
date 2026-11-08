@@ -5,6 +5,7 @@ import pyray as rl
 
 from openpilot.cereal import log
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
+from openpilot.common.transformations.exposure import exposure_rectangle, exposure_label
 from openpilot.common.transformations.model import SBIGMODEL_INPUT_SIZE, WIDE_MODEL_FOV_CHOICES, get_warp_matrix, wider_model_warp
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
@@ -33,6 +34,10 @@ class StoppedFovPreview:
     self._key = None
     self._polygon = None
     self._candidate = None
+    self._exposure_rect = None
+    self._exposure_text = 'AE --'
+    self._next_exposure_read = 0.
+    self._exposure_camera = None
 
   def update(self, state, road_available, wide_available):
     self.active = False
@@ -75,6 +80,15 @@ class StoppedFovPreview:
       self._stopped_since = now
     self.wide = wide_available and (not road_available or int((now - self._stopped_since) / _VIEW_SECONDS) % 2 == 0)
     lens = camera.ecam if self.wide else camera.fcam
+    self._exposure_rect = exposure_rectangle(sm['deviceState'].deviceType, sm['roadCameraState'].sensor, lens, self.wide)
+    name = 'wideRoadCameraState' if self.wide else 'roadCameraState'
+    if name != self._exposure_camera or now >= self._next_exposure_read:
+      self._exposure_camera = name
+      self._next_exposure_read = now + .5
+      self._exposure_text = 'AE --'
+      if (sm.valid.get(name, False) and sm.alive.get(name, False)
+          and 0 <= now - sm.recv_time.get(name, 0.) <= .3):
+        self._exposure_text = exposure_label(sm[name])
     fov = (WIDE_MODEL_FOV_CHOICES[self._selection - 1]
            if self.wide and 1 <= self._selection <= len(WIDE_MODEL_FOV_CHOICES) else None)
     key = lens, self.wide, sm.recv_frame["liveCalibration"], fov, self._yaw_trim, self._pitch_preview
@@ -113,3 +127,11 @@ class StoppedFovPreview:
         rl.draw_line_ex(points[i - 1], points[i], 4.0, color)
       draw_text_ui_style(label, center, y, 28, color, align="center_top", y_offset=0.0)
       y += 34
+    if self._exposure_rect is not None:
+      x, top, width, height = self._exposure_rect
+      rect = rl.Rectangle(dst.x + x * dst.width / frame.width, dst.y + top * dst.height / frame.height,
+                          width * dst.width / frame.width, height * dst.height / frame.height)
+      color = rl.Color(225, 153, 255, 255)
+      rl.draw_rectangle_lines_ex(rect, 3., color)
+      draw_text_ui_style('AE METER AREA | ' + self._exposure_text, center, y, 25, color,
+                         align='center_top', y_offset=0.)

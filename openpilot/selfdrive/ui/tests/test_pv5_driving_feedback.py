@@ -278,6 +278,50 @@ def test_notice_priority_resumes_only_current_conditions_after_alerts():
   assert tracker.update((), 103.9) is None
 
 
+def test_cutin_feedback_requires_same_confirmed_track_selected_by_the_plan_and_actual_deceleration():
+  sm = braking_messages()
+  sm['carState'].canValid = True
+  sm['carState'].gearShifter = 'drive'
+  radar = sm['radarState']
+  for lead in (radar.leadCutInRisk, radar.leadOne):
+    lead.status, lead.radar, lead.dRel = True, True, 18.
+    lead.radarTrackId = 42
+  sm['longitudinalPlan'].longitudinalPlanSource = 'lead0'
+  assert driving_notice_events(sm, 100.) == ('cutinTrack',)
+  sm['carState'].aEgo = -.3
+  assert driving_notice_events(sm, 100.) == ('cutinBrake',)
+  radar.leadOne.radarTrackId = 43
+  assert driving_notice_events(sm, 100.) == ('cutin',)
+  for lead in (radar.leadCutInRisk, radar.leadOne):
+    lead.radarTrackId = -1
+  assert driving_notice_events(sm, 100.) == ('cutin',)
+  for lead in (radar.leadCutInRisk, radar.leadOne):
+    lead.radarTrackId = 42
+  sm['carState'].gasPressed = True
+  assert driving_notice_events(sm, 100.) == ('cutin',)
+  sm['carState'].gasPressed = False
+  sm.valid['longitudinalPlan'] = False
+  assert driving_notice_events(sm, 100.) == ('cutin',)
+  sm.valid['radarState'] = False
+  assert driving_notice_events(sm, 100.) == ()
+  sm['carState'].canTimeout = True
+  assert driving_notice_events(sm, 100.) == ()
+
+
+def test_cutin_stage_dwell_never_retains_a_confirmation_without_fresh_evidence():
+  tracker = DrivingNoticeTracker()
+  assert tracker.update(('cutinTrack',), 10.) == 'cutin'
+  assert tracker.update(('cutinTrack',), 10.1) == 'cutin'
+  assert tracker.update(('cutinTrack',), 10.16) == 'cutinTrack'
+  assert tracker.update(('cutinBrake',), 10.2) == 'cutin'
+  assert tracker.update(('cutinBrake',), 10.36, decelerating=True) == 'cutinBrake'
+  assert tracker.update((), 10.4) is None
+  assert tracker.update(('cutinTrack',), 10.5, blocked=True) is None
+  assert tracker.update(('cutinTrack',), 10.51) == 'cutin'
+  assert tracker.update(('cutinTrack',), 10.67) == 'cutinTrack'
+  assert tracker.update(('cutin',), 10.68) == 'cutin'
+
+
 @pytest.mark.parametrize('notice', ('cutin', 'laneChange', 'leadBrake', 'curve'))
 def test_notice_stays_for_entire_condition_and_exits_only_when_it_ends(notice):
   tracker, slide = DrivingNoticeTracker(), DrivingPopupSlide()

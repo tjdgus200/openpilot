@@ -168,6 +168,16 @@ try:
  ui._draw_text_with_stroke=capture_text
  ui.render_to_file(replace(state,driving_notices=notices),popup_path)
  assert DRIVING_NOTICE_TEXT['cutin'] in texts and DRIVING_NOTICE_TEXT['laneChange'] not in texts
+ for stage in ('cutinTrack','cutinBrake'):
+  ui._driving_notices.reset()
+  ui._popup_slide.reset()
+  stage_state=replace(state,driving_notices=(stage,))
+  with patch('time.monotonic',return_value=1000.):
+   ui.render_to_file(stage_state,popup_path)
+  texts.clear()
+  with patch('time.monotonic',return_value=1000.2):
+   ui.render_to_file(stage_state,popup_path)
+  assert all(line in texts for line in DRIVING_NOTICE_TEXT[stage].splitlines())
  ui._driving_notices.reset()
  ui._popup_slide.reset()
  texts.clear()
@@ -324,7 +334,7 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-driver-attention.png', args.output / 'hud-driver-attention.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True,
+                center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,
