@@ -113,6 +113,51 @@ def test_sixty_second_twenty_hz_replay_does_not_create_two_second_telemetry_blac
   assert now[0] - sends[-1] < .5
 
 
+@pytest.mark.parametrize('inference,read_s,write_s', [(.025,.003,.002), (.030,.003,.003), (.035,.008,.002)])
+@pytest.mark.parametrize('fps', RATES)
+def test_sixty_second_fresh_snapshots_make_progress_with_spare_inference_headroom(monkeypatch, fps, inference, read_s, write_s):
+  from openpilot.selfdrive.modeld.jetlink import daemon
+  now, last_sent = [100.], [-1.]
+  sent = []
+  monkeypatch.setattr(daemon.time, 'monotonic', lambda: now[0])
+  monkeypatch.setattr(daemon, 'request_ready', lambda *a: False)
+  budget = IdleBudget()
+  def packet():
+    stamp = int((now[0] - 100.) * fps + 1e-7)
+    if stamp == last_sent[0]:
+      return None
+    now[0] += read_s
+    last_sent[0] = stamp
+    return b'latest snapshot'
+  def send(kind, seq, parts):
+    assert kind == daemon.HUD_MESSAGE
+    assert now[0] + write_s < budget.last_model + budget.period - .004
+    sent.append(now[0])
+    now[0] += write_s
+  client = NS(t=NS(send=send), _next_seq=lambda: len(sent))
+  publisher = NS(packet=packet, target_fps=fps)
+  for frame in range(1200):
+    start = 100. + frame * .05
+    budget.model_started(start)
+    now[0] = start + inference
+    budget.completed(now[0], inference)
+    while now[0] < start + .05:
+      daemon.publish_idle_hud(client, publisher, budget, object())
+      now[0] += .001
+  assert len(sent) >= 500
+  assert max(b-a for a,b in zip(sent, sent[1:])) < .3
+  assert now[0] - sent[-1] < .3
+
+
+def test_expensive_navigation_does_not_poison_the_hud_snapshot_budget():
+  budget = IdleBudget()
+  budget.model_started(10.)
+  budget.observe(10.021, {'display_media_send_ms': 20.})
+  assert budget.allowed(10.025)
+  assert not budget.allowed(10.025, media=True)
+  assert budget.send_budget == .002 and budget.write_budget == .002
+
+
 def test_remote_vehicle_data_still_expires_during_a_gap(monkeypatch):
   import hud
   from openpilot.cereal import log

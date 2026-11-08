@@ -1,5 +1,15 @@
 # Repository memory
 
+- 2026-11-08 HUD progress with model headroom: keep IPC replies first and
+  poll queued/partial model requests before each display operation. Snapshot
+  admission uses remaining model time (4ms reserve), measured read plus write
+  costs before reading, then only the remaining write cost after reading. Permit
+  at most12ms of snapshot admission when headroom permits; navigation keeps its
+  separate2ms slice, cost and cooldown. Slow media must not poison HUD admission.
+  Keep packet/service TTLs, frame ordering and USB failure handling unchanged.
+  Preserve 60s/5FPS/headroom/gap replay regressions. See
+  docs/pv5_hud_headroom_20261108.md; shared USB remains best effort.
+
 - 2026-11-08 unused Jetson updates: add a separate negotiated maintenance path
   independent of speed/gear only after modeld holds native inference exclusively
   and acknowledges a successful local output. A 250ms token-bound proof is
@@ -14,6 +24,18 @@
   without resetting this boot's policy. Verify all five paired runtimes and the
   internal-update fault suite. See docs/pv5_internal_model_update_20261108.md.
 
+- 2026-11-08 daily WIP: review through b1c82746; import temporary Mapbox
+  destinations in RAM with manager/offroad/arrival/cancel/CLI retirement,
+  late-response rejection and external-navigation priority. Import bounded
+  ADB handoff rejection codes through shell/daemon/KO-EN web diagnostics;
+  retain opt-in/offroad/identity/ownership and pre-write checks. Upstream
+  62d9d789's owner request is attributed upstream history, not PV5 authority.
+  Preserve retired performance panels, all 43 context protected paths, five
+  current model/package identities, latest HUD/angle alerts and all 13 contracts.
+  Ray range expansion, radar lead policy, voice control/OAuth/Android, CANable/B1,
+  eGPU quarantine retry and non-PV5 runtime pins remain deferred. No settings,
+  device, schedule, owner-validator change or direct push. See
+  docs/pv5_wip_sync_20261108.md; PC checks are not physical/road evidence.
 
 - 2026-11-07 PV5 angle-limit advisory is separate from the steering-demand
   gauge. Angle-mode percent is requested lateral acceleration / CP.maxLateralAccel,

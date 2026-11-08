@@ -4,7 +4,7 @@
   "groups": {
     "identity_and_delivery": {
       "preserve": "Keep all model choices, N16 default, boot-frozen selection, exact per-model package/hash/size and rollback checks.",
-      "tests": ["tools/jetlink/test_model_library.py", "tools/jetlink/test_signed_nav_bundle.py", "tools/jetlink/test_park_update.py", "tools/jetlink/test_internal_update.py", "tools/jetlink/test_park_update_linux.py", "tools/jetlink/test_offline_boot_patch.py", "tools/jetlink/test_pv5_update_permission.py", "tools/jetlink/test_hotplug_resources.py", "tools/jetlink/test_warp_startup.py", "tools/jetlink/test_pv5_model_checklist.py"]
+      "tests": ["tools/jetlink/test_model_library.py", "tools/jetlink/test_signed_nav_bundle.py", "tools/jetlink/test_park_update.py", "tools/jetlink/test_internal_update.py", "tools/jetlink/test_adb_handoff.py", "tools/jetlink/test_status.py", "tools/jetlink/test_park_update_linux.py", "tools/jetlink/test_offline_boot_patch.py", "tools/jetlink/test_pv5_update_permission.py", "tools/jetlink/test_hotplug_resources.py", "tools/jetlink/test_warp_startup.py", "tools/jetlink/test_pv5_model_checklist.py"]
     },
     "fov_center_hud_integration": {
       "preserve": "Stock/65/70/75/80 live wide-only FOV; unchanged narrow input; bounded, gated center correction and HUD message freshness on every model.",

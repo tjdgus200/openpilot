@@ -62,7 +62,7 @@ def update_affinity():
       pass
 
 
-def publish_hud(client, publisher, *, include_media=True, admit=None):
+def publish_hud(client, publisher, *, include_media=True, admit=None, admit_send=None):
   # Packet construction/Cap'n Proto encoding is in the publisher child. These
   # scopes measure only snapshot access and synchronous writes on the USB owner.
   metrics = {'display_snapshot_read_ms': 0., 'display_hud_send_ms': 0., 'display_media_read_ms': 0.,
@@ -76,7 +76,7 @@ def publish_hud(client, publisher, *, include_media=True, admit=None):
       return metrics
     ready = time.monotonic()
     metrics['display_snapshot_read_ms'] = (ready - started) * 1000
-    if packet and (admit is None or admit()):
+    if packet and ((admit_send or admit) is None or (admit_send or admit)()):
       client.t.send(HUD_MESSAGE, client._next_seq(), [packet])
       metrics['display_hud_bytes'] = len(packet)
     sent = time.monotonic()
@@ -101,15 +101,20 @@ def publish_idle_hud(client, publisher, budget, connection, *, navigation=False,
   """
   def admit():
     return budget.within_window(time.monotonic()) and not request_ready(connection, 0.)
+  def admit_send():
+    return budget.within_window(time.monotonic(), writing=True) and not request_ready(connection, 0.)
+  def admit_media():
+    return budget.within_window(time.monotonic(), media=True) and not request_ready(connection, 0.)
 
   budget.open_window(time.monotonic())
   if not admit():
     return {}
-  metrics = publish_hud(client, publisher, include_media=False, admit=admit) or {}
+  metrics = publish_hud(client, publisher, include_media=False, admit=admit, admit_send=admit_send) or {}
   budget.observe(time.monotonic(), metrics)
-  if navigation and admit():
+  budget.open_media_window(time.monotonic())
+  if navigation and admit_media():
     started = time.monotonic()
-    send_ready_after_reply(client, publisher, fast_receiver=fast_receiver, admit=admit)
+    send_ready_after_reply(client, publisher, fast_receiver=fast_receiver, admit=admit_media)
     budget.observe(time.monotonic(), {'display_media_send_ms': (time.monotonic() - started) * 1000})
   return metrics
 
@@ -773,7 +778,8 @@ def main():
         log.exception('Jetlink cable setup failed')
         if TRANSPORT_MODE == 'auto' and not mobile_unavailable:
           mobile_unavailable = True
-          publish('retrying', peer=None, error=f'iOS/NCM unavailable; retrying bulk USB after verified cleanup: {exc}'[:300])
+          error = str(exc) if '[adb-handoff:' in str(exc) else f'iOS/NCM unavailable; retrying bulk USB after verified cleanup: {exc}'
+          publish('retrying', peer=None, error=error[:300])
         else:
           publish('retrying', peer=None, error=str(exc)[:300])
       except Exception as exc:

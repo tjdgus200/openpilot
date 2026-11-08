@@ -90,11 +90,12 @@ def test_slow_display_write_stops_media_and_future_idle_admission(display, delay
     d.now[0] += delay
   d.client.t.send = send
   pump(d)
-  assert d.sent == [d.daemon.HUD_MESSAGE]
-  assert len(d.media) == 3
+  expected = [d.daemon.HUD_MESSAGE] + ([d.daemon.NAVI_MESSAGE] if delay == .003 else [])
+  assert d.sent == expected
+  assert len(d.media) == (2 if delay == .003 else 3)
   d.now[0] += .05
   assert pump(d) == {}
-  assert d.sent == [d.daemon.HUD_MESSAGE]
+  assert d.sent == expected
 
 
 def test_free_idle_window_preserves_fragment_order_and_sequence(display):
@@ -134,7 +135,7 @@ def test_model_request_during_media_read_defers_one_fragment_without_reordering(
   assert d.publisher._idle_media_pending is None
 
 
-def test_slow_media_read_defers_fragment_and_pauses_future_display(display):
+def test_slow_media_read_defers_fragment_without_starving_hud(display):
   d = display
   original = d.publisher.media_packet
   def media():
@@ -144,7 +145,9 @@ def test_slow_media_read_defers_fragment_and_pauses_future_display(display):
   pump(d)
   assert [s[0] for s in d.sent] == [d.daemon.HUD_MESSAGE]
   assert d.publisher._idle_media_pending[1] == b'fragment1'
-  assert pump(d) == {}
+  assert pump(d)['display_hud_bytes'] > 0
+  assert [s[0] for s in d.sent] == [d.daemon.HUD_MESSAGE, d.daemon.HUD_MESSAGE]
+  assert d.publisher._idle_media_pending[1] == b'fragment1'
 
 
 def test_expired_unsent_media_is_not_replayed_or_used_to_date_new_fragment(display):
@@ -161,15 +164,17 @@ def test_expired_unsent_media_is_not_replayed_or_used_to_date_new_fragment(displ
   assert not any(s[2][0] == b'stale' for s in d.sent)
 
 
-def test_slow_snapshot_read_does_not_start_a_write(display):
+@pytest.mark.parametrize('duration,delivered', [(.003, True), (.010, True), (.030, False)])
+def test_snapshot_read_uses_actual_headroom_and_rechecks_before_write(display, duration, delivered):
   d = display
   def snapshot():
-    d.now[0] += .01
+    d.now[0] += duration
     return b'expensive'
   d.publisher.packet = snapshot
   pump(d)
-  assert d.sent == []
-  assert len(d.media) == 3
+  assert any(s[0] == d.daemon.HUD_MESSAGE for s in d.sent) is delivered
+  if not delivered:
+    assert len(d.media) == 3
 
 
 def test_snapshot_failure_is_display_only(display):

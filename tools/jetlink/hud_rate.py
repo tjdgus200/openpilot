@@ -44,7 +44,12 @@ class IdleBudget:
     self.period = .05
     self.pause_until = 0.
     self.send_budget = .002
+    self.read_budget = 0.
+    self.write_budget = .002
+    self.media_budget = .002
+    self.media_pause_until = 0.
     self.window_until = 0.
+    self.media_window_until = 0.
 
   def model_started(self, now):
     if self.last_model is not None:
@@ -58,30 +63,47 @@ class IdleBudget:
       self.pause_until = max(self.pause_until, now + self.period)
 
   def open_window(self, now):
-    # One bounded slice after polling IPC, never a burst/catch-up queue.
-    self.window_until = now + .002
+    # Snapshot access may exceed 2ms despite ample model headroom. Reserve
+    # the measured USB write separately instead of discarding every snapshot.
+    remaining = .012 if self.last_model is None or now - self.last_model > .5 else (
+      self.last_model + self.period - now - .004 - self.write_budget)
+    self.window_until = now + min(.012, max(0., remaining))
+    self.media_window_until = now
 
-  def within_window(self, now):
-    return now < self.window_until and self.allowed(now)
+  def open_media_window(self, now):
+    self.media_window_until = min(self.window_until, now + .002)
 
-  def allowed(self, now):
-    if now < self.pause_until:
+  def within_window(self, now, *, writing=False, media=False):
+    deadline = self.media_window_until if media else self.window_until
+    return now < deadline and self.allowed(now, writing=writing, media=media)
+
+  def allowed(self, now, *, writing=False, media=False):
+    if now < (self.media_pause_until if media else self.pause_until):
       return False
     if self.last_model is None or now - self.last_model > .5:
       return True
-    return self.last_model + self.period - now > .004 + self.send_budget
+    cost = self.media_budget if media else self.write_budget if writing else self.send_budget
+    return self.last_model + self.period - now > .004 + cost
 
   def observe(self, now, metrics):
-    duration = sum(metrics.get(key, 0.) for key in (
-      'display_snapshot_read_ms', 'display_hud_send_ms',
-      'display_media_read_ms', 'display_media_send_ms')) / 1000.
-    if math.isfinite(duration) and duration >= 0:
-      self.send_budget = max(.002, min(.02, duration), self.send_budget * .95)
-      if duration > .002:
-        # Skip a model period, not two seconds of vehicle telemetry. A slow
-        # display write must not force the receiver past its 500ms data TTL.
-        # The normal headroom/IPC gates still apply after this retry delay.
+    def seconds(key):
+      value = metrics.get(key, 0.) / 1000.
+      return value if math.isfinite(value) and value >= 0 else 0.
+    if 'display_snapshot_read_ms' in metrics or 'display_hud_send_ms' in metrics:
+      read, write = seconds('display_snapshot_read_ms'), seconds('display_hud_send_ms')
+      self.read_budget = max(min(.02, read), self.read_budget * .95)
+      if metrics.get('display_hud_bytes', write > 0):
+        self.write_budget = max(.002, min(.02, write), self.write_budget * .95)
+      self.send_budget = self.read_budget + self.write_budget
+      if read + write > .012 or (self.last_model is not None and now - self.last_model <= .5
+                                and now >= self.last_model + self.period - .004):
         self.pause_until = max(self.pause_until, now + self.period)
+    if 'display_media_send_ms' in metrics or 'display_media_read_ms' in metrics:
+      duration = seconds('display_media_read_ms') + seconds('display_media_send_ms')
+      if duration > 0:
+        self.media_budget = max(.002, min(.02, duration), self.media_budget * .95)
+        if duration > .002:
+          self.media_pause_until = max(self.media_pause_until, now + self.period)
 
 
 class FrameRate:

@@ -92,6 +92,8 @@ def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, 
 
   assert replies == [(42, 20000, 1000, 22000)]
   tail = ['hud'] if usb and response_s < .045 else []
+  if tail and navigation:
+    tail.append('tail')
   # Slow inference suppresses display. A slow display cannot postpone the reply.
   assert calls == ['receive', 'usb_send', 'phase', *(['map_stage'] if map_staging is not None else []), 'usb_response', 'reply', *tail, 'wifi']
   assert len(events) == 1 and events[0]['component'] == 'jetlinkd'
@@ -104,7 +106,7 @@ def test_timing_records_usb_and_display_tail_after_unchanged_reply(monkeypatch, 
   assert peak['metrics']['usb_send_ms'] == pytest.approx(3.)
   assert peak['metrics']['server_total_ms'] == pytest.approx(22.)
   hud_ms = 1. if map_staging is not None else 0.
-  tail_ms = 4. if tail else 0.
+  tail_ms = (4. + (6. if navigation else 0.)) if tail else 0.
   for key, value in {'ipc_receive_ms': 1000., 'usb_send_ms': 3., 'usb_response_ms': response_s * 1000,
                      'ipc_reply_ms': 2., 'hud_ms': hud_ms,
                      'usb_exchange_ms': 4. + response_s * 1000 + hud_ms,
