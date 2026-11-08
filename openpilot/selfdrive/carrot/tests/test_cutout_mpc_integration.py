@@ -16,7 +16,7 @@ from openpilot.selfdrive.carrot.traffic_stop import get_traffic_stop_distance_ad
 
 
 def run_update(*, confidence=0., mode="acc", reset=False, enabled=True, second_distance=100., stop_x=1000., lane_change=None, selected_status=True,
-               lead_tau=None, jerk_factor=1., comfort_brake=2.5, t_follow=1.45):
+               lead_tau=None, jerk_factor=1., comfort_brake=2.5, t_follow=1.45, radar_state=None):
   path = Path(__file__).resolve().parents[2] / "controls/lib/longitudinal_mpc_lib/long_mpc.py"
   tree = ast.parse(path.read_text(encoding="utf-8"))
   mpc = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "LongitudinalMpc")
@@ -68,12 +68,12 @@ def run_update(*, confidence=0., mode="acc", reset=False, enabled=True, second_d
   self.weight_calls = []
   self.set_cost_weights = lambda *args:self.weight_calls.append(args)
   self.set_weights = lambda *args, **kwargs:namespace['set_weights'](self, *args, **kwargs)
-  if lead_tau is not None:
+  if lead_tau is not None or radar_state is not None:
     self.extrapolate_lead = namespace['extrapolate_lead']
     self.process_lead = lambda lead:namespace['process_lead'](self, lead)
   self.update_predicted_danger_margin=lambda *a:namespace["update_predicted_danger_margin"](self,*a)
   arrays=[np.zeros(13) for _ in range(4)]
-  namespace["update"](self, carrot, reset, NS(leadOne=lead, leadTwo=second), 20., *arrays, cutout_relief_enabled=enabled)
+  namespace["update"](self, carrot, reset, radar_state or NS(leadOne=lead, leadTwo=second), 20., *arrays, cutout_relief_enabled=enabled)
   return self, times
 
 

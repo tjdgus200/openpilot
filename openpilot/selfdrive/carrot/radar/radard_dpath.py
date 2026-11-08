@@ -15,6 +15,7 @@ from openpilot.common.swaglog import cloudlog
 from opendbc.car.hyundai.values import HyundaiExtFlags
 from openpilot.selfdrive.carrot.radar import effective_radar_track_mode
 from openpilot.selfdrive.carrot.radar_motion.coordinates import device_yaw_to_radar
+from openpilot.selfdrive.carrot.radar_motion.controller import pv5_vision_transition_enabled
 from openpilot.selfdrive.carrot.radar_motion.timing import front_radar_distance_delay_s
 from openpilot.selfdrive.carrot.radar_motion import (
   DPathRadarController,
@@ -117,6 +118,7 @@ class DPathRadarD:
       cut_in_sensitivity=PRODUCTION_CUT_IN_SENSITIVITY,
       front_radar_measurement_delay_s=front_radar_distance_delay_s(CP),
       production_live_tracks=True,
+      confirm_vision_transition=pv5_vision_transition_enabled(CP.brand, CP.carFingerprint),
     )
     self.radar_state = log.RadarState.new_message()
     self.radar_state_valid = False

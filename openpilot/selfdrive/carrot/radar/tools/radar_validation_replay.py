@@ -23,6 +23,7 @@ if str(REPO_ROOT) not in sys.path:
   sys.path.insert(0, str(REPO_ROOT))
 
 from openpilot.selfdrive.carrot.radar_motion.coordinates import device_yaw_to_radar
+from openpilot.selfdrive.carrot.radar_motion.controller import pv5_vision_transition_enabled
 from openpilot.selfdrive.carrot.radar_motion.timing import front_radar_distance_delay_s
 from openpilot.selfdrive.carrot.radar.lateral import front_radar_lateral, set_radar_track_flip
 from openpilot.selfdrive.carrot.radar_motion import (
@@ -116,7 +117,7 @@ STATIONARY_HANDOFF_MAX_YREL_DELTA_M = 1.5
 VALIDATION_SETTINGS_ENV = "CARROT_RADAR_VALIDATION_SETTINGS"
 VALIDATION_MOTION_MODES = ("normal", "front")
 VALIDATION_DEFAULT_SENSITIVITY = 3
-VISUAL_REPLAY_CACHE_VERSION = 4
+VISUAL_REPLAY_CACHE_VERSION = 5
 LEAD_ONE_RADAR_RGB = (246, 142, 55)
 LEAD_ONE_VISION_RGB = (72, 145, 255)
 LEAD_ONE_VISION_WEAK_RGB = (104, 205, 255)
@@ -307,6 +308,8 @@ class RadarFrame:
   model_velocity: tuple[float, ...] = ()
   model_lane_change_state: str = "unknown"
   stopping_lane_geometry_valid: bool = False
+  car_brand: str = ""
+  car_fingerprint: str = ""
 
 
 @dataclass(frozen=True)
@@ -2616,6 +2619,9 @@ def _production_controller_replay(
     prefer_corner_radar=motion_sensor == "corner",
     enable_radar_tracks=enable_radar_tracks,
     cut_in_sensitivity=cut_in_sensitivity,
+    confirm_vision_transition=bool(frames) and all(
+      pv5_vision_transition_enabled(frame.car_brand, frame.car_fingerprint) for frame in frames
+    ),
   )
   outputs = []
   estimates = []
@@ -3041,6 +3047,7 @@ def load_frames(log_path: Path, *, radar_track_flip: bool | None = None) -> list
   latest_carrot_a_target_ns = 0
   scc_dbc_messages: dict[int, tuple[str, dict[str, Any]]] = {}
   car_brand = ""
+  car_fingerprint = ""
   recorded_radar_track_mode = None
   configured_radar_track_mode = None
   for event in events:
@@ -3062,6 +3069,7 @@ def load_frames(log_path: Path, *, radar_track_flip: bool | None = None) -> list
     try:
       if event.which() == "carParams":
         car_brand = str(event.carParams.brand)
+        car_fingerprint = str(event.carParams.carFingerprint)
         recorded_radar_track_mode = (
           configured_radar_track_mode if car_brand == "hyundai"
           else (-2 if event.carParams.radarUnavailable else 1)
@@ -3277,6 +3285,8 @@ def load_frames(log_path: Path, *, radar_track_flip: bool | None = None) -> list
       )
       absolute_frames.append((
         event_ns, predictor_time_ns, latest_model_ns, RadarFrame(
+        car_brand=car_brand,
+        car_fingerprint=car_fingerprint,
         mono_time_s=event_ns / 1e9,
         time_s=predictor_time_ns / 1e9,
         input_age_s=max(0.0, (event_ns - latest_points_ns) / 1e9),

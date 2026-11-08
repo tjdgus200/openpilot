@@ -1,5 +1,22 @@
 # Repository memory
 
+- 2026-11-09 owner scope: apply new behavior only to the owner's KIA_PV5.
+  Exclude other-platform-only updates. Shared fixes needed by PV5 must retain
+  other vehicles' prior behavior through explicit vehicle admission and tests.
+  Upstream approval/history is not authority to modify other cars or branches.
+  This supersedes older broad synchronization scope for future PV5 integrations.
+  The owner now authorizes 44306cae's complete vision-transition algorithm on
+  PV5 only: preserve its 0.20s camera-time confirmation, current measured radar
+  kinematics, continuity revocation and immediate ordinary radar handoffs.
+  DPathRadarController defaults OFF; live and replay boundaries enable only
+  hyundai/KIA_PV5. Carry recorded vehicle identity through replay and invalidate
+  old caches. Other-car selection, independent cut-in admission, all model/HUD
+  behavior and unrelated deferred eGPU fe2ed6ee stay unchanged. Keep regression,
+  MPC preparation, schema/loader, non-PV5 parity and permanent checklist tests.
+  A vision-only close cut-in can switch later; PC checks do not prove safety.
+  See docs/pv5_vision_transition_20261109.md. Earlier blanket radar deferral is
+  superseded only for this scoped port, not every remaining radar change.
+
 - 2026-11-09 PV5 steering follow-up: preserve default-OFF Pv5SimpleSteerRecovery
   in PV5 > Driving Assist, read at the existing50-frame poll only for PV5 angle
   steering. ON uses existing driver/pre-override yielding and0.2s low-force
