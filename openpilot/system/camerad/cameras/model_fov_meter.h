@@ -10,7 +10,7 @@
 struct ModelFovSnapshot {
   bool ready = false;
   int selection = 0;
-  uint64_t generation = 0, valid_until = 0;
+  uint64_t generation = 0, valid_until = 0, session = 0;
   std::array<double, 3> rpy = {};
 };
 
@@ -25,6 +25,7 @@ public:
     selection.store(value.selection);
     generation.store(value.generation);
     valid_until.store(value.valid_until);
+    session.store(value.session);
     for (int i = 0; i < 3; ++i) rpy[i].store(value.rpy[i]);
     ++version;
   }
@@ -36,6 +37,7 @@ public:
     next.selection = selection.load();
     next.generation = generation.load();
     next.valid_until = valid_until.load();
+    next.session = session.load();
     for (int i = 0; i < 3; ++i) next.rpy[i] = rpy[i].load();
     if (before != version.load()) return false;
     value = next;
@@ -43,10 +45,64 @@ public:
   }
 private:
   static_assert(std::atomic<double>::is_always_lock_free && std::atomic<uint64_t>::is_always_lock_free);
-  std::atomic<uint64_t> version{0}, generation{0}, valid_until{0};
+  std::atomic<uint64_t> version{0}, generation{0}, valid_until{0}, session{0};
   std::atomic<bool> ready{false};
   std::atomic<int> selection{0};
   std::array<std::atomic<double>, 3> rpy{};
+};
+
+// Camera-owner state only. Invalid input exits immediately; recovery must prove
+// continuous valid frames. No sleep, allocation or changes to the AE controller.
+class ModelFovStability {
+public:
+  static constexpr uint64_t RECOVERY_NS = 2000000000ULL;
+  static constexpr uint64_t MAX_WARMUP_GAP_NS = 250000000ULL;
+  static constexpr uint64_t FAILURE_WINDOW_NS = 30000000000ULL;
+
+  void set_session(uint64_t value) {
+    // Only an observed user option edge changes the session. Calibration/FOV
+    // generations and transient failures must not clear a repeated-failure latch.
+    if (value != session) {
+      *this = ModelFovStability();
+      session = value;
+    }
+  }
+  bool locked() const { return latched; }
+
+  bool use_fov(bool valid, uint64_t now) {
+    if (latched) return false;
+    if (observed && now < last_observed) {
+      active = false;
+      latched = true;  // A clock discontinuity cannot prove a recovery interval.
+      return false;
+    }
+    const bool gap = observed && now - last_observed > MAX_WARMUP_GAP_NS;
+    last_observed = now;
+    observed = true;
+    if (!valid) {
+      if (active) {
+        failures[0] = failures[1];
+        failures[1] = failures[2];
+        failures[2] = now;
+        failure_count = std::min(failure_count + 1, 3);
+        latched = failure_count == 3 && now - failures[0] <= FAILURE_WINDOW_NS;
+      }
+      active = false;
+      warming = false;
+      return false;
+    }
+    if (active) return true;
+    if (!warming || gap) healthy_since = now;
+    warming = true;
+    active = now - healthy_since >= RECOVERY_NS;
+    return active;
+  }
+
+private:
+  uint64_t session = UINT64_MAX, healthy_since = 0, last_observed = 0;
+  std::array<uint64_t, 3> failures = {};
+  int failure_count = 0;
+  bool active = false, warming = false, observed = false, latched = false;
 };
 
 // Bounded C3/C3X metering in model coordinates. No image allocation or warp.

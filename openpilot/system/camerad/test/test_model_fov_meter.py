@@ -27,7 +27,7 @@ extern "C" int mailbox_check() {
     for (uint64_t i = 1; i < 100000; ++i) {
       ModelFovSnapshot value;
       value.ready = i % 2; value.selection = i % 5;
-      value.generation = i; value.valid_until = i + 1;
+      value.generation = i; value.valid_until = i + 1; value.session = i * 7;
       value.rpy = {double(i), double(i * 2), double(i * 3)};
       mailbox.publish(value);
     }
@@ -38,7 +38,7 @@ extern "C" int mailbox_check() {
     ModelFovSnapshot value;
     if (mailbox.read(value) && value.generation) {
       const auto i = value.generation;
-      good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 &&
+      good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 && value.session == i * 7 &&
               value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3;
     }
   } while (!done.load());
@@ -55,6 +55,14 @@ extern "C" int meter(int width, int height, bool wide, double roll, double pitch
   if (!meter.measure(pixels, size)) return -1;
   output[8] = meter.grey; output[9] = meter.black_fraction; output[10] = meter.white_fraction;
   return 2;
+}
+extern "C" void stability(const uint64_t *times, const uint64_t *sessions, const uint8_t *valid,
+                           size_t count, uint8_t *output) {
+  ModelFovStability guard;
+  for (size_t i = 0; i < count; ++i) {
+    guard.set_session(sessions[i]);
+    output[i] = guard.use_fov(valid[i], times[i]) | (guard.locked() << 1);
+  }
 }
 ''', encoding='utf-8')
   library = folder / 'meter.so'
@@ -73,6 +81,17 @@ extern "C" int meter(int width, int height, bool wide, double roll, double pitch
                   image.nbytes if size is None and image is not None else size or 0, output)
     return status, np.array(output)
   call.mailbox_check = module.mailbox_check
+  module.stability.argtypes = [ctypes.c_void_p] * 3 + [ctypes.c_size_t, ctypes.c_void_p]
+  module.stability.restype = None
+
+  def stability(events):
+    times = np.array([round(t * 1e9) for t, _, _ in events], dtype=np.uint64)
+    sessions = np.array([s for _, s, _ in events], dtype=np.uint64)
+    valid = np.array([v for _, _, v in events], dtype=np.uint8)
+    output = np.zeros(len(events), dtype=np.uint8)
+    module.stability(times.ctypes.data, sessions.ctypes.data, valid.ctypes.data, len(events), output.ctypes.data)
+    return output
+  call.stability = stability
   return call
 
 
@@ -147,6 +166,96 @@ def test_latest_snapshot_cannot_mix_calibration_or_fov_generations(native):
   assert native.mailbox_check() == 1
 
 
+def frames(start, stop, valid=True, session=1):
+  # Match capture cadence; use wall time rather than an arbitrary frame count.
+  return [(float(t), session, valid) for t in np.arange(start, stop + .001, .05)]
+
+
+@pytest.mark.parametrize('start', [0., 100., 86400.])
+def test_fov_entry_and_recovery_require_two_seconds_of_valid_frames(native, start):
+  events = frames(start, start + 2.) + [(start + 2.05, 1, False)] + frames(start + 2.1, start + 4.1)
+  output = native.stability(events)
+  assert not output[:40].any()
+  assert output[40] == 1
+  assert output[41] == 0  # Not a grace period for a corrupt buffer or expired context.
+  assert not output[42:82].any()
+  assert output[82] == 1
+
+
+@pytest.mark.parametrize('gap', [.05, .1, .2, .25])
+def test_valid_camera_cadences_use_elapsed_time_not_frame_count(native, gap):
+  events = [(float(t), 1, True) for t in np.arange(0., 2.001, gap)]
+  output = native.stability(events)
+  assert not output[:-1].any() and output[-1] == 1
+
+
+@pytest.mark.parametrize('invalid_at', [.05, 1., 1.95])
+def test_failure_while_warming_restarts_dwell_without_counting_a_switch(native, invalid_at):
+  events = frames(0., invalid_at - .05) + [(invalid_at, 1, False)] + frames(invalid_at + .05, invalid_at + 2.05)
+  output = native.stability(events)
+  assert not output[:-1].any() and output[-1] == 1
+
+
+def test_missing_capture_observations_cannot_instantly_complete_warmup(native):
+  events = frames(0., 1.) + frames(3., 5.)
+  output = native.stability(events)
+  assert not output[:-1].any() and output[-1] == 1
+
+
+def test_three_actual_fallbacks_in_thirty_seconds_latch_stock_until_observed_option_edge(native):
+  events = []
+  for start in [0., 3., 6.]:
+    events += frames(start, start + 2.) + [(start + 2.05, 1, False)]
+  events += frames(8.1, 70.)  # Neither elapsed time nor good input silently rearms it.
+  output = native.stability(events)
+  assert np.count_nonzero(output == 1) == 3
+  assert (output[125:] == 2).all()
+  events += [(70.05, 2, False)] + frames(70.1, 72.1, session=3)
+  output = native.stability(events)
+  assert not output[-41:-1].any() and output[-1] == 1
+
+
+def test_continuous_invalid_frames_count_only_one_actual_fallback(native):
+  events = frames(0., 2.) + frames(2.05, 20., False) + frames(20.05, 22.05)
+  output = native.stability(events)
+  assert output[40] == 1 and output[-1] == 1
+  assert not (output & 2).any()
+
+
+def test_three_sparse_fallbacks_outside_rolling_window_do_not_latch(native):
+  events = []
+  for start in [0., 20., 40., 60.]:
+    events += frames(start, start + 2.) + [(start + 2.05, 1, False)]
+  output = native.stability(events)
+  assert np.count_nonzero(output == 1) == 4
+  assert not (output & 2).any()
+
+
+@pytest.mark.parametrize('last_start,locked', [(30., True), (30.05, False)])
+def test_failure_window_boundary_is_rolling_and_inclusive(native, last_start, locked):
+  events = []
+  for start in [0., 15., last_start]:
+    events += frames(start, start + 2.) + [(start + 2.05, 1, False)]
+  assert native.stability(events)[-1] == (2 if locked else 0)
+
+
+def test_option_change_stops_immediately_and_requires_new_entry_dwell(native):
+  events = frames(0., 2.) + [(2.05, 2, False)] + frames(2.1, 4.1, session=3)
+  output = native.stability(events)
+  assert output[40] == 1 and not output[41:-1].any() and output[-1] == 1
+
+
+def test_backward_clock_fails_closed_until_new_option_session(native):
+  events = frames(10., 12.) + [(11., 1, True)] + frames(12.05, 15.)
+  output = native.stability(events)
+  assert output[40] == 1 and (output[41:] == 2).all()
+
+
+def test_long_valid_episode_does_not_expire_or_add_a_new_switch(native):
+  output = native.stability(frames(0., 120.))
+  assert not output[:40].any() and (output[40:] == 1).all()
+
+
 def test_camera_owner_keeps_ipc_and_disk_reads_out_of_frame_delivery():
   source = (ROOT / 'system/camerad/cameras/camera_qcom2.cc').read_text(encoding='utf-8')
   delivery = source.split('void CameraState::sendState(', 1)[1].split('void camerad_thread()', 1)[0]
@@ -155,6 +264,9 @@ def test_camera_owner_keeps_ipc_and_disk_reads_out_of_frame_delivery():
   assert 'fov_worker.latest()' in frame_loop and 'context.update(' not in frame_loop
   assert 'SCHED_OTHER' in source and 'setpriority(PRIO_PROCESS, 0, 10)' in source
   assert 'fov_active ? fov_meter.grey :' in delivery and 'calculate_exposure_value(' in delivery
+  assert 'now < context.valid_until' in delivery and '!fov_stability.locked()' in delivery
+  assert 'fov_stability.set_session(context.session)' in delivery
+  assert 'fov_stability.use_fov(fov_valid, now)' in delivery
 
 
 def test_default_off_and_camera_menu_keep_display_separate_from_metering():
@@ -165,6 +277,99 @@ def test_default_off_and_camera_menu_keep_display_separate_from_metering():
   camera = next(g for g in category['groups'] if g['id'] == 'PV5_CAMERA')
   assert camera['groups'][0]['params'] == ['Pv5WideModelFov', 'Pv5ModelFovExposure']
   assert camera['groups'][1]['params'] == ['Pv5CameraFovPreview', 'Pv5FovPreviewPitch']
+
+
+def test_actual_frame_selection_exits_on_fault_and_latches_repeated_fallbacks(tmp_path):
+  """Real production selection block, guard and pixel sampler; mocked sensor/AE boundary."""
+  source = (ROOT / 'system/camerad/cameras/camera_qcom2.cc').read_text(encoding='utf-8')
+  selection = 'const bool front' + source.split('const bool front', 1)[1].split('set_camera_exposure(grey);', 1)[0]
+  selection += 'set_camera_exposure(grey);'
+  fixture = r'''
+#include "system/camerad/cameras/model_fov_meter.h"
+#include <cassert>
+#include <vector>
+uint64_t clock_now = 0;
+uint64_t nanos_since_boot() { return clock_now; }
+constexpr int VISION_STREAM_ROAD = 0, VISION_STREAM_WIDE_ROAD = 1, VISION_STREAM_DRIVER = 2;
+namespace cereal { struct FrameData { enum class ImageSensor { AR0231, OX03C10, OTHER }; }; }
+struct Sensor { cereal::FrameData::ImageSensor image_sensor = cereal::FrameData::ImageSensor::OX03C10; };
+struct Yuv { uint8_t *y = nullptr; size_t len = 0; int stride = 1928; };
+struct Buffer { int out_img_width = 1928, out_img_height = 1208; Yuv *cur_yuv_buf = nullptr; };
+struct Camera { struct { int stream_type = VISION_STREAM_WIDE_ROAD; } cc; Sensor *sensor; Buffer buf; };
+struct Polygon { void set(size_t, float) {} };
+struct Frame {
+  bool active = false;
+  void setPv5ExposureFovActive(bool value) { active = value; }
+  Polygon initPv5ExposureFovPolygon(size_t) { return {}; }
+  void setPv5ExposureBlackFraction(float) {}
+  void setPv5ExposureWhiteFraction(float) {}
+};
+float calculate_exposure_value(Buffer *, int, int, int) { return .25f; }
+struct Capture {
+  Camera camera;
+  Frame framed;
+  ModelFovMeter fov_meter;
+  ModelFovStability fov_stability;
+  uint64_t fov_generation = UINT64_MAX;
+  bool fov_configured = false;
+  int ae_xywh = 0;
+  float selected = 0;
+  void set_camera_exposure(float grey) { selected = grey; }
+  void step(const ModelFovSnapshot &context) {
+    framed.active = false;  // A fresh FrameData message is built for every capture.
+'''
+  scenarios = r'''
+  }
+};
+int main() {
+  std::vector<uint8_t> pixels(1928 * 1208, 128);
+  for (int fault = 0; fault < 7; ++fault) {
+    Sensor sensor;
+    Yuv yuv{pixels.data(), pixels.size(), 1928};
+    Capture capture{{{}, &sensor, {1928, 1208, &yuv}}};
+    ModelFovSnapshot context;
+    context.ready = true; context.session = 1;
+    clock_now = 10000000000ULL;
+    auto step = [&](bool want_fov, bool refresh = true) {
+      if (refresh) context.valid_until = clock_now + 1000000000ULL;
+      capture.step(context);
+      assert(capture.framed.active == want_fov);
+      assert(capture.selected == (want_fov ? .5f : .25f));
+      clock_now += 50000000ULL;
+    };
+    auto warm = [&]() {
+      for (int i = 0; i < 40; ++i) { ++context.generation; step(false); }
+      step(true);  // Normal calibration generations do not restart dwell.
+    };
+    for (int episode = 0; episode < 3; ++episode) {
+      warm();
+      if (fault == 0) context.ready = false;
+      if (fault == 1) context.valid_until = clock_now;  // Expiry at the frame, after worker read.
+      if (fault == 2) yuv.len = 8;
+      if (fault == 3) yuv.y = nullptr;
+      if (fault == 4) sensor.image_sensor = cereal::FrameData::ImageSensor::OTHER;
+      if (fault == 5) { context.rpy[1] = .8; ++context.generation; }
+      if (fault == 6) std::fill(pixels.begin(), pixels.end(), 0);
+      step(false, fault != 1);  // Each fault selects stock on this very frame.
+      context.ready = true; context.rpy = {}; ++context.generation;
+      yuv.len = pixels.size(); yuv.y = pixels.data();
+      sensor.image_sensor = cereal::FrameData::ImageSensor::OX03C10;
+      std::fill(pixels.begin(), pixels.end(), 128);
+    }
+    assert(capture.fov_stability.locked());
+    for (int i = 0; i < 100; ++i) { ++context.generation; step(false); }
+    context.session = 2; context.ready = false; step(false);
+    assert(!capture.fov_stability.locked());
+    context.session = 3; context.ready = true; warm();
+  }
+}
+'''
+  wrapper = tmp_path / 'frame.cc'
+  wrapper.write_text(fixture + selection + scenarios, encoding='utf-8')
+  executable = tmp_path / 'frame'
+  subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-error=missing-field-initializers',
+                  '-I', str(ROOT), str(wrapper), '-o', str(executable)], check=True, capture_output=True)
+  subprocess.run([str(executable)], check=True, capture_output=True, timeout=10)
 
 
 def test_camera_context_faults_and_live_switches_use_the_actual_cpp_class(tmp_path):
@@ -198,7 +403,7 @@ struct InitData { enum class DeviceType { TICI, TIZI, MICI }; };
 struct LiveCalibrationData { enum class Status { CALIBRATED, UNCALIBRATED }; };
 struct CarParams {};
 }
-bool not_car = false, pv5 = true, messages_valid = true;
+bool not_car = false, pv5 = true, messages_valid = true, new_calibration = true;
 struct Car {
   bool getNotCar() const { return not_car; }
   std::string getCarFingerprint() const { return pv5 ? "KIA_PV5" : "OTHER"; }
@@ -233,7 +438,7 @@ struct SubMaster {
   explicit SubMaster(std::vector<const char *>) {}
   void update(int timeout) { assert(timeout == 0); }
   bool allAliveAndValid(std::vector<const char *>) { return messages_valid; }
-  bool updated(const char *) { return true; }
+  bool updated(const char *) { return new_calibration; }
   Event &operator[](const char *key) { static Event cal{true}, dev{false}; return std::string(key) == "liveCalibration" ? cal : dev; }
 };
 '''
@@ -243,7 +448,7 @@ int main() {
     clock_now = 10000000000ULL; cal_time = dev_time = clock_now;
     values = {{"Pv5ModelFovExposure", "1"}, {"UseWideCamera", "1"}, {"Pv5WideModelFov", "4"},
               {"CameraYawTrimDeg", "0"}, {"CarParams", "12345678"}};
-    not_car = false; pv5 = true; messages_valid = true; env_ctrl_exp_from_params = false;
+    not_car = false; pv5 = true; messages_valid = true; env_ctrl_exp_from_params = false; new_calibration = true;
     angles = {0, 0, 0}; device = cereal::InitData::DeviceType::TIZI;
     calibrated = cereal::LiveCalibrationData::Status::CALIBRATED;
     ModelFovContext context;
@@ -278,6 +483,27 @@ int main() {
       }
     } else assert(!context.ready);
   }
+  // No new calibration packet is needed for each frame, but holding it must
+  // never extend its original source expiry. FOV updates do not reset session.
+  clock_now = 20000000000ULL; cal_time = dev_time = clock_now;
+  values = {{"Pv5ModelFovExposure", "1"}, {"UseWideCamera", "1"}, {"Pv5WideModelFov", "4"},
+            {"CameraYawTrimDeg", "0"}, {"CarParams", "12345678"}};
+  not_car = false; pv5 = true; messages_valid = true; env_ctrl_exp_from_params = false; new_calibration = true;
+  angles = {0, 0, 0}; device = cereal::InitData::DeviceType::TIZI;
+  calibrated = cereal::LiveCalibrationData::Status::CALIBRATED;
+  ModelFovContext context;
+  context.update(true); assert(context.ready && context.session == 1);
+  const auto expiry = context.valid_until;
+  new_calibration = false; clock_now += 750000000ULL;
+  context.update(true); assert(context.ready && context.valid_until == expiry && context.session == 1);
+  values["Pv5WideModelFov"] = "3"; clock_now += 250000000ULL;
+  context.update(true); assert(context.ready && context.selection == 3 && context.session == 1);
+  clock_now += 1; context.update(true); assert(!context.ready);
+  values["Pv5ModelFovExposure"] = "0"; clock_now += 250000000ULL;
+  context.update(true); assert(!context.ready && context.session == 2);
+  values["Pv5ModelFovExposure"] = "1"; clock_now += 250000000ULL;
+  cal_time = dev_time = clock_now; new_calibration = true;
+  context.update(true); assert(context.ready && context.session == 3);
 }
 '''
   wrapper = tmp_path / 'context.cc'

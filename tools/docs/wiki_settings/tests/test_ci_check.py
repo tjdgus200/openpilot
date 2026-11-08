@@ -47,10 +47,12 @@ class WikiSettingsCiCheckTest(unittest.TestCase):
       self.assertTrue((output / "summary.md").is_file())
       self.assertTrue((output / "pages.diff").is_file())
       stored = json.loads((output / "summary.json").read_text(encoding="utf-8"))
-      self.assertEqual(stored["result"]["settings"], 212)
+      self.assertEqual(stored["result"]["settings"], 214)
       self.assertEqual(stored["validationIssues"], [])
       self.assertIn("Settings-Catalog.md", (output / "pages.diff").read_text(encoding="utf-8"))
       self.assertIn("Pv5FovPreviewPitch", (output / "pages.diff").read_text(encoding="utf-8"))
+      self.assertIn("Pv5ModelFovExposure", (output / "pages.diff").read_text(encoding="utf-8"))
+      self.assertIn("Pv5CameraFovPreview", (output / "pages.diff").read_text(encoding="utf-8"))
 
   def test_report_directory_cannot_be_the_wiki_checkout(self):
     with tempfile.TemporaryDirectory() as temp:

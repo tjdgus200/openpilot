@@ -1,5 +1,17 @@
 # Repository memory
 
+- 2026-11-08 FOV AE stability follow-up: each front camera requires 2s of
+  continuous valid frame metering before initial entry/re-entry; >250ms gaps
+  restart warmup. Invalid/expired context or pixels select stock immediately.
+  Preserve original calibration/device TTLs and last-valid reuse only within
+  those TTLs. Three actual FOV-to-stock fallbacks in a rolling30s latch stock
+  until an observed option OFF/ON or camerad restart; valid calibration/FOV
+  generations and elapsed time do not clear it. Skip grid sampling while
+  latched. Yaw invalidation still requires camera/model restart. Never reset
+  or slow the stock EV/gain controller to implement this dwell. Add native
+  timeline and real frame-selection fault tests to the existing mandatory
+  sampler suite; keep physical exposure response explicitly unverified.
+
 - 2026-11-08 user-authorized FOV exposure: preserve default-OFF
   Pv5ModelFovExposure and independent Pv5CameraFovPreview in PV5 > Camera &
   Exposure, with separate input/exposure and area-preview sections. Moving

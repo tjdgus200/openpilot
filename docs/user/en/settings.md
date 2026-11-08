@@ -433,6 +433,12 @@ configurations, excessive clipping and invalid brightness fall back to stock met
 `STOCK` labels stock metering; `FOV` labels the model-region metering actually used.
 Night perception benefits and physical-device latency are unverified.
 
+Initial entry and recovery require two continuous seconds of valid metering. Invalid input
+immediately selects stock metering. Three actual fallbacks within a rolling 30 seconds keep
+that camera on stock metering. To retry, turn the option off for one second then on, or reboot.
+The existing exposure/gain response and source expiry limits remain unchanged. Changing the
+yaw trim still requires a reboot.
+
 `Pv5CameraFovPreview` alternates the two cameras every two seconds at any speed when ON.
 OFF retains the stopped-only preview. Cyan outlines show model input; purple shows metering.
 A dashed purple outline distinguishes coincident regions. Safety alerts retain priority.

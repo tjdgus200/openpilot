@@ -36,7 +36,9 @@ public:
     const uint64_t now = nanos_since_boot();
     if (now >= next_params) {
       next_params = now + 250000000ULL;
-      enabled = params.getBool("Pv5ModelFovExposure");
+      const bool requested = params.getBool("Pv5ModelFovExposure");
+      if (requested != option_enabled) { option_enabled = requested; ++session; }
+      enabled = requested;
       const std::string wide = enabled ? params.get("UseWideCamera") : "";
       enabled = enabled && (wide.empty() || wide == "1");  // Declared default is ON, as in modeld.
       if (enabled) {
@@ -99,6 +101,7 @@ private:
   uint64_t next_params = 0;
   uint64_t next_vehicle = 0;
   bool enabled = false;
+  bool option_enabled = false;
   bool pv5 = false;
   bool yaw_invalidated = false;
 };
@@ -175,6 +178,7 @@ public:
   std::unique_ptr<PubMaster> pm;
   std::deque<cam_req_mgr_message> queued_events;
   ModelFovMeter fov_meter;
+  ModelFovStability fov_stability;
   uint64_t fov_generation = UINT64_MAX;
   bool fov_configured = false;
 
@@ -374,16 +378,19 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
   const bool front = camera.cc.stream_type == VISION_STREAM_ROAD || camera.cc.stream_type == VISION_STREAM_WIDE_ROAD;
   const bool known_sensor = camera.sensor->image_sensor == cereal::FrameData::ImageSensor::AR0231 ||
                             camera.sensor->image_sensor == cereal::FrameData::ImageSensor::OX03C10;
-  bool fov_active = false;
-  if (context.ready && front && known_sensor) {
+  const uint64_t now = nanos_since_boot();
+  fov_stability.set_session(context.session);
+  bool fov_valid = false;
+  if (context.ready && now < context.valid_until && front && known_sensor && !fov_stability.locked()) {
     if (fov_generation != context.generation) {
       fov_generation = context.generation;
       fov_configured = fov_meter.configure(camera.buf.out_img_width, camera.buf.out_img_height,
                                           camera.cc.stream_type == VISION_STREAM_WIDE_ROAD, context.rpy, context.selection,
                                           camera.buf.cur_yuv_buf->stride);
     }
-    fov_active = fov_configured && fov_meter.measure(camera.buf.cur_yuv_buf->y, camera.buf.cur_yuv_buf->len);
+    fov_valid = fov_configured && fov_meter.measure(camera.buf.cur_yuv_buf->y, camera.buf.cur_yuv_buf->len);
   }
+  const bool fov_active = fov_stability.use_fov(fov_valid, now);
   if (fov_active) {
     framed.setPv5ExposureFovActive(true);
     auto polygon = framed.initPv5ExposureFovPolygon(fov_meter.polygon.size());
