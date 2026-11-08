@@ -112,6 +112,8 @@ class CarrotSession(Session):
     self.telemetry.blinker = self.blinker
     self.navi = HostForwarder() if sys.platform == 'linux' and self.usb_display else None
     self.hud_wifi = None
+    self.last_model_request = 0.
+    self.maintenance_hold = False
     self.power_lease = SessionLease(self.t.transport if isinstance(self.t, ReadAheadTransport) else self.t)
 
   def _reset(self, seq):
@@ -138,6 +140,8 @@ class CarrotSession(Session):
       if host == 'jetson':
         from park_update import supported, usb_connection, CAPABILITY as PARK_UPDATE_CAPABILITY
         obj[PARK_UPDATE_CAPABILITY] = usb_connection(self.t) and supported()
+        from park_update import INTERNAL_CAPABILITY
+        obj[INTERNAL_CAPABILITY] = obj[PARK_UPDATE_CAPABILITY]
         obj[request_chunks.CAPABILITY] = request_chunks.descriptor()
         obj['carrot_source_commit'] = (ROOT / 'SOURCE_COMMIT').read_text().strip()
         obj['carrot_boot_update_installed'] = Path('/opt/carrot-jetlink/boot-update-required').is_file()
@@ -156,7 +160,11 @@ class CarrotSession(Session):
       try:
         if not usb_connection(self.t):
           raise ValueError('Park handoff requires the physical protocol2 USB connection')
+        value = json.loads(bytes(msg.payload)) if len(msg.payload) <= 65536 else {}
+        if 'internal' in value and time.monotonic() - getattr(self, 'last_model_request', 0.) < 1.:
+          raise ValueError('External inference has not retired')
         park_prepare(msg.payload, msg.received_ns / 1e9, Path('/opt/carrot-jetlink'))
+        self.maintenance_hold = getattr(self, 'maintenance_hold', False) or 'internal' in value
         accepted = True
       except (OSError, ValueError, TypeError, KeyError, ImportError):
         pass
@@ -168,6 +176,9 @@ class CarrotSession(Session):
           # Keep the live runtime if the fixed local worker cannot be started.
           # The comma reconnects and may retry; no forced USB reset/reboot.
           pass
+      return
+    if getattr(self, 'maintenance_hold', False):
+      self._error(msg.seq, 'update_required', 'Native model owns inference during Jetson maintenance')
       return
     if msg.msg_type == LIBRARY_REQUEST:
       if msg.seq <= self.last_seq:
@@ -307,6 +318,7 @@ class CarrotSession(Session):
       pass  # An unavailable display does not stop inference.
 
   def _infer(self, loaded, msg):
+    self.last_model_request = time.monotonic()
     comparison = getattr(self, 'input_comparison', None)
     if comparison is not None:
       comparison.before(loaded)

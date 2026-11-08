@@ -52,11 +52,14 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
   if peer.get('carrot_host') != 'jetson' or peer.get(CAPABILITY) is not True:
     return
   manifest = selected_release(RELEASE, required=True)
+  from openpilot.common.jetlink_maintenance import CAPABILITY as INTERNAL_CAPABILITY, lease
+  internal_gate = (peer.get(INTERNAL_CAPABILITY) is True and peer.get('engine_state') == 'none'
+                   and 'loaded' in peer and peer['loaded'] is None)
   parked_gate = peer.get('carrot_park_update_gate_v1') is True
-  if parked_gate:
+  if parked_gate or internal_gate:
     from openpilot.common.params import Params
     from openpilot.selfdrive.modeld.jetlink.park_update import GatePermission
-    permission = GatePermission(Params())
+    permission = GatePermission(Params(), allow_internal=internal_gate)
     def waiting():
       # Explicit revocation also reaches a candidate probe already in progress.
       client.t.send_json(MESSAGE, client._next_seq(), {'pause': True})
@@ -81,7 +84,8 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
       from openpilot.common.params import Params
       if not parked_gate:
         permission = Permission(Params(), allow_parked=(peer.get('engine_state') == 'none'
-                                                       and 'loaded' in peer and peer['loaded'] is None))
+                                                       and 'loaded' in peer and peer['loaded'] is None),
+                                allow_internal=internal_gate)
       def allowed():
         return connected() and permission.allowed()
       def waiting():
@@ -107,11 +111,14 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
             if not connected():
               raise ConnectionError('Jetson disconnected during USB transfer') from None
   while connected():
-    if usb_change or parked_gate:
+    if usb_change or parked_gate or internal_gate:
       wait_for_permission(permission, connected, waiting, sleep)
     # The release selection is independent of NetworkManager profile reads.
     # Network provisioning stays on its private channel and out of status/logs.
-    client.t.send_json(MESSAGE, client._next_seq(), manifest)
+    selection = manifest
+    if internal_gate and lease().allowed():
+      selection = {'manifest': manifest, 'internal': lease().proof}
+    client.t.send_json(MESSAGE, client._next_seq(), selection)
     if wifi is not None:
       wifi.send(client)
     value = client.state().get('carrot_update')
@@ -122,7 +129,7 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
     publish('updating', peer=peer, host_update=value)
     if value.get('state') == 'ready':
       break
-    sleep(.2 if parked_gate else .5)
+    sleep(.2 if parked_gate or internal_gate else .5)
   # The gate has no model. A fresh connection must greet the real server.
   if not connected():
     raise ConnectionError('Jetson disconnected during boot release check')

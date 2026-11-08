@@ -713,7 +713,8 @@ def main():
         from openpilot.selfdrive.modeld.jetlink.contracts import JETSON_SPEC
         from openpilot.selfdrive.modeld.jetlink.update_permission import Permission, wait_for_permission
         setup_permission = Permission(params, allow_parked=(peer.get('engine_state') == 'none'
-                                                           and 'loaded' in peer and peer['loaded'] is None)) if is_jetson(peer) else None
+                                                           and 'loaded' in peer and peer['loaded'] is None),
+                                      allow_internal=peer.get('carrot_internal_update_v1') is True) if is_jetson(peer) else None
         needs_setup = setup_permission is not None and peer.get('loaded') != JETSON_SPEC.sha256
         def setup_allowed(permission=setup_permission, current=params):
           return permission.allowed() if permission is not None else (
@@ -754,6 +755,9 @@ def main():
           raise PreparationDeferred('Jetson setup permission expired')
         log.info('Jetlink ready: %s', peer)
         startup.ready_once = True
+        if is_jetson(peer):
+          from openpilot.common.jetlink_maintenance import lease
+          lease().release()
         serve_local(listener, client, peer, wifi)
       except RuntimeHandoff as exc:
         log.info('%s', exc)

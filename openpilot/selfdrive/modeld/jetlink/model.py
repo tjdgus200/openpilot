@@ -178,6 +178,8 @@ class JoiningModel:
     self.error = ''
     self.small_runs = 0
     self.last_slow_log = 0.
+    from openpilot.common.jetlink_maintenance import Owner
+    self.maintenance = Owner()
 
   def update(self, sm, metadata):
     self.source_sof = metadata.timestamp_sof if self.phase_enabled else 0
@@ -215,10 +217,19 @@ class JoiningModel:
 
   def run(self, bufs, transforms, inputs, prepare_only):
     from openpilot.common.swaglog import cloudlog
+    maintenance = getattr(self, 'maintenance', None)
+    held = maintenance is not None and maintenance.held(external=self.client is not None or self.active)
+    if held:
+      if self.connection is not None:
+        self.connection.close()
+        self.connection = None
+      if self.preparation is not None:
+        self.preparation.close()
+        self.preparation = None
     if self.preparation is not None and not self.ready:
       self.preparation.close()
       self.preparation = None
-    if self.warp is None and self.small_runs >= 3 and self.ready and self.join_allowed and time.monotonic() >= self.next_join:
+    if not held and self.warp is None and self.small_runs >= 3 and self.ready and self.join_allowed and time.monotonic() >= self.next_join:
       try:
         if self.preparation is None:
           cloudlog.warning('Jetlink warp preparation starting after %d internal outputs', self.small_runs)
@@ -240,7 +251,7 @@ class JoiningModel:
     if self.connection is not None and not (self.ready and self.join_allowed):
       self.connection.close()
       self.connection = None
-    if (self.warp is not None and self.client is None and self.small_runs >= 3 and
+    if (not held and self.warp is not None and self.client is None and self.small_runs >= 3 and
         self.ready and self.join_allowed and time.monotonic() >= self.next_join):
       try:
         if self.connection is None:
@@ -314,4 +325,6 @@ class JoiningModel:
       # Loading the PKL alone leaves its first execution cold (~0.8 s on C4).
       # Execute the native fallback before allowing an external-model join.
       self.small_runs += 1
+      if held:
+        maintenance.completed()
     return result

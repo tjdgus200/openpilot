@@ -75,6 +75,17 @@ def test_black_detailed_screen_and_telemetry_panel_handoff(monkeypatch):
   assert hud.dashboard_ready()
 
 
+def test_installed_update_waits_visibly_for_comma_reboot(monkeypatch):
+  monkeypatch.setattr(boot_status, 'read_json', lambda _: {
+      'state': 'waiting_comma_reboot', 'updated': 100., 'error': '', 'fraction': None})
+  value = boot_status.update_status(100.1)
+  assert value['state'] == 'waiting_comma_reboot'
+  title, rows, detail, error = lines({'update': value})
+  assert rows[6][2] == '업데이트 완료 · 콤마 재부팅 대기' and not error
+  assert render({'update': value}).getpixel((1919, 461)) == (0, 0, 0)
+  assert not boot_status.update_status(110.)
+
+
 @pytest.mark.parametrize('state', ['checking', 'transferring', 'verifying', 'ready', 'failed'])
 def test_boot_update_phase_progress_and_previous_release_visible(state):
   title, rows, detail, error = lines({'update': {'state': state, 'fraction': .5,

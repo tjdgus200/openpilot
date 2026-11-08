@@ -13,6 +13,7 @@ import subprocess
 import time
 
 CAPABILITY = 'carrot_park_update_v1'
+INTERNAL_CAPABILITY = 'carrot_internal_update_v1'
 REQUEST, RESPONSE = 0x4015, 0x4016
 DIRECTORY = Path('/run/carrot-jetlink-display')
 REQUEST_FILE = DIRECTORY / 'park-update.json'
@@ -42,7 +43,9 @@ def validate_request(value, root):
   import update_host as update
   from usb_release import trusted
   from openpilot.common.jetson_model import read_spec
-  if not isinstance(value, dict) or set(value) != {'manifest', 'parked'} or value['parked'] is not True:
+  from boot_update import internal_proof
+  internal = isinstance(value, dict) and set(value) == {'manifest', 'internal'} and internal_proof(value['internal'])
+  if not internal and (not isinstance(value, dict) or set(value) != {'manifest', 'parked'} or value['parked'] is not True):
     raise ValueError('Park update permission missing')
   manifest = value['manifest']
   if not isinstance(manifest, dict) or manifest.get('delivery') != 'usb':
@@ -51,7 +54,8 @@ def validate_request(value, root):
   trusted(root, manifest)
   update.validate_storage_compatibility(manifest)
   spec = read_spec(root / 'current')
-  if any(manifest['model'][key] != spec[key] for key in ('sha256', 'size')):
+  if (manifest['model']['sha256'] != spec['sha256']
+      or manifest['model']['size'] != spec.get('nbytes', spec.get('size'))):
     raise ValueError('Park update cannot change the boot-selected model')
   if manifest['source_commit'] == (root / 'current/SOURCE_COMMIT').read_text().strip():
     raise ValueError('Runtime is already selected')
@@ -69,7 +73,8 @@ def prepare(payload, received, root, clock=time.monotonic):
   if DIRECTORY.is_symlink() or not DIRECTORY.is_dir():
     raise ValueError('Private display runtime directory unavailable')
   temporary = REQUEST_FILE.with_suffix('.new')
-  data = json.dumps({'manifest': manifest, 'received': received, 'boot_id': BOOT_ID.read_text().strip()}).encode()
+  data = json.dumps({'manifest': manifest, 'received': received, 'boot_id': BOOT_ID.read_text().strip(),
+                     **({'internal': value['internal']} if 'internal' in value else {})}).encode()
   if len(data) > MAX_BYTES:
     raise ValueError('Oversized private update request')
   fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
@@ -150,8 +155,9 @@ def enter():
     if (value.get('boot_id') != boot_id or type(stamp) not in (int, float)
         or not math.isfinite(stamp) or not 0 <= time.monotonic() - stamp < 3.):
       return  # No runtime was stopped. Let the comma request again in Park.
-    validate_request({'manifest': value.get('manifest'), 'parked': True}, update.ROOT)
-    if not runtime_parked():
+    proof = value.get('internal')
+    validate_request({'manifest': value.get('manifest'), **({'internal': proof} if proof else {'parked': True})}, update.ROOT)
+    if proof is None and not runtime_parked():
       return
     update.atomic_json(RECOVERY, {'boot_id': boot_id})
     RECOVERY.chmod(0o600)

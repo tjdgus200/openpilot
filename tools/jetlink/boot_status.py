@@ -21,7 +21,7 @@ def update_status(now):
   if type(stamp) not in (int, float) or not 0 <= now - stamp < 10:
     return {}
   states = {'checking', 'checking_usb', 'transferring', 'downloading', 'verifying',
-            'waiting_internet', 'waiting_park', 'ready', 'failed'}
+            'waiting_internet', 'waiting_park', 'waiting_comma_reboot', 'ready', 'failed'}
   state = value.get('state')
   if state not in states:
     return {}

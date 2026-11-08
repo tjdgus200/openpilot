@@ -4,6 +4,7 @@ Runs as the existing root update service. No model/backend/renderer imports.
 Network provisioning remains in the independent Wi-Fi service.
 """
 import json
+import re
 from pathlib import Path
 import sys
 import subprocess
@@ -19,6 +20,14 @@ MESSAGE = 0x4003
 READY = Path('/run/carrot-jetlink-boot-ready.json')
 STATUS = Path('/run/carrot-jetlink-boot-update.json')
 BOOT_ID = Path('/proc/sys/kernel/random/boot_id')
+INTERNAL_CAPABILITY = 'carrot_internal_update_v1'
+
+
+def internal_proof(value):
+  return (isinstance(value, dict) and value.get('internal') is True
+          and re.fullmatch('[0-9a-f]{32}', str(value.get('token', ''))) is not None
+          and re.fullmatch('[0-9a-f-]{36}', str(value.get('boot', ''))) is not None
+          and re.fullmatch('[0-9a-f]{40}', str(value.get('release', ''))) is not None)
 
 
 def enabled():
@@ -64,12 +73,14 @@ class Gate:
     self.worker = None
     self.done = False
     self.error = ''
+    self.internal = None
 
   def report(self, state, fraction=None):
     self.state, self.fraction = state, fraction
 
   def telemetry(self):
-    return {'state': self.state, 'fraction': self.fraction, 'error': self.error}
+    return {'state': self.state, 'fraction': self.fraction, 'error': self.error,
+            'permission': 'internal_model' if self.internal is not None else 'park_or_offroad'}
 
   def select(self, manifest):
     # Validate before trusting equality, downloading or granting permission.
@@ -82,6 +93,28 @@ class Gate:
     self.selected = manifest
     self.source_commit = commit
     self.received = time.monotonic()
+
+  def select_internal(self, value):
+    if set(value) != {'manifest', 'internal'} or not internal_proof(value['internal']):
+      raise ValueError('Native model ownership proof missing')
+    self.select(value['manifest'])
+    proof = value['internal']
+    self.internal = proof
+    self.require_permission = True
+    wait = update.ROOT / 'updates/wait-comma-boot.json'
+    if proof['release'] != self.source_commit:
+      record = {'boot': proof['boot'], 'source_commit': self.source_commit}
+      if not wait.exists() or json.loads(wait.read_text()) != record:
+        update.atomic_json(wait, record)
+    elif wait.exists():
+      saved = json.loads(wait.read_text())
+      if saved.get('boot') != proof['boot']:
+        wait.unlink()
+
+  def waiting_comma(self):
+    # Durable across worker/Jetson restart. A daemon restart on the same comma
+    # boot is not a device reboot and cannot release a paired-code barrier.
+    return (update.ROOT / 'updates/wait-comma-boot.json').exists()
 
   def allowed(self):
     return (self.selected is not None and 0 <= time.monotonic() - self.received <
@@ -125,6 +158,9 @@ class Gate:
       return
     manifest = self.selected
     if (update.ROOT / 'current/SOURCE_COMMIT').read_text().strip() == self.source_commit:
+      if self.waiting_comma():
+        self.report('waiting_comma_reboot')
+        return
       update.atomic_json(READY, {'boot_id': BOOT_ID.read_text().strip(), 'source_commit': self.source_commit})
       READY.chmod(0o644)  # The unprivileged model/HUD guards must read this.
       self.report('ready')
@@ -166,6 +202,7 @@ class BootstrapSession:
         'carrot_usb_sha256_v1': sha256_usb, 'carrot_usb_sha256_check_v1': sha256_usb,
         'usb_source_commit': current,
         'carrot_park_update_gate_v1': self.gate.require_permission,
+        INTERNAL_CAPABILITY: True,
       })
       return
     if msg.seq <= self.last_seq:
@@ -207,8 +244,10 @@ class BootstrapSession:
         if not 0 < len(msg.payload) <= 65536:
           raise ValueError('Release manifest size invalid')
         value = json.loads(bytes(msg.payload))
-        if self.gate.require_permission and value == {'pause': True}:
+        if value == {'pause': True}:
           self.gate.received = 0.
+        elif isinstance(value, dict) and 'internal' in value:
+          self.gate.select_internal(value)
         else:
           self.gate.select(value)
       except Exception:

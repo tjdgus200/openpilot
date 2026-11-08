@@ -522,3 +522,9 @@ An ATC recovery attempt has a new four-second activation deadline. It does not e
 Manual indication projects 0.3s of measured boundary approach, advancing the centre-to-boundary threshold by at most 0.3m. Existing speed, centre-line and road-edge gates remain.
 
 After confirmed turn entry, the TBT indicator ends its hold as the wheel returns within ±30 degrees while moving, without waiting for the remaining 30m. Pre-turn traffic-light waits remain held; see [lane changes](lane-change.md) for the entry conditions.
+
+### Jetson maintenance while native inference owns the model (2026-11-08)
+
+An unused Jetson may update at any vehicle speed or gear while modeld confirms completed native-model outputs under an exclusive maintenance hold. A disconnected badge or `UsbGpuActive` alone is insufficient. External joining is blocked during maintenance; after reconnection and engine preparation, the existing stationary/manual-steering join gate still applies.
+
+If the running comma process started against an older paired package, Jetson completes installation and reports that it is waiting for comma reboot. Comma is never rebooted automatically. A real comma reboot and matching package identity release the barrier and allow Jetson services to start and reconnect. This runtime update does not flash an OS/kernel image. A legacy receiver may need this package installed once through its existing Park/offroad procedure. Physical-device latency and recovery remain separate validation steps.

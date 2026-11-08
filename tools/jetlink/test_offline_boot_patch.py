@@ -123,7 +123,7 @@ def test_old_runtime_guards_wait_without_timeout_and_depend_on_setup(tmp_path, m
   assert calls == [['systemctl', 'daemon-reload']]
 
 
-def test_signed_runtime_still_migrates_once_without_reboot(tmp_path, monkeypatch):
+def test_signed_runtime_migrates_then_repairs_missing_installed_bootstrap(tmp_path, monkeypatch):
   import install_updates
   source = tmp_path / 'current/tools/jetlink'
   source.mkdir(parents=True)
@@ -134,7 +134,7 @@ def test_signed_runtime_still_migrates_once_without_reboot(tmp_path, monkeypatch
   assert calls[0][:2] == ['sudo', '-n'] and calls[0][-1] == '--bootstrap-only'
   (tmp_path / 'boot-update-required').write_text('this-boot')
   install_updates.migrate_running_release(tmp_path)
-  assert len(calls) == 1
+  assert len(calls) == 2 and calls[-1][-1] == '--refresh-bootstrap'
 
 
 def test_retired_hold_cannot_strand_updated_comma():

@@ -28,7 +28,9 @@ def update_badge(value):
     action = '파일 검사' if state == 'checking_files' else 'USB 전송'
     return f'Jetson 업데이트 {action} 중{percent}', 'loading'
   if state == 'waiting_park':
-    return 'Jetson 업데이트 대기 · P단·정지/CAN 확인', 'loading'
+    return 'Jetson 업데이트 대기 · 내부 모델/P단 확인', 'loading'
+  if state == 'waiting_comma_reboot':
+    return 'Jetson 업데이트 완료 · 콤마 재부팅 대기', 'loading'
   if state == 'verifying':
     return 'Jetson 업데이트 검증·적용 중', 'loading'
   if state == 'failed':

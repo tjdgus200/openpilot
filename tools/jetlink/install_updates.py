@@ -22,6 +22,17 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
   if not (runtime / 'current/tools/jetlink/boot_update.py').is_file():
     return
   if (runtime / 'boot-update-required').is_file():
+    # An enrolled host also needs new protocol/reboot barriers at its next boot.
+    # Refresh from the validated current release, never restart the live updater.
+    try:
+      source = runtime / 'current/tools/jetlink'
+      if any(not (runtime / 'updater' / name).is_file()
+             or (runtime / 'updater' / name).read_bytes() != (source / name).read_bytes()
+             for name in bootstrap_files(source)):
+        subprocess.run(['sudo', '-n', sys.executable, str(runtime / 'current/tools/jetlink/install_updates.py'),
+                        '--refresh-bootstrap'], check=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+      print('Updater refresh deferred; retaining installed bootstrap', flush=True)
     return
   subprocess.run(['sudo', '-n', sys.executable, str(runtime / 'current/tools/jetlink/install_updates.py'),
                   '--bootstrap-only'], check=True, timeout=30)
@@ -65,17 +76,22 @@ def configure_runtime_boot_display(runtime=Path('/opt/carrot-jetlink')):
   subprocess.run(['systemctl', 'restart', 'carrot-jetlink-boot-display'], check=True, timeout=15)
 
 
-def bootstrap(root, source, defer_this_boot=False):
-  root, source = Path(root), Path(source)
-  target = root / 'opt/carrot-jetlink/updater'
-  target.mkdir(parents=True, exist_ok=True)
-  # Dependencies first, entry point last; enable only after every file is durable.
+def bootstrap_files(source):
   names = ['finalize_sd_image.py', 'hud_protocol.py', 'release-signing-public.pem',
            'wifi_protocol.py', 'local_release.py', 'boot_update.py', 'update_host.py']
   # Older offline patch payloads do not include the optional USB receiver.
   # Copying its code never enables the locally selected USB policy.
   if (source / 'usb_release.py').is_file():
     names.insert(-2, 'usb_release.py')
+  return names
+
+
+def bootstrap(root, source, defer_this_boot=False, preserve_policy=False):
+  root, source = Path(root), Path(source)
+  target = root / 'opt/carrot-jetlink/updater'
+  target.mkdir(parents=True, exist_ok=True)
+  # Dependencies first, entry point last; enable only after every file is durable.
+  names = bootstrap_files(source)
   for name in names:
     temporary = target / (name + '.new')
     with temporary.open('wb') as stream:
@@ -85,9 +101,10 @@ def bootstrap(root, source, defer_this_boot=False):
     temporary.chmod(0o644)
     temporary.replace(target / name)
   marker = target.parent / 'boot-update-required'
-  temporary = marker.with_suffix('.new')
-  temporary.write_text(Path('/proc/sys/kernel/random/boot_id').read_text() if defer_this_boot else 'next-boot\n')
-  temporary.replace(marker)
+  if not preserve_policy or not marker.is_file():
+    temporary = marker.with_suffix('.new')
+    temporary.write_text(Path('/proc/sys/kernel/random/boot_id').read_text() if defer_this_boot else 'next-boot\n')
+    temporary.replace(marker)
   if hasattr(os, 'sync'):
     os.sync()
 
@@ -145,13 +162,14 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('--boot-display-runtime', action='store_true', help='Use the signed display runtime for this boot only')
   parser.add_argument('--bootstrap-only', action='store_true', help='Migrate an installed runtime; enable from its next boot without OS writes')
+  parser.add_argument('--refresh-bootstrap', action='store_true', help='Refresh enrolled bootstrap without changing this boot policy')
   args = parser.parse_args()
   if args.boot_display_runtime:
     configure_runtime_boot_display()
-  elif args.bootstrap_only:
+  elif args.bootstrap_only or args.refresh_bootstrap:
     source = Path('/opt/carrot-jetlink/current/tools/jetlink')
     if not (source / 'boot_update.py').is_file():
       raise RuntimeError('Install the boot-gated source release before enabling this policy')
-    bootstrap(Path('/'), source, defer_this_boot=True)
+    bootstrap(Path('/'), source, defer_this_boot=True, preserve_policy=args.refresh_bootstrap)
   else:
     configure(Path('/'), Path(__file__).resolve().parent)

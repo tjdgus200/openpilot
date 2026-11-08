@@ -1,5 +1,20 @@
 # Repository memory
 
+- 2026-11-08 unused Jetson updates: add a separate negotiated maintenance path
+  independent of speed/gear only after modeld holds native inference exclusively
+  and acknowledges a successful local output. A 250ms token-bound proof is
+  mandatory; neither a disconnected badge nor UsbGpuActive proves ownership.
+  Preserve the hold across daemon/modeld failure, rotate tokens after explicit
+  release, deny recent host inference and retain legacy Park admission. Keep
+  hashes/spec/storage/rollback, service-retirement and activation lease checks.
+  After installation, a process/package source mismatch waits durably for an
+  actual new comma boot plus matching source; never reboot comma automatically.
+  Retain the original external-model join gate, all model/control contracts,
+  USB power cutoff and low-priority bulk policy. Refresh installed bootstrap
+  without resetting this boot's policy. Verify all five paired runtimes and the
+  internal-update fault suite. See docs/pv5_internal_model_update_20261108.md.
+
+
 - 2026-11-07 PV5 angle-limit advisory is separate from the steering-demand
   gauge. Angle-mode percent is requested lateral acceleration / CP.maxLateralAccel,
   not percent of a mechanical steering stop. Preserve the existing 80%/90%+DM

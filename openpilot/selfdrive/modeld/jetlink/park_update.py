@@ -32,6 +32,11 @@ class ParkPermission(Permission):
 
 class GatePermission(ParkPermission):
   def allowed(self):
+    if self.allow_internal:
+      from openpilot.common.jetlink_maintenance import lease
+      if lease().allowed():
+        self.reason = 'internal_model'
+        return True
     if self.params.get_bool('IsOffroad') and not self.params.get_bool('IsOnroad'):
       return True
     return super().allowed()
@@ -42,13 +47,15 @@ class Watcher:
     self.peer, self.clock = peer, clock
     self.enabled = peer.get('carrot_host') == 'jetson' and peer.get(CAPABILITY) is True
     self.permission = permission or ParkPermission(params, clock=clock)
+    from openpilot.common.jetlink_maintenance import CAPABILITY as INTERNAL_CAPABILITY
+    self.internal = peer.get(INTERNAL_CAPABILITY) is True
     self.next_poll = self.next_manifest = self.next_attempt = 0.
 
   def tick(self, client):
     if not self.enabled or self.clock() < self.next_poll:
       return
     self.next_poll = self.clock() + .2
-    if not self.permission.allowed() or self.clock() < max(self.next_manifest, self.next_attempt):
+    if self.clock() < max(self.next_manifest, self.next_attempt):
       return
     self.next_manifest = self.clock() + 1.
     from openpilot.common.jetson_model import selected_release
@@ -59,11 +66,16 @@ class Watcher:
         return
     except (OSError, ValueError, KeyError, TypeError):
       return  # A malformed/new pin must not interrupt the active model.
-    if not self.permission.allowed():
+    proof = None
+    if self.internal:
+      from openpilot.common.jetlink_maintenance import lease
+      if lease().allowed():
+        proof = lease().proof
+    if proof is None and not self.permission.allowed():
       return
     self.next_attempt = self.clock() + 5.
     seq = client._next_seq()
-    client.t.send_json(REQUEST, seq, {'manifest': manifest, 'parked': True})
+    client.t.send_json(REQUEST, seq, {'manifest': manifest, **({'internal': proof} if proof else {'parked': True})})
     message = client._expect(RESPONSE, seq, 2.)
     if len(message.payload) > 128:
       raise ValueError('Oversized Park update acknowledgement')

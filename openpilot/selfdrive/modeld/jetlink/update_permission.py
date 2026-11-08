@@ -1,7 +1,8 @@
-"""Permit setup offroad or from fresh Park and zero-speed vehicle state.
+"""Permit setup offroad, in fresh Park, or under explicit native ownership.
 
-This does not change ignition, vehicle messages, control flags or model joining.
-The USB boot gate has no active inference engine; live runtimes are not updated.
+This does not change ignition, vehicle messages or control flags. The optional
+native-model hold prevents external joining until maintenance has completed.
+Active external inference must first retire through the existing Park path.
 """
 from contextlib import contextmanager
 import math
@@ -38,17 +39,23 @@ def parked_stationary(sm, now):
 
 
 class Permission:
-  def __init__(self, params, factory=None, clock=time.monotonic, allow_parked=True):
+  def __init__(self, params, factory=None, clock=time.monotonic, allow_parked=True, allow_internal=False):
     self.params, self.factory, self.clock = params, factory, clock
     self.sm = None
     self.next_sample = 0.
     self.cached = False
     self.allow_parked = allow_parked
+    self.allow_internal = allow_internal
     self.reason = 'vehicle_data_unavailable'
 
   def allowed(self):
     try:
       offroad, onroad = self.params.get_bool('IsOffroad'), self.params.get_bool('IsOnroad')
+      if self.allow_internal:
+        from openpilot.common.jetlink_maintenance import lease
+        if lease().allowed():
+          self.reason = 'internal_model'
+          return True
       if offroad and not onroad:
         self.reason = 'offroad'
         return True
