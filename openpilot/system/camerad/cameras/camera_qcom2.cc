@@ -55,7 +55,12 @@ public:
       if (selection != value) { selection = value; ++generation; }
     }
     ready = false;
-    if (!enabled || !dual_camera || env_ctrl_exp_from_params) { sm.reset(); return; }
+    status = ModelFovStatus::INPUT_UNAVAILABLE;
+    if (!enabled || !dual_camera || env_ctrl_exp_from_params) {
+      status = !mode ? ModelFovStatus::DISABLED : yaw_invalidated ? ModelFovStatus::YAW_CHANGED :
+        env_ctrl_exp_from_params ? ModelFovStatus::MANUAL_EXPOSURE : ModelFovStatus::UNSUPPORTED;
+      sm.reset(); return;
+    }
     if (now >= next_vehicle) {
       next_vehicle = now + 1000000000ULL;
       pv5 = false;
@@ -70,19 +75,29 @@ public:
         } catch (const kj::Exception &) { pv5 = false; }
       }
     }
-    if (!pv5) return;
+    if (!pv5) { status = ModelFovStatus::VEHICLE_UNAVAILABLE; return; }
     if (!sm) sm = std::make_unique<SubMaster>(std::vector<const char *>{"liveCalibration", "deviceState"});
     sm->update(0);  // Only the latest available data; never wait for modeld/Jetson.
     if (!sm->allAliveAndValid({"liveCalibration", "deviceState"})) return;
     const auto &cal_event = (*sm)["liveCalibration"];
     const auto &dev_event = (*sm)["deviceState"];
     if (now < cal_event.getLogMonoTime() || now - cal_event.getLogMonoTime() > 1000000000ULL ||
-        now < dev_event.getLogMonoTime() || now - dev_event.getLogMonoTime() > 2500000000ULL) return;
+        now < dev_event.getLogMonoTime() || now - dev_event.getLogMonoTime() > 2500000000ULL) {
+      status = now < cal_event.getLogMonoTime() || now < dev_event.getLogMonoTime() ? ModelFovStatus::TIMESTAMP_INVALID :
+        now - cal_event.getLogMonoTime() > 1000000000ULL ? ModelFovStatus::CALIBRATION_EXPIRED : ModelFovStatus::DEVICE_EXPIRED;
+      return;
+    }
     const auto device = dev_event.getDeviceState().getDeviceType();
-    if (device != cereal::InitData::DeviceType::TICI && device != cereal::InitData::DeviceType::TIZI) return;
+    if (device != cereal::InitData::DeviceType::TICI && device != cereal::InitData::DeviceType::TIZI) {
+      status = ModelFovStatus::UNSUPPORTED; return;
+    }
     const auto calibration = cal_event.getLiveCalibration();
     const auto angles = calibration.getRpyCalib();
-    if (calibration.getCalStatus() != cereal::LiveCalibrationData::Status::CALIBRATED || angles.size() != 3) return;
+    if (calibration.getCalStatus() != cereal::LiveCalibrationData::Status::CALIBRATED || angles.size() != 3) {
+      status = calibration.getCalStatus() != cereal::LiveCalibrationData::Status::CALIBRATED ?
+        ModelFovStatus::CALIBRATION_PENDING : ModelFovStatus::CALIBRATION_INVALID;
+      return;
+    }
     if (sm->updated("liveCalibration")) {
       for (int i = 0; i < 3; ++i) rpy[i] = angles[i];
       // Use the startup yaw snapshot; a later stored change invalidates metering.
@@ -90,9 +105,12 @@ public:
       rpy[2] -= yaw_trim;
       ++generation;
     }
-    for (double angle : rpy) if (!std::isfinite(angle) || std::abs(angle) > 0.5) return;
+    for (double angle : rpy) if (!std::isfinite(angle) || std::abs(angle) > 0.5) {
+      status = ModelFovStatus::CALIBRATION_INVALID; return;
+    }
     valid_until = std::min(cal_event.getLogMonoTime() + 1000000000ULL, dev_event.getLogMonoTime() + 2500000000ULL);
     ready = true;
+    status = ModelFovStatus::ACTIVE;
   }
 
 private:
@@ -125,8 +143,8 @@ public:
           while (running) {
             context.ready = false;
             try { context.update(dual_camera); }
-            catch (const kj::Exception &) { context.ready = false; }
-            catch (const std::exception &) { context.ready = false; }
+            catch (const kj::Exception &) { context.ready = false; context.status = ModelFovStatus::WORKER_ERROR; }
+            catch (const std::exception &) { context.ready = false; context.status = ModelFovStatus::WORKER_ERROR; }
             snapshot.publish(context);
             wake.wait_for(lock, std::chrono::milliseconds(250), [this]() { return !running; });
           }
@@ -146,7 +164,10 @@ public:
   ModelFovSnapshot latest() {
     snapshot.read(last);  // On overlap, retain only the previous unexpired value.
     ModelFovSnapshot result = last;
-    if (nanos_since_boot() >= result.valid_until) result.ready = false;
+    if (nanos_since_boot() >= result.valid_until) {
+      if (result.ready) result.status = ModelFovStatus::INPUT_EXPIRED;
+      result.ready = false;
+    }
     return result;
   }
 private:
@@ -384,6 +405,12 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
   const uint64_t now = nanos_since_boot();
   const bool wide = camera.cc.stream_type == VISION_STREAM_WIDE_ROAD;
   fov_stability.set_session(context.sessions[wide]);
+  const bool worker_unavailable = context.status == ModelFovStatus::WORKER_UNAVAILABLE || context.status == ModelFovStatus::WORKER_ERROR;
+  ModelFovStatus fov_status = !front ? ModelFovStatus::DISABLED : worker_unavailable ? context.status :
+    !context.camera_enabled(wide) ? ModelFovStatus::DISABLED : !known_sensor ? ModelFovStatus::UNSUPPORTED : context.status;
+  if (context.ready && now >= context.valid_until && front && context.camera_enabled(wide) && known_sensor) {
+    fov_status = ModelFovStatus::INPUT_EXPIRED;
+  }
   bool fov_valid = false;
   if (context.ready && context.camera_enabled(wide) && now < context.valid_until && front && known_sensor && !fov_stability.locked()) {
     if (fov_generation != context.generation) {
@@ -393,8 +420,13 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
                                           camera.buf.cur_yuv_buf->stride);
     }
     fov_valid = fov_configured && fov_meter.measure(camera.buf.cur_yuv_buf->y, camera.buf.cur_yuv_buf->len);
+    fov_status = fov_meter.status;
   }
   const bool fov_active = fov_stability.use_fov(fov_valid, now);
+  if (fov_stability.locked()) fov_status = fov_stability.lock_status();
+  else if (fov_valid) fov_status = fov_active ? ModelFovStatus::ACTIVE : ModelFovStatus::WARMING;
+  framed.setPv5ExposureFovStatus(static_cast<uint8_t>(fov_status));
+  framed.setPv5ExposureFovWarmupMs(fov_stability.warmup_ms());
   if (fov_active) {
     framed.setPv5ExposureFovActive(true);
     auto polygon = framed.initPv5ExposureFovPolygon(fov_meter.polygon.size());

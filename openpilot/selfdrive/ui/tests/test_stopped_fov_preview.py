@@ -170,6 +170,31 @@ def test_meter_waiting_label_matches_the_selected_camera(preview, mode, wide):
   assert viewer.active and viewer.wide is wide
 
 
+@pytest.mark.parametrize('wide', [False, True])
+@pytest.mark.parametrize('status,prefix', [(3, '정상 확인 중 1.2/2.0초'), (5, '보정 정보 만료'),
+                                        (12, '영역 잘림'), (15, '반복 오류 잠금')])
+def test_native_reason_replaces_generic_fallback_only_for_fresh_current_lens(preview, wide, status, prefix):
+  viewer, update, _, settings, _ = preview
+  settings['Pv5ModelFovExposure'] = 1
+  sm = viewer._test_state.sm
+  name = 'wideRoadCameraState' if wide else 'roadCameraState'
+  sm[name] = NS(sensor='os04c10', measuredGreyFraction=.2, targetGreyFraction=.1, gain=2.,
+                pv5ExposureFovActive=False, pv5ExposureFovStatus=status, pv5ExposureFovWarmupMs=1250)
+  sm.valid[name] = sm.alive[name] = True
+  sm.recv_time[name] = 10.
+  update(10., road=not wide, wide=wide)
+  assert viewer._exposure_status_text.startswith(prefix)
+  assert 'STOCK' in viewer._exposure_text and 'waiting/fallback' not in viewer._exposure_text
+  update(10.35, road=not wide, wide=wide)
+  assert viewer._exposure_status_text == ''  # Expire without waiting for the .5s formatted-text poll.
+  sm.recv_time[name] = 10.6
+  update(10.6, road=not wide, wide=wide)
+  assert viewer._exposure_status_text.startswith(prefix)
+  update(12., road=True, wide=True)
+  if viewer.wide != wide:
+    assert viewer._exposure_status_text == ''  # No previous-lens reason crosses the 2s switch.
+
+
 def test_preview_toggle_never_bypasses_invalid_vehicle_or_calibration(preview):
   viewer, update, car, settings, _ = preview
   settings['Pv5CameraFovPreview'] = True

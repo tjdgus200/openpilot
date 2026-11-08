@@ -260,6 +260,8 @@ struct FrameData {
   pv5ExposureFovPolygon @30 :List(Float32);
   pv5ExposureBlackFraction @31 :Float32;
   pv5ExposureWhiteFraction @32 :Float32;
+  pv5ExposureFovStatus @33 :UInt8; # Read-only codes in model_fov_meter.h; 0 means old/unknown telemetry
+  pv5ExposureFovWarmupMs @34 :UInt16; # Current camera's confirmed recovery interval, 0..2000ms
 
   transform @10 :List(Float32);
 

@@ -7,12 +7,23 @@
 #include <cstddef>
 #include <cstdint>
 
+// Stable diagnostic codes for FrameData.pv5ExposureFovStatus. Never a control input.
+enum class ModelFovStatus : uint8_t {
+  UNKNOWN = 0, DISABLED = 1, ACTIVE = 2, WARMING = 3, INPUT_UNAVAILABLE = 4,
+  CALIBRATION_EXPIRED = 5, DEVICE_EXPIRED = 6, CALIBRATION_INVALID = 7,
+  CALIBRATION_PENDING = 8, UNSUPPORTED = 9, MANUAL_EXPOSURE = 10, YAW_CHANGED = 11,
+  REGION_CLIPPED = 12, INVALID_BUFFER = 13, INVALID_BRIGHTNESS = 14,
+  REPEATED_FALLBACK = 15, CLOCK_INVALID = 16, WORKER_UNAVAILABLE = 17,
+  WORKER_ERROR = 18, TIMESTAMP_INVALID = 19, VEHICLE_UNAVAILABLE = 20, INPUT_EXPIRED = 21,
+};
+
 struct ModelFovSnapshot {
   bool ready = false;
   int selection = 0, mode = 0;
   uint64_t generation = 0, valid_until = 0;
   std::array<uint64_t, 2> sessions = {};  // road, wide; unrelated option edges cannot rearm the other camera.
   std::array<double, 3> rpy = {};
+  ModelFovStatus status = ModelFovStatus::WORKER_UNAVAILABLE;
 
   // Preserve the original persisted 0/OFF and 1/both-ON values.
   static bool includes_camera(int choice, bool wide) { return choice == 1 || choice == (wide ? 3 : 2); }
@@ -32,6 +43,7 @@ public:
     ready.store(value.ready);
     selection.store(value.selection);
     mode.store(value.mode);
+    status.store(static_cast<int>(value.status));
     generation.store(value.generation);
     valid_until.store(value.valid_until);
     for (int i = 0; i < 2; ++i) sessions[i].store(value.sessions[i]);
@@ -45,6 +57,7 @@ public:
     next.ready = ready.load();
     next.selection = selection.load();
     next.mode = mode.load();
+    next.status = static_cast<ModelFovStatus>(status.load());
     next.generation = generation.load();
     next.valid_until = valid_until.load();
     for (int i = 0; i < 2; ++i) next.sessions[i] = sessions[i].load();
@@ -59,6 +72,7 @@ private:
   std::array<std::atomic<uint64_t>, 2> sessions{};
   std::atomic<bool> ready{false};
   std::atomic<int> selection{0}, mode{0};
+  std::atomic<int> status{static_cast<int>(ModelFovStatus::WORKER_UNAVAILABLE)};
   std::array<std::atomic<double>, 3> rpy{};
 };
 
@@ -79,10 +93,16 @@ public:
     }
   }
   bool locked() const { return latched; }
+  ModelFovStatus lock_status() const { return clock_invalid ? ModelFovStatus::CLOCK_INVALID : ModelFovStatus::REPEATED_FALLBACK; }
+  uint16_t warmup_ms() const {
+    return warming && !active && !latched && last_observed >= healthy_since ?
+      static_cast<uint16_t>(std::min((last_observed - healthy_since) / 1000000ULL, 2000ULL)) : 0;
+  }
 
   bool use_fov(bool valid, uint64_t now) {
     if (latched) return false;
     if (observed && now < last_observed) {
+      clock_invalid = true;
       active = false;
       latched = true;  // A clock discontinuity cannot prove a recovery interval.
       return false;
@@ -113,7 +133,7 @@ private:
   uint64_t session = UINT64_MAX, healthy_since = 0, last_observed = 0;
   std::array<uint64_t, 3> failures = {};
   int failure_count = 0;
-  bool active = false, warming = false, observed = false, latched = false;
+  bool active = false, warming = false, observed = false, latched = false, clock_invalid = false;
 };
 
 // Bounded C3/C3X metering in model coordinates. No image allocation or warp.
@@ -123,14 +143,17 @@ public:
   static constexpr int COLS = 64, ROWS = 36, SAMPLES = COLS * ROWS;
   std::array<float, 8> polygon = {};
   float grey = 0, black_fraction = 0, white_fraction = 0;
+  ModelFovStatus status = ModelFovStatus::UNSUPPORTED;
 
   bool configure(int width, int height, bool wide, const std::array<double, 3> &rpy, int selection, int stride = 0) {
     valid = false;
     count = 0;
+    status = ModelFovStatus::UNSUPPORTED;
     if (width != 1928 || height != 1208 || selection < 0 || selection > 4) return false;
     stride = stride ? stride : width;
     if (stride < width || stride > 8192) return false;
     minimum_bytes = static_cast<size_t>(stride) * (height - 1) + width;
+    status = ModelFovStatus::CALIBRATION_INVALID;
     for (double angle : rpy) if (!std::isfinite(angle) || std::abs(angle) > 0.5) return false;
     const double cr = std::cos(rpy[0]), sr = std::sin(rpy[0]);
     const double cp = std::cos(rpy[1]), sp = std::sin(rpy[1]);
@@ -167,10 +190,12 @@ public:
     }
     // Do not meter a small, clipped fragment as though it were the whole input.
     valid = count * 10 >= SAMPLES * 9;
+    status = valid ? ModelFovStatus::ACTIVE : ModelFovStatus::REGION_CLIPPED;
     return valid;
   }
 
   bool measure(const uint8_t *pixels, size_t bytes) {
+    status = ModelFovStatus::INVALID_BUFFER;
     if (!valid || pixels == nullptr || bytes < minimum_bytes) return false;
     std::array<uint32_t, 256> histogram = {};
     int black = 0, white = 0;
@@ -188,7 +213,9 @@ public:
     grey = median / 256.0f;
     black_fraction = static_cast<float>(black) / count;
     white_fraction = static_cast<float>(white) / count;
-    return grey > 0 && std::isfinite(grey);
+    const bool measured = grey > 0 && std::isfinite(grey);
+    status = measured ? ModelFovStatus::ACTIVE : ModelFovStatus::INVALID_BRIGHTNESS;
+    return measured;
   }
 
 private:

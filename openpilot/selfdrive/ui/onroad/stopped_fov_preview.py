@@ -6,7 +6,7 @@ import pyray as rl
 
 from openpilot.cereal import log
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
-from openpilot.common.transformations.exposure import exposure_rectangle, exposure_label
+from openpilot.common.transformations.exposure import exposure_rectangle, exposure_label, fov_status_label
 from openpilot.common.transformations.model import SBIGMODEL_INPUT_SIZE, WIDE_MODEL_FOV_CHOICES, get_warp_matrix, wider_model_warp
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
@@ -37,6 +37,7 @@ class StoppedFovPreview:
     self._candidate = None
     self._exposure_rect = None
     self._exposure_text = 'AE --'
+    self._exposure_status_text = ''
     self._next_exposure_read = 0.
     self._exposure_camera = None
     self._always_preview = False
@@ -90,15 +91,20 @@ class StoppedFovPreview:
     lens = camera.ecam if self.wide else camera.fcam
     self._exposure_rect = exposure_rectangle(sm['deviceState'].deviceType, sm['roadCameraState'].sensor, lens, self.wide)
     name = 'wideRoadCameraState' if self.wide else 'roadCameraState'
+    telemetry_fresh = (sm.valid.get(name, False) and sm.alive.get(name, False)
+                       and 0 <= now - sm.recv_time.get(name, 0.) <= .3)
+    if not telemetry_fresh:
+      self._exposure_status_text = ''
     if name != self._exposure_camera or now >= self._next_exposure_read:
       self._exposure_camera = name
       self._next_exposure_read = now + .5
       self._exposure_text = 'AE --'
+      self._exposure_status_text = ''
       self._meter_polygon = None
-      if (sm.valid.get(name, False) and sm.alive.get(name, False)
-          and 0 <= now - sm.recv_time.get(name, 0.) <= .3):
+      if telemetry_fresh:
         camera_state = sm[name]
         self._exposure_text = exposure_label(camera_state)
+        self._exposure_status_text = fov_status_label(camera_state)
         if getattr(camera_state, 'pv5ExposureFovActive', False):
           points = np.asarray(camera_state.pv5ExposureFovPolygon, dtype=float)
           if points.shape == (8,) and np.isfinite(points).all():
@@ -108,7 +114,7 @@ class StoppedFovPreview:
               self._exposure_text += f' | FOV | dark {black:.0%} bright {white:.0%}'
         else:
           requested = self._fov_exposure == 1 or self._fov_exposure == (3 if self.wide else 2)
-          self._exposure_text += ' | STOCK (FOV waiting/fallback)' if requested else ' | STOCK'
+          self._exposure_text += ' | STOCK (FOV waiting/fallback)' if requested and not self._exposure_status_text else ' | STOCK'
     fov = (WIDE_MODEL_FOV_CHOICES[self._selection - 1]
            if self.wide and 1 <= self._selection <= len(WIDE_MODEL_FOV_CHOICES) else None)
     key = lens, self.wide, sm.recv_frame["liveCalibration"], fov, self._yaw_trim, self._pitch_preview
@@ -166,4 +172,7 @@ class StoppedFovPreview:
       color = rl.Color(225, 153, 255, 255)
       rl.draw_rectangle_lines_ex(rect, 3., color)
       draw_text_ui_style('AE METER AREA | ' + self._exposure_text, center, y, 25, color,
+                         align='center_top', y_offset=0.)
+    if self._exposure_status_text:
+      draw_text_ui_style(self._exposure_status_text, center, y + 40, 25, rl.Color(225, 153, 255, 255),
                          align='center_top', y_offset=0.)

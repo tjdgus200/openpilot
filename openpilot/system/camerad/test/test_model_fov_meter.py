@@ -28,6 +28,7 @@ extern "C" int mailbox_check() {
       ModelFovSnapshot value;
       value.ready = i % 2; value.selection = i % 5;
       value.generation = i; value.valid_until = i + 1; value.sessions = {i * 7, i * 9}; value.mode = i % 4;
+      value.status = static_cast<ModelFovStatus>(i % 22);
       value.rpy = {double(i), double(i * 2), double(i * 3)};
       mailbox.publish(value);
     }
@@ -40,6 +41,7 @@ extern "C" int mailbox_check() {
       const auto i = value.generation;
       good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 &&
               value.sessions[0] == i * 7 && value.sessions[1] == i * 9 && value.mode == int(i % 4) &&
+              static_cast<int>(value.status) == int(i % 22) &&
               value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3;
     }
   } while (!done.load());
@@ -305,7 +307,11 @@ struct Camera { struct { int stream_type = VISION_STREAM_WIDE_ROAD; } cc; Sensor
 struct Polygon { void set(size_t, float) {} };
 struct Frame {
   bool active = false;
+  uint8_t status = 0;
+  uint16_t warmup_ms = 0;
   void setPv5ExposureFovActive(bool value) { active = value; }
+  void setPv5ExposureFovStatus(uint8_t value) { status = value; }
+  void setPv5ExposureFovWarmupMs(uint16_t value) { warmup_ms = value; }
   Polygon initPv5ExposureFovPolygon(size_t) { return {}; }
   void setPv5ExposureBlackFraction(float) {}
   void setPv5ExposureWhiteFraction(float) {}
@@ -337,6 +343,7 @@ int main() {
     Capture capture{{{stream}, &sensor, {1928, 1208, &yuv}}};
     ModelFovSnapshot context;
     context.ready = mode != 0; context.mode = mode; context.sessions = {1, 1};
+    context.status = mode ? ModelFovStatus::ACTIVE : ModelFovStatus::DISABLED;
     const bool selected = stream < 2 && (mode == 1 || mode == (stream == 1 ? 3 : 2));
     clock_now = 0;
     for (int i = 0; i <= 50; ++i) {
@@ -345,15 +352,22 @@ int main() {
       const bool active = selected && i >= 40;
       assert(capture.framed.active == active);
       assert(capture.selected == (active ? .5f : .25f));
+      assert(capture.framed.status == static_cast<uint8_t>(active ? ModelFovStatus::ACTIVE :
+        selected ? ModelFovStatus::WARMING : ModelFovStatus::DISABLED));
+      assert(capture.framed.warmup_ms == (selected && i < 40 ? i * 50 : 0));
       clock_now += 50000000ULL;
     }
   }
-  for (int fault = 0; fault < 7; ++fault) {
+  const ModelFovStatus fault_status[] = {ModelFovStatus::INPUT_UNAVAILABLE, ModelFovStatus::INPUT_EXPIRED,
+    ModelFovStatus::INVALID_BUFFER, ModelFovStatus::INVALID_BUFFER, ModelFovStatus::UNSUPPORTED,
+    ModelFovStatus::CALIBRATION_INVALID, ModelFovStatus::INVALID_BRIGHTNESS, ModelFovStatus::REGION_CLIPPED};
+  for (int fault = 0; fault < 8; ++fault) {
     Sensor sensor;
     Yuv yuv{pixels.data(), pixels.size(), 1928};
     Capture capture{{{}, &sensor, {1928, 1208, &yuv}}};
     ModelFovSnapshot context;
     context.ready = true; context.mode = 1; context.sessions = {1, 1};
+    context.status = ModelFovStatus::ACTIVE;
     clock_now = 10000000000ULL;
     auto step = [&](bool want_fov, bool refresh = true) {
       if (refresh) context.valid_until = clock_now + 1000000000ULL;
@@ -368,15 +382,18 @@ int main() {
     };
     for (int episode = 0; episode < 3; ++episode) {
       warm();
-      if (fault == 0) context.ready = false;
+      if (fault == 0) { context.ready = false; context.status = ModelFovStatus::INPUT_UNAVAILABLE; }
       if (fault == 1) context.valid_until = clock_now;  // Expiry at the frame, after worker read.
       if (fault == 2) yuv.len = 8;
       if (fault == 3) yuv.y = nullptr;
       if (fault == 4) sensor.image_sensor = cereal::FrameData::ImageSensor::OTHER;
       if (fault == 5) { context.rpy[1] = .8; ++context.generation; }
       if (fault == 6) std::fill(pixels.begin(), pixels.end(), 0);
+      if (fault == 7) { capture.camera.cc.stream_type = VISION_STREAM_ROAD; context.rpy[1] = -.1; ++context.generation; }
       step(false, fault != 1);  // Each fault selects stock on this very frame.
-      context.ready = true; context.rpy = {}; ++context.generation;
+      assert(capture.framed.status == static_cast<uint8_t>(episode == 2 ? ModelFovStatus::REPEATED_FALLBACK : fault_status[fault]));
+      assert(capture.framed.warmup_ms == 0);
+      context.ready = true; context.status = ModelFovStatus::ACTIVE; context.rpy = {}; ++context.generation;
       yuv.len = pixels.size(); yuv.y = pixels.data();
       sensor.image_sensor = cereal::FrameData::ImageSensor::OX03C10;
       std::fill(pixels.begin(), pixels.end(), 128);
@@ -394,6 +411,7 @@ int main() {
   Capture wide{{{VISION_STREAM_WIDE_ROAD}, &sensor, {1928, 1208, &wide_yuv}}};
   ModelFovSnapshot pair;
   pair.ready = true; pair.mode = 1; pair.sessions = {1, 1};
+  pair.status = ModelFovStatus::ACTIVE;
   clock_now = 0;
   auto step_pair = [&](bool road_active, bool wide_active) {
     pair.valid_until = clock_now + 1000000000ULL;
@@ -416,6 +434,17 @@ int main() {
   pair.mode = 1; ++pair.sessions[0];
   for (int i = 0; i < 40; ++i) step_pair(false, true);
   step_pair(true, true);
+  clock_now -= 200000000ULL;
+  step_pair(false, false);
+  assert(road.framed.status == static_cast<uint8_t>(ModelFovStatus::CLOCK_INVALID));
+  assert(wide.framed.status == static_cast<uint8_t>(ModelFovStatus::CLOCK_INVALID));
+  ModelFovSnapshot unavailable;
+  Capture startup{{{}, &sensor, {1928, 1208, &wide_yuv}}};
+  startup.step(unavailable);
+  assert(!startup.framed.active && startup.framed.status == static_cast<uint8_t>(ModelFovStatus::WORKER_UNAVAILABLE));
+  unavailable.status = ModelFovStatus::WORKER_ERROR;
+  startup.step(unavailable);
+  assert(startup.framed.status == static_cast<uint8_t>(ModelFovStatus::WORKER_ERROR));
 }
 '''
   wrapper = tmp_path / 'frame.cc'
@@ -522,18 +551,25 @@ int main() {
     if (scenario == 14) values["CameraYawTrimDeg"] = "100";
     if (scenario == 18) values["UseWideCamera"] = "";
     context.update(scenario != 15);
+    const ModelFovStatus expected[] = {ModelFovStatus::ACTIVE, ModelFovStatus::DISABLED, ModelFovStatus::UNSUPPORTED,
+      ModelFovStatus::VEHICLE_UNAVAILABLE, ModelFovStatus::VEHICLE_UNAVAILABLE, ModelFovStatus::UNSUPPORTED,
+      ModelFovStatus::CALIBRATION_PENDING, ModelFovStatus::CALIBRATION_EXPIRED, ModelFovStatus::DEVICE_EXPIRED,
+      ModelFovStatus::TIMESTAMP_INVALID, ModelFovStatus::INPUT_UNAVAILABLE, ModelFovStatus::CALIBRATION_INVALID,
+      ModelFovStatus::MANUAL_EXPOSURE, ModelFovStatus::VEHICLE_UNAVAILABLE, ModelFovStatus::YAW_CHANGED,
+      ModelFovStatus::UNSUPPORTED, ModelFovStatus::ACTIVE, ModelFovStatus::ACTIVE, ModelFovStatus::ACTIVE, ModelFovStatus::ACTIVE};
+    assert(context.status == expected[scenario]);
     if (scenario == 0 || scenario >= 16) {
       assert(context.ready && context.selection == 4);
       if (scenario == 16) {
         values["Pv5ModelFovExposure"] = "0"; clock_now += 250000000ULL;
-        context.update(true); assert(!context.ready);
+        context.update(true); assert(!context.ready && context.status == ModelFovStatus::DISABLED);
       } else if (scenario == 17) {
-        clock_now += 1100000000ULL; context.update(true); assert(!context.ready);
+        clock_now += 1100000000ULL; context.update(true); assert(!context.ready && context.status == ModelFovStatus::CALIBRATION_EXPIRED);
       } else if (scenario == 19) {
         values["CameraYawTrimDeg"] = "100"; clock_now += 250000000ULL;
-        context.update(true); assert(!context.ready);
+        context.update(true); assert(!context.ready && context.status == ModelFovStatus::YAW_CHANGED);
         values["CameraYawTrimDeg"] = "0"; clock_now += 250000000ULL;
-        context.update(true); assert(!context.ready);
+        context.update(true); assert(!context.ready && context.status == ModelFovStatus::YAW_CHANGED);
       }
     } else assert(!context.ready);
   }

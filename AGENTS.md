@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-09 FOV AE fallback diagnostics: FrameData @33 UInt8 reason and
+  @34 UInt16 warmup-ms are read-only telemetry. Keep stable codes in
+  model_fov_meter.h and exposure.py; code0 means legacy/unknown. Forward worker,
+  geometry/pixel and per-camera stability reasons without using them as control
+  gates. Show a separate Korean status line only inside the existing valid FOV
+  preview, at its <=2Hz telemetry poll. Clear stale/previous-lens reasons;
+  retain legacy packets, preview admission/alert order and2s lens alternation.
+  Preserve original AE functions, all numeric decisions/timers and measured-grey
+  publication order (recommendation2 remains deferred). No extra inference,
+  image scan, settings poll, worker or HUD/package change. Verify actual native
+  reason/progress publication, schema roundtrip, both lenses and C3X rendering.
+  See docs/pv5_fov_exposure_status_20261109.md; PC tests are not vehicle validation.
+
 - 2026-11-08 FOV AE per-camera selection: Pv5ModelFovExposure is now an
   INT/select with 0=stock both, 1=FOV both (legacy ON), 2=road FOV only,
   3=wide FOV only. Preserve stored0/1 meanings without migration/device writes.

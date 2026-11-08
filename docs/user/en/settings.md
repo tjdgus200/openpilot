@@ -445,6 +445,11 @@ yaw trim still requires a reboot.
 `Pv5CameraFovPreview` alternates the two cameras every two seconds at any speed when ON.
 OFF retains the stopped-only preview. Cyan outlines show model input; purple shows metering.
 A dashed purple outline distinguishes coincident regions. Safety alerts retain priority.
+The line below exposure information shows the current camera's recovery progress or stock-metering
+reason, including expired calibration, clipped geometry and repeated-failure lockout. It appears
+only in the existing preview, updates at most twice per second and clears stale or previous-lens
+reasons. No extra switch is needed. Existing vehicle/speed/calibration gates still close the preview
+and hide this line when preview admission fails.
 The yellow `Pv5FovPreviewPitch` comparison is display-only and changes neither model input
 nor exposure geometry. Metering camera selection and preview are independent. See the [design record](../../pv5_fov_exposure_20261108.md).
 
