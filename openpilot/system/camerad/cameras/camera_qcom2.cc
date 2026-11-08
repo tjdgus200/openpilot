@@ -36,9 +36,13 @@ public:
     const uint64_t now = nanos_since_boot();
     if (now >= next_params) {
       next_params = now + 250000000ULL;
-      const bool requested = params.getBool("Pv5ModelFovExposure");
-      if (requested != option_enabled) { option_enabled = requested; ++session; }
-      enabled = requested;
+      const std::string requested = params.get("Pv5ModelFovExposure");
+      const int next_mode = requested.size() == 1 && requested[0] >= '0' && requested[0] <= '3' ? requested[0] - '0' : 0;
+      for (int lens = 0; lens < 2; ++lens) {
+        if (camera_enabled(lens) != includes_camera(next_mode, lens)) ++sessions[lens];
+      }
+      mode = next_mode;
+      enabled = mode != 0;
       const std::string wide = enabled ? params.get("UseWideCamera") : "";
       enabled = enabled && (wide.empty() || wide == "1");  // Declared default is ON, as in modeld.
       if (enabled) {
@@ -101,7 +105,6 @@ private:
   uint64_t next_params = 0;
   uint64_t next_vehicle = 0;
   bool enabled = false;
-  bool option_enabled = false;
   bool pv5 = false;
   bool yaw_invalidated = false;
 };
@@ -379,9 +382,10 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
   const bool known_sensor = camera.sensor->image_sensor == cereal::FrameData::ImageSensor::AR0231 ||
                             camera.sensor->image_sensor == cereal::FrameData::ImageSensor::OX03C10;
   const uint64_t now = nanos_since_boot();
-  fov_stability.set_session(context.session);
+  const bool wide = camera.cc.stream_type == VISION_STREAM_WIDE_ROAD;
+  fov_stability.set_session(context.sessions[wide]);
   bool fov_valid = false;
-  if (context.ready && now < context.valid_until && front && known_sensor && !fov_stability.locked()) {
+  if (context.ready && context.camera_enabled(wide) && now < context.valid_until && front && known_sensor && !fov_stability.locked()) {
     if (fov_generation != context.generation) {
       fov_generation = context.generation;
       fov_configured = fov_meter.configure(camera.buf.out_img_width, camera.buf.out_img_height,

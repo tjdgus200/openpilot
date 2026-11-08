@@ -154,6 +154,22 @@ def test_active_meter_outline_comes_from_camerad_and_expires_on_lens_switch(prev
   assert viewer._meter_polygon is None and 'waiting/fallback' in viewer._exposure_text
 
 
+@pytest.mark.parametrize('mode', range(4))
+@pytest.mark.parametrize('wide', [False, True])
+def test_meter_waiting_label_matches_the_selected_camera(preview, mode, wide):
+  viewer, update, _, settings, _ = preview
+  settings['Pv5ModelFovExposure'] = mode
+  sm = viewer._test_state.sm
+  name = 'wideRoadCameraState' if wide else 'roadCameraState'
+  sm[name] = NS(sensor='os04c10', measuredGreyFraction=.2, targetGreyFraction=.1, gain=2., pv5ExposureFovActive=False)
+  sm.valid[name] = sm.alive[name] = True
+  sm.recv_time[name] = 10.
+  update(10., road=not wide, wide=wide)
+  selected = mode == 1 or mode == (3 if wide else 2)
+  assert ('waiting/fallback' in viewer._exposure_text) is selected
+  assert viewer.active and viewer.wide is wide
+
+
 def test_preview_toggle_never_bypasses_invalid_vehicle_or_calibration(preview):
   viewer, update, car, settings, _ = preview
   settings['Pv5CameraFovPreview'] = True

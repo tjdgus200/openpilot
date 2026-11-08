@@ -27,7 +27,7 @@ extern "C" int mailbox_check() {
     for (uint64_t i = 1; i < 100000; ++i) {
       ModelFovSnapshot value;
       value.ready = i % 2; value.selection = i % 5;
-      value.generation = i; value.valid_until = i + 1; value.session = i * 7;
+      value.generation = i; value.valid_until = i + 1; value.sessions = {i * 7, i * 9}; value.mode = i % 4;
       value.rpy = {double(i), double(i * 2), double(i * 3)};
       mailbox.publish(value);
     }
@@ -38,7 +38,8 @@ extern "C" int mailbox_check() {
     ModelFovSnapshot value;
     if (mailbox.read(value) && value.generation) {
       const auto i = value.generation;
-      good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 && value.session == i * 7 &&
+      good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 &&
+              value.sessions[0] == i * 7 && value.sessions[1] == i * 9 && value.mode == int(i % 4) &&
               value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3;
     }
   } while (!done.load());
@@ -265,7 +266,8 @@ def test_camera_owner_keeps_ipc_and_disk_reads_out_of_frame_delivery():
   assert 'SCHED_OTHER' in source and 'setpriority(PRIO_PROCESS, 0, 10)' in source
   assert 'fov_active ? fov_meter.grey :' in delivery and 'calculate_exposure_value(' in delivery
   assert 'now < context.valid_until' in delivery and '!fov_stability.locked()' in delivery
-  assert 'fov_stability.set_session(context.session)' in delivery
+  assert 'fov_stability.set_session(context.sessions[wide])' in delivery
+  assert 'context.camera_enabled(wide)' in delivery
   assert 'fov_stability.use_fov(fov_valid, now)' in delivery
 
 
@@ -273,6 +275,10 @@ def test_default_off_and_camera_menu_keep_display_separate_from_metering():
   settings = json.loads((ROOT / 'selfdrive/carrot_settings.json').read_text(encoding='utf-8'))
   params = {item['name']: item for item in settings['params']}
   assert params['Pv5ModelFovExposure']['default'] == params['Pv5CameraFovPreview']['default'] == 0
+  metering = params['Pv5ModelFovExposure']
+  assert metering['control'] == 'select' and metering['max'] == 3
+  assert metering['options']['ko'] == ['끔 (기존 자동 노출)', '일반각 + 광각', '일반각만', '광각만']
+  assert all(len(options) == 4 for options in metering['options'].values())
   category = next(c for c in settings['menu'] if c['id'] == 'PV5')
   camera = next(g for g in category['groups'] if g['id'] == 'PV5_CAMERA')
   assert camera['groups'][0]['params'] == ['Pv5WideModelFov', 'Pv5ModelFovExposure']
@@ -323,12 +329,31 @@ struct Capture {
 };
 int main() {
   std::vector<uint8_t> pixels(1928 * 1208, 128);
+  // Actual frame selection for all four choices and all three capture streams.
+  // Driver exposure always remains stock, including legacy mode1/both.
+  for (int mode = 0; mode < 4; ++mode) for (int stream = 0; stream < 3; ++stream) {
+    Sensor sensor;
+    Yuv yuv{pixels.data(), pixels.size(), 1928};
+    Capture capture{{{stream}, &sensor, {1928, 1208, &yuv}}};
+    ModelFovSnapshot context;
+    context.ready = mode != 0; context.mode = mode; context.sessions = {1, 1};
+    const bool selected = stream < 2 && (mode == 1 || mode == (stream == 1 ? 3 : 2));
+    clock_now = 0;
+    for (int i = 0; i <= 50; ++i) {
+      context.valid_until = clock_now + 1000000000ULL;
+      capture.step(context);
+      const bool active = selected && i >= 40;
+      assert(capture.framed.active == active);
+      assert(capture.selected == (active ? .5f : .25f));
+      clock_now += 50000000ULL;
+    }
+  }
   for (int fault = 0; fault < 7; ++fault) {
     Sensor sensor;
     Yuv yuv{pixels.data(), pixels.size(), 1928};
     Capture capture{{{}, &sensor, {1928, 1208, &yuv}}};
     ModelFovSnapshot context;
-    context.ready = true; context.session = 1;
+    context.ready = true; context.mode = 1; context.sessions = {1, 1};
     clock_now = 10000000000ULL;
     auto step = [&](bool want_fov, bool refresh = true) {
       if (refresh) context.valid_until = clock_now + 1000000000ULL;
@@ -358,10 +383,39 @@ int main() {
     }
     assert(capture.fov_stability.locked());
     for (int i = 0; i < 100; ++i) { ++context.generation; step(false); }
-    context.session = 2; context.ready = false; step(false);
+    context.sessions = {2, 2}; context.ready = false; step(false);
     assert(!capture.fov_stability.locked());
-    context.session = 3; context.ready = true; warm();
+    context.sessions = {3, 3}; context.ready = true; warm();
   }
+  // A wide-camera fault/rearm cannot interrupt road FOV metering, or vice versa.
+  Sensor sensor;
+  Yuv road_yuv{pixels.data(), pixels.size(), 1928}, wide_yuv = road_yuv;
+  Capture road{{{VISION_STREAM_ROAD}, &sensor, {1928, 1208, &road_yuv}}};
+  Capture wide{{{VISION_STREAM_WIDE_ROAD}, &sensor, {1928, 1208, &wide_yuv}}};
+  ModelFovSnapshot pair;
+  pair.ready = true; pair.mode = 1; pair.sessions = {1, 1};
+  clock_now = 0;
+  auto step_pair = [&](bool road_active, bool wide_active) {
+    pair.valid_until = clock_now + 1000000000ULL;
+    road.step(pair); wide.step(pair);
+    assert(road.framed.active == road_active && wide.framed.active == wide_active);
+    clock_now += 50000000ULL;
+  };
+  for (int episode = 0; episode < 3; ++episode) {
+    for (int i = 0; i < 40; ++i) step_pair(episode != 0, false);
+    step_pair(true, true);
+    wide_yuv.len = 8; step_pair(true, false); wide_yuv.len = pixels.size();
+  }
+  assert(wide.fov_stability.locked() && !road.fov_stability.locked());
+  pair.mode = 2; ++pair.sessions[1]; step_pair(true, false);
+  assert(!wide.fov_stability.locked());
+  pair.mode = 1; ++pair.sessions[1];
+  for (int i = 0; i < 40; ++i) step_pair(true, false);
+  step_pair(true, true);
+  pair.mode = 3; ++pair.sessions[0]; step_pair(false, true);
+  pair.mode = 1; ++pair.sessions[0];
+  for (int i = 0; i < 40; ++i) step_pair(false, true);
+  step_pair(true, true);
 }
 '''
   wrapper = tmp_path / 'frame.cc'
@@ -492,18 +546,44 @@ int main() {
   angles = {0, 0, 0}; device = cereal::InitData::DeviceType::TIZI;
   calibrated = cereal::LiveCalibrationData::Status::CALIBRATED;
   ModelFovContext context;
-  context.update(true); assert(context.ready && context.session == 1);
+  context.update(true); assert(context.ready && context.sessions[0] == 1 && context.sessions[1] == 1);
   const auto expiry = context.valid_until;
   new_calibration = false; clock_now += 750000000ULL;
-  context.update(true); assert(context.ready && context.valid_until == expiry && context.session == 1);
+  context.update(true); assert(context.ready && context.valid_until == expiry && context.sessions[0] == 1 && context.sessions[1] == 1);
   values["Pv5WideModelFov"] = "3"; clock_now += 250000000ULL;
-  context.update(true); assert(context.ready && context.selection == 3 && context.session == 1);
+  context.update(true); assert(context.ready && context.selection == 3 && context.sessions[0] == 1 && context.sessions[1] == 1);
   clock_now += 1; context.update(true); assert(!context.ready);
   values["Pv5ModelFovExposure"] = "0"; clock_now += 250000000ULL;
-  context.update(true); assert(!context.ready && context.session == 2);
+  context.update(true); assert(!context.ready && context.sessions[0] == 2 && context.sessions[1] == 2);
   values["Pv5ModelFovExposure"] = "1"; clock_now += 250000000ULL;
   cal_time = dev_time = clock_now; new_calibration = true;
-  context.update(true); assert(context.ready && context.session == 3);
+  context.update(true); assert(context.ready && context.sessions[0] == 3 && context.sessions[1] == 3);
+  // All sixteen live mode transitions preserve the unaffected camera's session.
+  const bool selected[][2] = {{false, false}, {true, true}, {true, false}, {false, true}};
+  for (int before = 0; before < 4; ++before) for (int after = 0; after < 4; ++after) {
+    values["Pv5ModelFovExposure"] = std::to_string(before);
+    ModelFovContext pair;
+    pair.update(true);
+    assert(pair.ready == (before != 0));
+    for (int lens = 0; lens < 2; ++lens) {
+      assert(pair.camera_enabled(lens) == selected[before][lens]);
+      assert(pair.sessions[lens] == uint64_t(selected[before][lens]));
+    }
+    values["Pv5ModelFovExposure"] = std::to_string(after);
+    clock_now += 250000000ULL; cal_time = dev_time = clock_now;
+    pair.update(true);
+    assert(pair.ready == (after != 0));
+    for (int lens = 0; lens < 2; ++lens) {
+      assert(pair.camera_enabled(lens) == selected[after][lens]);
+      assert(pair.sessions[lens] == uint64_t(selected[before][lens]) + (selected[before][lens] != selected[after][lens]));
+    }
+  }
+  for (auto invalid : {"", "-1", "4", "11", "true", "nan"}) {
+    values["Pv5ModelFovExposure"] = invalid;
+    ModelFovContext invalid_context;
+    invalid_context.update(true);
+    assert(!invalid_context.ready && !invalid_context.camera_enabled(false) && !invalid_context.camera_enabled(true));
+  }
 }
 '''
   wrapper = tmp_path / 'context.cc'

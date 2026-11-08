@@ -1,5 +1,17 @@
 # Repository memory
 
+- 2026-11-08 FOV AE per-camera selection: Pv5ModelFovExposure is now an
+  INT/select with 0=stock both, 1=FOV both (legacy ON), 2=road FOV only,
+  3=wide FOV only. Preserve stored0/1 meanings without migration/device writes.
+  Only a change to a lens's selected bit increments that lens's session; do not
+  reset the other lens's active/warmup/failure latch on a mode change. Retain
+  the existing dual-camera/UseWideCamera qualification and driver stock AE.
+  Worker snapshots include coherent mode and two sessions. Frame owner and
+  preview waiting labels must select the current lens. Test all4 modes across
+  road/wide/driver, all16 transitions and independent fault/rearm behavior.
+  This supersedes earlier references to the single BOOL/toggle; all2s/30s/3
+  stability, TTL, yaw, no-wait and original EV/gain rules below still apply.
+
 - 2026-11-08 FOV AE stability follow-up: each front camera requires 2s of
   continuous valid frame metering before initial entry/re-entry; >250ms gaps
   restart warmup. Invalid/expired context or pixels select stock immediately.

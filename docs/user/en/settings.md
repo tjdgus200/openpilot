@@ -426,16 +426,19 @@ Preparation releases when red evidence disappears or conflicts with green. The e
 ## PV5 camera and exposure
 
 Open **Settings → PV5 → Camera & Exposure** in Carrot Web. Model input/exposure settings
-and area previews are grouped separately. `Pv5ModelFovExposure` is experimental and OFF
-by default. On C3/C3X it meters a 64×36 grid in each calibrated narrow/wide model input
-and retains the existing exposure/gain controller. Missing/stale information, unsupported
+and area previews are grouped separately. `Pv5ModelFovExposure` is experimental and defaults
+to Off. Choose **Off / Narrow + wide / Narrow only / Wide only**. Each selected C3/C3X camera
+meters a 64×36 grid in its calibrated model input and retains the existing exposure/gain controller.
+Unselected cameras keep stock automatic exposure. Previously enabled settings retain Narrow + wide.
+Missing/stale information, unsupported
 configurations, excessive clipping and invalid brightness fall back to stock metering.
 `STOCK` labels stock metering; `FOV` labels the model-region metering actually used.
 Night perception benefits and physical-device latency are unverified.
 
 Initial entry and recovery require two continuous seconds of valid metering. Invalid input
 immediately selects stock metering. Three actual fallbacks within a rolling 30 seconds keep
-that camera on stock metering. To retry, turn the option off for one second then on, or reboot.
+that camera on stock metering. To retry, exclude that camera for one second then select it again, or reboot.
+The other camera's active, warmup and failure-latch state is retained.
 The existing exposure/gain response and source expiry limits remain unchanged. Changing the
 yaw trim still requires a reboot.
 
@@ -443,7 +446,7 @@ yaw trim still requires a reboot.
 OFF retains the stopped-only preview. Cyan outlines show model input; purple shows metering.
 A dashed purple outline distinguishes coincident regions. Safety alerts retain priority.
 The yellow `Pv5FovPreviewPitch` comparison is display-only and changes neither model input
-nor exposure geometry. Both switches are independent. See the [design record](../../pv5_fov_exposure_20261108.md).
+nor exposure geometry. Metering camera selection and preview are independent. See the [design record](../../pv5_fov_exposure_20261108.md).
 
 ## Safe adjustment order
 

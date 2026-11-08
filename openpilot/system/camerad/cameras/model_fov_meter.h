@@ -9,23 +9,32 @@
 
 struct ModelFovSnapshot {
   bool ready = false;
-  int selection = 0;
-  uint64_t generation = 0, valid_until = 0, session = 0;
+  int selection = 0, mode = 0;
+  uint64_t generation = 0, valid_until = 0;
+  std::array<uint64_t, 2> sessions = {};  // road, wide; unrelated option edges cannot rearm the other camera.
   std::array<double, 3> rpy = {};
+
+  // Preserve the original persisted 0/OFF and 1/both-ON values.
+  static bool includes_camera(int choice, bool wide) { return choice == 1 || choice == (wide ? 3 : 2); }
+  bool camera_enabled(bool wide) const { return includes_camera(mode, wide); }
 };
 
 // One writer, one reader. One bounded read attempt, never spin behind the worker.
 // Atomic fields avoid data races even when a read overlaps a publication.
 class ModelFovMailbox {
 public:
-  ModelFovMailbox() { for (auto &angle : rpy) angle.store(0.0); }
+  ModelFovMailbox() {
+    for (auto &angle : rpy) angle.store(0.0);
+    for (auto &counter : sessions) counter.store(0);
+  }
   void publish(const ModelFovSnapshot &value) {
     ++version;
     ready.store(value.ready);
     selection.store(value.selection);
+    mode.store(value.mode);
     generation.store(value.generation);
     valid_until.store(value.valid_until);
-    session.store(value.session);
+    for (int i = 0; i < 2; ++i) sessions[i].store(value.sessions[i]);
     for (int i = 0; i < 3; ++i) rpy[i].store(value.rpy[i]);
     ++version;
   }
@@ -35,9 +44,10 @@ public:
     ModelFovSnapshot next;
     next.ready = ready.load();
     next.selection = selection.load();
+    next.mode = mode.load();
     next.generation = generation.load();
     next.valid_until = valid_until.load();
-    next.session = session.load();
+    for (int i = 0; i < 2; ++i) next.sessions[i] = sessions[i].load();
     for (int i = 0; i < 3; ++i) next.rpy[i] = rpy[i].load();
     if (before != version.load()) return false;
     value = next;
@@ -45,9 +55,10 @@ public:
   }
 private:
   static_assert(std::atomic<double>::is_always_lock_free && std::atomic<uint64_t>::is_always_lock_free);
-  std::atomic<uint64_t> version{0}, generation{0}, valid_until{0}, session{0};
+  std::atomic<uint64_t> version{0}, generation{0}, valid_until{0};
+  std::array<std::atomic<uint64_t>, 2> sessions{};
   std::atomic<bool> ready{false};
-  std::atomic<int> selection{0};
+  std::atomic<int> selection{0}, mode{0};
   std::array<std::atomic<double>, 3> rpy{};
 };
 
