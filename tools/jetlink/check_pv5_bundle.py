@@ -166,6 +166,11 @@ try:
   texts.append(text)
   draw_text(text,*args,**kwargs)
  ui._draw_text_with_stroke=capture_text
+ draw_plain_text=ui._draw_text
+ def capture_plain_text(text,*args,**kwargs):
+  texts.append(text)
+  draw_plain_text(text,*args,**kwargs)
+ ui._draw_text=capture_plain_text
  ui.render_to_file(replace(state,driving_notices=notices),popup_path)
  assert DRIVING_NOTICE_TEXT['cutin'] in texts and DRIVING_NOTICE_TEXT['laneChange'] not in texts
  for stage in ('cutinTrack','cutinBrake'):
