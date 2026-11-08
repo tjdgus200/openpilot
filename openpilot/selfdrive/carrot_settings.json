@@ -661,7 +661,29 @@
           "ko": "주행 보조",
           "en": "Driving Assist",
           "zh": "驾驶辅助",
-          "params": ["Pv5LaneCenterAssist", "Pv5WideModelFov", "Pv5FovPreviewPitch"]
+          "params": ["Pv5LaneCenterAssist"]
+        },
+        {
+          "id": "PV5_CAMERA",
+          "ko": "카메라·노출",
+          "en": "Camera & Exposure",
+          "zh": "相机与曝光",
+          "groups": [
+            {
+              "id": "PV5_CAMERA_INPUT",
+              "ko": "모델 입력·노출",
+              "en": "Model Input & Exposure",
+              "zh": "模型输入与曝光",
+              "params": ["Pv5WideModelFov", "Pv5ModelFovExposure"]
+            },
+            {
+              "id": "PV5_CAMERA_PREVIEW",
+              "ko": "영역 확인",
+              "en": "Area Preview",
+              "zh": "区域预览",
+              "params": ["Pv5CameraFovPreview", "Pv5FovPreviewPitch"]
+            }
+          ]
         }
       ]
     }
@@ -669,14 +691,49 @@
   "params": [
     {
       "group": "PV5",
+      "name": "Pv5ModelFovExposure",
+      "title": "모델 FOV 기준 자동 노출 (실험)",
+      "descr": "기본은 끔입니다. C3/C3X에서 일반각·광각 모델 입력 영역의 밝기로 노출을 조절합니다. 차량·보정 정보 수신 후 적용하며, 정보가 오래되거나 영역이 유효하지 않으면 기존 측광으로 복귀합니다. 센서 노출·게인 한계는 유지됩니다. 야간 인식 개선과 실차 성능은 검증 전입니다.",
+      "egroup": "PV5",
+      "etitle": "Model FOV Auto Exposure (Experimental)",
+      "edescr": "Off by default. On C3/C3X, meters the narrow and wide model input regions. Applies after vehicle and calibration data arrive; stale or invalid geometry falls back to stock metering. Existing exposure and gain limits remain. Night perception and vehicle performance are unvalidated.",
+      "cgroup": "PV5",
+      "ctitle": "模型视野自动曝光（实验）",
+      "cdescr": "默认关闭。在C3/C3X上根据窄角和广角模型输入区域测光。收到车辆和标定信息后启用，信息过期或区域无效时恢复原测光。保持原曝光和增益限制。夜间识别和实车性能尚未验证。",
+      "control": "toggle",
+      "risk": "high",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5CameraFovPreview",
+      "title": "주행 중 FOV·노출 영역 표시",
+      "descr": "켜면 속도와 관계없이 콤마 화면에서 광각과 일반각을 2초씩 교대로 표시합니다. 청록 실선은 모델 입력, 보라 선은 측광 영역입니다. 끄면 기존처럼 정차 시에만 표시합니다. 안전 경고는 항상 우선하며 이 옵션은 화면 표시만 바꿉니다.",
+      "egroup": "PV5",
+      "etitle": "Show FOV & Metering Areas While Moving",
+      "edescr": "Alternates wide and narrow camera views every two seconds at any speed. Cyan outlines show model input; purple shows metering. Off retains the stopped-only preview. Safety alerts retain priority. This option only changes the display.",
+      "cgroup": "PV5",
+      "ctitle": "行驶时显示视野和测光区域",
+      "cdescr": "开启后在任意车速下每两秒交替显示广角和窄角。青色线为模型输入区域，紫色线为测光区域。关闭后保持仅停车时预览。安全警报始终优先，此选项仅影响显示。",
+      "control": "toggle",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "PV5",
       "name": "Pv5FovPreviewPitch",
-      "title": "정차 FOV 상하 미리보기 (0.1°)",
+      "title": "FOV 상하 비교선 (0.1°)",
       "descr": "0이면 현재 모델 영역만 표시합니다. +10은 1° 아래, -10은 1° 위입니다. 두 카메라에 노란 비교선을 표시하며 실제 모델 입력과 보정값은 그대로입니다.",
       "egroup": "PV5",
-      "etitle": "Stopped FOV Pitch Preview (0.1°)",
+      "etitle": "FOV Pitch Comparison Outline (0.1°)",
       "edescr": "Zero shows the current model footprint. +10 previews 1° down and -10 previews 1° up. The yellow comparison outline appears on both cameras. Model inputs and calibration stay as they are.",
       "cgroup": "PV5",
-      "ctitle": "停车视野俯仰预览（0.1°）",
+      "ctitle": "视野俯仰比较线（0.1°）",
       "cdescr": "0仅显示当前模型区域。+10预览向下1°，-10预览向上1°。两路相机均显示黄色对比轮廓，实际模型输入和标定保持原样。",
       "control": "slider",
       "min": -30,

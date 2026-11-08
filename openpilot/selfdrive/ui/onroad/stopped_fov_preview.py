@@ -1,3 +1,4 @@
+import math
 import time
 
 import numpy as np
@@ -38,6 +39,9 @@ class StoppedFovPreview:
     self._exposure_text = 'AE --'
     self._next_exposure_read = 0.
     self._exposure_camera = None
+    self._always_preview = False
+    self._fov_exposure = False
+    self._meter_polygon = None
 
   def update(self, state, road_available, wide_available):
     self.active = False
@@ -48,9 +52,19 @@ class StoppedFovPreview:
 
     sm = state.sm
     now = time.monotonic()
+    if now >= self._next_poll:
+      self._next_poll = now + 0.25
+      self._selection = state.params.get_int("Pv5WideModelFov")
+      self._yaw_trim = state.params.get_float("CameraYawTrimDeg") * 0.01
+      self._pitch_preview = max(-30, min(30, state.params.get_int("Pv5FovPreviewPitch")))
+      self._wide_enabled = bool(state.params.get("UseWideCamera", return_default=True))
+      self._always_preview = state.params.get_bool("Pv5CameraFovPreview")
+      self._fov_exposure = state.params.get_bool("Pv5ModelFovExposure")
     car = sm["carState"]
     if not (sm.valid["carState"] and sm.alive["carState"] and 0 <= now - sm.recv_time["carState"] <= 0.3
-            and car.canValid and not car.canTimeout and car.vEgoRaw == 0 and abs(car.vEgo) <= 0.01):
+            and car.canValid and not car.canTimeout
+            and math.isfinite(car.vEgoRaw) and math.isfinite(car.vEgo)
+            and (self._always_preview or (car.vEgoRaw == 0 and abs(car.vEgo) <= 0.01))):
       self._stopped_since = None
       return
     if not (sm.valid["liveCalibration"] and sm.alive["liveCalibration"]
@@ -66,12 +80,6 @@ class StoppedFovPreview:
       self._stopped_since = None
       return
 
-    if now >= self._next_poll:
-      self._next_poll = now + 0.25
-      self._selection = state.params.get_int("Pv5WideModelFov")
-      self._yaw_trim = state.params.get_float("CameraYawTrimDeg") * 0.01
-      self._pitch_preview = max(-30, min(30, state.params.get_int("Pv5FovPreviewPitch")))
-      self._wide_enabled = bool(state.params.get("UseWideCamera", return_default=True))
     wide_available = wide_available and self._wide_enabled and bool(camera.ecam.width)
     if not (road_available or wide_available):
       self._stopped_since = None
@@ -86,9 +94,20 @@ class StoppedFovPreview:
       self._exposure_camera = name
       self._next_exposure_read = now + .5
       self._exposure_text = 'AE --'
+      self._meter_polygon = None
       if (sm.valid.get(name, False) and sm.alive.get(name, False)
           and 0 <= now - sm.recv_time.get(name, 0.) <= .3):
-        self._exposure_text = exposure_label(sm[name])
+        camera_state = sm[name]
+        self._exposure_text = exposure_label(camera_state)
+        if getattr(camera_state, 'pv5ExposureFovActive', False):
+          points = np.asarray(camera_state.pv5ExposureFovPolygon, dtype=float)
+          if points.shape == (8,) and np.isfinite(points).all():
+            self._meter_polygon = points.reshape(4, 2)
+            black, white = camera_state.pv5ExposureBlackFraction, camera_state.pv5ExposureWhiteFraction
+            if np.isfinite([black, white]).all() and 0 <= black <= 1 and 0 <= white <= 1:
+              self._exposure_text += f' | FOV | dark {black:.0%} bright {white:.0%}'
+        else:
+          self._exposure_text += ' | STOCK (FOV waiting/fallback)' if self._fov_exposure else ' | STOCK'
     fov = (WIDE_MODEL_FOV_CHOICES[self._selection - 1]
            if self.wide and 1 <= self._selection <= len(WIDE_MODEL_FOV_CHOICES) else None)
     key = lens, self.wide, sm.recv_frame["liveCalibration"], fov, self._yaw_trim, self._pitch_preview
@@ -127,7 +146,19 @@ class StoppedFovPreview:
         rl.draw_line_ex(points[i - 1], points[i], 4.0, color)
       draw_text_ui_style(label, center, y, 28, color, align="center_top", y_offset=0.0)
       y += 34
-    if self._exposure_rect is not None:
+    if self._meter_polygon is not None:
+      color = rl.Color(225, 153, 255, 255)
+      points = [rl.Vector2(dst.x + float(x) * dst.width / frame.width,
+                          dst.y + float(top) * dst.height / frame.height) for x, top in self._meter_polygon]
+      # Dashed purple AE outline remains distinguishable from the cyan model FOV.
+      for i in range(4):
+        a, b = points[i - 1], points[i]
+        for segment in range(0, 24, 2):
+          start, end = segment / 24, (segment + 1) / 24
+          rl.draw_line_ex(rl.Vector2(a.x + (b.x - a.x) * start, a.y + (b.y - a.y) * start),
+                          rl.Vector2(a.x + (b.x - a.x) * end, a.y + (b.y - a.y) * end), 5., color)
+      draw_text_ui_style(self._exposure_text, center, y, 25, color, align='center_top', y_offset=0.)
+    elif self._exposure_rect is not None:
       x, top, width, height = self._exposure_rect
       rect = rl.Rectangle(dst.x + x * dst.width / frame.width, dst.y + top * dst.height / frame.height,
                           width * dst.width / frame.width, height * dst.height / frame.height)

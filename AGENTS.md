@@ -1,5 +1,25 @@
 # Repository memory
 
+- 2026-11-08 user-authorized FOV exposure: preserve default-OFF
+  Pv5ModelFovExposure and independent Pv5CameraFovPreview in PV5 > Camera &
+  Exposure, with separate input/exposure and area-preview sections. Moving
+  preview opt-in retains 2s wide/road alternation and all alert priorities;
+  OFF restores stopped-only preview. On known dual-camera PV5 C3/C3X only,
+  use the cached 64x36 model-coordinate Y sampler with actual NV12 stride.
+  Keep stock EV/gain/limits, driver AE and OFF behavior. Stale/invalid/unsupported
+  geometry or <90% sample coverage/black median falls back to stock. Read
+  settings/IPC only in SCHED_OTHER/nice10 worker; frame owner uses bounded
+  lock-free latest-state reads with expiry, no waiting or image copies. Preserve
+  actual camerad AE polygon/clipping telemetry, dashed purple vs cyan overlays,
+  and <=2Hz display sampling. Pitch comparison is always display-only. A
+  changed stored yaw trim disables new AE until camera/model restart; modeld's
+  existing yaw poll is every100 loops and must not be described as boot-frozen.
+  Run native sampler/warp/bounds/stride/mailbox/context faults, full camerad
+  translation-unit compilation and permanent PV5 checklist. See
+  docs/pv5_fov_exposure_20261108.md. This explicitly permits the opt-in AE
+  change despite older notes below; model tensor geometry/control stay unchanged.
+  PC checks do not establish physical exposure, night accuracy or latency gains.
+
 - 2026-11-08 PV5 follow-up1-5: preserve PC-only pv5_drive_report.py for
   full-schema rlogs, bounded trace/percentiles, time-weighted center reasons,
   exact camera frame joins and honestly scoped EOF-to-publication timing.

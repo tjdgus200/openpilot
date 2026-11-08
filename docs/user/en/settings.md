@@ -423,6 +423,22 @@ Mode `2` gradually requests acceleration toward approximately −0.5m/s² after 
 
 Preparation releases when red evidence disappears or conflicts with green. The existing driving model still controls stopping toward the stop line; this trial does not guarantee deceleration or stopping at every red signal.
 
+## PV5 camera and exposure
+
+Open **Settings → PV5 → Camera & Exposure** in Carrot Web. Model input/exposure settings
+and area previews are grouped separately. `Pv5ModelFovExposure` is experimental and OFF
+by default. On C3/C3X it meters a 64×36 grid in each calibrated narrow/wide model input
+and retains the existing exposure/gain controller. Missing/stale information, unsupported
+configurations, excessive clipping and invalid brightness fall back to stock metering.
+`STOCK` labels stock metering; `FOV` labels the model-region metering actually used.
+Night perception benefits and physical-device latency are unverified.
+
+`Pv5CameraFovPreview` alternates the two cameras every two seconds at any speed when ON.
+OFF retains the stopped-only preview. Cyan outlines show model input; purple shows metering.
+A dashed purple outline distinguishes coincident regions. Safety alerts retain priority.
+The yellow `Pv5FovPreviewPitch` comparison is display-only and changes neither model input
+nor exposure geometry. Both switches are independent. See the [design record](../../pv5_fov_exposure_20261108.md).
+
 ## Safe adjustment order
 
 1. Record the current value in Carrot Web.

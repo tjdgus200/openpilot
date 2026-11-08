@@ -256,6 +256,10 @@ struct FrameData {
   measuredGreyFraction @21 :Float32;
   targetGreyFraction @22 :Float32;
   exposureValPercent @27 :Float32;
+  pv5ExposureFovActive @29 :Bool;
+  pv5ExposureFovPolygon @30 :List(Float32);
+  pv5ExposureBlackFraction @31 :Float32;
+  pv5ExposureWhiteFraction @32 :Float32;
 
   transform @10 :List(Float32);
 

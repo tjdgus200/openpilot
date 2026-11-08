@@ -1,17 +1,22 @@
 #include "system/camerad/cameras/camera_common.h"
 #include "system/camerad/cameras/spectra.h"
+#include "system/camerad/cameras/model_fov_meter.h"
 
 #include <poll.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cerrno>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <deque>
 #include <string>
 #include <vector>
+#include <condition_variable>
+#include <system_error>
 
 #include "common/params.h"
 #include "common/swaglog.h"
@@ -23,6 +28,129 @@ ExitHandler do_exit;
 const bool env_debug_frames = getenv("DEBUG_FRAMES") != nullptr;
 const bool env_log_raw_frames = getenv("LOG_RAW_FRAMES") != nullptr;
 const bool env_ctrl_exp_from_params = getenv("CTRL_EXP_FROM_PARAMS") != nullptr;
+
+class ModelFovContext : public ModelFovSnapshot {
+public:
+
+  void update(bool dual_camera) {
+    const uint64_t now = nanos_since_boot();
+    if (now >= next_params) {
+      next_params = now + 250000000ULL;
+      enabled = params.getBool("Pv5ModelFovExposure");
+      const std::string wide = enabled ? params.get("UseWideCamera") : "";
+      enabled = enabled && (wide.empty() || wide == "1");  // Declared default is ON, as in modeld.
+      if (enabled) {
+        const double current_yaw = std::strtod(params.get("CameraYawTrimDeg").c_str(), nullptr) * 0.01 * std::acos(-1.0) / 180.0;
+        yaw_invalidated |= !std::isfinite(current_yaw) || std::abs(current_yaw - yaw_trim) > 1e-9;
+        enabled = !yaw_invalidated;
+      }
+      const std::string choice = enabled ? params.get("Pv5WideModelFov") : "";
+      const int value = choice.size() == 1 && choice[0] >= '0' && choice[0] <= '4' ? choice[0] - '0' : 0;
+      if (selection != value) { selection = value; ++generation; }
+    }
+    ready = false;
+    if (!enabled || !dual_camera || env_ctrl_exp_from_params) { sm.reset(); return; }
+    if (now >= next_vehicle) {
+      next_vehicle = now + 1000000000ULL;
+      pv5 = false;
+      const auto bytes = params.get("CarParams");
+      if (!bytes.empty() && bytes.size() <= 1024 * 1024 && bytes.size() % sizeof(capnp::word) == 0) {
+        std::vector<capnp::word> words(bytes.size() / sizeof(capnp::word));
+        std::memcpy(words.data(), bytes.data(), bytes.size());
+        try {
+          capnp::FlatArrayMessageReader reader(kj::arrayPtr(words.data(), words.size()));
+          const auto cp = reader.getRoot<cereal::CarParams>();
+          pv5 = !cp.getNotCar() && cp.getCarFingerprint() == "KIA_PV5";
+        } catch (const kj::Exception &) { pv5 = false; }
+      }
+    }
+    if (!pv5) return;
+    if (!sm) sm = std::make_unique<SubMaster>(std::vector<const char *>{"liveCalibration", "deviceState"});
+    sm->update(0);  // Only the latest available data; never wait for modeld/Jetson.
+    if (!sm->allAliveAndValid({"liveCalibration", "deviceState"})) return;
+    const auto &cal_event = (*sm)["liveCalibration"];
+    const auto &dev_event = (*sm)["deviceState"];
+    if (now < cal_event.getLogMonoTime() || now - cal_event.getLogMonoTime() > 1000000000ULL ||
+        now < dev_event.getLogMonoTime() || now - dev_event.getLogMonoTime() > 2500000000ULL) return;
+    const auto device = dev_event.getDeviceState().getDeviceType();
+    if (device != cereal::InitData::DeviceType::TICI && device != cereal::InitData::DeviceType::TIZI) return;
+    const auto calibration = cal_event.getLiveCalibration();
+    const auto angles = calibration.getRpyCalib();
+    if (calibration.getCalStatus() != cereal::LiveCalibrationData::Status::CALIBRATED || angles.size() != 3) return;
+    if (sm->updated("liveCalibration")) {
+      for (int i = 0; i < 3; ++i) rpy[i] = angles[i];
+      // Use the startup yaw snapshot; a later stored change invalidates metering.
+      // modeld polls yaw more slowly. Never use the display-only pitch preview.
+      rpy[2] -= yaw_trim;
+      ++generation;
+    }
+    for (double angle : rpy) if (!std::isfinite(angle) || std::abs(angle) > 0.5) return;
+    valid_until = std::min(cal_event.getLogMonoTime() + 1000000000ULL, dev_event.getLogMonoTime() + 2500000000ULL);
+    ready = true;
+  }
+
+private:
+  Params params;
+  // Match modeld's CameraYawTrimDeg convention/units at camera startup.
+  // On a stored change, fall back until camera/model restart rather than
+  // guessing when modeld's 100-loop settings poll has taken effect.
+  const double yaw_trim = std::strtod(params.get("CameraYawTrimDeg").c_str(), nullptr) * 0.01 * std::acos(-1.0) / 180.0;
+  std::unique_ptr<SubMaster> sm;
+  uint64_t next_params = 0;
+  uint64_t next_vehicle = 0;
+  bool enabled = false;
+  bool pv5 = false;
+  bool yaw_invalidated = false;
+};
+
+// Disk reads, Cap'n Proto parsing and IPC polling stay off the camera owner.
+// Camera delivery reads one small immutable latest-value snapshot, never joins.
+class ModelFovWorker {
+public:
+  explicit ModelFovWorker(bool dual_camera) {
+    try {
+      worker = std::thread([this, dual_camera]() {
+        try {
+          // camerad may be real-time. Never let this worker inherit that policy.
+          sched_param policy = {};
+          if (pthread_setschedparam(pthread_self(), SCHED_OTHER, &policy) != 0 || setpriority(PRIO_PROCESS, 0, 10) != 0) return;
+          ModelFovContext context;
+          std::unique_lock<std::mutex> lock(mutex);
+          while (running) {
+            context.ready = false;
+            try { context.update(dual_camera); }
+            catch (const kj::Exception &) { context.ready = false; }
+            catch (const std::exception &) { context.ready = false; }
+            snapshot.publish(context);
+            wake.wait_for(lock, std::chrono::milliseconds(250), [this]() { return !running; });
+          }
+        } catch (const kj::Exception &) { }
+        catch (const std::exception &) { }
+        // Worker initialization failure leaves stock metering in effect.
+      });
+    } catch (const std::system_error &) {
+      // Optional worker unavailable: retain the default stock-only snapshot.
+    }
+  }
+  ~ModelFovWorker() {
+    { std::lock_guard<std::mutex> lock(mutex); running = false; }
+    wake.notify_one();
+    if (worker.joinable()) worker.join();  // Shutdown only, outside the camera frame loop.
+  }
+  ModelFovSnapshot latest() {
+    snapshot.read(last);  // On overlap, retain only the previous unexpired value.
+    ModelFovSnapshot result = last;
+    if (nanos_since_boot() >= result.valid_until) result.ready = false;
+    return result;
+  }
+private:
+  ModelFovMailbox snapshot;
+  ModelFovSnapshot last;
+  std::thread worker;
+  std::mutex mutex;
+  std::condition_variable wake;
+  bool running = true;
+};
 
 
 class CameraState {
@@ -46,6 +174,9 @@ public:
   float fl_pix = 0;
   std::unique_ptr<PubMaster> pm;
   std::deque<cam_req_mgr_message> queued_events;
+  ModelFovMeter fov_meter;
+  uint64_t fov_generation = UINT64_MAX;
+  bool fov_configured = false;
 
   CameraState(SpectraMaster *master, const CameraConfig &config) : camera(master, config) {};
   ~CameraState();
@@ -53,7 +184,7 @@ public:
   void update_exposure_score(float desired_ev, int exp_t, int exp_g_idx, float exp_gain);
   void set_camera_exposure(float grey_frac);
   void set_exposure_rect();
-  void sendState();
+  void sendState(const ModelFovSnapshot &context);
 
   float get_gain_factor() const {
     return (1 + dc_gain_weight * (camera.sensor->dc_gain_factor-1) / camera.sensor->dc_gain_max_weight);
@@ -213,7 +344,7 @@ void CameraState::set_camera_exposure(float grey_frac) {
   camera.sensors_i2c(exp_reg_array.data(), exp_reg_array.size(), CAM_SENSOR_PACKET_OPCODE_SENSOR_CONFIG, camera.sensor->data_word);
 }
 
-void CameraState::sendState() {
+void CameraState::sendState(const ModelFovSnapshot &context) {
   camera.buf.sendFrameToVipc();
 
   MessageBuilder msg;
@@ -240,7 +371,29 @@ void CameraState::sendState() {
     framed.setImage(get_raw_frame_image(&camera.buf));
   }
 
-  set_camera_exposure(calculate_exposure_value(&camera.buf, ae_xywh, 2, camera.cc.stream_type != VISION_STREAM_DRIVER ? 2 : 4));
+  const bool front = camera.cc.stream_type == VISION_STREAM_ROAD || camera.cc.stream_type == VISION_STREAM_WIDE_ROAD;
+  const bool known_sensor = camera.sensor->image_sensor == cereal::FrameData::ImageSensor::AR0231 ||
+                            camera.sensor->image_sensor == cereal::FrameData::ImageSensor::OX03C10;
+  bool fov_active = false;
+  if (context.ready && front && known_sensor) {
+    if (fov_generation != context.generation) {
+      fov_generation = context.generation;
+      fov_configured = fov_meter.configure(camera.buf.out_img_width, camera.buf.out_img_height,
+                                          camera.cc.stream_type == VISION_STREAM_WIDE_ROAD, context.rpy, context.selection,
+                                          camera.buf.cur_yuv_buf->stride);
+    }
+    fov_active = fov_configured && fov_meter.measure(camera.buf.cur_yuv_buf->y, camera.buf.cur_yuv_buf->len);
+  }
+  if (fov_active) {
+    framed.setPv5ExposureFovActive(true);
+    auto polygon = framed.initPv5ExposureFovPolygon(fov_meter.polygon.size());
+    for (size_t i = 0; i < fov_meter.polygon.size(); ++i) polygon.set(i, fov_meter.polygon[i]);
+    framed.setPv5ExposureBlackFraction(fov_meter.black_fraction);
+    framed.setPv5ExposureWhiteFraction(fov_meter.white_fraction);
+  }
+  const float grey = fov_active ? fov_meter.grey :
+    calculate_exposure_value(&camera.buf, ae_xywh, 2, camera.cc.stream_type != VISION_STREAM_DRIVER ? 2 : 4);
+  set_camera_exposure(grey);
 
   // Send the message
   pm->send(camera.cc.publish_name, msg);
@@ -271,6 +424,12 @@ void camerad_thread() {
 
   // poll events
   LOG("-- Dequeueing Video events");
+  bool road_enabled = false, wide_enabled = false;
+  for (auto &cam : cams) {
+    road_enabled |= cam->camera.enabled && cam->camera.cc.stream_type == VISION_STREAM_ROAD;
+    wide_enabled |= cam->camera.enabled && cam->camera.cc.stream_type == VISION_STREAM_WIDE_ROAD;
+  }
+  ModelFovWorker fov_worker(road_enabled && wide_enabled);
   while (!do_exit) {
     // Driver IFE/BPS waits must not stall road/wide event delivery. Its result
     // wakes this same owner thread, which still owns all camera state/recovery.
@@ -284,10 +443,11 @@ void camerad_thread() {
       LOGE("poll failed (%d - %d)", ret, errno);
       break;
     }
+    const auto fov_context = fov_worker.latest();
 
     for (size_t i = 0; i < cams.size(); ++i) {
       if ((fds[i + 1].revents & POLLIN) && cams[i]->camera.complete_frame_wait()) {
-        cams[i]->sendState();
+        cams[i]->sendState(fov_context);
       }
     }
 
@@ -314,7 +474,7 @@ void camerad_thread() {
                 }
                 cam->queued_events.push_back(*event_data);
               } else if (cam->camera.handle_camera_event(event_data)) {
-                cam->sendState();
+                cam->sendState(fov_context);
               }
               break;
             }
@@ -330,7 +490,7 @@ void camerad_thread() {
       while (!cam->camera.frame_wait_pending() && !cam->queued_events.empty()) {
         const auto event = cam->queued_events.front();
         cam->queued_events.pop_front();
-        if (cam->camera.handle_camera_event(&event)) cam->sendState();
+        if (cam->camera.handle_camera_event(&event)) cam->sendState(fov_context);
       }
     }
   }

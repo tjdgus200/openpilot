@@ -1,4 +1,4 @@
-"""Test the parked preview with real camera geometry and synthetic vehicle state."""
+"""Test stopped/opt-in moving previews with real geometry and synthetic state."""
 import ast
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -22,7 +22,8 @@ def preview():
   namespace = {"log": NS(LiveCalibrationData=NS(Status=NS(calibrated=calibrated)))}
   exec(compile(tree, str(source), "exec"), namespace)
   car = NS(canValid=True, canTimeout=False, vEgoRaw=0., vEgo=0.)
-  settings = {"Pv5WideModelFov": 4, "CameraYawTrimDeg": 0, "Pv5FovPreviewPitch": 0, "UseWideCamera": True}
+  settings = {"Pv5WideModelFov": 4, "CameraYawTrimDeg": 0, "Pv5FovPreviewPitch": 0, "UseWideCamera": True,
+              "Pv5CameraFovPreview": False, "Pv5ModelFovExposure": False}
   sm = type("Messages", (dict,), {})(carState=car, deviceState=NS(deviceType="mici"),
                                     roadCameraState=NS(sensor="os04c10"),
                                     liveCalibration=NS(calStatus=calibrated, rpyCalib=[0., 0., 0.]))
@@ -32,7 +33,7 @@ def preview():
   sm.recv_time = {"carState": 10.}
   sm.recv_frame = {"liveCalibration": 1}
   state = NS(started=True, CP=NS(notCar=False, carFingerprint="KIA_PV5"), sm=sm,
-             params=NS(get_int=settings.__getitem__, get_float=settings.__getitem__,
+             params=NS(get_int=settings.__getitem__, get_float=settings.__getitem__, get_bool=settings.__getitem__,
                        get=lambda key, **_: settings[key]))
   viewer = namespace["StoppedFovPreview"]()
   viewer._test_state = state
@@ -104,7 +105,7 @@ def test_c3x_exposure_overlay_uses_fresh_correct_lens_and_never_changes_warp(pre
     sm.recv_time[name] = 10.
   update(10.)
   assert viewer._exposure_rect == (97, 400, 1734, 524)
-  assert viewer._exposure_text == 'AE grey 0.05/0.10 | gain 2.0'
+  assert viewer._exposure_text == 'AE grey 0.05/0.10 | gain 2.0 | STOCK'
   camera = DEVICE_CAMERAS['tizi', 'ox03c10']
   np.testing.assert_allclose(viewer._polygon, polygon(wider_model_warp(get_warp_matrix(np.zeros(3), camera.ecam.intrinsics, True), 80)), atol=1e-5)
   update(12.)
@@ -112,7 +113,58 @@ def test_c3x_exposure_overlay_uses_fresh_correct_lens_and_never_changes_warp(pre
   assert viewer._exposure_text == 'AE --'  # old telemetry never labels the new lens
   sm.recv_time['roadCameraState'] = 12.6
   update(12.6)
-  assert viewer._exposure_text == 'AE grey 0.20/0.10 | gain 2.0'
+  assert viewer._exposure_text == 'AE grey 0.20/0.10 | gain 2.0 | STOCK'
+
+
+def test_opt_in_preview_works_while_moving_and_off_restores_stopped_only(preview):
+  viewer, update, car, settings, _ = preview
+  car.vEgoRaw = car.vEgo = 20.
+  update(10.)
+  assert not viewer.active
+  settings['Pv5CameraFovPreview'] = True
+  for now, wide in ((10.3, True), (12.3, False), (14.3, True)):
+    update(now)
+    assert viewer.active and viewer.wide is wide
+  settings['Pv5CameraFovPreview'] = False
+  update(14.6)
+  assert not viewer.active
+  car.vEgoRaw = car.vEgo = 0.
+  update(14.9)
+  assert viewer.active
+
+
+def test_active_meter_outline_comes_from_camerad_and_expires_on_lens_switch(preview):
+  viewer, update, _, settings, _ = preview
+  settings['Pv5ModelFovExposure'] = True
+  sm = viewer._test_state.sm
+  points = [100., 200., 1000., 200., 1000., 700., 100., 700.]
+  sm['wideRoadCameraState'] = NS(measuredGreyFraction=.2, targetGreyFraction=.1, gain=2.,
+                                pv5ExposureFovActive=True, pv5ExposureFovPolygon=points,
+                                pv5ExposureBlackFraction=.1, pv5ExposureWhiteFraction=.02)
+  sm.valid['wideRoadCameraState'] = sm.alive['wideRoadCameraState'] = True
+  sm.recv_time['wideRoadCameraState'] = 10.
+  update(10.)
+  np.testing.assert_equal(viewer._meter_polygon, np.array(points).reshape(4, 2))
+  assert 'FOV | dark 10% bright 2%' in viewer._exposure_text
+  update(12.)
+  assert viewer._meter_polygon is None and viewer._exposure_text == 'AE --'
+  sm.recv_time['wideRoadCameraState'] = 14.
+  sm['wideRoadCameraState'].pv5ExposureFovActive = False
+  update(14.)
+  assert viewer._meter_polygon is None and 'waiting/fallback' in viewer._exposure_text
+
+
+def test_preview_toggle_never_bypasses_invalid_vehicle_or_calibration(preview):
+  viewer, update, car, settings, _ = preview
+  settings['Pv5CameraFovPreview'] = True
+  car.vEgoRaw = car.vEgo = 20.
+  update(10., age=.31)
+  assert not viewer.active
+  update(10.3)
+  assert viewer.active
+  viewer._test_state.sm.valid['liveCalibration'] = False
+  update(10.6)
+  assert not viewer.active
 
 
 @pytest.mark.parametrize("layout", ("onroad", "mici/onroad"))
