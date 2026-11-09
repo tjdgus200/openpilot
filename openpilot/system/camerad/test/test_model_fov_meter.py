@@ -30,6 +30,9 @@ extern "C" int mailbox_check() {
       value.generation = i; value.valid_until = i + 1; value.sessions = {i * 7, i * 9}; value.mode = i % 4;
       value.status = static_cast<ModelFovStatus>(i % 22); value.assist_mode = (i / 4) % 4;
       value.rpy = {double(i), double(i * 2), double(i * 3)};
+      value.lane_mode = i % 4;
+      for (int lens=0;lens<2;++lens) { value.lanes[lens].valid = true; value.lanes[lens].valid_until = i+3;
+        value.lanes[lens].left.fill(float(i)); value.lanes[lens].right.fill(float(i+1)); }
       mailbox.publish(value);
     }
     done.store(true);
@@ -42,7 +45,11 @@ extern "C" int mailbox_check() {
       good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 &&
               value.sessions[0] == i * 7 && value.sessions[1] == i * 9 && value.mode == int(i % 4) &&
               static_cast<int>(value.status) == int(i % 22) && value.assist_mode == int((i / 4) % 4) &&
-              value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3;
+              value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3 && value.lane_mode == int(i%4);
+      if (value.lane_mode) for (const auto &lane:value.lanes) {
+        good &= lane.valid && lane.valid_until == i+3;
+        for(int row=0;row<36;++row) good &= lane.left[row] == i && lane.right[row] == i+1;
+      }
     }
   } while (!done.load());
   writer.join();
@@ -79,8 +86,9 @@ extern "C" void assist(bool wide, int selection, const uint8_t *pixels, size_t b
 }
 ''', encoding='utf-8')
   library = folder / 'meter.so'
-  subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-shared', '-pthread',
-                  '-I', str(ROOT), str(wrapper), '-o', str(library)], check=True, capture_output=True)
+  result = subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-fPIC', '-shared', '-pthread',
+                  '-I', str(ROOT), str(wrapper), '-o', str(library)], capture_output=True)
+  assert result.returncode == 0, result.stderr.decode()
   module = ctypes.CDLL(str(library))
   func = module.meter
   func.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_bool, ctypes.c_double, ctypes.c_double, ctypes.c_double,
@@ -374,10 +382,10 @@ def test_default_off_and_camera_menu_keep_display_separate_from_metering():
   assert all(len(options) == 4 for options in metering['options'].values())
   category = next(c for c in settings['menu'] if c['id'] == 'PV5')
   camera = next(g for g in category['groups'] if g['id'] == 'PV5_CAMERA')
-  assert camera['groups'][0]['params'] == ['Pv5WideModelFov', 'Pv5ModelFovExposure', 'Pv5RoadExposureAssist', 'Pv5WideExposureAssist']
+  assert camera['groups'][0]['params'] == ['Pv5WideModelFov', 'Pv5ModelFovExposure', 'Pv5RoadExposureAssist', 'Pv5WideExposureAssist', 'Pv5RoadLaneExposure', 'Pv5WideLaneExposure']
   assert camera['groups'][1]['params'] == ['Pv5CameraFovPreview', 'Pv5FovPreviewPitch']
   keys = (ROOT / 'common/params_keys.h').read_text(encoding='utf-8')
-  for key in ('Pv5RoadExposureAssist', 'Pv5WideExposureAssist'):
+  for key in ('Pv5RoadExposureAssist', 'Pv5WideExposureAssist', 'Pv5RoadLaneExposure', 'Pv5WideLaneExposure'):
     assert params[key]['default'] == 0 and params[key]['control'] == 'toggle'
     assert key in keys
 
@@ -545,8 +553,9 @@ int main() {
   wrapper = tmp_path / 'frame.cc'
   wrapper.write_text(fixture + selection + scenarios, encoding='utf-8')
   executable = tmp_path / 'frame'
-  subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-error=missing-field-initializers',
-                  '-I', str(ROOT), str(wrapper), '-o', str(executable)], check=True, capture_output=True)
+  result = subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-error=missing-field-initializers',
+                  '-I', str(ROOT), str(wrapper), '-o', str(executable)], capture_output=True)
+  assert result.returncode == 0, result.stderr.decode()
   subprocess.run([str(executable)], check=True, capture_output=True, timeout=10)
 
 
@@ -580,6 +589,7 @@ namespace cereal {
 struct InitData { enum class DeviceType { TICI, TIZI, MICI }; };
 struct LiveCalibrationData { enum class Status { CALIBRATED, UNCALIBRATED }; };
 struct CarParams {};
+enum class LaneChangeState { OFF, STARTING };
 }
 bool not_car = false, pv5 = true, messages_valid = true, new_calibration = true;
 struct Car {
@@ -606,18 +616,37 @@ struct Calibration {
   auto getRpyCalib() const { return angles; }
 };
 struct Device { auto getDeviceType() const { return device; } };
+bool model_valid = true;
+uint64_t model_age = 0, model_event_age = 0;
+cereal::LaneChangeState lane_change = cereal::LaneChangeState::OFF;
+struct Lane {
+  int side;
+  std::vector<float> getX() const { std::vector<float> x; for (int i=0;i<33;++i) x.push_back(i*2); return x; }
+  std::vector<float> getY() const { return std::vector<float>(33, side == 1 ? -1.8f : 1.8f); }
+  std::vector<float> getZ() const { return std::vector<float>(33, 1.4f); }
+};
+struct Meta { auto getLaneChangeState() const { return lane_change; } };
+struct Model {
+  uint64_t getTimestampEof() const { return clock_now - model_age; }
+  Meta getMeta() const { return {}; }
+  auto getLaneLines() const { return std::vector<Lane>{{0},{1},{2},{3}}; }
+  auto getLaneLineProbs() const { return std::vector<float>(4,.99f); }
+  auto getLaneLineStds() const { return std::vector<float>(4,.1f); }
+};
 struct Event {
   bool cal = false;
-  uint64_t getLogMonoTime() const { return cal ? cal_time : dev_time; }
+  bool model = false;
+  uint64_t getLogMonoTime() const { return model ? clock_now - model_event_age : cal ? cal_time : dev_time; }
   Calibration getLiveCalibration() const { return {}; }
   Device getDeviceState() const { return {}; }
+  Model getModelV2() const { return {}; }
 };
 struct SubMaster {
   explicit SubMaster(std::vector<const char *>) {}
   void update(int timeout) { assert(timeout == 0); }
-  bool allAliveAndValid(std::vector<const char *>) { return messages_valid; }
+  bool allAliveAndValid(std::vector<const char *> names) { return messages_valid && (std::string(names[0]) != "modelV2" || model_valid); }
   bool updated(const char *) { return new_calibration; }
-  Event &operator[](const char *key) { static Event cal{true}, dev{false}; return std::string(key) == "liveCalibration" ? cal : dev; }
+  Event &operator[](const char *key) { static Event cal{true}, dev{false}, model{false,true}; return std::string(key) == "modelV2" ? model : std::string(key) == "liveCalibration" ? cal : dev; }
 };
 '''
   scenarios = r'''
@@ -712,23 +741,28 @@ int main() {
     }
   }
   // All 256 effective method transitions, with independent per-lens rearm.
-  for (int before = 0; before < 16; ++before) for (int after = 0; after < 16; ++after) {
+  for (int before = 0; before < 64; ++before) for (int after = 0; after < 64; ++after) {
     auto select = [&](int setting) {
       values["Pv5ModelFovExposure"] = std::to_string(setting % 4);
       values["Pv5RoadExposureAssist"] = setting & 4 ? "1" : "0";
       values["Pv5WideExposureAssist"] = setting & 8 ? "1" : "0";
+      values["Pv5RoadLaneExposure"] = setting & 16 ? "1" : "0";
+      values["Pv5WideLaneExposure"] = setting & 32 ? "1" : "0";
       clock_now += 250000000ULL; cal_time = dev_time = clock_now;
     };
     select(before); ModelFovContext pair; pair.update(true);
     const auto sessions = pair.sessions;
-    const int methods[] = {pair.camera_method(false), pair.camera_method(true)};
+    const int methods[] = {pair.camera_signature(false), pair.camera_signature(true)};
     select(after); pair.update(true);
     for (int lens = 0; lens < 2; ++lens) {
       const int expected = (after & (lens ? 8 : 4)) ? 2 : selected[after % 4][lens] ? 1 : 0;
-      assert(pair.camera_method(lens) == expected);
-      assert(pair.sessions[lens] == sessions[lens] + (expected != methods[lens]));
+      const bool lane = after & (lens ? 32 : 16);
+      assert(pair.camera_method(lens) == (lane ? 3 : expected));
+      assert(pair.camera_fov_base(lens) == (expected != 0));
+      assert(pair.sessions[lens] == sessions[lens] + ((expected | (lane ? 4 : 0)) != methods[lens]));
     }
   }
+  values["Pv5RoadLaneExposure"] = "0"; values["Pv5WideLaneExposure"] = "0";
   values["Pv5RoadExposureAssist"] = "0"; values["Pv5WideExposureAssist"] = "0";
   for (auto invalid : {"", "-1", "4", "11", "true", "nan"}) {
     values["Pv5ModelFovExposure"] = invalid;
@@ -736,11 +770,30 @@ int main() {
     invalid_context.update(true);
     assert(!invalid_context.ready && !invalid_context.camera_enabled(false) && !invalid_context.camera_enabled(true));
   }
+  // Optional model loss never disables a valid selected base or changes its session.
+  values["Pv5ModelFovExposure"] = "0"; values["Pv5RoadLaneExposure"] = "1"; values["Pv5WideLaneExposure"] = "1";
+  cal_time = dev_time = clock_now; ModelFovContext lanes; lanes.update(true);
+  assert(lanes.ready && lanes.lanes[0].valid && !lanes.lanes[1].valid);
+  clock_now += 500000000ULL; cal_time = dev_time = clock_now; lanes.update(true);
+  assert(lanes.ready && lanes.lanes[0].valid && lanes.lanes[1].valid);
+  const auto session = lanes.sessions;
+  for (int fault = 0; fault < 4; ++fault) {
+    model_age = fault == 0 ? 251000000ULL : 0;
+    model_event_age = fault == 1 ? 201000000ULL : 0;
+    model_valid = fault != 2;
+    lane_change = fault == 3 ? cereal::LaneChangeState::STARTING : cereal::LaneChangeState::OFF;
+    lanes.update(true); assert(lanes.ready && !lanes.lanes[0].valid && !lanes.lanes[1].valid && lanes.sessions == session);
+  }
+  model_age = model_event_age = 0; model_valid = true; lane_change = cereal::LaneChangeState::OFF;
+  lanes.update(true); assert(lanes.lanes[0].valid && lanes.lanes[1].valid);
+  pv5 = false; clock_now += 1100000000ULL; cal_time = dev_time = clock_now;
+  lanes.update(true); assert(!lanes.ready && lanes.status == ModelFovStatus::VEHICLE_UNAVAILABLE);
 }
 '''
   wrapper = tmp_path / 'context.cc'
   wrapper.write_text(fixture + context + scenarios, encoding='utf-8')
   executable = tmp_path / 'context'
-  subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-I', str(ROOT),
-                  str(wrapper), '-o', str(executable)], check=True, capture_output=True)
+  result = subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-I', str(ROOT),
+                  str(wrapper), '-o', str(executable)], capture_output=True)
+  assert result.returncode == 0, result.stderr.decode()
   subprocess.run([str(executable)], check=True, capture_output=True, timeout=10)

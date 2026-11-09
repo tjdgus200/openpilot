@@ -40,13 +40,18 @@ public:
       const int next_mode = requested.size() == 1 && requested[0] >= '0' && requested[0] <= '3' ? requested[0] - '0' : 0;
       const int next_assist = (params.get("Pv5RoadExposureAssist") == "1" ? 1 : 0) |
                               (params.get("Pv5WideExposureAssist") == "1" ? 2 : 0);
+      const int next_lane = (params.get("Pv5RoadLaneExposure") == "1" ? 1 : 0) |
+                           (params.get("Pv5WideLaneExposure") == "1" ? 2 : 0);
+      if (bool(next_lane) != bool(lane_mode)) sm.reset();
       for (int lens = 0; lens < 2; ++lens) {
-        const int next_method = (next_assist & (1 << lens)) ? 2 : includes_camera(next_mode, lens) ? 1 : 0;
-        if (camera_method(lens) != next_method) ++sessions[lens];
+        const int next_signature = ((next_lane & (1 << lens)) ? 4 : 0) |
+          ((next_assist & (1 << lens)) ? 2 : includes_camera(next_mode, lens) ? 1 : 0);
+        if (camera_signature(lens) != next_signature) ++sessions[lens];
       }
       mode = next_mode;
       assist_mode = next_assist;
-      enabled = mode != 0 || assist_mode != 0;
+      lane_mode = next_lane;
+      enabled = mode != 0 || assist_mode != 0 || lane_mode != 0;
       const std::string wide = enabled ? params.get("UseWideCamera") : "";
       enabled = enabled && (wide.empty() || wide == "1");  // Declared default is ON, as in modeld.
       if (enabled) {
@@ -56,12 +61,12 @@ public:
       }
       const std::string choice = enabled ? params.get("Pv5WideModelFov") : "";
       const int value = choice.size() == 1 && choice[0] >= '0' && choice[0] <= '4' ? choice[0] - '0' : 0;
-      if (selection != value) { selection = value; ++generation; }
+      if (selection != value) { selection = value; ++generation; lane_wide_changed_at = now; }
     }
     ready = false;
     status = ModelFovStatus::INPUT_UNAVAILABLE;
     if (!enabled || !dual_camera || env_ctrl_exp_from_params) {
-      status = !(mode || assist_mode) ? ModelFovStatus::DISABLED : yaw_invalidated ? ModelFovStatus::YAW_CHANGED :
+      status = !(mode || assist_mode || lane_mode) ? ModelFovStatus::DISABLED : yaw_invalidated ? ModelFovStatus::YAW_CHANGED :
         env_ctrl_exp_from_params ? ModelFovStatus::MANUAL_EXPOSURE : ModelFovStatus::UNSUPPORTED;
       sm.reset(); return;
     }
@@ -80,7 +85,8 @@ public:
       }
     }
     if (!pv5) { status = ModelFovStatus::VEHICLE_UNAVAILABLE; return; }
-    if (!sm) sm = std::make_unique<SubMaster>(std::vector<const char *>{"liveCalibration", "deviceState"});
+    if (!sm) sm = std::make_unique<SubMaster>(lane_mode ? std::vector<const char *>{"liveCalibration", "deviceState", "modelV2"} :
+                                                       std::vector<const char *>{"liveCalibration", "deviceState"});
     sm->update(0);  // Only the latest available data; never wait for modeld/Jetson.
     if (!sm->allAliveAndValid({"liveCalibration", "deviceState"})) return;
     const auto &cal_event = (*sm)["liveCalibration"];
@@ -113,6 +119,41 @@ public:
       status = ModelFovStatus::CALIBRATION_INVALID; return;
     }
     valid_until = std::min(cal_event.getLogMonoTime() + 1000000000ULL, dev_event.getLogMonoTime() + 2500000000ULL);
+    lanes = {};
+    if (lane_mode && sm->allAliveAndValid({"modelV2"})) {
+      const auto &event = (*sm)["modelV2"];
+      const auto model = event.getModelV2();
+      const uint64_t eof = model.getTimestampEof();
+      // Original camera time, not reception time: repeats cannot renew old lanes.
+      if (eof && now >= eof && now - eof <= 250000000ULL && now >= event.getLogMonoTime() &&
+          now - event.getLogMonoTime() <= 200000000ULL &&
+          model.getMeta().getLaneChangeState() == cereal::LaneChangeState::OFF) {
+        const auto lines = model.getLaneLines();
+        const auto probabilities = model.getLaneLineProbs(), deviations = model.getLaneLineStds();
+        if (lines.size() == 4 && probabilities.size() == 4 && deviations.size() == 4) {
+          ExposureLaneInput input;
+          const auto l = lines[1], r = lines[2];
+          const auto count = l.getX().size();
+          if (count >= 6 && count <= 33 && l.getY().size() == count && l.getZ().size() == count &&
+              r.getX().size() == count && r.getY().size() == count && r.getZ().size() == count) {
+            input.count = count;
+            for (unsigned int i = 0; i < count; ++i) {
+              input.left[i] = {l.getX()[i], l.getY()[i], l.getZ()[i]};
+              input.right[i] = {r.getX()[i], r.getY()[i], r.getZ()[i]};
+            }
+            input.probability = {probabilities[1], probabilities[2]};
+            input.deviation = {deviations[1], deviations[2]};
+            for (int lens = 0; lens < 2; ++lens) {
+              // modeld polls FOV independently. Let previous-geometry outputs
+              // expire before using lane predictions in the newly selected view.
+              if (lens && now - lane_wide_changed_at < 500000000ULL) continue;
+              lanes[lens] = exposure_lane_corridor(input, lens, selection);
+              lanes[lens].valid_until = std::min<uint64_t>(valid_until, eof + 250000000ULL);
+            }
+          }
+        }
+      }
+    }
     ready = true;
     status = ModelFovStatus::ACTIVE;
   }
@@ -126,6 +167,7 @@ private:
   std::unique_ptr<SubMaster> sm;
   uint64_t next_params = 0;
   uint64_t next_vehicle = 0;
+  uint64_t lane_wide_changed_at = 0;
   bool enabled = false;
   bool pv5 = false;
   bool yaw_invalidated = false;
@@ -150,7 +192,7 @@ public:
             catch (const kj::Exception &) { context.ready = false; context.status = ModelFovStatus::WORKER_ERROR; }
             catch (const std::exception &) { context.ready = false; context.status = ModelFovStatus::WORKER_ERROR; }
             snapshot.publish(context);
-            wake.wait_for(lock, std::chrono::milliseconds(250), [this]() { return !running; });
+            wake.wait_for(lock, std::chrono::milliseconds(context.lane_mode ? 100 : 250), [this]() { return !running; });
           }
         } catch (const kj::Exception &) { }
         catch (const std::exception &) { }
@@ -424,7 +466,8 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
                                           camera.buf.cur_yuv_buf->stride);
     }
     fov_valid = fov_configured && fov_meter.measure(camera.buf.cur_yuv_buf->y, camera.buf.cur_yuv_buf->len,
-                                                 context.camera_assisted(wide));
+                                                 context.camera_assisted(wide),
+                                                 context.camera_lane(wide) ? &context.lanes[wide] : nullptr, now);
     fov_status = fov_meter.status;
   }
   const bool fov_active = fov_stability.use_fov(fov_valid, now);
@@ -439,7 +482,11 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
     framed.setPv5ExposureBlackFraction(fov_meter.black_fraction);
     framed.setPv5ExposureWhiteFraction(fov_meter.white_fraction);
   }
-  const float metered_grey = fov_meter.assisted_grey(fov_active && context.camera_assisted(wide), now);
+  // The lane option adds a bounded bias on top of the user's selected base.
+  // With both base toggles OFF, the base is the original stock ROI/controller.
+  const float base_grey = fov_active && context.camera_lane(wide) && !context.camera_fov_base(wide) ?
+    calculate_exposure_value(&camera.buf, ae_xywh, 2, 2) : fov_meter.grey;
+  const float metered_grey = fov_meter.assisted_grey(fov_active && (context.camera_assisted(wide) || context.camera_lane(wide)), now, base_grey);
   const float grey = fov_active ? metered_grey :
     calculate_exposure_value(&camera.buf, ae_xywh, 2, camera.cc.stream_type != VISION_STREAM_DRIVER ? 2 : 4);
   set_camera_exposure(grey);

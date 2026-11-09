@@ -461,6 +461,32 @@ The bounded correction is smoothed rather than probing with a sudden exposure ch
 To retry an assist lockout, turn that lens's assist OFF for one second, then ON again.
 See the [implementation and PC validation record](../../pv5_exposure_assist_20261109.md).
 
+**Narrow/Wide Lane-Following Metering** (`Pv5RoadLaneExposure`, `Pv5WideLaneExposure`)
+are independent default-OFF experiments. They project fresh existing model lane boundaries
+into the actual model coordinates and add luminance weight inside them. Model input FOV
+and crop do not move, and no additional inference is run.
+
+Base priority is per camera; lower options are never silently switched off or overwritten:
+
+| Saved settings for this lens | Base metering | With lane-following ON |
+|---|---|---|
+| Road/contrast assist ON | Road/contrast-assisted FOV | Adds lane weight to this base |
+| Assist OFF, FOV metering selected | Uniform FOV | Adds lane weight to this base |
+| Neither selected | Original stock ROI | Applies a bounded lane-derived bias to stock metering |
+
+Only fresh, geometrically valid, high-confidence lane pairs qualify. Weak/stale lanes or
+an active lane change fade added weights out over about one second, restoring the selected
+base. Valid lanes must qualify for 0.5 seconds before smoothly returning. Explicit OFF
+clears the extra weights. Effective method changes may repeat the existing two-second
+qualification without resetting the other lens. Common geometry/calibration faults take
+priority and immediately select stock metering; repeated-fallback latching is retained.
+The lane-derived bias is bounded to +/-0.125 stops relative to the base, and the total
+auxiliary bias to +/-0.375 stops, with smoothing and slew limits. These do not guarantee
+physical shutter/gain bounds. Small CPU work and a model subscription are added only for
+lane metering. Perception improvement and unchanged device inference latency are unverified.
+Area Preview is independent of metering selection. See the [implementation and validation
+record](../../pv5_lane_exposure_20261109.md).
+
 Initial entry and recovery require two continuous seconds of valid metering. Invalid input
 immediately selects stock metering. Three actual fallbacks within a rolling 30 seconds keep
 that camera on stock metering. To retry, exclude that camera for one second then select it again, or reboot.

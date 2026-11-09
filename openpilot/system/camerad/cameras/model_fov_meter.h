@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "lane_exposure.h"
+
 // Stable diagnostic codes for FrameData.pv5ExposureFovStatus. Never a control input.
 enum class ModelFovStatus : uint8_t {
   UNKNOWN = 0, DISABLED = 1, ACTIVE = 2, WARMING = 3, INPUT_UNAVAILABLE = 4,
@@ -19,16 +21,20 @@ enum class ModelFovStatus : uint8_t {
 
 struct ModelFovSnapshot {
   bool ready = false;
-  int selection = 0, mode = 0, assist_mode = 0;  // assist bits: road=1, wide=2
+  int selection = 0, mode = 0, assist_mode = 0, lane_mode = 0;  // bits: road=1, wide=2
   uint64_t generation = 0, valid_until = 0;
   std::array<uint64_t, 2> sessions = {};  // road, wide; unrelated option edges cannot rearm the other camera.
   std::array<double, 3> rpy = {};
+  std::array<ExposureLaneCorridor, 2> lanes = {};
   ModelFovStatus status = ModelFovStatus::WORKER_UNAVAILABLE;
 
   // Preserve the original persisted 0/OFF and 1/both-ON values.
   static bool includes_camera(int choice, bool wide) { return choice == 1 || choice == (wide ? 3 : 2); }
   bool camera_assisted(bool wide) const { return assist_mode & (wide ? 2 : 1); }
-  int camera_method(bool wide) const { return camera_assisted(wide) ? 2 : includes_camera(mode, wide) ? 1 : 0; }
+  bool camera_lane(bool wide) const { return lane_mode & (wide ? 2 : 1); }
+  bool camera_fov_base(bool wide) const { return camera_assisted(wide) || includes_camera(mode, wide); }
+  int camera_signature(bool wide) const { return (camera_lane(wide) ? 4 : 0) | (camera_assisted(wide) ? 2 : includes_camera(mode, wide) ? 1 : 0); }
+  int camera_method(bool wide) const { return camera_lane(wide) ? 3 : camera_assisted(wide) ? 2 : includes_camera(mode, wide) ? 1 : 0; }
   bool camera_enabled(bool wide) const { return camera_method(wide) != 0; }
 };
 
@@ -46,6 +52,15 @@ public:
     selection.store(value.selection);
     mode.store(value.mode);
     assist_mode.store(value.assist_mode);
+    lane_mode.store(value.lane_mode);
+    if (value.lane_mode) for (int lens = 0; lens < 2; ++lens) {
+      lane_valid[lens].store(value.lanes[lens].valid);
+      lane_until[lens].store(value.lanes[lens].valid_until);
+      for (int row = 0; row < 36; ++row) {
+        lane_left[lens][row].store(value.lanes[lens].left[row]);
+        lane_right[lens][row].store(value.lanes[lens].right[row]);
+      }
+    }
     status.store(static_cast<int>(value.status));
     generation.store(value.generation);
     valid_until.store(value.valid_until);
@@ -61,6 +76,15 @@ public:
     next.selection = selection.load();
     next.mode = mode.load();
     next.assist_mode = assist_mode.load();
+    next.lane_mode = lane_mode.load();
+    if (next.lane_mode) for (int lens = 0; lens < 2; ++lens) {
+      next.lanes[lens].valid = lane_valid[lens].load();
+      next.lanes[lens].valid_until = lane_until[lens].load();
+      for (int row = 0; row < 36; ++row) {
+        next.lanes[lens].left[row] = lane_left[lens][row].load();
+        next.lanes[lens].right[row] = lane_right[lens][row].load();
+      }
+    }
     next.status = static_cast<ModelFovStatus>(status.load());
     next.generation = generation.load();
     next.valid_until = valid_until.load();
@@ -71,11 +95,14 @@ public:
     return true;
   }
 private:
-  static_assert(std::atomic<double>::is_always_lock_free && std::atomic<uint64_t>::is_always_lock_free);
+  static_assert(std::atomic<double>::is_always_lock_free && std::atomic<uint64_t>::is_always_lock_free && std::atomic<float>::is_always_lock_free);
   std::atomic<uint64_t> version{0}, generation{0}, valid_until{0};
   std::array<std::atomic<uint64_t>, 2> sessions{};
   std::atomic<bool> ready{false};
-  std::atomic<int> selection{0}, mode{0}, assist_mode{0};
+  std::atomic<int> selection{0}, mode{0}, assist_mode{0}, lane_mode{0};
+  std::array<std::atomic<bool>, 2> lane_valid{};
+  std::array<std::atomic<uint64_t>, 2> lane_until{};
+  std::array<std::array<std::atomic<float>, 36>, 2> lane_left{}, lane_right{};
   std::atomic<int> status{static_cast<int>(ModelFovStatus::WORKER_UNAVAILABLE)};
   std::array<std::atomic<double>, 3> rpy{};
 };
@@ -192,6 +219,7 @@ public:
       if (!project(511.0 * (col + 0.5) / COLS, 255.0 * (row + 0.5) / ROWS, x, y)) return false;
       if (x >= 0 && x < width && y >= 0 && y < height) {
         offsets[count] = static_cast<int>(y) * stride + static_cast<int>(x);
+        cells[count] = row * COLS + col;
         // Fixed model-space prior, not a claim that a pixel is road/vehicle.
         // Every sample retains weight; peripheral objects are never excluded.
         const bool below_horizon = 255.0 * (row + 0.5) / ROWS >= center_y;
@@ -205,26 +233,39 @@ public:
     return valid;
   }
 
-  bool measure(const uint8_t *pixels, size_t bytes, bool assisted = false) {
+  bool measure(const uint8_t *pixels, size_t bytes, bool assisted = false,
+               const ExposureLaneCorridor *lane = nullptr, uint64_t now = 0) {
     desired_bias = 0;
+    lane_weights.update(lane, now);
+    const bool lane_active = lane && lane_weights.active();
     status = ModelFovStatus::INVALID_BUFFER;
     if (!valid || pixels == nullptr || bytes < minimum_bytes) return false;
     std::array<uint32_t, 256> histogram = {};
     std::array<uint32_t, 256> weighted = {};
+    std::array<uint32_t, 256> lane_histogram = {};
     std::array<int, 9> region_count = {}, region_black = {}, region_white = {};
     int total_weight = 0;
+    int lane_weight = 0, lane_extra_weight = 0;
     int black = 0, white = 0;
     for (int i = 0; i < count; ++i) {
       const uint8_t value = pixels[offsets[i]];
       ++histogram[value];
       black += value <= 5;
       white += value >= 250;
-      if (assisted) {
-        weighted[value] += weights[i];
-        total_weight += weights[i];
+      if (assisted || lane_active) {
+        const int weight = assisted ? weights[i] : 1;
+        weighted[value] += weight;
+        total_weight += weight;
         ++region_count[regions[i]];
         region_black[regions[i]] += value <= 5;
         region_white[regions[i]] += value >= 250;
+      }
+      if (lane_active) {
+        const int extra = lane_weights.extra(cells[i]);
+        lane_extra_weight += extra;
+        const int weight = (assisted ? weights[i] : 1) * 16 + extra;
+        lane_histogram[value] += weight;
+        lane_weight += weight;
       }
     }
     int median = 255, accumulated = 0;
@@ -236,11 +277,14 @@ public:
     black_fraction = static_cast<float>(black) / count;
     white_fraction = static_cast<float>(white) / count;
     const bool measured = grey > 0 && std::isfinite(grey);
-    if (measured && assisted) {
-      int weighted_median = 255, mass = 0;
+    int weighted_median = median;
+    float highlight_cap = 1;
+    if (measured && (assisted || lane_active)) {
+      weighted_median = 255;
+      int mass = 0;
       for (; weighted_median > 0; --weighted_median) {
         mass += weighted[weighted_median];
-        if (mass >= (total_weight + 1) / 2) break;
+        if (mass >= (assisted ? (total_weight + 1) / 2 : count / 2)) break;
       }
       // Bound the extra metering bias relative to the unchanged uniform FOV
       // median. These are metering bounds, not a physical shutter/gain guarantee.
@@ -254,31 +298,50 @@ public:
       const float road_bias = std::clamp(std::log2(float(median) / std::max(weighted_median, 1)), -0.25f, 0.25f);
       const float highlight_bias = 0.125f * std::clamp((highlight - 0.10f) / 0.30f, 0.0f, 1.0f);
       const float shadow_bias = highlight <= 0.10f ? 0.125f * std::clamp((shadow - 0.25f) / 0.50f, 0.0f, 1.0f) : 0;
-      desired_bias = std::clamp(road_bias + shadow_bias - highlight_bias, -0.375f, 0.375f);
-      if (highlight > 0.10f) desired_bias = std::min(desired_bias, -highlight_bias);
+      if (assisted) {
+        desired_bias = std::clamp(road_bias + shadow_bias - highlight_bias, -0.375f, 0.375f);
+        if (highlight > 0.10f) desired_bias = std::min(desired_bias, -highlight_bias);
+      }
+      if (lane_extra_weight && highlight > 0.10f) highlight_cap = 0;
+    }
+    if (measured && lane_extra_weight) {
+      int lane_median = 255, mass = 0;
+      for (; lane_median > 0; --lane_median) {
+        mass += lane_histogram[lane_median];
+        if (mass >= (lane_weight + 1) / 2) break;
+      }
+      const float extra = std::min(std::clamp(std::log2(float(weighted_median) / std::max(lane_median, 1)), -.125f, .125f), highlight_cap);
+      // Suppress additional brightening in clipped scenes without replacing
+      // the user's selected base or exceeding the lane-only bias bound.
+      desired_bias = std::clamp(desired_bias + extra, -.375f, .375f);
     }
     status = measured ? ModelFovStatus::ACTIVE : ModelFovStatus::INVALID_BRIGHTNESS;
     return measured;
   }
 
-  float assisted_grey(bool active, uint64_t now) {
+  float assisted_grey(bool active, uint64_t now, float base_grey = -1) {
+    const float base = base_grey >= 0 ? base_grey : grey;
     if (!active || !last_assisted || now <= last_assisted || now - last_assisted > 250000000ULL) {
       bias = 0;
       last_assisted = active ? now : 0;
-      return grey;
+      return base;
     }
     const float dt = std::min(float(now - last_assisted) * 1e-9f, 0.1f);
     last_assisted = now;
     bias += std::clamp((desired_bias - bias) * dt / (0.5f + dt), -0.4f * dt, 0.4f * dt);
-    return std::min(grey * std::exp2(-bias), 1.0f);
+    return std::min(base * std::exp2(-bias), 1.0f);
   }
+
+  const ExposureLaneWeights &lane_state() const { return lane_weights; }
 
 private:
   bool valid = false;
   int count = 0;
   size_t minimum_bytes = 0;
   std::array<uint32_t, SAMPLES> offsets = {};
+  std::array<uint16_t, SAMPLES> cells = {};
   std::array<uint8_t, SAMPLES> weights = {}, regions = {};
   float desired_bias = 0, bias = 0;
   uint64_t last_assisted = 0;
+  ExposureLaneWeights lane_weights;
 };

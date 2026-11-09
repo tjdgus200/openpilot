@@ -1,5 +1,22 @@
 # Repository memory
 
+- 2026-11-09 lane-following metering: preserve independent default-OFF
+  Pv5RoadLaneExposure/Pv5WideLaneExposure in PV5 Camera & Exposure, C3/C3X only.
+  Additional model-space lane weights do not move model FOV, crop or tensors.
+  Base priority per lens: enabled static road/contrast assist, selected uniform
+  FOV, else original stock ROI. Never overwrite lower saved options. Lane loss
+  fades added weights to the chosen base; option OFF clears them. Source EOF
+  and publication TTL, lane probability/std/shape/change gates, 0.5s qualification,
+  64px/s edge slew and 1/s weight ramp/fade are mandatory. Keep +/-0.125-stop
+  lane bias, +/-0.375 total, original smoothing, common stock fallback/2s recovery
+  and repeated-error latch. Optional model IPC/projection stays in nice10 worker
+  at100ms only while lane options ON; camera owner does not wait. No extra NN,
+  radar input, control or model contract changes. Other cars/driver stay stock.
+  Require 4096 settings transitions, coherent mailbox, native frame/fault/parity
+  tests, actual camerad compilation and full permanent checklist. Actual paired
+  public recording replay demonstrates weights only, not sensor feedback, new
+  NN results or physical C3X/Orin latency. See docs/pv5_lane_exposure_20261109.md.
+
 - 2026-11-09 owner-authorized road/contrast exposure assist: preserve default-OFF
   Pv5RoadExposureAssist and Pv5WideExposureAssist in PV5 > Camera & Exposure.
   Each lens independently combines cached road-weighted FOV metering and regional
