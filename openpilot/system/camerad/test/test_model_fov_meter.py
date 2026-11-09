@@ -28,7 +28,7 @@ extern "C" int mailbox_check() {
       ModelFovSnapshot value;
       value.ready = i % 2; value.selection = i % 5;
       value.generation = i; value.valid_until = i + 1; value.sessions = {i * 7, i * 9}; value.mode = i % 4;
-      value.status = static_cast<ModelFovStatus>(i % 22);
+      value.status = static_cast<ModelFovStatus>(i % 22); value.assist_mode = (i / 4) % 4;
       value.rpy = {double(i), double(i * 2), double(i * 3)};
       mailbox.publish(value);
     }
@@ -41,7 +41,7 @@ extern "C" int mailbox_check() {
       const auto i = value.generation;
       good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 &&
               value.sessions[0] == i * 7 && value.sessions[1] == i * 9 && value.mode == int(i % 4) &&
-              static_cast<int>(value.status) == int(i % 22) &&
+              static_cast<int>(value.status) == int(i % 22) && value.assist_mode == int((i / 4) % 4) &&
               value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3;
     }
   } while (!done.load());
@@ -65,6 +65,16 @@ extern "C" void stability(const uint64_t *times, const uint64_t *sessions, const
   for (size_t i = 0; i < count; ++i) {
     guard.set_session(sessions[i]);
     output[i] = guard.use_fov(valid[i], times[i]) | (guard.locked() << 1);
+  }
+}
+extern "C" void assist(bool wide, int selection, const uint8_t *pixels, size_t bytes,
+                      const uint64_t *times, const uint8_t *active, size_t count, float *output) {
+  ModelFovMeter meter;
+  meter.configure(1928, 1208, wide, {}, selection, 2048);
+  for (size_t i = 0; i < count; ++i) {
+    const bool valid = meter.measure(pixels, bytes, true);
+    output[i * 2] = meter.grey;
+    output[i * 2 + 1] = valid ? meter.assisted_grey(active[i], times[i]) : -1;
   }
 }
 ''', encoding='utf-8')
@@ -95,6 +105,19 @@ extern "C" void stability(const uint64_t *times, const uint64_t *sessions, const
     module.stability(times.ctypes.data, sessions.ctypes.data, valid.ctypes.data, len(events), output.ctypes.data)
     return output
   call.stability = stability
+  module.assist.argtypes = [ctypes.c_bool, ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t,
+                           ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p]
+  module.assist.restype = None
+
+  def assist(image, wide=True, selection=0, times=None, active=None, size=None):
+    times = np.array(times if times is not None else np.arange(1., 11., .05), dtype=float)
+    stamps = np.rint(times * 1e9).astype(np.uint64)
+    active = np.array(active if active is not None else np.ones(len(times)), dtype=np.uint8)
+    output = np.zeros((len(times), 2), dtype=np.float32)
+    module.assist(wide, selection, image.ctypes.data, image.nbytes if size is None else size,
+                  stamps.ctypes.data, active.ctypes.data, len(times), output.ctypes.data)
+    return output
+  call.assist = assist
   return call
 
 
@@ -163,6 +186,74 @@ def test_real_nv12_row_padding_is_not_sampled_as_image(native):
   np.testing.assert_equal(output[8:], native(image=logical)[1][8:])
   assert native(image=padded, size=1928 * 1208)[0] == -1
   assert native(stride=1)[0] == 0
+
+
+def assisted_scene(wide, selection, kind):
+  """Synthetic luminance at independently projected model samples, padded NV12 Y."""
+  row, col = np.indices((36, 64))
+  u, v = 511 * (col + .5) / 64, 255 * (row + .5) / 36
+  values = np.full((36, 64), 100, dtype=np.uint8)
+  if kind == 'dark_road':
+    values[row < 19] = 180
+    values[row >= 19] = 30
+  elif kind == 'black_sky':
+    values[row < 12] = 0
+  elif kind == 'road_shadow':
+    values[(row >= 24) & (col < 22)] = 0
+  elif kind == 'glare':
+    values[(row < 12) & (col >= 22) & (col < 43)] = 255
+    values[(row >= 24) & (col < 22)] = 0
+  elif kind == 'white':
+    values.fill(255)
+  elif kind == 'black':
+    values.fill(0)
+  source = warp_points(wide, (0., 0., 0.), selection, np.column_stack((u.ravel(), v.ravel()))).astype(int)
+  assert ((source >= 0) & (source < [1928, 1208])).all()
+  assert len(np.unique(source, axis=0)) == 2304
+  image = np.full((1208, 2048), 233, dtype=np.uint8)
+  image[source[:, 1], source[:, 0]] = values.ravel()
+  return image
+
+
+@pytest.mark.parametrize('wide', [False, True])
+@pytest.mark.parametrize('selection', range(5))
+@pytest.mark.parametrize('kind,expected_bias', [
+  ('uniform', 0.), ('dark_road', .25), ('black_sky', 0.),
+  ('road_shadow', .125), ('glare', -.125), ('white', None),
+])
+def test_assist_scene_response_is_bounded_smooth_and_directional(native, wide, selection, kind, expected_bias):
+  image = assisted_scene(wide, selection, kind)
+  output = native.assist(image, wide, selection)
+  assert np.isfinite(output).all() and ((output > 0) & (output <= 1)).all()
+  # Uniform metering remains unchanged; corrected grey is only the AE input.
+  baseline = native(wide, selection=selection, image=image)[1][8]
+  np.testing.assert_array_equal(output[:, 0], np.full(len(output), baseline))
+  assert output[0, 1] == baseline  # No entry step.
+  bias = np.log2(output[:, 0] / output[:, 1])
+  assert np.max(np.abs(bias)) <= .375001
+  assert np.max(np.abs(np.diff(bias))) <= .020001  # 0.4 EV/s at 20 Hz.
+  if expected_bias is not None:
+    assert bias[-1] == pytest.approx(expected_bias, abs=.001)
+  else:
+    assert output[-1, 1] == 1.  # White frame never produces invalid grey > 1.
+
+
+def test_assist_resets_on_disable_gap_and_backward_clock(native):
+  image = assisted_scene(True, 4, 'dark_road')
+  times = [1., 1.05, 1.10, 1.15, 1.20, 2., 2.05, 1.9, 1.95]
+  active = [1, 1, 0, 1, 1, 1, 1, 1, 1]
+  output = native.assist(image, selection=4, times=times, active=active)
+  for i in [0, 2, 3, 5, 7]:
+    assert output[i, 1] == output[i, 0]
+  for i in [1, 4, 6, 8]:
+    assert output[i, 1] < output[i, 0]
+
+
+def test_assisted_invalid_buffers_and_black_frames_are_rejected(native):
+  image = assisted_scene(True, 0, 'black')
+  assert (native.assist(image)[:, 1] == -1).all()
+  image.fill(100)
+  assert (native.assist(image, size=1928 * 1208)[:, 1] == -1).all()
 
 
 def test_latest_snapshot_cannot_mix_calibration_or_fov_generations(native):
@@ -266,7 +357,7 @@ def test_camera_owner_keeps_ipc_and_disk_reads_out_of_frame_delivery():
   assert 'params.get' not in delivery and 'sm->update' not in delivery
   assert 'fov_worker.latest()' in frame_loop and 'context.update(' not in frame_loop
   assert 'SCHED_OTHER' in source and 'setpriority(PRIO_PROCESS, 0, 10)' in source
-  assert 'fov_active ? fov_meter.grey :' in delivery and 'calculate_exposure_value(' in delivery
+  assert 'fov_active ? metered_grey :' in delivery and 'calculate_exposure_value(' in delivery
   assert 'now < context.valid_until' in delivery and '!fov_stability.locked()' in delivery
   assert 'fov_stability.set_session(context.sessions[wide])' in delivery
   assert 'context.camera_enabled(wide)' in delivery
@@ -283,8 +374,12 @@ def test_default_off_and_camera_menu_keep_display_separate_from_metering():
   assert all(len(options) == 4 for options in metering['options'].values())
   category = next(c for c in settings['menu'] if c['id'] == 'PV5')
   camera = next(g for g in category['groups'] if g['id'] == 'PV5_CAMERA')
-  assert camera['groups'][0]['params'] == ['Pv5WideModelFov', 'Pv5ModelFovExposure']
+  assert camera['groups'][0]['params'] == ['Pv5WideModelFov', 'Pv5ModelFovExposure', 'Pv5RoadExposureAssist', 'Pv5WideExposureAssist']
   assert camera['groups'][1]['params'] == ['Pv5CameraFovPreview', 'Pv5FovPreviewPitch']
+  keys = (ROOT / 'common/params_keys.h').read_text(encoding='utf-8')
+  for key in ('Pv5RoadExposureAssist', 'Pv5WideExposureAssist'):
+    assert params[key]['default'] == 0 and params[key]['control'] == 'toggle'
+    assert key in keys
 
 
 def test_actual_frame_selection_exits_on_fault_and_latches_repeated_fallbacks(tmp_path):
@@ -337,14 +432,14 @@ int main() {
   std::vector<uint8_t> pixels(1928 * 1208, 128);
   // Actual frame selection for all four choices and all three capture streams.
   // Driver exposure always remains stock, including legacy mode1/both.
-  for (int mode = 0; mode < 4; ++mode) for (int stream = 0; stream < 3; ++stream) {
+  for (int assist = 0; assist < 4; ++assist) for (int mode = 0; mode < 4; ++mode) for (int stream = 0; stream < 3; ++stream) {
     Sensor sensor;
     Yuv yuv{pixels.data(), pixels.size(), 1928};
     Capture capture{{{stream}, &sensor, {1928, 1208, &yuv}}};
     ModelFovSnapshot context;
-    context.ready = mode != 0; context.mode = mode; context.sessions = {1, 1};
-    context.status = mode ? ModelFovStatus::ACTIVE : ModelFovStatus::DISABLED;
-    const bool selected = stream < 2 && (mode == 1 || mode == (stream == 1 ? 3 : 2));
+    context.ready = mode != 0 || assist != 0; context.mode = mode; context.assist_mode = assist; context.sessions = {1, 1};
+    context.status = context.ready ? ModelFovStatus::ACTIVE : ModelFovStatus::DISABLED;
+    const bool selected = stream < 2 && context.camera_enabled(stream == 1);
     clock_now = 0;
     for (int i = 0; i <= 50; ++i) {
       context.valid_until = clock_now + 1000000000ULL;
@@ -361,12 +456,12 @@ int main() {
   const ModelFovStatus fault_status[] = {ModelFovStatus::INPUT_UNAVAILABLE, ModelFovStatus::INPUT_EXPIRED,
     ModelFovStatus::INVALID_BUFFER, ModelFovStatus::INVALID_BUFFER, ModelFovStatus::UNSUPPORTED,
     ModelFovStatus::CALIBRATION_INVALID, ModelFovStatus::INVALID_BRIGHTNESS, ModelFovStatus::REGION_CLIPPED};
-  for (int fault = 0; fault < 8; ++fault) {
+  for (int assist = 0; assist < 2; ++assist) for (int fault = 0; fault < 8; ++fault) {
     Sensor sensor;
     Yuv yuv{pixels.data(), pixels.size(), 1928};
     Capture capture{{{}, &sensor, {1928, 1208, &yuv}}};
     ModelFovSnapshot context;
-    context.ready = true; context.mode = 1; context.sessions = {1, 1};
+    context.ready = true; context.mode = 1; context.assist_mode = assist ? 3 : 0; context.sessions = {1, 1};
     context.status = ModelFovStatus::ACTIVE;
     clock_now = 10000000000ULL;
     auto step = [&](bool want_fov, bool refresh = true) {
@@ -527,14 +622,16 @@ struct SubMaster {
 '''
   scenarios = r'''
 int main() {
-  for (int scenario = 0; scenario < 20; ++scenario) {
+  for (int assist = 0; assist < 2; ++assist) for (int scenario = 0; scenario < 20; ++scenario) {
     clock_now = 10000000000ULL; cal_time = dev_time = clock_now;
     values = {{"Pv5ModelFovExposure", "1"}, {"UseWideCamera", "1"}, {"Pv5WideModelFov", "4"},
               {"CameraYawTrimDeg", "0"}, {"CarParams", "12345678"}};
     not_car = false; pv5 = true; messages_valid = true; env_ctrl_exp_from_params = false; new_calibration = true;
     angles = {0, 0, 0}; device = cereal::InitData::DeviceType::TIZI;
     calibrated = cereal::LiveCalibrationData::Status::CALIBRATED;
+    if (assist) { values["Pv5ModelFovExposure"] = "0"; values["Pv5RoadExposureAssist"] = "1"; values["Pv5WideExposureAssist"] = "1"; }
     ModelFovContext context;
+    if (scenario == 1) { values["Pv5RoadExposureAssist"] = "0"; values["Pv5WideExposureAssist"] = "0"; }
     if (scenario == 1) values["Pv5ModelFovExposure"] = "0";
     if (scenario == 2) values["UseWideCamera"] = "0";
     if (scenario == 3) pv5 = false;
@@ -561,7 +658,7 @@ int main() {
     if (scenario == 0 || scenario >= 16) {
       assert(context.ready && context.selection == 4);
       if (scenario == 16) {
-        values["Pv5ModelFovExposure"] = "0"; clock_now += 250000000ULL;
+        values["Pv5ModelFovExposure"] = "0"; values["Pv5RoadExposureAssist"] = "0"; values["Pv5WideExposureAssist"] = "0"; clock_now += 250000000ULL;
         context.update(true); assert(!context.ready && context.status == ModelFovStatus::DISABLED);
       } else if (scenario == 17) {
         clock_now += 1100000000ULL; context.update(true); assert(!context.ready && context.status == ModelFovStatus::CALIBRATION_EXPIRED);
@@ -614,6 +711,25 @@ int main() {
       assert(pair.sessions[lens] == uint64_t(selected[before][lens]) + (selected[before][lens] != selected[after][lens]));
     }
   }
+  // All 256 effective method transitions, with independent per-lens rearm.
+  for (int before = 0; before < 16; ++before) for (int after = 0; after < 16; ++after) {
+    auto select = [&](int setting) {
+      values["Pv5ModelFovExposure"] = std::to_string(setting % 4);
+      values["Pv5RoadExposureAssist"] = setting & 4 ? "1" : "0";
+      values["Pv5WideExposureAssist"] = setting & 8 ? "1" : "0";
+      clock_now += 250000000ULL; cal_time = dev_time = clock_now;
+    };
+    select(before); ModelFovContext pair; pair.update(true);
+    const auto sessions = pair.sessions;
+    const int methods[] = {pair.camera_method(false), pair.camera_method(true)};
+    select(after); pair.update(true);
+    for (int lens = 0; lens < 2; ++lens) {
+      const int expected = (after & (lens ? 8 : 4)) ? 2 : selected[after % 4][lens] ? 1 : 0;
+      assert(pair.camera_method(lens) == expected);
+      assert(pair.sessions[lens] == sessions[lens] + (expected != methods[lens]));
+    }
+  }
+  values["Pv5RoadExposureAssist"] = "0"; values["Pv5WideExposureAssist"] = "0";
   for (auto invalid : {"", "-1", "4", "11", "true", "nan"}) {
     values["Pv5ModelFovExposure"] = invalid;
     ModelFovContext invalid_context;

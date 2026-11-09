@@ -449,6 +449,18 @@ configurations, excessive clipping and invalid brightness fall back to stock met
 `STOCK` labels stock metering; `FOV` labels the model-region metering actually used.
 Night perception benefits and physical-device latency are unverified.
 
+**Narrow road/contrast exposure assist** (`Pv5RoadExposureAssist`) and **Wide road/contrast
+exposure assist** (`Pv5WideExposureAssist`) are separate, default-OFF experiments in the
+same model input/exposure group. Each combines road-weighted model-region metering with
+bounded regional shadow/highlight feedback, reusing existing samples. ON overrides the
+selected lens to assisted FOV metering; OFF returns that lens to the selection above.
+The other lens is unchanged. These options apply only to the supported PV5 C3/C3X setup,
+retain the qualification/fallback rules below and add no model inference. Exposure can
+change model predictions; neither better recognition nor unchanged device timing is proven.
+The bounded correction is smoothed rather than probing with a sudden exposure change.
+To retry an assist lockout, turn that lens's assist OFF for one second, then ON again.
+See the [implementation and PC validation record](../../pv5_exposure_assist_20261109.md).
+
 Initial entry and recovery require two continuous seconds of valid metering. Invalid input
 immediately selects stock metering. Three actual fallbacks within a rolling 30 seconds keep
 that camera on stock metering. To retry, exclude that camera for one second then select it again, or reboot.

@@ -19,7 +19,7 @@ enum class ModelFovStatus : uint8_t {
 
 struct ModelFovSnapshot {
   bool ready = false;
-  int selection = 0, mode = 0;
+  int selection = 0, mode = 0, assist_mode = 0;  // assist bits: road=1, wide=2
   uint64_t generation = 0, valid_until = 0;
   std::array<uint64_t, 2> sessions = {};  // road, wide; unrelated option edges cannot rearm the other camera.
   std::array<double, 3> rpy = {};
@@ -27,7 +27,9 @@ struct ModelFovSnapshot {
 
   // Preserve the original persisted 0/OFF and 1/both-ON values.
   static bool includes_camera(int choice, bool wide) { return choice == 1 || choice == (wide ? 3 : 2); }
-  bool camera_enabled(bool wide) const { return includes_camera(mode, wide); }
+  bool camera_assisted(bool wide) const { return assist_mode & (wide ? 2 : 1); }
+  int camera_method(bool wide) const { return camera_assisted(wide) ? 2 : includes_camera(mode, wide) ? 1 : 0; }
+  bool camera_enabled(bool wide) const { return camera_method(wide) != 0; }
 };
 
 // One writer, one reader. One bounded read attempt, never spin behind the worker.
@@ -43,6 +45,7 @@ public:
     ready.store(value.ready);
     selection.store(value.selection);
     mode.store(value.mode);
+    assist_mode.store(value.assist_mode);
     status.store(static_cast<int>(value.status));
     generation.store(value.generation);
     valid_until.store(value.valid_until);
@@ -57,6 +60,7 @@ public:
     next.ready = ready.load();
     next.selection = selection.load();
     next.mode = mode.load();
+    next.assist_mode = assist_mode.load();
     next.status = static_cast<ModelFovStatus>(status.load());
     next.generation = generation.load();
     next.valid_until = valid_until.load();
@@ -71,7 +75,7 @@ private:
   std::atomic<uint64_t> version{0}, generation{0}, valid_until{0};
   std::array<std::atomic<uint64_t>, 2> sessions{};
   std::atomic<bool> ready{false};
-  std::atomic<int> selection{0}, mode{0};
+  std::atomic<int> selection{0}, mode{0}, assist_mode{0};
   std::atomic<int> status{static_cast<int>(ModelFovStatus::WORKER_UNAVAILABLE)};
   std::array<std::atomic<double>, 3> rpy{};
 };
@@ -186,7 +190,14 @@ public:
     for (int row = 0; row < ROWS; ++row) for (int col = 0; col < COLS; ++col) {
       double x, y;
       if (!project(511.0 * (col + 0.5) / COLS, 255.0 * (row + 0.5) / ROWS, x, y)) return false;
-      if (x >= 0 && x < width && y >= 0 && y < height) offsets[count++] = static_cast<int>(y) * stride + static_cast<int>(x);
+      if (x >= 0 && x < width && y >= 0 && y < height) {
+        offsets[count] = static_cast<int>(y) * stride + static_cast<int>(x);
+        // Fixed model-space prior, not a claim that a pixel is road/vehicle.
+        // Every sample retains weight; peripheral objects are never excluded.
+        const bool below_horizon = 255.0 * (row + 0.5) / ROWS >= center_y;
+        weights[count] = below_horizon ? (col >= COLS / 3 && col < 2 * COLS / 3 ? 3 : 2) : 1;
+        regions[count++] = (row * 3 / ROWS) * 3 + col * 3 / COLS;
+      }
     }
     // Do not meter a small, clipped fragment as though it were the whole input.
     valid = count * 10 >= SAMPLES * 9;
@@ -194,16 +205,27 @@ public:
     return valid;
   }
 
-  bool measure(const uint8_t *pixels, size_t bytes) {
+  bool measure(const uint8_t *pixels, size_t bytes, bool assisted = false) {
+    desired_bias = 0;
     status = ModelFovStatus::INVALID_BUFFER;
     if (!valid || pixels == nullptr || bytes < minimum_bytes) return false;
     std::array<uint32_t, 256> histogram = {};
+    std::array<uint32_t, 256> weighted = {};
+    std::array<int, 9> region_count = {}, region_black = {}, region_white = {};
+    int total_weight = 0;
     int black = 0, white = 0;
     for (int i = 0; i < count; ++i) {
       const uint8_t value = pixels[offsets[i]];
       ++histogram[value];
       black += value <= 5;
       white += value >= 250;
+      if (assisted) {
+        weighted[value] += weights[i];
+        total_weight += weights[i];
+        ++region_count[regions[i]];
+        region_black[regions[i]] += value <= 5;
+        region_white[regions[i]] += value >= 250;
+      }
     }
     int median = 255, accumulated = 0;
     for (; median >= 0; --median) {
@@ -214,8 +236,41 @@ public:
     black_fraction = static_cast<float>(black) / count;
     white_fraction = static_cast<float>(white) / count;
     const bool measured = grey > 0 && std::isfinite(grey);
+    if (measured && assisted) {
+      int weighted_median = 255, mass = 0;
+      for (; weighted_median > 0; --weighted_median) {
+        mass += weighted[weighted_median];
+        if (mass >= (total_weight + 1) / 2) break;
+      }
+      // Bound the extra metering bias relative to the unchanged uniform FOV
+      // median. These are metering bounds, not a physical shutter/gain guarantee.
+      float shadow = 0, highlight = 0;
+      for (int region = 0; region < 9; ++region) {
+        if (region_count[region] < SAMPLES / 18) continue;
+        highlight = std::max(highlight, float(region_white[region]) / region_count[region]);
+        // Bottom model-space regions only: do not brighten for a black sky.
+        if (region >= 6) shadow = std::max(shadow, float(region_black[region]) / region_count[region]);
+      }
+      const float road_bias = std::clamp(std::log2(float(median) / std::max(weighted_median, 1)), -0.25f, 0.25f);
+      const float highlight_bias = 0.125f * std::clamp((highlight - 0.10f) / 0.30f, 0.0f, 1.0f);
+      const float shadow_bias = highlight <= 0.10f ? 0.125f * std::clamp((shadow - 0.25f) / 0.50f, 0.0f, 1.0f) : 0;
+      desired_bias = std::clamp(road_bias + shadow_bias - highlight_bias, -0.375f, 0.375f);
+      if (highlight > 0.10f) desired_bias = std::min(desired_bias, -highlight_bias);
+    }
     status = measured ? ModelFovStatus::ACTIVE : ModelFovStatus::INVALID_BRIGHTNESS;
     return measured;
+  }
+
+  float assisted_grey(bool active, uint64_t now) {
+    if (!active || !last_assisted || now <= last_assisted || now - last_assisted > 250000000ULL) {
+      bias = 0;
+      last_assisted = active ? now : 0;
+      return grey;
+    }
+    const float dt = std::min(float(now - last_assisted) * 1e-9f, 0.1f);
+    last_assisted = now;
+    bias += std::clamp((desired_bias - bias) * dt / (0.5f + dt), -0.4f * dt, 0.4f * dt);
+    return std::min(grey * std::exp2(-bias), 1.0f);
   }
 
 private:
@@ -223,4 +278,7 @@ private:
   int count = 0;
   size_t minimum_bytes = 0;
   std::array<uint32_t, SAMPLES> offsets = {};
+  std::array<uint8_t, SAMPLES> weights = {}, regions = {};
+  float desired_bias = 0, bias = 0;
+  uint64_t last_assisted = 0;
 };

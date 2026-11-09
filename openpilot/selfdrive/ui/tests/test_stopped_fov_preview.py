@@ -23,7 +23,7 @@ def preview():
   exec(compile(tree, str(source), "exec"), namespace)
   car = NS(canValid=True, canTimeout=False, vEgoRaw=0., vEgo=0.)
   settings = {"Pv5WideModelFov": 4, "CameraYawTrimDeg": 0, "Pv5FovPreviewPitch": 0, "UseWideCamera": True,
-              "Pv5CameraFovPreview": False, "Pv5ModelFovExposure": False}
+              "Pv5CameraFovPreview": False, "Pv5ModelFovExposure": False, "Pv5RoadExposureAssist": False, "Pv5WideExposureAssist": False}
   sm = type("Messages", (dict,), {})(carState=car, deviceState=NS(deviceType="mici"),
                                     roadCameraState=NS(sensor="os04c10"),
                                     liveCalibration=NS(calStatus=calibrated, rpyCalib=[0., 0., 0.]))
@@ -156,16 +156,19 @@ def test_active_meter_outline_comes_from_camerad_and_expires_on_lens_switch(prev
 
 @pytest.mark.parametrize('mode', range(4))
 @pytest.mark.parametrize('wide', [False, True])
-def test_meter_waiting_label_matches_the_selected_camera(preview, mode, wide):
+@pytest.mark.parametrize('assist_mask', range(4))
+def test_meter_waiting_label_matches_the_selected_camera(preview, mode, wide, assist_mask):
   viewer, update, _, settings, _ = preview
   settings['Pv5ModelFovExposure'] = mode
+  settings['Pv5RoadExposureAssist'] = bool(assist_mask & 1)
+  settings['Pv5WideExposureAssist'] = bool(assist_mask & 2)
   sm = viewer._test_state.sm
   name = 'wideRoadCameraState' if wide else 'roadCameraState'
   sm[name] = NS(sensor='os04c10', measuredGreyFraction=.2, targetGreyFraction=.1, gain=2., pv5ExposureFovActive=False)
   sm.valid[name] = sm.alive[name] = True
   sm.recv_time[name] = 10.
   update(10., road=not wide, wide=wide)
-  selected = mode == 1 or mode == (3 if wide else 2)
+  selected = bool(assist_mask & (2 if wide else 1)) or mode == 1 or mode == (3 if wide else 2)
   assert ('waiting/fallback' in viewer._exposure_text) is selected
   assert viewer.active and viewer.wide is wide
 

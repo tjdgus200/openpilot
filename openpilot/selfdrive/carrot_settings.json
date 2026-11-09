@@ -674,7 +674,7 @@
               "ko": "모델 입력·노출",
               "en": "Model Input & Exposure",
               "zh": "模型输入与曝光",
-              "params": ["Pv5WideModelFov", "Pv5ModelFovExposure"]
+              "params": ["Pv5WideModelFov", "Pv5ModelFovExposure", "Pv5RoadExposureAssist", "Pv5WideExposureAssist"]
             },
             {
               "id": "PV5_CAMERA_PREVIEW",
@@ -729,6 +729,42 @@
         "en": ["Off (stock auto exposure)", "Narrow + wide", "Narrow only", "Wide only"],
         "zh": ["关闭（原自动曝光）", "窄角 + 广角", "仅窄角", "仅广角"]
       }
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5RoadExposureAssist",
+      "title": "일반각 도로·명암 보조 노출 (실험)",
+      "descr": "PV5 C3/C3X 일반각 전용, 기본 끔. 켜면 모델 FOV의 기존 2,304개 밝기 표본으로 도로 방향에 가중치를 주고 영역별 암부·밝은 부분 포화를 함께 고려합니다. 보조 측광 변화는 제한·완화하며 추가 추론은 없습니다. 이 카메라의 FOV 측광을 자동 사용하고, 끄면 위의 FOV 자동 노출 선택으로 돌아갑니다. 정상 2초 확인과 이상 시 기존 측광 복귀를 유지합니다. 다른 카메라에는 적용하지 않습니다. 노출이 달라져 인식·주행도 달라질 수 있으며 실차 효과는 미검증입니다.",
+      "egroup": "PV5",
+      "etitle": "Narrow Road & Contrast Exposure Assist (Experimental)",
+      "edescr": "PV5 C3/C3X narrow camera only, default off. Reuses 2,304 model-FOV luminance samples for road-biased metering and regional shadow/highlight clipping protection. The auxiliary metering bias is bounded and smoothed; no additional inference. On overrides this camera to assisted FOV metering; off returns to the FOV exposure selection above. Retains two-second qualification and stock fallback. Does not change the other camera. Exposure changes can affect perception and driving; vehicle effects are unvalidated.",
+      "cgroup": "PV5",
+      "ctitle": "窄角道路与明暗辅助曝光（实验）",
+      "cdescr": "仅用于 PV5 C3/C3X 窄角相机，默认关闭。复用模型视野的 2304 个亮度样本，进行道路加权和区域暗部、高光保护。辅助测光偏置有限幅和平滑，不增加推理。开启时覆盖此相机的 FOV 测光选择，关闭后恢复上方选择。保留两秒确认及异常回退，不影响另一相机。曝光会影响感知及驾驶，实车效果尚未验证。",
+      "control": "toggle",
+      "risk": "high",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5WideExposureAssist",
+      "title": "광각 도로·명암 보조 노출 (실험)",
+      "descr": "PV5 C3/C3X 광각 전용, 기본 끔. 켜면 모델 FOV의 기존 2,304개 밝기 표본으로 도로 방향에 가중치를 주고 영역별 암부·밝은 부분 포화를 함께 고려합니다. 보조 측광 변화는 제한·완화하며 추가 추론은 없습니다. 이 카메라의 FOV 측광을 자동 사용하고, 끄면 위의 FOV 자동 노출 선택으로 돌아갑니다. 정상 2초 확인과 이상 시 기존 측광 복귀를 유지합니다. 다른 카메라에는 적용하지 않습니다. 노출이 달라져 인식·주행도 달라질 수 있으며 실차 효과는 미검증입니다.",
+      "egroup": "PV5",
+      "etitle": "Wide Road & Contrast Exposure Assist (Experimental)",
+      "edescr": "PV5 C3/C3X wide camera only, default off. Reuses 2,304 model-FOV luminance samples for road-biased metering and regional shadow/highlight clipping protection. The auxiliary metering bias is bounded and smoothed; no additional inference. On overrides this camera to assisted FOV metering; off returns to the FOV exposure selection above. Retains two-second qualification and stock fallback. Does not change the other camera. Exposure changes can affect perception and driving; vehicle effects are unvalidated.",
+      "cgroup": "PV5",
+      "ctitle": "广角道路与明暗辅助曝光（实验）",
+      "cdescr": "仅用于 PV5 C3/C3X 广角相机，默认关闭。复用模型视野的 2304 个亮度样本，进行道路加权和区域暗部、高光保护。辅助测光偏置有限幅和平滑，不增加推理。开启时覆盖此相机的 FOV 测光选择，关闭后恢复上方选择。保留两秒确认及异常回退，不影响另一相机。曝光会影响感知及驾驶，实车效果尚未验证。",
+      "control": "toggle",
+      "risk": "high",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
     },
     {
       "group": "PV5",

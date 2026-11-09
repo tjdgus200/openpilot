@@ -42,6 +42,7 @@ class StoppedFovPreview:
     self._exposure_camera = None
     self._always_preview = False
     self._fov_exposure = 0
+    self._exposure_assist = (False, False)
     self._meter_polygon = None
 
   def update(self, state, road_available, wide_available):
@@ -61,6 +62,7 @@ class StoppedFovPreview:
       self._wide_enabled = bool(state.params.get("UseWideCamera", return_default=True))
       self._always_preview = state.params.get_bool("Pv5CameraFovPreview")
       self._fov_exposure = state.params.get_int("Pv5ModelFovExposure")
+      self._exposure_assist = (state.params.get_bool("Pv5RoadExposureAssist"), state.params.get_bool("Pv5WideExposureAssist"))
     car = sm["carState"]
     if not (sm.valid["carState"] and sm.alive["carState"] and 0 <= now - sm.recv_time["carState"] <= 0.3
             and car.canValid and not car.canTimeout
@@ -113,7 +115,7 @@ class StoppedFovPreview:
             if np.isfinite([black, white]).all() and 0 <= black <= 1 and 0 <= white <= 1:
               self._exposure_text += f' | FOV | dark {black:.0%} bright {white:.0%}'
         else:
-          requested = self._fov_exposure == 1 or self._fov_exposure == (3 if self.wide else 2)
+          requested = self._exposure_assist[self.wide] or self._fov_exposure == 1 or self._fov_exposure == (3 if self.wide else 2)
           self._exposure_text += ' | STOCK (FOV waiting/fallback)' if requested and not self._exposure_status_text else ' | STOCK'
     fov = (WIDE_MODEL_FOV_CHOICES[self._selection - 1]
            if self.wide and 1 <= self._selection <= len(WIDE_MODEL_FOV_CHOICES) else None)

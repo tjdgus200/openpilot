@@ -1,5 +1,22 @@
 # Repository memory
 
+- 2026-11-09 owner-authorized road/contrast exposure assist: preserve default-OFF
+  Pv5RoadExposureAssist and Pv5WideExposureAssist in PV5 > Camera & Exposure.
+  Each lens independently combines cached road-weighted FOV metering and regional
+  shadow/highlight bias, using the same 2304 samples with no extra inference,
+  image scan/copy or frame-thread settings reads. ON overrides that lens's prior
+  FOV selection; OFF restores it. Keep coherent method/session changes, PV5-only
+  C3/C3X admission, driver/other-car stock behavior, TTL/manual/yaw/coverage
+  checks and 2s qualification/3-in-30s fallback latch. Metering bias is bounded
+  to +/-0.375 stops and slewed/smoothed; this is not a physical exposure bound.
+  Preserve original sensor EV/gain controller, model/control paths and independent
+  preview. This supersedes the earlier recommendation2 deferral only for these
+  opt-in options. Radar-driven exposure and extra inference are not implemented.
+  Require native scene/buffer/timing/toggle tests, actual camerad compilation,
+  offline baseline/OFF/ON cost/parity checks and full PV5 checklist. PC tests
+  cannot establish C3X/Orin latency or perception improvement. See
+  docs/pv5_exposure_assist_20261109.md.
+
 - 2026-11-09 owner scope: apply new behavior only to the owner's KIA_PV5.
   Exclude other-platform-only updates. Shared fixes needed by PV5 must retain
   other vehicles' prior behavior through explicit vehicle admission and tests.
