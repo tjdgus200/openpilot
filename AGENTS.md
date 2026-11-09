@@ -1,21 +1,22 @@
 # Repository memory
 
-- 2026-11-09 lane-following metering: preserve independent default-OFF
-  Pv5RoadLaneExposure/Pv5WideLaneExposure in PV5 Camera & Exposure, C3/C3X only.
-  Additional model-space lane weights do not move model FOV, crop or tensors.
-  Base priority per lens: enabled static road/contrast assist, selected uniform
-  FOV, else original stock ROI. Never overwrite lower saved options. Lane loss
-  fades added weights to the chosen base; option OFF clears them. Source EOF
-  and publication TTL, lane probability/std/shape/change gates, 0.5s qualification,
-  64px/s edge slew and 1/s weight ramp/fade are mandatory. Keep +/-0.125-stop
-  lane bias, +/-0.375 total, original smoothing, common stock fallback/2s recovery
-  and repeated-error latch. Optional model IPC/projection stays in nice10 worker
-  at100ms only while lane options ON; camera owner does not wait. No extra NN,
-  radar input, control or model contract changes. Other cars/driver stay stock.
-  Require 4096 settings transitions, coherent mailbox, native frame/fault/parity
-  tests, actual camerad compilation and full permanent checklist. Actual paired
-  public recording replay demonstrates weights only, not sensor feedback, new
-  NN results or physical C3X/Orin latency. See docs/pv5_lane_exposure_20261109.md.
+- 2026-11-09 owner correction supersedes f70b2b44's lane-interior weighting:
+  Pv5RoadLaneExposure/Pv5WideLaneExposure now translate the WHOLE fixed-size
+  selected metering rectangle horizontally to geometric lane center15/25/35m.
+  No lane-pixel-only extra weights or darkness-based target selection. Keep
+  model FOV/crop/tensors and box width/height/vertical position unchanged.
+  Per-lens base priority remains static assist, selected FOV, else stock ROI;
+  lower saved options are never overwritten. Weak/stale/change inputs return
+  toward the original position at bounded speed. Keep0.5s qualification,
+  original EOF/publication TTLs,64 model-pixel-equivalent shift and slew,
+  image/stride bounds, +/-0.125-stop position delta and +/-0.375 total bias,
+  original smoothing/highlight protection and2s/common-fault stock recovery.
+  PV5 C3/C3X only; no extra NN/control/radar changes or camera-thread waiting.
+  Preview must show the actual shifted rectangle. Require4096 settings
+  transitions, native projection/whole-box/stride/bounds/fallback tests,
+  actual camerad compilation, OFF/static parity and full permanent checks.
+  PC replay does not prove physical exposure, perception or device latency.
+  See docs/pv5_lane_exposure_20261109.md.
 
 - 2026-11-09 owner-authorized road/contrast exposure assist: preserve default-OFF
   Pv5RoadExposureAssist and Pv5WideExposureAssist in PV5 > Camera & Exposure.

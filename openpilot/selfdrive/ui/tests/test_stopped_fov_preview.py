@@ -133,9 +133,11 @@ def test_opt_in_preview_works_while_moving_and_off_restores_stopped_only(preview
   assert viewer.active
 
 
-def test_active_meter_outline_comes_from_camerad_and_expires_on_lens_switch(preview):
+@pytest.mark.parametrize("moving", [False, True])
+def test_active_meter_outline_comes_from_camerad_and_expires_on_lens_switch(preview, moving):
   viewer, update, _, settings, _ = preview
   settings['Pv5ModelFovExposure'] = True
+  settings['Pv5WideLaneExposure'] = moving
   sm = viewer._test_state.sm
   points = [100., 200., 1000., 200., 1000., 700., 100., 700.]
   sm['wideRoadCameraState'] = NS(measuredGreyFraction=.2, targetGreyFraction=.1, gain=2.,
@@ -145,7 +147,7 @@ def test_active_meter_outline_comes_from_camerad_and_expires_on_lens_switch(prev
   sm.recv_time['wideRoadCameraState'] = 10.
   update(10.)
   np.testing.assert_equal(viewer._meter_polygon, np.array(points).reshape(4, 2))
-  assert 'FOV | dark 10% bright 2%' in viewer._exposure_text
+  assert ('BOX' if moving else 'FOV') + ' | dark 10% bright 2%' in viewer._exposure_text
   update(12.)
   assert viewer._meter_polygon is None and viewer._exposure_text == 'AE --'
   sm.recv_time['wideRoadCameraState'] = 14.

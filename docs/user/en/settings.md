@@ -461,31 +461,32 @@ The bounded correction is smoothed rather than probing with a sudden exposure ch
 To retry an assist lockout, turn that lens's assist OFF for one second, then ON again.
 See the [implementation and PC validation record](../../pv5_exposure_assist_20261109.md).
 
-**Narrow/Wide Lane-Following Metering** (`Pv5RoadLaneExposure`, `Pv5WideLaneExposure`)
-are independent default-OFF experiments. They project fresh existing model lane boundaries
-into the actual model coordinates and add luminance weight inside them. Model input FOV
-and crop do not move, and no additional inference is run.
+**Narrow/Wide Lane-Centered Metering Box** (`Pv5RoadLaneExposure`, `Pv5WideLaneExposure`)
+are independent default-OFF options. Existing lane geometry estimates the lane center
+15–35m ahead, and the **entire metering rectangle translates horizontally** toward it.
+Its width, height and vertical position remain fixed, as do model FOV/crop/tensor size.
+Dark pixels and lane-line luminance do not locate the box. There are no lane-interior-only
+extra sample weights.
 
-Base priority is per camera; lower options are never silently switched off or overwritten:
-
-| Saved settings for this lens | Base metering | With lane-following ON |
+| Settings for this lens | Base region to translate | OFF or lost lane geometry |
 |---|---|---|
-| Road/contrast assist ON | Road/contrast-assisted FOV | Adds lane weight to this base |
-| Assist OFF, FOV metering selected | Uniform FOV | Adds lane weight to this base |
-| Neither selected | Original stock ROI | Applies a bounded lane-derived bias to stock metering |
+| Road/contrast assist ON | Existing assisted FOV box | Original position of the saved assist |
+| Assist OFF, FOV selected | Existing uniform FOV box | Original position of saved FOV metering |
+| Neither selected | Original stock AE box | Original stock AE region |
 
-Only fresh, geometrically valid, high-confidence lane pairs qualify. Weak/stale lanes or
-an active lane change fade added weights out over about one second, restoring the selected
-base. Valid lanes must qualify for 0.5 seconds before smoothly returning. Explicit OFF
-clears the extra weights. Effective method changes may repeat the existing two-second
-qualification without resetting the other lens. Common geometry/calibration faults take
-priority and immediately select stock metering; repeated-fallback latching is retained.
-The lane-derived bias is bounded to +/-0.125 stops relative to the base, and the total
-auxiliary bias to +/-0.375 stops, with smoothing and slew limits. These do not guarantee
-physical shutter/gain bounds. Small CPU work and a model subscription are added only for
-lane metering. Perception improvement and unchanged device inference latency are unverified.
-Area Preview is independent of metering selection. See the [implementation and validation
-record](../../pv5_lane_exposure_20261109.md).
+Lower saved options are never overwritten. Weak/stale geometry or lane-changing returns
+the box smoothly to its original position. Valid geometry must qualify for0.5 seconds
+before moving again. Explicit OFF clears motion. Common geometry/calibration faults
+immediately select stock; existing two-second qualification and repeated-fault latch remain.
+Horizontal distance and slew are limited to64 model-pixel equivalents and64 equivalents/s,
+and constrained by image boundaries. The whole translated box is compared to its original
+position, with a +/-0.125-stop metering delta and +/-0.375 total auxiliary bound plus
+smoothing. A dark road does not trigger a sudden brightness increase; clipped regions
+suppress additional brightening. These do not guarantee physical shutter/gain bounds or
+perception improvement. Stock-base mode also applies only a bounded difference relative
+to original metering. Sample reads and small CPU work are added; no extra inference runs.
+Preview is independent and the purple metering outline shows the actual translated box.
+See the [implementation and validation record](../../pv5_lane_exposure_20261109.md).
 
 Initial entry and recovery require two continuous seconds of valid metering. Invalid input
 immediately selects stock metering. Three actual fallbacks within a rolling 30 seconds keep

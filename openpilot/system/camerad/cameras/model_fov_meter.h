@@ -25,7 +25,7 @@ struct ModelFovSnapshot {
   uint64_t generation = 0, valid_until = 0;
   std::array<uint64_t, 2> sessions = {};  // road, wide; unrelated option edges cannot rearm the other camera.
   std::array<double, 3> rpy = {};
-  std::array<ExposureLaneCorridor, 2> lanes = {};
+  std::array<ExposureBoxTarget, 2> boxes = {};
   ModelFovStatus status = ModelFovStatus::WORKER_UNAVAILABLE;
 
   // Preserve the original persisted 0/OFF and 1/both-ON values.
@@ -54,12 +54,9 @@ public:
     assist_mode.store(value.assist_mode);
     lane_mode.store(value.lane_mode);
     if (value.lane_mode) for (int lens = 0; lens < 2; ++lens) {
-      lane_valid[lens].store(value.lanes[lens].valid);
-      lane_until[lens].store(value.lanes[lens].valid_until);
-      for (int row = 0; row < 36; ++row) {
-        lane_left[lens][row].store(value.lanes[lens].left[row]);
-        lane_right[lens][row].store(value.lanes[lens].right[row]);
-      }
+      lane_valid[lens].store(value.boxes[lens].valid);
+      lane_until[lens].store(value.boxes[lens].valid_until);
+      lane_center[lens].store(value.boxes[lens].center_x);
     }
     status.store(static_cast<int>(value.status));
     generation.store(value.generation);
@@ -78,12 +75,9 @@ public:
     next.assist_mode = assist_mode.load();
     next.lane_mode = lane_mode.load();
     if (next.lane_mode) for (int lens = 0; lens < 2; ++lens) {
-      next.lanes[lens].valid = lane_valid[lens].load();
-      next.lanes[lens].valid_until = lane_until[lens].load();
-      for (int row = 0; row < 36; ++row) {
-        next.lanes[lens].left[row] = lane_left[lens][row].load();
-        next.lanes[lens].right[row] = lane_right[lens][row].load();
-      }
+      next.boxes[lens].valid = lane_valid[lens].load();
+      next.boxes[lens].valid_until = lane_until[lens].load();
+      next.boxes[lens].center_x = lane_center[lens].load();
     }
     next.status = static_cast<ModelFovStatus>(status.load());
     next.generation = generation.load();
@@ -102,7 +96,7 @@ private:
   std::atomic<int> selection{0}, mode{0}, assist_mode{0}, lane_mode{0};
   std::array<std::atomic<bool>, 2> lane_valid{};
   std::array<std::atomic<uint64_t>, 2> lane_until{};
-  std::array<std::array<std::atomic<float>, 36>, 2> lane_left{}, lane_right{};
+  std::array<std::atomic<float>, 2> lane_center{};
   std::atomic<int> status{static_cast<int>(ModelFovStatus::WORKER_UNAVAILABLE)};
   std::array<std::atomic<double>, 3> rpy{};
 };
@@ -167,6 +161,12 @@ private:
   bool active = false, warming = false, observed = false, latched = false, clock_invalid = false;
 };
 
+struct ModelFovRegion {
+  int x = 0, y = 0, w = 0, h = 0;
+  bool operator==(const ModelFovRegion &other) const { return x == other.x && y == other.y && w == other.w && h == other.h; }
+  bool operator!=(const ModelFovRegion &other) const { return !(*this == other); }
+};
+
 // Bounded C3/C3X metering in model coordinates. No image allocation or warp.
 // Geometry matches common/transformations/model.py; the PC test checks both.
 class ModelFovMeter {
@@ -176,9 +176,10 @@ public:
   float grey = 0, black_fraction = 0, white_fraction = 0;
   ModelFovStatus status = ModelFovStatus::UNSUPPORTED;
 
-  bool configure(int width, int height, bool wide, const std::array<double, 3> &rpy, int selection, int stride = 0) {
+  bool configure(int width, int height, bool wide, const std::array<double, 3> &rpy, int selection, int stride = 0, ModelFovRegion region = {}) {
     valid = false;
     count = 0;
+    min_x = width; max_x = -1;
     status = ModelFovStatus::UNSUPPORTED;
     if (width != 1928 || height != 1208 || selection < 0 || selection > 4) return false;
     stride = stride ? stride : width;
@@ -207,19 +208,25 @@ public:
       y = camera_focal * ray[2] / ray[0] + height / 2.0;
       return std::isfinite(x) && std::isfinite(y);
     };
+    scale = camera_focal / focal;
+    if (region.w && (region.x < 0 || region.y < 0 || region.w < COLS || region.h < ROWS ||
+                     region.w > width || region.h > height || region.x > width - region.w || region.y > height - region.h)) return false;
     const double corners[][2] = {{0, 0}, {511, 0}, {511, 255}, {0, 255}};
     for (int i = 0; i < 4; ++i) {
       double x, y;
       if (!project(corners[i][0], corners[i][1], x, y)) return false;
-      polygon[i * 2] = x;
-      polygon[i * 2 + 1] = y;
+      if (region.w) { x = region.x + (i == 1 || i == 2 ? region.w - 1 : 0); y = region.y + (i >= 2 ? region.h - 1 : 0); }
+      base_polygon[i * 2] = x;
+      base_polygon[i * 2 + 1] = y;
     }
     for (int row = 0; row < ROWS; ++row) for (int col = 0; col < COLS; ++col) {
       double x, y;
       if (!project(511.0 * (col + 0.5) / COLS, 255.0 * (row + 0.5) / ROWS, x, y)) return false;
+      if (region.w) { x = region.x + (region.w - 1.) * (col + .5) / COLS; y = region.y + (region.h - 1.) * (row + .5) / ROWS; }
       if (x >= 0 && x < width && y >= 0 && y < height) {
         offsets[count] = static_cast<int>(y) * stride + static_cast<int>(x);
-        cells[count] = row * COLS + col;
+        min_x = std::min(min_x, static_cast<int>(x));
+        max_x = std::max(max_x, static_cast<int>(x));
         // Fixed model-space prior, not a claim that a pixel is road/vehicle.
         // Every sample retains weight; peripheral objects are never excluded.
         const bool below_horizon = 255.0 * (row + 0.5) / ROWS >= center_y;
@@ -228,44 +235,47 @@ public:
       }
     }
     // Do not meter a small, clipped fragment as though it were the whole input.
+    polygon = base_polygon;
+    origin = (base_polygon[0] + base_polygon[2] + base_polygon[4] + base_polygon[6]) * .25f;
+    float left = base_polygon[0], right = base_polygon[0];
+    for (int i = 1; i < 4; ++i) { left = std::min(left, base_polygon[i * 2]); right = std::max(right, base_polygon[i * 2]); }
+    // Preserve zero as the original position, including any admitted original
+    // clipping. Translation must not worsen clipping or touch row padding.
+    min_shift = std::max(-min_x, -static_cast<int>(std::floor(std::clamp(left, 0.f, float(width)))));
+    max_shift = std::min(width - 1 - max_x, static_cast<int>(std::floor(std::clamp(width - 1 - right, 0.f, float(width)))));
     valid = count * 10 >= SAMPLES * 9;
     status = valid ? ModelFovStatus::ACTIVE : ModelFovStatus::REGION_CLIPPED;
     return valid;
   }
 
   bool measure(const uint8_t *pixels, size_t bytes, bool assisted = false,
-               const ExposureLaneCorridor *lane = nullptr, uint64_t now = 0) {
+               const ExposureBoxTarget *box = nullptr, uint64_t now = 0) {
     desired_bias = 0;
-    lane_weights.update(lane, now);
-    const bool lane_active = lane && lane_weights.active();
+    motion.update(box, now, origin, scale);
     status = ModelFovStatus::INVALID_BUFFER;
     if (!valid || pixels == nullptr || bytes < minimum_bytes) return false;
-    std::array<uint32_t, 256> histogram = {};
-    std::array<uint32_t, 256> weighted = {};
-    std::array<uint32_t, 256> lane_histogram = {};
-    std::array<int, 9> region_count = {}, region_black = {}, region_white = {};
-    int total_weight = 0;
-    int lane_weight = 0, lane_extra_weight = 0;
-    int black = 0, white = 0;
+    motion.offset = std::clamp(motion.offset, float(min_shift), float(max_shift));  // no windup against the image edge
+    const int shift = std::clamp(static_cast<int>(std::lround(motion.offset)), min_shift, max_shift);
+    polygon = base_polygon;
+    for (int corner = 0; corner < 4; ++corner) polygon[corner * 2] += shift;
+    std::array<uint32_t, 256> histogram = {}, weighted = {}, moved = {};
+    std::array<int, 9> region_count = {}, region_black = {}, region_white = {}, moved_white = {};
+    int total_weight = 0, black = 0, white = 0;
     for (int i = 0; i < count; ++i) {
       const uint8_t value = pixels[offsets[i]];
+      const uint8_t other = shift ? pixels[static_cast<int64_t>(offsets[i]) + shift] : value;
       ++histogram[value];
-      black += value <= 5;
-      white += value >= 250;
-      if (assisted || lane_active) {
+      black += other <= 5;
+      white += other >= 250;
+      if (assisted || shift) {
         const int weight = assisted ? weights[i] : 1;
         weighted[value] += weight;
         total_weight += weight;
         ++region_count[regions[i]];
         region_black[regions[i]] += value <= 5;
         region_white[regions[i]] += value >= 250;
-      }
-      if (lane_active) {
-        const int extra = lane_weights.extra(cells[i]);
-        lane_extra_weight += extra;
-        const int weight = (assisted ? weights[i] : 1) * 16 + extra;
-        lane_histogram[value] += weight;
-        lane_weight += weight;
+        moved_white[regions[i]] += other >= 250;
+        if (shift) moved[other] += weight;
       }
     }
     int median = 255, accumulated = 0;
@@ -278,41 +288,40 @@ public:
     white_fraction = static_cast<float>(white) / count;
     const bool measured = grey > 0 && std::isfinite(grey);
     int weighted_median = median;
-    float highlight_cap = 1;
-    if (measured && (assisted || lane_active)) {
+    float shifted_highlight = 0;
+    if (measured && (assisted || shift)) {
       weighted_median = 255;
       int mass = 0;
       for (; weighted_median > 0; --weighted_median) {
         mass += weighted[weighted_median];
         if (mass >= (assisted ? (total_weight + 1) / 2 : count / 2)) break;
       }
-      // Bound the extra metering bias relative to the unchanged uniform FOV
-      // median. These are metering bounds, not a physical shutter/gain guarantee.
       float shadow = 0, highlight = 0;
       for (int region = 0; region < 9; ++region) {
         if (region_count[region] < SAMPLES / 18) continue;
         highlight = std::max(highlight, float(region_white[region]) / region_count[region]);
-        // Bottom model-space regions only: do not brighten for a black sky.
+        shifted_highlight = std::max(shifted_highlight, float(moved_white[region]) / region_count[region]);
         if (region >= 6) shadow = std::max(shadow, float(region_black[region]) / region_count[region]);
       }
-      const float road_bias = std::clamp(std::log2(float(median) / std::max(weighted_median, 1)), -0.25f, 0.25f);
-      const float highlight_bias = 0.125f * std::clamp((highlight - 0.10f) / 0.30f, 0.0f, 1.0f);
-      const float shadow_bias = highlight <= 0.10f ? 0.125f * std::clamp((shadow - 0.25f) / 0.50f, 0.0f, 1.0f) : 0;
       if (assisted) {
-        desired_bias = std::clamp(road_bias + shadow_bias - highlight_bias, -0.375f, 0.375f);
-        if (highlight > 0.10f) desired_bias = std::min(desired_bias, -highlight_bias);
+        const float road_bias = std::clamp(std::log2(float(median) / std::max(weighted_median, 1)), -.25f, .25f);
+        const float highlight_bias = .125f * std::clamp((highlight - .10f) / .30f, 0.f, 1.f);
+        const float shadow_bias = highlight <= .10f ? .125f * std::clamp((shadow - .25f) / .50f, 0.f, 1.f) : 0;
+        desired_bias = std::clamp(road_bias + shadow_bias - highlight_bias, -.375f, .375f);
+        if (highlight > .10f) desired_bias = std::min(desired_bias, -highlight_bias);
       }
-      if (lane_extra_weight && highlight > 0.10f) highlight_cap = 0;
     }
-    if (measured && lane_extra_weight) {
-      int lane_median = 255, mass = 0;
-      for (; lane_median > 0; --lane_median) {
-        mass += lane_histogram[lane_median];
-        if (mass >= (lane_weight + 1) / 2) break;
+    if (measured && shift) {
+      int moved_median = 255, mass = 0;
+      for (; moved_median > 0; --moved_median) {
+        mass += moved[moved_median];
+        if (mass >= (assisted ? (total_weight + 1) / 2 : count / 2)) break;
       }
-      const float extra = std::min(std::clamp(std::log2(float(weighted_median) / std::max(lane_median, 1)), -.125f, .125f), highlight_cap);
-      // Suppress additional brightening in clipped scenes without replacing
-      // the user's selected base or exceeding the lane-only bias bound.
+      // The whole fixed-size translated box is sampled. Never favor lane-line
+      // pixels or select a darker patch as the location. A dark shifted scene
+      // cannot request more than the existing bounded exposure correction.
+      float extra = moved_median > 0 ? std::clamp(std::log2(float(weighted_median) / moved_median), -.125f, .125f) : 0;
+      if (shifted_highlight > .10f) extra = std::min(extra, 0.f);
       desired_bias = std::clamp(desired_bias + extra, -.375f, .375f);
     }
     status = measured ? ModelFovStatus::ACTIVE : ModelFovStatus::INVALID_BRIGHTNESS;
@@ -332,16 +341,18 @@ public:
     return std::min(base * std::exp2(-bias), 1.0f);
   }
 
-  const ExposureLaneWeights &lane_state() const { return lane_weights; }
+  const ExposureBoxMotion &box_state() const { return motion; }
 
 private:
   bool valid = false;
   int count = 0;
   size_t minimum_bytes = 0;
   std::array<uint32_t, SAMPLES> offsets = {};
-  std::array<uint16_t, SAMPLES> cells = {};
+  std::array<float, 8> base_polygon = {};
+  int min_x = 0, max_x = 0, min_shift = 0, max_shift = 0;
+  float origin = 0, scale = 1;
   std::array<uint8_t, SAMPLES> weights = {}, regions = {};
   float desired_bias = 0, bias = 0;
   uint64_t last_assisted = 0;
-  ExposureLaneWeights lane_weights;
+  ExposureBoxMotion motion;
 };

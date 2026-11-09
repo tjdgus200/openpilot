@@ -115,7 +115,10 @@ class StoppedFovPreview:
             self._meter_polygon = points.reshape(4, 2)
             black, white = camera_state.pv5ExposureBlackFraction, camera_state.pv5ExposureWhiteFraction
             if np.isfinite([black, white]).all() and 0 <= black <= 1 and 0 <= white <= 1:
-              self._exposure_text += f' | FOV | dark {black:.0%} bright {white:.0%}'
+              method = 'BOX' if self._lane_exposure[self.wide] else 'FOV'
+              self._exposure_text += f' | {method} | dark {black:.0%} bright {white:.0%}'
+              if self._lane_exposure[self.wide] and getattr(camera_state, 'pv5ExposureFovStatus', 0) == 2:
+                self._exposure_status_text = '측광 박스 사용 중'
         else:
           requested = (self._exposure_assist[self.wide] or self._lane_exposure[self.wide]) or self._fov_exposure == 1 or self._fov_exposure == (3 if self.wide else 2)
           self._exposure_text += ' | STOCK (FOV waiting/fallback)' if requested and not self._exposure_status_text else ' | STOCK'

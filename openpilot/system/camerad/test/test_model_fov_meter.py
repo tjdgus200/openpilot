@@ -31,8 +31,8 @@ extern "C" int mailbox_check() {
       value.status = static_cast<ModelFovStatus>(i % 22); value.assist_mode = (i / 4) % 4;
       value.rpy = {double(i), double(i * 2), double(i * 3)};
       value.lane_mode = i % 4;
-      for (int lens=0;lens<2;++lens) { value.lanes[lens].valid = true; value.lanes[lens].valid_until = i+3;
-        value.lanes[lens].left.fill(float(i)); value.lanes[lens].right.fill(float(i+1)); }
+      for (int lens=0;lens<2;++lens) { value.boxes[lens].valid = true; value.boxes[lens].valid_until = i+3;
+        value.boxes[lens].center_x = float(i); }
       mailbox.publish(value);
     }
     done.store(true);
@@ -46,9 +46,9 @@ extern "C" int mailbox_check() {
               value.sessions[0] == i * 7 && value.sessions[1] == i * 9 && value.mode == int(i % 4) &&
               static_cast<int>(value.status) == int(i % 22) && value.assist_mode == int((i / 4) % 4) &&
               value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3 && value.lane_mode == int(i%4);
-      if (value.lane_mode) for (const auto &lane:value.lanes) {
+      if (value.lane_mode) for (const auto &lane:value.boxes) {
         good &= lane.valid && lane.valid_until == i+3;
-        for(int row=0;row<36;++row) good &= lane.left[row] == i && lane.right[row] == i+1;
+        good &= lane.center_x == i;
       }
     }
   } while (!done.load());
@@ -407,27 +407,29 @@ struct Sensor { cereal::FrameData::ImageSensor image_sensor = cereal::FrameData:
 struct Yuv { uint8_t *y = nullptr; size_t len = 0; int stride = 1928; };
 struct Buffer { int out_img_width = 1928, out_img_height = 1208; Yuv *cur_yuv_buf = nullptr; };
 struct Camera { struct { int stream_type = VISION_STREAM_WIDE_ROAD; } cc; Sensor *sensor; Buffer buf; };
-struct Polygon { void set(size_t, float) {} };
+struct Polygon { std::array<float,8> *points; void set(size_t i, float value) { (*points)[i]=value; } };
 struct Frame {
   bool active = false;
   uint8_t status = 0;
   uint16_t warmup_ms = 0;
+  std::array<float,8> points = {};
   void setPv5ExposureFovActive(bool value) { active = value; }
   void setPv5ExposureFovStatus(uint8_t value) { status = value; }
   void setPv5ExposureFovWarmupMs(uint16_t value) { warmup_ms = value; }
-  Polygon initPv5ExposureFovPolygon(size_t) { return {}; }
+  Polygon initPv5ExposureFovPolygon(size_t) { return {&points}; }
   void setPv5ExposureBlackFraction(float) {}
   void setPv5ExposureWhiteFraction(float) {}
 };
-float calculate_exposure_value(Buffer *, int, int, int) { return .25f; }
+float calculate_exposure_value(Buffer *, ModelFovRegion, int, int) { return .25f; }
 struct Capture {
   Camera camera;
   Frame framed;
   ModelFovMeter fov_meter;
   ModelFovStability fov_stability;
   uint64_t fov_generation = UINT64_MAX;
+  ModelFovRegion fov_region;
   bool fov_configured = false;
-  int ae_xywh = 0;
+  ModelFovRegion ae_xywh{97,160,1734,986};
   float selected = 0;
   void set_camera_exposure(float grey) { selected = grey; }
   void step(const ModelFovSnapshot &context) {
@@ -440,21 +442,27 @@ int main() {
   std::vector<uint8_t> pixels(1928 * 1208, 128);
   // Actual frame selection for all four choices and all three capture streams.
   // Driver exposure always remains stock, including legacy mode1/both.
-  for (int assist = 0; assist < 4; ++assist) for (int mode = 0; mode < 4; ++mode) for (int stream = 0; stream < 3; ++stream) {
+  for (int assist = 0; assist < 4; ++assist) for (int mode = 0; mode < 4; ++mode) for (int lane = 0; lane < 4; ++lane) for (int stream = 0; stream < 3; ++stream) {
     Sensor sensor;
     Yuv yuv{pixels.data(), pixels.size(), 1928};
     Capture capture{{{stream}, &sensor, {1928, 1208, &yuv}}};
     ModelFovSnapshot context;
-    context.ready = mode != 0 || assist != 0; context.mode = mode; context.assist_mode = assist; context.sessions = {1, 1};
+    context.ready = mode != 0 || assist != 0 || lane != 0; context.mode = mode; context.assist_mode = assist; context.lane_mode = lane; context.sessions = {1, 1};
     context.status = context.ready ? ModelFovStatus::ACTIVE : ModelFovStatus::DISABLED;
     const bool selected = stream < 2 && context.camera_enabled(stream == 1);
     clock_now = 0;
     for (int i = 0; i <= 50; ++i) {
       context.valid_until = clock_now + 1000000000ULL;
+      for(auto &box:context.boxes) { box.valid=true;box.center_x=1100;box.valid_until=context.valid_until; }
       capture.step(context);
       const bool active = selected && i >= 40;
       assert(capture.framed.active == active);
-      assert(capture.selected == (active ? .5f : .25f));
+      assert(capture.selected == (active && context.camera_fov_base(stream==1) ? .5f : .25f));
+      if(active&&context.camera_lane(stream==1)) {
+        for(int corner=0;corner<4;++corner)assert(capture.framed.points[corner*2]>=0&&capture.framed.points[corner*2]<1928);
+        const float expected_width=context.camera_fov_base(stream==1) ? capture.fov_meter.polygon[2]-capture.fov_meter.polygon[0] : capture.ae_xywh.w-1;
+        assert(std::abs(capture.framed.points[2]-capture.framed.points[0]-expected_width)<.001);
+      }
       assert(capture.framed.status == static_cast<uint8_t>(active ? ModelFovStatus::ACTIVE :
         selected ? ModelFovStatus::WARMING : ModelFovStatus::DISABLED));
       assert(capture.framed.warmup_ms == (selected && i < 40 ? i * 50 : 0));
@@ -556,7 +564,8 @@ int main() {
   result = subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-error=missing-field-initializers',
                   '-I', str(ROOT), str(wrapper), '-o', str(executable)], capture_output=True)
   assert result.returncode == 0, result.stderr.decode()
-  subprocess.run([str(executable)], check=True, capture_output=True, timeout=10)
+  result = subprocess.run([str(executable)], capture_output=True, timeout=10)
+  assert result.returncode == 0, result.stderr.decode()
 
 
 def test_camera_context_faults_and_live_switches_use_the_actual_cpp_class(tmp_path):
@@ -773,19 +782,19 @@ int main() {
   // Optional model loss never disables a valid selected base or changes its session.
   values["Pv5ModelFovExposure"] = "0"; values["Pv5RoadLaneExposure"] = "1"; values["Pv5WideLaneExposure"] = "1";
   cal_time = dev_time = clock_now; ModelFovContext lanes; lanes.update(true);
-  assert(lanes.ready && lanes.lanes[0].valid && !lanes.lanes[1].valid);
+  assert(lanes.ready && lanes.boxes[0].valid && !lanes.boxes[1].valid);
   clock_now += 500000000ULL; cal_time = dev_time = clock_now; lanes.update(true);
-  assert(lanes.ready && lanes.lanes[0].valid && lanes.lanes[1].valid);
+  assert(lanes.ready && lanes.boxes[0].valid && lanes.boxes[1].valid);
   const auto session = lanes.sessions;
   for (int fault = 0; fault < 4; ++fault) {
     model_age = fault == 0 ? 251000000ULL : 0;
     model_event_age = fault == 1 ? 201000000ULL : 0;
     model_valid = fault != 2;
     lane_change = fault == 3 ? cereal::LaneChangeState::STARTING : cereal::LaneChangeState::OFF;
-    lanes.update(true); assert(lanes.ready && !lanes.lanes[0].valid && !lanes.lanes[1].valid && lanes.sessions == session);
+    lanes.update(true); assert(lanes.ready && !lanes.boxes[0].valid && !lanes.boxes[1].valid && lanes.sessions == session);
   }
   model_age = model_event_age = 0; model_valid = true; lane_change = cereal::LaneChangeState::OFF;
-  lanes.update(true); assert(lanes.lanes[0].valid && lanes.lanes[1].valid);
+  lanes.update(true); assert(lanes.boxes[0].valid && lanes.boxes[1].valid);
   pv5 = false; clock_now += 1100000000ULL; cal_time = dev_time = clock_now;
   lanes.update(true); assert(!lanes.ready && lanes.status == ModelFovStatus::VEHICLE_UNAVAILABLE);
 }
@@ -796,4 +805,5 @@ int main() {
   result = subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-I', str(ROOT),
                   str(wrapper), '-o', str(executable)], capture_output=True)
   assert result.returncode == 0, result.stderr.decode()
-  subprocess.run([str(executable)], check=True, capture_output=True, timeout=10)
+  result = subprocess.run([str(executable)], capture_output=True, timeout=10)
+  assert result.returncode == 0, result.stderr.decode()

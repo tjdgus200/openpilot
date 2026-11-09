@@ -38,9 +38,9 @@ int main(int argc, char **argv) {
   ModelFovMeter meter;
   if (!meter.configure(1928, 1208, true, {}, 4, 2048)) return 2;
 #if CURRENT
-  ExposureLaneCorridor lane;
+  ExposureBoxTarget lane;
   lane.valid = true;
-  for(int row=22;row<36;++row) { lane.left[row]=120; lane.right[row]=390; }
+  lane.center_x = 1030;
 #endif
   std::vector<double> elapsed;
   elapsed.reserve(12000);

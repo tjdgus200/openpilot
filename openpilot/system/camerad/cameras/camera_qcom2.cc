@@ -119,7 +119,7 @@ public:
       status = ModelFovStatus::CALIBRATION_INVALID; return;
     }
     valid_until = std::min(cal_event.getLogMonoTime() + 1000000000ULL, dev_event.getLogMonoTime() + 2500000000ULL);
-    lanes = {};
+    boxes = {};
     if (lane_mode && sm->allAliveAndValid({"modelV2"})) {
       const auto &event = (*sm)["modelV2"];
       const auto model = event.getModelV2();
@@ -147,8 +147,8 @@ public:
               // modeld polls FOV independently. Let previous-geometry outputs
               // expire before using lane predictions in the newly selected view.
               if (lens && now - lane_wide_changed_at < 500000000ULL) continue;
-              lanes[lens] = exposure_lane_corridor(input, lens, selection);
-              lanes[lens].valid_until = std::min<uint64_t>(valid_until, eof + 250000000ULL);
+              boxes[lens] = exposure_box_target(input, lens, selection, rpy);
+              boxes[lens].valid_until = std::min<uint64_t>(valid_until, eof + 250000000ULL);
             }
           }
         }
@@ -250,6 +250,7 @@ public:
   ModelFovMeter fov_meter;
   ModelFovStability fov_stability;
   uint64_t fov_generation = UINT64_MAX;
+  ModelFovRegion fov_region;
   bool fov_configured = false;
 
   CameraState(SpectraMaster *master, const CameraConfig &config) : camera(master, config) {};
@@ -459,15 +460,18 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
   }
   bool fov_valid = false;
   if (context.ready && context.camera_enabled(wide) && now < context.valid_until && front && known_sensor && !fov_stability.locked()) {
-    if (fov_generation != context.generation) {
+    const ModelFovRegion region = context.camera_lane(wide) && !context.camera_fov_base(wide) ?
+      ModelFovRegion{ae_xywh.x, ae_xywh.y, ae_xywh.w, ae_xywh.h} : ModelFovRegion{};
+    if (fov_generation != context.generation || region != fov_region) {
+      fov_region = region;
       fov_generation = context.generation;
       fov_configured = fov_meter.configure(camera.buf.out_img_width, camera.buf.out_img_height,
                                           camera.cc.stream_type == VISION_STREAM_WIDE_ROAD, context.rpy, context.selection,
-                                          camera.buf.cur_yuv_buf->stride);
+                                          camera.buf.cur_yuv_buf->stride, region);
     }
     fov_valid = fov_configured && fov_meter.measure(camera.buf.cur_yuv_buf->y, camera.buf.cur_yuv_buf->len,
                                                  context.camera_assisted(wide),
-                                                 context.camera_lane(wide) ? &context.lanes[wide] : nullptr, now);
+                                                 context.camera_lane(wide) ? &context.boxes[wide] : nullptr, now);
     fov_status = fov_meter.status;
   }
   const bool fov_active = fov_stability.use_fov(fov_valid, now);
@@ -482,7 +486,7 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
     framed.setPv5ExposureBlackFraction(fov_meter.black_fraction);
     framed.setPv5ExposureWhiteFraction(fov_meter.white_fraction);
   }
-  // The lane option adds a bounded bias on top of the user's selected base.
+  // Box motion adds a bounded whole-region correction to the selected base.
   // With both base toggles OFF, the base is the original stock ROI/controller.
   const float base_grey = fov_active && context.camera_lane(wide) && !context.camera_fov_base(wide) ?
     calculate_exposure_value(&camera.buf, ae_xywh, 2, 2) : fov_meter.grey;
