@@ -66,7 +66,9 @@ inline ExposureBoxTarget exposure_box_target(const ExposureLaneInput &in, bool w
     if (!found) return out;
   }
   out.center_x = sum / 3;
-  out.valid = std::isfinite(out.center_x) && out.center_x >= 0 && out.center_x < 1928;
+  // A valid geometric target may lie beyond the current image. The complete
+  // box stops at the image boundary in ModelFovMeter rather than recentering.
+  out.valid = std::isfinite(out.center_x);
   return out;
 }
 
@@ -79,12 +81,11 @@ public:
     if (!last || now <= last || now - last > 250000000ULL) { *this = {}; last = now; return; }
     const float dt = std::min(float(now - last) * 1e-9f, .1f);
     last = now;
-    const bool valid = input->valid && now < input->valid_until && std::isfinite(input->center_x) &&
-                       input->center_x >= 0 && input->center_x < 1928;
+    const bool valid = input->valid && now < input->valid_until && std::isfinite(input->center_x);
     if (!valid) healthy_since = 0;
     else if (!healthy_since) healthy_since = now;
     const float goal = valid && now - healthy_since >= 500000000ULL ?
-      std::clamp(input->center_x - origin, -64.f * scale, 64.f * scale) : 0;
+      input->center_x - origin : 0;
     offset += std::clamp(goal - offset, -64.f * scale * dt, 64.f * scale * dt);
   }
 

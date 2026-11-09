@@ -8,7 +8,10 @@
   Per-lens base priority remains static assist, selected FOV, else stock ROI;
   lower saved options are never overwritten. Weak/stale/change inputs return
   toward the original position at bounded speed. Keep0.5s qualification,
-  original EOF/publication TTLs,64 model-pixel-equivalent shift and slew,
+  original EOF/publication TTLs and64 model-pixel-equivalents/s slew. The
+  owner removed the fixed travel cap: any finite geometric target may lie
+  outside the image; the whole box stops only at the image edge, without
+  windup, and reverses immediately under the same slew limit. Keep
   image/stride bounds, +/-0.125-stop position delta and +/-0.375 total bias,
   original smoothing/highlight protection and2s/common-fault stock recovery.
   PV5 C3/C3X only; no extra NN/control/radar changes or camera-thread waiting.

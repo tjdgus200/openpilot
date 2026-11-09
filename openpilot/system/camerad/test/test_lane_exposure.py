@@ -43,6 +43,13 @@ int main() {
   assert(!exposure_box_target(input,true,4,{0,std::nan(""),0}).valid);
   auto far=input;far.left[32].z=-10;far.right[32].z=-10;
   assert(exposure_box_target(far,true,4,{}).valid);
+  // A well-formed geometric center beyond the image remains a target.
+  for(float side:{-1.f,1.f}) {
+    auto outside=input;
+    for(int i=0;i<33;++i){outside.left[i].y+=side*10;outside.right[i].y+=side*10;}
+    const auto projected=exposure_box_target(outside,false,0,{});
+    assert(projected.valid&&(side<0?projected.center_x<0:projected.center_x>=1928));
+  }
   ExposureBoxMotion motion;
   ExposureBoxTarget target;target.valid=true;target.center_x=1100;
   uint64_t now=1000000000ULL;
@@ -50,11 +57,11 @@ int main() {
     now+=50000000ULL;target.valid_until=now+250000000ULL;
     const float before=motion.offset;motion.update(&target,now,964,1);
     if(frame<10)assert(motion.offset==0);
-    assert(std::abs(motion.offset-before)<=3.201&&std::abs(motion.offset)<=64.001);
+    assert(std::abs(motion.offset-before)<=3.201&&std::abs(motion.offset)<=136.001);
   }
-  assert(motion.offset==64);
+  assert(motion.offset==136);
   // Repeated old input cannot maintain position; return motion is bounded too.
-  for(int frame=0;frame<40;++frame){now+=50000000ULL;float old=motion.offset;motion.update(&target,now,964,1);assert(std::abs(motion.offset-old)<=3.201);}
+  for(int frame=0;frame<60;++frame){now+=50000000ULL;float old=motion.offset;motion.update(&target,now,964,1);assert(std::abs(motion.offset-old)<=3.201);}
   assert(motion.offset==0);
   target.valid_until=now+250000000ULL;now+=50000000ULL;motion.update(&target,now,964,1);assert(motion.offset==0);
   motion.update(nullptr,now,964,1);assert(motion.offset==0);
@@ -91,6 +98,42 @@ int main() {
     target.valid=true;
     box.measure(pixels.data(),pixels.size(),false,nullptr,now+50000000ULL);
     assert(box.assisted_grey(false,now+50000000ULL,.4f)==.4f);
+  }
+  // No fixed travel cap: reach both image edges for every FOV and base ROI,
+  // hold without windup, then reverse immediately at the retained slew limit.
+  for(bool wide:{false,true}) for(int selection=0;selection<5;++selection)
+  for(bool stock:{false,true}) for(float side:{-1.f,1.f}) for(bool tilted:{false,true}) {
+    ModelFovMeter box;
+    const ModelFovRegion region=stock?ModelFovRegion{97,160,1734,986}:ModelFovRegion{};
+    assert(box.configure(1928,1208,wide,tilted?std::array<double,3>{.02,.01,.015}:std::array<double,3>{},selection,2048,region));
+    const auto original=box.polygon;
+    const int choices[]={0,65,70,75,80};
+    const float focal=wide?(selection?256/std::tan(choices[selection]*std::acos(-1.)/360):455):910;
+    const float scale=(wide?567.f:2648.f)/focal;
+    target.valid=true;target.center_x=side<0?-2000:4000;now=1000000000ULL;
+    for(int frame=0;frame<240;++frame) {
+      now+=50000000ULL;target.valid_until=now+250000000ULL;
+      const auto before=box.polygon;
+      assert(box.measure(pixels.data(),pixels.size(),false,&target,now));
+      assert(std::abs(box.polygon[0]-before[0])<=64*scale*.05f+1.001f);
+      const float dx=box.polygon[0]-original[0];
+      for(int k=0;k<4;++k){
+        assert(box.polygon[k*2]>=0&&box.polygon[k*2]<=1927.001);
+        assert(std::abs(box.polygon[k*2]-original[k*2]-dx)<.001);
+        assert(box.polygon[k*2+1]==original[k*2+1]);
+      }
+    }
+    const float edge=side<0?std::min(box.polygon[0],box.polygon[6]):std::max(box.polygon[2],box.polygon[4]);
+    assert(side<0?edge<1.001:1927-edge<1.001);
+    if(!stock&&!tilted)assert(std::abs(box.polygon[0]-original[0])>64*scale+1);
+    const auto stopped=box.polygon;
+    for(int frame=0;frame<20;++frame){now+=50000000ULL;target.valid_until=now+250000000ULL;
+      box.measure(pixels.data(),pixels.size(),false,&target,now);assert(box.polygon==stopped);
+    }
+    target.center_x=side<0?4000:-2000;now+=50000000ULL;target.valid_until=now+250000000ULL;
+    box.measure(pixels.data(),pixels.size(),false,&target,now);
+    assert(side*(box.polygon[0]-stopped[0])<0);
+    assert(std::abs(box.polygon[0]-stopped[0])<=64*scale*.05f+1.001f);
   }
 }
 '''

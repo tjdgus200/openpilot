@@ -478,8 +478,9 @@ Lower saved options are never overwritten. Weak/stale geometry or lane-changing 
 the box smoothly to its original position. Valid geometry must qualify for0.5 seconds
 before moving again. Explicit OFF clears motion. Common geometry/calibration faults
 immediately select stock; existing two-second qualification and repeated-fault latch remain.
-Horizontal distance and slew are limited to64 model-pixel equivalents and64 equivalents/s,
-and constrained by image boundaries. The whole translated box is compared to its original
+There is no fixed travel cap: the complete box stops at the image edge, even when the
+geometric lane center lies beyond the image. Sampling stays within the image. The existing
+slew limit of64 model-pixel equivalents/s remains; larger travel also takes longer to return. The whole translated box is compared to its original
 position, with a +/-0.125-stop metering delta and +/-0.375 total auxiliary bound plus
 smoothing. A dark road does not trigger a sudden brightness increase; clipped regions
 suppress additional brightening. These do not guarantee physical shutter/gain bounds or
