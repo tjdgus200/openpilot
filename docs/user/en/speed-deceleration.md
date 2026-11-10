@@ -378,6 +378,21 @@ Adjust by 100 (1 m) at a time under comparable no-lead signal stops, because the
 
 Automatic CAN diagnostic logs are generated only when currently received vehicle or radar state from the present onroad session reports an actual error. CAN timeouts from the previous drive's shutdown are not used, and capture occurs five seconds after detection to include the immediate aftermath. When investigating a speed or deceleration issue, upload the affected drive from Carrot Web even if no automatic diagnostic log was generated.
 
+## PV5 signal-stop transmit object
+
+On the PV5 deployment branch, CAN-FD camera-SCC with openpilot longitudinal
+control supplements an existing signal-stop/held-stop request with a synthetic
+3 m object when no real lead is present. There is no separate setting; the
+existing traffic-stop decision must request the stop. The final packet requires
+active control, Drive, valid CAN and every wheel/raw vehicle speed at or below
+0.7 m/s (about2.5 km/h). A real lead, pedal input, brake hold, parking brake,
+expired inputs or released conditions cancels the synthetic object.
+
+The object exists only in the outgoing SCC packet. It does not create a displayed
+lead, radar observation or model input, and does not change the planned acceleration or outgoing
+command limits. PC checks cannot establish ECU acceptance or successful physical
+stopping; the driver must continue to verify the stop.
+
 ## Code references
 
 - Event/limit/bump/turn candidate selection: `openpilot/selfdrive/carrot/carrot_serv.py`

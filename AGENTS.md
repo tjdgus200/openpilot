@@ -1,5 +1,20 @@
 # Repository memory
 
+- 2026-11-10 owner explicitly adopts the synthetic3m signal-stop CAN object
+  for KIA_PV5 only. Port the complete request/publish/final-SCC/feedback/schema
+  chain from7d337b plus f3564347's publish-local freshness fix; never import
+  the unrelated Panda/Casper fault monitor. Preserve wire tags HUD24/actuator11,
+  default-false compatibility, fresh <=0.2s plan/radar, enabled longitudinal
+  Drive signal-stop states3/5, no measured/planned lead, pedal/hold/CAN gates,
+  every finite wheel/raw speed <=0.7m/s and final ACCMode1/StopReq1. Request and
+  final sender both enforce PV5 CANFD+CAMERA_SCC+openpilot-long scope. Object
+  fields remain TX-only; relative speed is minus ego speed, no RX/model/radar
+  injection, latching, new worker, setting or brake-limit change. Actual last
+  packet application is reported separately. Extend the permanent checklist
+  with request/complete-publish/packet/release/non-PV5/schema regressions and
+  retain all model/HUD/steering/exposure/BLE behavior. See
+  docs/pv5_signal_stop_object_20261110.md. PC checks are not ESC/vehicle proof.
+
 - 2026-11-10 radar audit: compare measured CAN/radar tracks, timing, selection,
   stationary/cut-in/cut-out evidence, fast updates and longitudinal lead response
   against carrot-wip c8454993, not just the vision-transition helper. At6c282e37,
