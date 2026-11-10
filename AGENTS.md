@@ -1,6 +1,23 @@
 # Repository memory
 
-- 2026-11-10 owner approves the scoped Blendful-style PV5 center update.
+- 2026-11-10 final owner correction SUPERSEDES the scoped center-fit entry below.
+  Use upstream Blendful unchanged (sunnypilot3d8f211d/97135965; original normalized
+  source SHA256652c52e164933a0fe585ef121e642f60e3e0a616554dcc9366b2231efefe5920).
+  Only its constants import path changes. Run on raw model output in modeld before
+  existing smoothing, once only. Preserve original single-line/learned-width/
+  avoidance history/trust/build-release/18kmh fade and desire/lane-change activation.
+  REMOVE custom0.08 acceleration cap, lead/BSD/DM/pedal/gear/bilateral confidence
+  gates and bespoke dwell/ramp. Do not reintroduce them during sync. PV5-only
+  default-OFF scope, existing live web toggle, unchanged model inputs/longitudinal
+  outputs and existing vehicle startup/driver-yield/angle/rate/physics/CAN limits
+  remain. Carrot lane-mode planner selection stays original. controls-side helper
+  observes telemetry only; sqrt-scaled0.2m push is a display scale, not a cap.
+  Malformed tensors/undefined arithmetic reset the feature without injecting NaN.
+  Keep original source/hash/dependency/X-grid, golden, five-model parser/action/
+  metadata/HUD and no-double-application tests. Jetson neural/renderer packages
+  are unchanged. See docs/pv5_blendful_original_20261110.md; PC is not road proof.
+
+- Historical, superseded by the final original-policy port above: 2026-11-10 owner approves the scoped Blendful-style PV5 center update.
   Preserve default-OFF Pv5LaneCenterAssist, live250ms toggle/actual lateral
   admission, bilateral lines, lead/BSD/driver/maneuver/freshness/lane-mode gates,
   dwell/ramp, 0.08m/s2 cap, low-speed normalization and all downstream limits.

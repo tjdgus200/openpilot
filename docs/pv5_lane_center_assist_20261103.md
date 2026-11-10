@@ -1,52 +1,40 @@
 # PV5 차로 중앙 보정 · Lane Center Assist
 
-캐럿웹 **설정 → PV5 → 주행 보조 → 차로 중앙 보정 (실험)**에서 선택합니다. 기본값은 꺼짐입니다.
-켜기와 끄기는 기어와 무관하게 반영됩니다. 제어기의 설정 확인 주기는 250ms입니다.
-크루즈가 꺼져 있어도 AlwaysLateral 등 기존 조건에 따라 실제 조향 제어가 활성화되어 있으면 보정합니다.
-조향 제어가 꺼져 있으면 보정하지 않습니다. 차선·BSD·운전자·입력 유효성 조건과 보정 상한은 유지합니다.
-2026-11-05 PC 회귀 테스트 148개가 통과했습니다. 크루즈 OFF/ON 좌우 보정, 비활성화 시 기존 출력과의
-일치, 조향 허용·오류·운전자 중지·재부팅 차단 및 기존 보정 거부 조건을 합성 입력으로 확인했습니다.
-실제 차량과 EPS/CAN 안전 계층의 동작은 이 테스트 범위에 포함되지 않습니다.
+캐럿웹 **설정 → PV5 → 주행 보조 → 차로 중앙 보정 (실험)**에서 선택합니다.
+기본 OFF와 기존 저장값을 유지하며, 켜기·끄기는 약 250ms 내 모델 처리에 반영됩니다.
+PV5에서만 구성하며 다른 차종의 모델 출력·제어는 그대로입니다.
 
-In CarrotWeb, open **Settings → PV5 → Driving Assist → Lane Center Assist (Experimental)**.
-It defaults to off. Both settings apply in any gear on the next settings check,
-which runs every 250 ms.
+2026-11-10 최종 승인으로 [원본 Blendful 전체](pv5_blendful_original_20261110.md)를
+modeld의 원시 파서 출력에 적용합니다. 이전9지점 근사와 별도0.08m/s² 상한,
+앞차/BSD/DM/페달/기어/양쪽 차선 확률50% 차단 및 별도 진입 dwell/ramp는 제거했습니다.
+원본의 차로 폭 학습·한쪽 차선 처리·회피 경로 판단·신뢰도 필터·증가/해제율과
+18km/h 미만 감쇠를 사용합니다. 회피 판단은 모델의 경로 변화로 하며 장애물 존재의
+정답 판정이나 충돌 회피 보장이 아닙니다.
 
-The PV5 fork applies a small additive lateral acceleration request before the existing
-curvature smoothing and limiting. It requires active lateral control (including
-AlwaysLateral with cruise disabled), valid Drive
-gear while moving forward, two usable lane lines and agreement
-between the lane center and the model path. It yields to existing lane-line
-mode, driver steering or braking, turn signals, maneuver intent, blind spots,
-driver monitoring alerts, nearby tracked leads, and stale input. The extra
-request is capped at 0.08 m/s² and ramps in after 0.5 seconds of eligibility.
-When eligibility is lost, the extra request becomes zero and the existing
-curvature filter and rate limits govern the transition.
+기존 차량 조향 허용·운전자 개입 양보·각도/속도/물리/CAN 한계는 유지합니다.
+중앙 보정은 모델 action에 한 번만 더합니다. Carrot 레인모드가 lateralPlan을
+선택하면 그 기존 경로가 우선하며, 이때 화면은 ‘레인모드’ 대기를 표시합니다.
+이는 원본 알고리즘을 추가로 제한하는 조건이 아니라 실제 적용 경로 표시입니다.
 
-2026-11-10에는 [여러 지점 곡률 보정](pv5_lane_center_fit_20261110.md)을 적용했습니다.
-전방 9지점의 차선 중앙과 모델 경로·조향 곡률을 함께 비교합니다. 양쪽 차선 확률
-50% 이상·표준편차 0.6m 미만이 필요하며, 낮은 쪽의 확률과 불확실성으로 강도를
-줄입니다. 85%를 오가는 작은 변화만으로 진입 확인을 다시 시작하지 않습니다.
-기존 0.6m/s² 커브 차단과 전방 중앙 위치 0.75m 차단은 곡선 기하 검사로 대체합니다.
-앞차·BSD·운전자·기동·신선도·기존 레인모드 차단, 0.08m/s² 상한과 기본 OFF는 유지합니다.
-한쪽 차선 추정과 원본의 회피 이력 판단은 이번 범위에 포함하지 않습니다.
+The PV5-only default-OFF setting uses the complete upstream Blendful algorithm
+on raw parser outputs in modeld. Its learned width, single-line handling, planned
+avoidance logic, confidence filters, slew and fading below18km/h are preserved.
+The old custom0.08m/s² cap and lead/BSD/DM/pedal/gear/bilateral-confidence gates,
+and custom dwell/ramp are removed. Existing vehicle steering admission, driver
+override and angle/rate/physics/CAN limits remain. Correction is applied once,
+before existing model smoothing; Carrot's existing lane-mode planner selection
+remains unchanged. Physical vehicle safety remains unvalidated.
 
-The 2026-11-10 fit compares nine forward lane-center samples with both model path
-and action curvature. Both inner lines must have probability at least50% and
-standard deviation below0.6m. Bilateral probability/std quality scales the bounded
-correction; rising quality recovers gradually. The former0.6m/s² curve veto and
-0.75m absolute forward-center veto are replaced by curved-road geometry checks.
-All obstacle/driver/freshness/maneuver/lane-mode gates, default OFF and0.08m/s²
-ceiling remain. This is a scoped adaptation, not the full Blendful policy.
+The gauge displays the original geometric push at the lookahead, sqrt-scaled
+against0.2m as in ZoomPilot. This is display normalization, not a steering ceiling.
+Missing/stale telemetry clears the gauge without changing model/control output.
+Existing Jetson packages read the same controlsState fields; no host model update
+is required for this comma-side post-processing change.
 
-보정 전용 속도 제한은 없습니다. 저속에서는 곡률 환산에 사용하는 속도의 하한을 적용해 보정값이 커지는 것을 막습니다.
-The assist follows the existing steering activation speed rules. Curvature
-conversion uses a bounded denominator to limit correction at low speed.
+## 이전 표시·패키지 이력
 
-Jetson HUD는 기존 ‘대기’를 제어 비활성, 정차, 입력 대기, 운전자 개입, 방향 전환,
-앞차, 레이더, 차선 신뢰도, 경로 조건, 연속 조건 확인 및 보정 불필요로 구분합니다.
-기존 레인모드와 BSD 표시는 유지합니다. 별도 크루즈 활성 조건 외의 보정 허용 조건과 보정량 계산은 유지합니다.
-새 대기 사유는 기존 상태 필드와 별도로 전송되며, 이전 버전은 기존 ‘대기’를 표시합니다.
+아래 기록은 각 날짜의 표시 및 패키지 검증 이력입니다. 중앙 보정의 현행 정책은
+위 원본 포팅 설명이 우선합니다.
 
 2026-11-05 ‘모델 신뢰도’ 표시는 ‘차선 인식’으로 교체했습니다.
 콤마와 Jetson HUD 모두 현재 차로의 `modelV2.laneLineProbs[1]`(왼쪽), `[2]`(오른쪽)를

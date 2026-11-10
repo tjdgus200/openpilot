@@ -2,12 +2,12 @@
 
 [한국어](../ko/settings.md)
 
-PV5 **Lane Center Assist (Experimental)** compares multiple forward lane-center
-points with the model path and action curvature. Both lines' probability and
-uncertainty scale correction, including eligible curves. Missing lines, nearby
-leads, BSD, driver intervention, maneuvers or expired inputs stop extra correction.
-Default OFF, existing steering limits and the0.08m/s² additive acceleration ceiling
-remain. Physical vehicle safety has not been validated.
+PV5 **Lane Center Assist (Experimental)** runs upstream Blendful on raw model
+outputs, retaining learned width, single-line handling, planned-avoidance logic,
+original slew and fading below18km/h. The separate0.08m/s² cap and additional
+lead/BSD/DM gates are removed. Vehicle steering admission, driver override,
+steering limits and existing Carrot lane-mode selection remain. Default OFF;
+physical vehicle safety has not been validated.
 
 The PV5 **Simple Steering Authority Recovery** details now provide confirmation and
 recovery timing controls. Defaults are 200ms (0.20s) and 1500ms (1.50s) for the full

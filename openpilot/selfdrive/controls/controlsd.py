@@ -26,7 +26,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.controls.lib.steer_ratio import resolve_vehicle_model_steer_ratio
 from openpilot.selfdrive.controls.lib.lateral_readiness import LateralStartupGate, lateral_vehicle_parameters
-from openpilot.selfdrive.controls.lib.pv5_lane_center import MAX_CORRECTION_ACCEL, Pv5LaneCenter
+from openpilot.selfdrive.controls.lib.pv5_lane_center import Pv5LaneCenter
 
 
 from openpilot.common.realtime import DT_CTRL, DT_MDL
@@ -210,11 +210,10 @@ class Controls:
       alpha = 1 - np.exp(-DT_CTRL / tau) if tau > 0 else 1
       return alpha * val + (1 - alpha) * prev_val
 
-    correction = 0.0
     if self.pv5_lane_center is not None:
-      correction = self.pv5_lane_center.update(
+      self.pv5_lane_center.observe(
         self.sm, CS, model_v2, time.monotonic(), active=CC.latActive,
-        lane_mode=lat_plan.useLaneLines,
+        lane_mode=self.lanefull_mode_enabled,
       )
 
     if not CC.latActive:
@@ -237,12 +236,10 @@ class Controls:
         new_desired_curvature = smooth_value(curvature, self.desired_curvature, lat_smooth_seconds)
     else:      
       model_curvature = model_v2.action.desiredCurvature
-      if correction:
-        model_curvature += correction
       new_desired_curvature = smooth_value(model_curvature, self.desired_curvature, 0.1)
 
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
-    self.pv5_lane_center_accel = correction * CS.vEgo**2 if correction else 0.0
+    self.pv5_lane_center_accel = self.pv5_lane_center.accel if self.pv5_lane_center is not None else 0.
 
     actuators.curvature = float(self.desired_curvature)
 
@@ -476,7 +473,7 @@ class Controls:
 
     cs.activeLaneLine = self.lanefull_mode_enabled
     if self.pv5_lane_center is not None and self.pv5_lane_center.enabled:
-      cs.pv5LaneCenterFraction = self.pv5_lane_center_accel / MAX_CORRECTION_ACCEL
+      cs.pv5LaneCenterFraction = self.pv5_lane_center.fraction
       status = self.pv5_lane_center.status
       if status in ('off', 'correcting', 'laneMode', 'blindspot'):
         cs.pv5LaneCenterStatus = status

@@ -871,7 +871,7 @@ struct ControlsState @0x97ff69c53601abf1 {
 
   activeLaneLine @67 : Bool;
   pv5LaneCenterStatus @68 :Pv5LaneCenterStatus;
-  pv5LaneCenterFraction @69 :Float32;  # signed fraction of the assist ceiling before curvature limits
+  pv5LaneCenterFraction @69 :Float32;  # signed sqrt-scaled lookahead push for display; never a control cap
   pv5LaneCenterWaitReason @70 :Pv5LaneCenterWaitReason;
 
   enum Pv5LaneCenterStatus {
@@ -1083,6 +1083,17 @@ struct ModelDataV2 {
 
   # e2e lateral planner
   action @26: Action;
+  pv5LaneCenter @27 :LaneCenterData; # modeld-owned upstream Blendful; display telemetry only
+
+  struct LaneCenterData {
+    valid @0 :Bool;
+    enabled @1 :Bool;
+    active @2 :Bool; # upstream desire/lane-change activation, not vehicle admission
+    curvature @3 :Float64;
+    modelCurvature @4 :Float64;
+    trust @5 :Float32;
+    goingAround @6 :Bool;
+  }
 
   lateralPlannerSolutionDEPRECATED @25: Deprecated.LateralPlannerSolution;
 

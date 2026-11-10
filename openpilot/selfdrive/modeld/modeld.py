@@ -91,7 +91,8 @@ def get_lat_smooth_seconds_dynamic(model_output: dict[str, np.ndarray],
 
 
 def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.ModelDataV2.Action,
-                          lat_action_t: float, long_action_t: float, v_ego: float, lat_smooth_seconds: float, vEgoStopping: float) -> log.ModelDataV2.Action:
+                          lat_action_t: float, long_action_t: float, v_ego: float, lat_smooth_seconds: float, vEgoStopping: float,
+                          *, blendful=None) -> log.ModelDataV2.Action:
   plan = model_output['plan'][0]
   desired_accel, should_stop, _, desired_velocity_now = get_accel_from_plan(plan[:,Plan.VELOCITY][:,0],
                                                    plan[:,Plan.ACCELERATION][:,0],
@@ -113,6 +114,8 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
     desired_accel = model_output['action'][0,1]
     desired_curvature = model_output['action'][0,0] / (max(2.5, v_ego))**2
     #should_stop = (v_ego < 0.3 and desired_accel < 0.1)
+  if blendful is not None:
+    desired_curvature += blendful(desired_curvature)
   desired_accel = smooth_value(desired_accel, prev_action.desiredAcceleration, LONG_SMOOTH_SECONDS)
   desired_velocity_now = smooth_value(desired_velocity_now, prev_action.desiredVelocity, LONG_SMOOTH_SECONDS)
 
@@ -408,6 +411,8 @@ def main(demo=False):
   else:
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   cloudlog.info("modeld got CarParams: %s", CP.brand)
+  from openpilot.selfdrive.modeld.pv5_blendful import for_vehicle
+  lane_center = for_vehicle(CP, params)
 
   # TODO this needs more thought, use .2s extra for now to estimate other delays
   # TODO Move smooth seconds to action function
@@ -591,11 +596,16 @@ def main(demo=False):
       else:
         lat_delay_dynamic = sm["liveDelay"].lateralDelay + lat_smooth_seconds_dynamic
 
-      action = get_action_from_model(model_output, prev_action, lat_action_t, long_action_t, v_ego, lat_smooth_seconds_dynamic, vEgoStopping)
+      action = get_action_from_model(
+        model_output, prev_action, lat_action_t, long_action_t, v_ego, lat_smooth_seconds_dynamic, vEgoStopping,
+        blendful=lane_center.callback(model_output, v_ego, desire, DH.lane_change_state, loop_start) if lane_center is not None else None,
+      )
       prev_action = action
       fill_model_msg(modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
                      frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen)
+      if lane_center is not None:
+        lane_center.fill(modelv2_send.modelV2.pv5LaneCenter)
 
       desire_state = modelv2_send.modelV2.meta.desireState
       l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]

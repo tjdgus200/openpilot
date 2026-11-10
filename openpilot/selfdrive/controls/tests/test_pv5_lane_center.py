@@ -1,10 +1,9 @@
-import math
 from types import SimpleNamespace
 
 import pytest
 
 from openpilot.cereal import log
-from openpilot.selfdrive.controls.lib.pv5_lane_center import MAX_CORRECTION_ACCEL, PARAM, Pv5LaneCenter
+from openpilot.selfdrive.controls.lib.pv5_lane_center import PARAM, Pv5LaneCenter
 from openpilot.selfdrive.controls.tests.test_lateral_startup_control import control_fixture
 
 
@@ -60,208 +59,60 @@ def drive(control, cruise_active=True):
   control.sm['selfdriveState'].enabled = control.sm['selfdriveState'].active = cruise_active
 
 
-@pytest.mark.parametrize('kph', [0.0, 3.6, 17.9, 18.0, 120.0])
-def test_correction_without_separate_speed_gate(kph):
+@pytest.mark.parametrize('cruise', [False, True])
+def test_default_or_legacy_model_message_matches_unchanged_controls(cruise):
+  control, _, tick = setup_control(.27, 0)
+  other, _, other_tick = setup_control(.27, 0)
+  other.pv5_lane_center = None
+  for item in (control, other):
+    drive(item, cruise)
+    item.sm['modelV2'].action.desiredCurvature = .002
+  for _ in range(140):
+    assert tick().to_dict() == other_tick().to_dict()
+  assert control.pv5_lane_center.status == 'off'
+
+
+@pytest.mark.parametrize('correction', [-.001, .001])
+@pytest.mark.parametrize('context', ['ordinary', 'bsd', 'lead', 'dm', 'driver'])
+def test_controls_uses_model_action_once_and_reader_does_not_rewrite_it(correction, context):
   control, _, tick = setup_control(.27)
-  drive(control)
-  control.sm['carState'].vEgo = kph / 3.6
-  for i in range(140):
-    cc = tick(new_model=i % 5 == 0)
-  if kph > 0:
-    assert .065 < cc.actuators.curvature * max(kph / 3.6, 5.0)**2 <= MAX_CORRECTION_ACCEL
-    assert control.pv5_lane_center.status == 'correcting'
-  else:
-    assert control.pv5_lane_center.target == 0.
-    assert control.pv5_lane_center.status == 'stopped'
-
-
-def test_already_centered_is_distinct_from_eligibility_dwell():
-  for offset, expected in ((0., 'centered'), (.27, 'checking')):
-    control, _, tick = setup_control(offset)
-    drive(control)
-    assert tick().actuators.curvature == 0.
-    assert control.pv5_lane_center.status == expected
-
-
-@pytest.mark.parametrize('cruise_active', [False, True])
-def test_disabled_matches_existing_control(cruise_active):
-  control, _, tick = setup_control(.27, selected=0)
-  baseline, _, baseline_tick = setup_control(.27, selected=0)
-  baseline.pv5_lane_center = None
-  tick()
-  baseline_tick()
-  for instance in (control, baseline):
-    drive(instance, cruise_active)
-    instance.sm['modelV2'].action.desiredCurvature = .001
-  for _ in range(110):
-    assert tick().to_dict() == baseline_tick().to_dict()
-
-
-@pytest.mark.parametrize('offset', [-.27, .27])
-@pytest.mark.parametrize('cruise_active', [False, True])
-def test_full_control_loop_bounded_correction_and_release(offset, cruise_active):
-  control, settings, tick = setup_control(offset)
-  tick()
-  assert control.pv5_lane_center.enabled
-  drive(control, cruise_active)
-  for i in range(200):
-    cc = tick(new_model=i % 5 == 0)
-    assert cc.latActive and math.isfinite(cc.actuators.torque)
-    assert cc.enabled == cruise_active
-    assert not cc.longActive
-    assert abs(cc.actuators.curvature) * 20**2 <= MAX_CORRECTION_ACCEL + 1e-6
-    if i < 49:
-      assert cc.actuators.curvature == 0
-  assert .065 < math.copysign(1, offset) * cc.actuators.curvature * 20**2 <= MAX_CORRECTION_ACCEL
-  settings[PARAM] = 0
-  for i in range(26):
-    tick(new_model=i % 5 == 0)
-  assert not control.pv5_lane_center.enabled
-  assert control.pv5_lane_center.target == 0.
-  for i in range(90):
-    cc = tick(new_model=i % 5 == 0)
-  assert not control.pv5_lane_center.enabled
-  assert abs(cc.actuators.curvature) * 20**2 < .001
-  settings[PARAM] = 1
-  for i in range(26):
-    tick(new_model=i % 5 == 0)
-  assert control.pv5_lane_center.enabled
-  for i in range(130):
-    cc = tick(new_model=i % 5 == 0)
-  assert .065 < math.copysign(1, offset) * cc.actuators.curvature * 20**2 <= MAX_CORRECTION_ACCEL
-
-
-@pytest.mark.parametrize('condition', ['blinker', 'blindspot', 'driver', 'radar', 'radar_fault', 'model_lead', 'desire',
-                                      'lane_mode', 'stale', 'repeated', 'invalid_line', 'no_lateral'])
-@pytest.mark.parametrize('cruise_active', [False, True])
-def test_rejects_correction_and_resets_dwell(condition, cruise_active):
-  control, _, tick = setup_control(.27)
-  tick()
-  drive(control, cruise_active)
-  sm = control.sm
-  for i in range(140):
-    tick(new_model=i % 5 == 0)
-  assert control.pv5_lane_center.target > 0.
-  match condition:
-    case 'blinker':
-      sm['carState'].leftBlinker = True
-    case 'blindspot':
-      sm['carState'].rightBlindspot = True
-    case 'driver':
-      sm['carState'].steeringPressed = True
-    case 'radar':
-      sm['radarState'].leadTwo.status = True
-      sm['radarState'].leadTwo.dRel = 40.
-    case 'radar_fault':
-      sm['radarState'].radarErrors.radarFault = True
-    case 'model_lead':
-      sm['modelV2'].leadsV3[1].prob = .5
-    case 'desire':
-      sm['modelV2'].meta.desire = 'turnLeft'
-    case 'lane_mode':
-      sm['lateralPlan'].useLaneLines = True
-    case 'invalid_line':
-      sm['modelV2'].laneLines[2].y = [1.97, float('nan'), 1.97]
-    case 'no_lateral':
-      sm['carState'].latEnabled = False
-  tick(new_model=condition != 'repeated', repeated=condition == 'repeated',
-       stale='modelV2' if condition == 'stale' else None)
-  assert control.pv5_lane_center.target == 0.
-  assert control.pv5_lane_center.eligible_since is None
-  assert control.pv5_lane_center.status == {
-    'blinker': 'maneuver', 'blindspot': 'blindspot', 'driver': 'driver', 'radar': 'lead',
-    'radar_fault': 'radar', 'model_lead': 'lead', 'desire': 'maneuver', 'lane_mode': 'laneMode',
-    'stale': 'inputs', 'repeated': 'inputs', 'invalid_line': 'geometry', 'no_lateral': 'inactive',
-  }[condition]
-
-
-def test_cruise_release_preserves_admitted_lateral_correction():
-  control, _, tick = setup_control(.27)
-  drive(control)
-  for i in range(140):
-    tick(new_model=i % 5 == 0)
-  eligible_since = control.pv5_lane_center.eligible_since
-  control.sm['selfdriveState'].enabled = control.sm['selfdriveState'].active = False
-  cc = tick()
-  assert cc.latActive and not cc.enabled and not cc.longActive
+  other, _, other_tick = setup_control(.27)
+  other.pv5_lane_center = None
+  for item in (control, other):
+    drive(item)
+    md = item.sm['modelV2']
+    md.action.desiredCurvature = .002+correction
+    md.pv5LaneCenter.valid = md.pv5LaneCenter.enabled = md.pv5LaneCenter.active = True
+    md.pv5LaneCenter.curvature = correction
+    md.pv5LaneCenter.trust = .9
+    if context == 'bsd':
+      item.sm['carState'].rightBlindspot = True
+    elif context == 'lead':
+      item.sm['radarState'].leadOne.status = True
+      item.sm['radarState'].leadOne.dRel = 10.
+    elif context == 'dm':
+      item.sm['driverMonitoringState'].activePolicy = 'vision'
+      item.sm['driverMonitoringState'].visionPolicyState.isDistracted = True
+    elif context == 'driver':
+      item.sm['carState'].steeringPressed = True
+  for _ in range(140):
+    assert tick().to_dict() == other_tick().to_dict()
   assert control.pv5_lane_center.status == 'correcting'
-  assert control.pv5_lane_center.eligible_since == eligible_since
-  assert .065 < cc.actuators.curvature * 20**2 <= MAX_CORRECTION_ACCEL
+  assert control.pv5_lane_center.accel == pytest.approx(correction*400)
 
 
-@pytest.mark.parametrize('inhibit', ['lat_disabled', 'always_lateral_off', 'temporary_fault', 'permanent_fault',
-                                    'driver_suspend', 'reboot'])
-def test_cruise_off_preserves_lateral_admission_and_restarts_dwell(inhibit):
-  control, settings, tick = setup_control(.27)
-  drive(control, cruise_active=False)
-  for i in range(140):
-    tick(new_model=i % 5 == 0)
-  assert control.pv5_lane_center.status == 'correcting'
-  cs = control.sm['carState']
-  match inhibit:
-    case 'lat_disabled':
-      cs.latEnabled = False
-    case 'always_lateral_off':
-      settings['AlwaysLateral'] = 0
-    case 'temporary_fault':
-      cs.steerFaultTemporary = True
-    case 'permanent_fault':
-      cs.steerFaultPermanent = True
-    case 'driver_suspend':
-      control.carrot_controls.lat_suspend_control = lambda cs, active: False
-    case 'reboot':
-      settings['ImpactDashcamReboot'] = 1
-  cc = tick()
-  assert not cc.latActive and not cc.enabled and not cc.longActive
-  assert cc.actuators.torque == 0.
-  assert control.pv5_lane_center.target == 0.
-  assert control.pv5_lane_center.eligible_since is None
-  assert control.pv5_lane_center.status == 'inactive'
-  cs.latEnabled = True
-  cs.steerFaultTemporary = cs.steerFaultPermanent = False
-  settings['AlwaysLateral'] = 1
-  settings['ImpactDashcamReboot'] = 0
-  control.carrot_controls.lat_suspend_control = lambda cs, active: active
-  for i in range(49):
-    cc = tick(new_model=i % 5 == 0)
-    assert cc.latActive and not cc.enabled and not cc.longActive
-    assert control.pv5_lane_center.status == 'checking'
-    assert control.pv5_lane_center_accel == 0.
-  for i in range(100):
-    cc = tick(new_model=i % 5 == 0)
-  assert control.pv5_lane_center.status == 'correcting'
-  assert .065 < cc.actuators.curvature * 20**2 <= MAX_CORRECTION_ACCEL
-
-
-def test_crossing_old_85_percent_threshold_keeps_dwell_but_reduces_authority():
-  control, _, tick = setup_control(.27)
-  drive(control)
-  for i in range(250):
-    tick(new_model=i % 5 == 0)
-  assist = control.pv5_lane_center
-  before, since = assist.target, assist.eligible_since
-  control.sm['modelV2'].laneLineProbs = [0., .84, .84, 0.]
-  tick()
-  assert assist.eligible_since == since and assist.status == 'correcting'
-  assert 0 < assist.target < before
-  control.sm['modelV2'].laneLineProbs = [0., .49, .84, 0.]
-  tick()
-  assert assist.target == 0 and assist.trust == 0 and assist.eligible_since is None
-
-
-def test_new_curve_correction_still_yields_immediately_to_bsd():
-  from openpilot.selfdrive.controls.tests.test_pv5_lane_center_fit import frame
+@pytest.mark.parametrize('fault', ['can', 'temporary', 'permanent', 'inactive'])
+def test_existing_vehicle_lateral_admission_still_disables_actuation(fault):
   control, _, tick = setup_control(.1)
   drive(control)
-  md = control.sm['modelV2']
-  source = frame(curvature=.002, offset=.1)
-  md.position.x, md.position.y = source.position.x, source.position.y
-  for i in (1, 2):
-    md.laneLines[i].x, md.laneLines[i].y = source.laneLines[i].x, source.laneLines[i].y
-  md.action.desiredCurvature = .002
-  for i in range(180):
-    tick(new_model=i % 5 == 0)
-  assert control.pv5_lane_center.target > 0
-  control.sm['carState'].leftBlindspot = True
-  tick(new_model=False)
-  assert control.pv5_lane_center.target == 0 and control.pv5_lane_center.status == 'blindspot'
+  control.sm['modelV2'].action.desiredCurvature = .003
+  cs = control.sm['carState']
+  if fault == 'can':
+    cs.canValid = False
+  elif fault == 'temporary':
+    cs.steerFaultTemporary = True
+  elif fault == 'permanent':
+    cs.steerFaultPermanent = True
+  else:
+    cs.latEnabled = False
+  assert not tick().latActive
