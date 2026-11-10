@@ -455,7 +455,10 @@ Requested and limited-command errors relative to measured steering must agree fo
 0.1s. Speed-normalized error then smoothly increases the rate, at most 1.5 times
 the selected base rate and no faster than one second across the full authority
 range. Thus 1.5s can approach 1s and 3s can approach 2s. Falling error reduces the
-extra rate. Disagreement, reversal, invalid inputs and driver/pre-override intervention
+extra rate. Filtered trends of both errors also advance extra recovery when both
+grow and reduce it when both shrink. Disagreeing trends use magnitude alone.
+Trend shaping requires an already above-threshold error and never lowers the base rate.
+Disagreement, reversal, invalid inputs and driver/pre-override intervention
 clear acceleration evidence. Extra recovery is allowed only at low driver effort.
 No extra neural model, profiler or settings poll is added; full authority skips
 the extra error calculation. Model uncertainty

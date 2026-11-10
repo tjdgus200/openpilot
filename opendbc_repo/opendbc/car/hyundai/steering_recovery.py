@@ -13,6 +13,11 @@ FASTEST_RECOVERY_SECONDS = 1.0  # Existing selectable full-range rate ceiling, n
 MAX_RECOVERY_FACTOR = 1.5
 ERROR_CONFIRM_SECONDS = 0.1
 BOOST_SLEW_SECONDS = 0.2
+TREND_FILTER_SECONDS = 0.15
+TREND_LOOKAHEAD_SECONDS = 0.1
+TREND_RATE_LIMIT = 10.0  # Tolerance widths/s; clip before filtering model-step noise.
+TREND_DEADBAND = 0.1
+TREND_ERROR_LIMIT = 0.5  # At most half a tolerance width of bounded look-ahead.
 TIMING_SETTINGS = (
   ("Pv5SteerReleaseMs", 100, 500, 50, DEFAULT_RELEASE_MS),
   ("Pv5SteerRecoveryMs", 1000, 3000, 100, DEFAULT_RECOVERY_MS),
@@ -57,6 +62,23 @@ class SimpleSteeringRecovery:
     self.error_direction = 0
     self.error_seconds = 0.0
     self.recovery_boost = 0.0
+    self.previous_errors = None
+    self.error_rates = (0.0, 0.0)
+
+  def _trend_demand(self, dt, errors, margin, demand):
+    # Follow both raw-request AND limited-command errors. Differentiating only
+    # their minimum could mistake a switch of the limiting cue for convergence.
+    if self.previous_errors is not None:
+      alpha = dt / (TREND_FILTER_SECONDS + dt)
+      rates = [max(-TREND_RATE_LIMIT, min(TREND_RATE_LIMIT, (value - previous) / margin / dt))
+               for value, previous in zip(errors, self.previous_errors, strict=True)]
+      self.error_rates = tuple(old + alpha * (new - old) for old, new in zip(self.error_rates, rates, strict=True))
+    self.previous_errors = errors
+    a, b = self.error_rates
+    trend = min(a, b) if min(a, b) > TREND_DEADBAND else max(a, b) if max(a, b) < -TREND_DEADBAND else 0.0
+    correction = max(-TREND_ERROR_LIMIT, min(TREND_ERROR_LIMIT, trend * TREND_LOOKAHEAD_SECONDS))
+    # Cannot qualify a sub-threshold error or change the base recovery/any limit.
+    return min(1.0, max(0.0, demand + correction / 2.0)) if demand > 0 else 0.0
 
   def _update_boost(self, dt, target_error, command_error, speed, wheelbase, steer_ratio):
     # A raw request beyond the angle/rate limits cannot itself speed recovery.
@@ -74,8 +96,9 @@ class SimpleSteeringRecovery:
     margin = min(5.0, max(1.0, math.degrees(math.atan(0.3 * wheelbase / max(speed * speed, 25.0))) * steer_ratio))
     error = min(abs(target_error), abs(command_error))
     demand = min(1.0, max(0.0, (error / margin - 1.0) / 2.0))
+    trend_demand = self._trend_demand(dt, (abs(target_error), abs(command_error)), margin, demand)
     self.error_seconds = self.error_seconds + dt if demand > 0 else 0.0
-    target = demand if self.error_seconds + 1e-9 >= ERROR_CONFIRM_SECONDS else 0.0
+    target = trend_demand if self.error_seconds + 1e-9 >= ERROR_CONFIRM_SECONDS else 0.0
     step = dt / BOOST_SLEW_SECONDS
     self.recovery_boost += max(-step, min(step, target - self.recovery_boost))
 

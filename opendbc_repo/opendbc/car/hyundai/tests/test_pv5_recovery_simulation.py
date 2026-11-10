@@ -53,6 +53,7 @@ def simulate(monkeypatch, adaptive, *, speed, eps_accel, delay, tightening, dire
   lateral = heading = steering_rate = integral = peak = 0.
   peak_angle_error = peak_boost = peak_cap_step = 0.
   previous_cap = output.torqueOutputCan
+  previous_internal_cap = controller.simple_steer_recovery.cap
   for tick in range(500):
     elapsed = tick * dt
     road = road_start * (1 + (tightening - 1) * min(1., elapsed / .6))
@@ -65,10 +66,16 @@ def simulate(monkeypatch, adaptive, *, speed, eps_accel, delay, tightening, dire
     cap = output.torqueOutputCan
     assert all(math.isfinite(v) for v in (cap, output.steeringAngleDeg, steering, lateral, heading))
     assert 25 <= cap <= 250
-    assert 0 <= cap - previous_cap <= 2.25 + 1e-8
+    # Actuator feedback is Float32; subtracting two rounded values can exceed
+    # the exact internal rise by two Float32 ULPs at this authority range.
+    assert 0 <= cap - previous_cap <= 2.25 + 2**-15
+    internal_cap = controller.simple_steer_recovery.cap
+    internal_rise = internal_cap - previous_internal_cap
+    assert 0 <= internal_rise <= 2.25 + 1e-8
+    previous_internal_cap = internal_cap
     assert abs(output.steeringAngleDeg) <= controller.params.ANGLE_LIMITS.STEER_ANGLE_MAX
     assert abs(next(data[6] for addr, data, bus in messages if addr == 0xCB) - cap) <= .5
-    peak_cap_step = max(peak_cap_step, cap - previous_cap)
+    peak_cap_step = max(peak_cap_step, internal_rise)
     previous_cap = cap
     peak_boost = max(peak_boost, controller.simple_steer_recovery.recovery_boost)
     queue.append((output.steeringAngleDeg, cap))

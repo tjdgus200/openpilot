@@ -1,5 +1,15 @@
 # Repository memory
 
+- 2026-11-10 owner additionally approves bounded error-trend shaping inside the
+  existing opt-in PV5 simple recovery. Filter requested AND limited-command
+  absolute-error rates, require their trends to agree and bound look-ahead to
+  half the speed-normalized tolerance. Do not qualify sub-threshold errors,
+  lower base recovery, change target/command angle or loosen any existing limit.
+  Preserve0.1s error/low-effort confirmation,0.2s boost slew, max1.5x/1s rate,
+  immediate driver yielding and every reset/OFF/non-PV5 gate. No new worker,
+  neural model, polling or per-frame telemetry. Compare against60231f59 with
+  all outcomes and disclose uncalibrated EPS/vehicle/planner assumptions.
+
 - 2026-11-10 owner explicitly requests PV5 opt-in angle-error authority recovery.
   After the unchanged low-force confirmation, require finite requested AND limited
   command errors in the same direction for0.1s. Normalize tolerance by speed/geometry
