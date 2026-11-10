@@ -117,6 +117,7 @@ class DPathRadarD:
       cut_in_sensitivity=PRODUCTION_CUT_IN_SENSITIVITY,
       front_radar_measurement_delay_s=front_radar_distance_delay_s(CP),
       production_live_tracks=True,
+      pv5_refinements=CP.brand == "hyundai" and CP.carFingerprint == "KIA_PV5",
     )
     self.radar_state = log.RadarState.new_message()
     self.radar_state_valid = False

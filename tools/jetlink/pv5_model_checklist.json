@@ -4,27 +4,87 @@
   "groups": {
     "identity_and_delivery": {
       "preserve": "Keep all model choices, N16 default, boot-frozen selection, exact per-model package/hash/size and rollback checks.",
-      "tests": ["tools/jetlink/test_model_library.py", "tools/jetlink/test_signed_nav_bundle.py", "tools/jetlink/test_park_update.py", "tools/jetlink/test_internal_update.py", "tools/jetlink/test_adb_handoff.py", "tools/jetlink/test_status.py", "tools/jetlink/test_park_update_linux.py", "tools/jetlink/test_offline_boot_patch.py", "tools/jetlink/test_pv5_update_permission.py", "tools/jetlink/test_hotplug_resources.py", "tools/jetlink/test_warp_startup.py", "tools/jetlink/test_pv5_model_checklist.py"]
+      "tests": [
+        "tools/jetlink/test_model_library.py",
+        "tools/jetlink/test_signed_nav_bundle.py",
+        "tools/jetlink/test_park_update.py",
+        "tools/jetlink/test_internal_update.py",
+        "tools/jetlink/test_adb_handoff.py",
+        "tools/jetlink/test_status.py",
+        "tools/jetlink/test_park_update_linux.py",
+        "tools/jetlink/test_offline_boot_patch.py",
+        "tools/jetlink/test_pv5_update_permission.py",
+        "tools/jetlink/test_hotplug_resources.py",
+        "tools/jetlink/test_warp_startup.py",
+        "tools/jetlink/test_pv5_model_checklist.py"
+      ]
     },
     "fov_center_hud_integration": {
-      "preserve": "Stock/65/70/75/80 live wide-only FOV; unchanged narrow input; PV5-only independent default-OFF road/wide exposure assist with bounded bias, stock fallback, lens isolation and no extra inference; bounded, gated center correction and HUD message freshness on every model; Common Carrot coherent vision transition for every vehicle using the existing DPath path, identical live/replay policy, original radar-mode boundaries and upstream-equivalent outputs; no PV5 gate for this explicitly authorized exception. Preserve PV5-only independent default-OFF whole-box metering options, saved base precedence, constant box size, geometry-only positioning, smooth return, original EOF freshness, no lane-pixel weights, extra inference or model-FOV movement. Preserve PV5-only synthetic signal-stop request/publish/final-SCC/feedback wire tags, 0.2s input freshness, finite <=0.7m/s wheel/raw speeds, existing stop interlocks, actual-lead priority, TX-only data and non-PV5/no-request CAN parity.",
-      "tests": ["tools/jetlink/test_pv5_model_integration.py", "openpilot/selfdrive/ui/tests/test_stopped_fov_preview.py", "openpilot/common/tests/test_exposure_overlay.py", "openpilot/system/camerad/test/test_model_fov_meter.py", "openpilot/system/camerad/test/test_lane_exposure.py", "openpilot/selfdrive/modeld/tests/test_orientation_rate_std.py", "openpilot/selfdrive/carrot/tests/test_pv5_vision_transition.py", "openpilot/selfdrive/carrot/tests/test_cutout_mpc_integration.py", "openpilot/selfdrive/controls/tests/test_controlsd_publish.py"]
+      "preserve": "Stock/65/70/75/80 live wide-only FOV; unchanged narrow input; PV5-only independent default-OFF road/wide exposure assist with bounded bias, stock fallback, lens isolation and no extra inference; bounded, gated center correction and HUD message freshness on every model; Common Carrot coherent vision transition for every vehicle using the existing DPath path, identical live/replay policy, original radar-mode boundaries and upstream-equivalent outputs; no PV5 gate for this explicitly authorized exception. Preserve PV5-only independent default-OFF whole-box metering options, saved base precedence, constant box size, geometry-only positioning, smooth return, original EOF freshness, no lane-pixel weights, extra inference or model-FOV movement. Preserve PV5-only synthetic signal-stop request/publish/final-SCC/feedback wire tags, 0.2s input freshness, finite <=0.7m/s wheel/raw speeds, existing stop interlocks, actual-lead priority, TX-only data and non-PV5/no-request CAN parity. New development-branch SCC identity continuity and fresh-stationary shielding are PV5-only opt-ins at live and complete-metadata replay constructors; common 0.20s vision handover stays enabled for all existing DPath cars. Reset refinement history on stream resets/clock discontinuity. Verify immediate braking-lead/re-ID/cut-out/new-queue/moving-cut-in selection and disclose the three-frame stopped-side-entry confirmation cost.",
+      "tests": [
+        "tools/jetlink/test_pv5_model_integration.py",
+        "openpilot/selfdrive/ui/tests/test_stopped_fov_preview.py",
+        "openpilot/common/tests/test_exposure_overlay.py",
+        "openpilot/system/camerad/test/test_model_fov_meter.py",
+        "openpilot/system/camerad/test/test_lane_exposure.py",
+        "openpilot/selfdrive/modeld/tests/test_orientation_rate_std.py",
+        "openpilot/selfdrive/carrot/tests/test_pv5_vision_transition.py",
+        "openpilot/selfdrive/carrot/tests/test_cutout_mpc_integration.py",
+        "openpilot/selfdrive/controls/tests/test_controlsd_publish.py",
+        "openpilot/selfdrive/carrot/tests/test_pv5_radar_stationary_shield.py",
+        "openpilot/selfdrive/carrot/tests/test_pv5_radar_scc_continuity.py",
+        "openpilot/selfdrive/carrot/tests/test_pv5_radar_refinement_scope.py"
+      ]
     },
     "hud_and_alerts": {
-      "preserve": "Lane probabilities, steering, correction/wait reason, camera target/distance and curve speeds, C3X/Jetson notices throughout each fresh active condition with no timed expiry, a one-second minimum settled hold and upward exit after the condition clears, immediate driver-attention glyph and alert priority, BSD pulse and existing Q92/FPS choices.",
-      "tests": ["tools/jetlink/test_hud.py", "tools/jetlink/test_hud_health.py", "tools/jetlink/test_hud_bsd.py", "tools/jetlink/test_hud_rate.py", "tools/jetlink/test_hud_fps_transition.py", "tools/jetlink/test_hud_hotplug.py", "tools/jetlink/test_hud_stability.py", "tools/jetlink/test_hud_display_cache.py", "tools/jetlink/test_pv5_steering_audio.py", "openpilot/selfdrive/ui/tests/test_pv5_driving_feedback.py"]
+      "preserve": "Lane probabilities, steering, correction/wait reason, camera target/distance and curve speeds, C3X/Jetson notices throughout each fresh active condition with no timed expiry, a one-second minimum settled hold and upward exit after the condition clears, immediate driver-attention glyph and alert priority, BSD pulse and existing Q92/FPS choices. PV5 native CCNC same-side BSD plus turn request: steady red background5 and 200ms-on/200ms-off red lane-highlight5 with side BCA indication, independent of model lane visibility. Preserve native higher-priority alerts and stock warning fields, existing cadence/counters/checksum; Jetson gradient/bracket behavior unchanged. Physical PV5 palette acceptance is not proven by packet tests.",
+      "tests": [
+        "tools/jetlink/test_hud.py",
+        "tools/jetlink/test_hud_health.py",
+        "tools/jetlink/test_hud_bsd.py",
+        "tools/jetlink/test_hud_rate.py",
+        "tools/jetlink/test_hud_fps_transition.py",
+        "tools/jetlink/test_hud_hotplug.py",
+        "tools/jetlink/test_hud_stability.py",
+        "tools/jetlink/test_hud_display_cache.py",
+        "tools/jetlink/test_pv5_steering_audio.py",
+        "openpilot/selfdrive/ui/tests/test_pv5_driving_feedback.py"
+      ]
     },
     "battery_and_ble": {
       "preserve": "108 voltage channels, 15 temperatures, progressive heatmaps, trip SOC, zero-speed/P/charging view and per-field TTL; sequential BLE requests and recovery.",
-      "tests": ["tools/jetlink/test_battery_heatmap.py", "tools/jetlink/test_battery_retention.py", "tools/jetlink/test_stationary_battery.py", "tools/jetlink/test_obd_priority.py", "tools/jetlink/test_obd_resync.py"]
+      "tests": [
+        "tools/jetlink/test_battery_heatmap.py",
+        "tools/jetlink/test_battery_retention.py",
+        "tools/jetlink/test_stationary_battery.py",
+        "tools/jetlink/test_obd_priority.py",
+        "tools/jetlink/test_obd_resync.py"
+      ]
     },
     "resources_and_state": {
-      "preserve": "Full diagnostics OFF, 1Hz HUD resource and inference timing readouts, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates.",
-      "tests": ["tools/jetlink/test_optimization_defaults.py", "tools/jetlink/test_device_state.py", "tools/jetlink/test_input_overlap.py", "tools/jetlink/test_parsed_output_guard.py", "tools/jetlink/test_hud_runtime_stats.py", "tools/jetlink/test_performance_diagnostics.py", "tools/jetlink/test_hud_inference_priority.py", "tools/jetlink/test_daemon_timing.py", "tools/jetlink/test_hud_media.py", "tools/jetlink/test_pv5_drive_report.py", "opendbc_repo/opendbc/car/hyundai/tests/test_steering_recovery.py"]
+      "preserve": "Full diagnostics OFF, 1Hz HUD resource and inference timing readouts, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates. PV5-angle-only sustained 0.30s press confirmation affects repeated-override penalties only, never immediate driver yielding, original limits or the optional simple-recovery toggle. PV5-only boot build repair uses identified real-car persisted metadata, no native Params before compilation, fail-closed scope and a retained interruption marker; at most one empty-object/cache-disabled retry, with existing cache locks and other-car behavior preserved.",
+      "tests": [
+        "tools/jetlink/test_optimization_defaults.py",
+        "tools/jetlink/test_device_state.py",
+        "tools/jetlink/test_input_overlap.py",
+        "tools/jetlink/test_parsed_output_guard.py",
+        "tools/jetlink/test_hud_runtime_stats.py",
+        "tools/jetlink/test_performance_diagnostics.py",
+        "tools/jetlink/test_hud_inference_priority.py",
+        "tools/jetlink/test_daemon_timing.py",
+        "tools/jetlink/test_hud_media.py",
+        "tools/jetlink/test_pv5_drive_report.py",
+        "opendbc_repo/opendbc/car/hyundai/tests/test_steering_recovery.py",
+        "openpilot/common/tests/test_pv5_build_recovery.py"
+      ]
     },
     "power_and_boot": {
       "preserve": "Jetson USB input-power block, black boot diagnostics, regular W/temperature text and permission-gated Park update/previous-release recovery.",
-      "tests": ["tools/jetlink/test_usb_power.py", "tools/jetlink/test_boot_display.py", "tools/jetlink/test_boot_update.py"]
+      "tests": [
+        "tools/jetlink/test_usb_power.py",
+        "tools/jetlink/test_boot_display.py",
+        "tools/jetlink/test_boot_update.py"
+      ]
     }
   },
   "release_checks": [
@@ -34,6 +94,7 @@
     "Run the full control-loop tests: test_pv5_lane_center.py, test_lateral_startup_control.py and test_lateral_readiness.py in the native PC test environment.",
     "Run PV5 steering recovery/controller and angle-limit tests, including OFF full-CAN replay equivalence, live switching, driver priority, stale/fault inputs and non-PV5 exclusion.",
     "Run test_stop_object.py and test_stopping.py in the prepared PC CAN/Params boundary environment; include complete publish-to-SCC execution, actual packet field/CRC/accel checks, non-PV5/no-request parity, release, finite raw/wheel-speed boundaries, missing templates and wire tags. Never run heavy validation on the vehicle.",
+    "Run PV5 override-filter/controller, CCNC packet and paired pre-port radar/steering output comparisons. Check actual 2.5Hz CAN guide timing, side/end/stale inputs, unchanged other-car frames and model/camera/Jetson source hashes. Do not equate synthetic replay with road safety or hardware inference latency.",
     "Before declaring hardware validation: verify physical Orin TensorRT build/output precision, saved FOV routing, sustained inference/HUD timing, USB/BLE reconnection and EPS/CAN behavior under a controlled procedure."
   ]
 }

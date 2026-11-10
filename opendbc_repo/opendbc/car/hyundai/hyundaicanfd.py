@@ -889,10 +889,23 @@ def _select_cluster_background(cruise_enabled, lat_active, paddle_pressed, paddl
   if paddle_mode > 0 and paddle_pressed:
     return 6
   if bsd_warning:
-    return 3  # Steady orange is supported by the native cluster.
+    return 5  # Steady red (same wire value used by the source branch's traffic-light display).
   if lat_active and turning:
     return turn_background
   return 1 if cruise_enabled else 3 if lat_active else 7
+
+
+def _apply_pv5_bsd_cluster_guide(values, out, frame):
+  if not _cluster_bsd_warning(out):
+    return
+  # Existing 20Hz 0x161 cadence samples a 200ms-on/200ms-off cue (2.5Hz).
+  # Only display fields change; retain stronger original indications on the off phase.
+  if (frame // 20) % 2 == 0:
+    values["LANE_HIGHLIGHT"] = 5
+  if out.leftBlinker and out.leftBlindspot:
+    values["BCA_LEFT"] = 2
+  if out.rightBlinker and out.rightBlindspot:
+    values["BCA_RIGHT"] = 2
 
 
 def _apply_cluster_lane_lines(values, CS, lat_active, desire):
@@ -1091,6 +1104,8 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
           cruise_enabled, lat_active, CS.paddle_button_prev > 0, paddle_mode, turning=desire in (1, 2),
           bsd_warning=pv5_cluster and _cluster_bsd_warning(CS.out), turn_background=7 if pv5_cluster else 6,
         )
+        if pv5_cluster:
+          _apply_pv5_bsd_cluster_guide(values, CS.out, frame)
         values["CENTERLINE"] = 1 if HDA_CntrlModSta > 0 else 0
         values["CAR_CIRCLE"] = 2 if hdp_active else 1 if cruise_enabled else 0
 

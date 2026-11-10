@@ -36,7 +36,7 @@ def test_model_turn_background_requires_active_steering(cruise_enabled, lat_acti
 
 @pytest.mark.parametrize('enabled,lat_active', ((False, False), (False, True), (True, False), (True, True)))
 @pytest.mark.parametrize('turning', (False, True))
-def test_pv5_turn_is_gray_bsd_is_steady_orange_and_paddle_takes_priority(enabled, lat_active, turning):
+def test_pv5_turn_is_gray_bsd_is_steady_red_and_paddle_takes_priority(enabled, lat_active, turning):
   palette = CANDefine('hyundai_canfd_generated').dv['ADRV_0x161']['BACKGROUND']
   assert palette[3] == 'ORANGE'
   assert palette[6] == 'FLASHING_RED'
@@ -44,7 +44,7 @@ def test_pv5_turn_is_gray_bsd_is_steady_orange_and_paddle_takes_priority(enabled
   normal = 1 if enabled else 3 if lat_active else 7
   args = (enabled, lat_active, False, 0, turning)
   assert _select_cluster_background(*args, turn_background=7) == (7 if lat_active and turning else normal)
-  assert _select_cluster_background(*args, turn_background=7, bsd_warning=True) == 3
+  assert _select_cluster_background(*args, turn_background=7, bsd_warning=True) == 5
   assert _select_cluster_background(enabled, lat_active, True, 1, turning, turn_background=7) == 6
   assert _select_cluster_background(enabled, lat_active, True, 1, turning, turn_background=7, bsd_warning=True) == 6
 
@@ -111,13 +111,47 @@ def test_bsd_background_can_frames_preserve_payload_and_restore_on_event_end(mon
                     lambda *args, **kwargs: selector(*args, **dict(kwargs, bsd_warning=False, turn_background=6)))
       baseline = messages(frame, baseline_packer)
     warning = pv5 and out.canValid and out.leftBlinker and out.leftBlindspot
-    assert actual['BACKGROUND'] == (3 if warning else fallback)
-    assert {k: v for k, v in actual.items() if k not in ('BACKGROUND', 'CHECKSUM')} == {
-      k: v for k, v in baseline.items() if k not in ('BACKGROUND', 'CHECKSUM')}
+    assert actual['BACKGROUND'] == (5 if warning else fallback)
+    assert actual['LANE_HIGHLIGHT'] == (5 if warning and (frame // 20) % 2 == 0 else baseline['LANE_HIGHLIGHT'])
+    assert actual['BCA_LEFT'] == (2 if warning else baseline['BCA_LEFT'])
+    assert actual['BCA_RIGHT'] == baseline['BCA_RIGHT']
+    assert {k: v for k, v in actual.items() if k not in ('BACKGROUND', 'LANE_HIGHLIGHT', 'BCA_LEFT', 'BCA_RIGHT', 'CHECKSUM')} == {
+      k: v for k, v in baseline.items() if k not in ('BACKGROUND', 'LANE_HIGHLIGHT', 'BCA_LEFT', 'BCA_RIGHT', 'CHECKSUM')}
     if previous_counter is not None:
       assert actual['COUNTER'] == (previous_counter + 1) % 256
     previous_counter = actual['COUNTER']
   assert stock == original
+
+
+@pytest.mark.parametrize('left,right', ((True, False), (False, True), (True, True)))
+def test_pv5_bsd_guide_is_independent_of_lane_visibility_with_exact_2_5hz(left, right):
+  out = structs.CarState(canValid=True, leftBlinker=left, rightBlinker=right,
+                        leftBlindspot=left, rightBlindspot=right)
+  highlights = []
+  for frame in range(0, 200, 5):
+    values = {"LANE_HIGHLIGHT": 0, "BCA_LEFT": 0, "BCA_RIGHT": 0, "ALERTS_1": 123, "SOUNDS_1": 3}
+    hyundaicanfd._apply_pv5_bsd_cluster_guide(values, out, frame)
+    highlights.append(values['LANE_HIGHLIGHT'])
+    assert values['BCA_LEFT'] == (2 if left else 0)
+    assert values['BCA_RIGHT'] == (2 if right else 0)
+    assert (values['ALERTS_1'], values['SOUNDS_1']) == (123, 3)
+  assert highlights == [5] * 4 + [0] * 4 + ([5] * 4 + [0] * 4) * 4
+  out.leftBlinker = out.rightBlinker = False
+  values = {"LANE_HIGHLIGHT": 0, "BCA_LEFT": 0, "BCA_RIGHT": 0}
+  hyundaicanfd._apply_pv5_bsd_cluster_guide(values, out, 200)
+  assert values == {"LANE_HIGHLIGHT": 0, "BCA_LEFT": 0, "BCA_RIGHT": 0}
+
+
+def test_pv5_bsd_guide_does_not_erase_oem_warning_on_off_phase_or_bad_can():
+  out = structs.CarState(canValid=True, leftBlinker=True, leftBlindspot=True)
+  original = {"LANE_HIGHLIGHT": 5, "BCA_LEFT": 2, "BCA_RIGHT": 2, "ALERTS_1": 123}
+  values = original.copy()
+  hyundaicanfd._apply_pv5_bsd_cluster_guide(values, out, 20)
+  assert values == original
+  out.canValid = False
+  values = {"LANE_HIGHLIGHT": 0, "BCA_LEFT": 0, "BCA_RIGHT": 0}
+  hyundaicanfd._apply_pv5_bsd_cluster_guide(values, out, 0)
+  assert values == {"LANE_HIGHLIGHT": 0, "BCA_LEFT": 0, "BCA_RIGHT": 0}
 
 
 @pytest.mark.parametrize('enabled,lat_active', ((False, False), (True, True)))
@@ -166,15 +200,19 @@ def test_bsd_background_stays_steady_without_extra_can_frames_or_paddle_changes(
     assert (actual[0][0], actual[0][2]) == (baseline[0][0], baseline[0][2]) == (0x161, 0)
     values = {key: get_raw_value(actual[0][1], sig) for key, sig in definition.sigs.items()}
     old = {key: get_raw_value(baseline[0][1], sig) for key, sig in definition.sigs.items()}
-    assert {k: v for k, v in values.items() if k not in ('BACKGROUND', 'CHECKSUM')} == {
-      k: v for k, v in old.items() if k not in ('BACKGROUND', 'CHECKSUM')}
+    assert {k: v for k, v in values.items() if k not in ('BACKGROUND', 'LANE_HIGHLIGHT', 'BCA_LEFT', 'BCA_RIGHT', 'CHECKSUM')} == {
+      k: v for k, v in old.items() if k not in ('BACKGROUND', 'LANE_HIGHLIGHT', 'BCA_LEFT', 'BCA_RIGHT', 'CHECKSUM')}
     assert values['CHECKSUM'] == hyundaicanfd.hkg_can_fd_checksum(0x161, None, bytearray(actual[0][1]))
+    warning = pv5 and out.leftBlinker and out.leftBlindspot
+    assert values['LANE_HIGHLIGHT'] == (5 if warning and (frame // 20) % 2 == 0 else old['LANE_HIGHLIGHT'])
+    assert values['BCA_LEFT'] == (2 if warning else old['BCA_LEFT'])
+    assert values['BCA_RIGHT'] == old['BCA_RIGHT']
     backgrounds.append(values['BACKGROUND'])
     counters.append(values['COUNTER'])
 
   normal = 1 if enabled else 3 if lat_active else 7
   fallback = (7 if pv5 else 6) if lat_active and desire == 1 else normal
-  expected = [6 if paddle else 3 if pv5 else fallback] * 40
+  expected = [6 if paddle else 5 if pv5 else fallback] * 40
   assert backgrounds == expected
   assert all(b == (a + 1) % 256 for a, b in zip(counters[:-1], counters[1:], strict=True))
   assert stock == original

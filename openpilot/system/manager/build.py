@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import selectors
+import stat
 import subprocess
 import sys
 import time
@@ -15,6 +16,7 @@ from openpilot.common.text_window import TextWindow
 from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.system.hardware import HARDWARE, AGNOS
 from openpilot.system.version import get_build_metadata
+from openpilot.system.manager.pv5_build_recovery import pv5_build_recovery_enabled
 
 MAX_CACHE_SIZE = 4e9 if "CI" in os.environ else 2e9
 CACHE_DIR = Path(os.environ.get("SCONS_CACHE_DIR") or ("/data/scons_cache" if AGNOS else "/tmp/scons_cache"))
@@ -236,6 +238,8 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
     nproc = 2
 
   extra_args = ["--minimal"] if minimal else []
+  cache_option = "--cache-populate"
+  pv5_recovery = AGNOS and pv5_build_recovery_enabled()
 
   if AGNOS:
     HARDWARE.set_power_save(False)
@@ -244,9 +248,10 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
   # building with all cores can result in using too
   # much memory, so retry with less parallelism
   compile_output: list[bytes] = []
-  for n in (nproc, nproc/2, 1):
+  attempts = [nproc, nproc/2, 1]
+  for attempt, n in enumerate(attempts):
     compile_output.clear()
-    scons: subprocess.Popen = subprocess.Popen(["scons", f"-j{int(n)}", "--cache-populate", *extra_args], cwd=BASEDIR, env=env,
+    scons: subprocess.Popen = subprocess.Popen(["scons", f"-j{int(n)}", cache_option, *extra_args], cwd=BASEDIR, env=env,
                                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     assert scons.stdout is not None
 
@@ -280,6 +285,12 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
       spinner.update(message)
       compile_output.append(message.encode('utf8'))
       break
+    if pv5_recovery and cache_option != "--cache-disable":
+      if remove_empty_build_outputs(Path(BASEDIR), CACHE_DIR):
+        spinner.update("Repairing empty PV5 build files; retrying without cache")
+        cache_option = "--cache-disable"
+        # One bounded low-memory recovery attempt; ordinary retries stay unchanged otherwise.
+        attempts[attempt + 1:] = [1]
 
   if scons.returncode != 0:
     # Read remaining output
@@ -300,6 +311,26 @@ def build(spinner: Spinner, dirty: bool = False, minimal: bool = False) -> None:
 
   # enforce max cache size only while no other patched SCons process uses it
   prune_cache(CACHE_DIR)
+
+
+def remove_empty_build_outputs(root: Path, cache_dir: Path) -> int:
+  """Delete only empty regular object/archive outputs while the shared cache is idle."""
+  removed = 0
+  try:
+    with acquire_cache_lock(cache_dir):
+      for directory, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in files:
+          path = Path(directory) / name
+          if path.suffix not in {".o", ".os", ".a"}:
+            continue
+          info = path.lstat()
+          if stat.S_ISREG(info.st_mode) and info.st_size == 0:
+            path.unlink()
+            removed += 1
+  except (OSError, RuntimeError) as exc:
+    print(f"Empty PV5 build output recovery stopped: {exc}")
+  return removed
 
 
 def prunable_cache_files(cache_dir: Path) -> list[Path]:

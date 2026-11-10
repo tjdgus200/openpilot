@@ -57,6 +57,17 @@ STATIONARY_FRONT_MIN_VISION_SUPPORT_FRAMES = 3
 STATIONARY_CONFIRMATION_S = 0.25
 STATIONARY_RADAR_ONLY_CONFIRMATION_S = 0.50
 STATIONARY_MAX_ABS_VLEAD_MPS = 4.0
+# 11-08 tunnel FCW (02_logs/measurements.md s52, s53): the vision lead jumped (24 -> 23 m but 7.3 -> 3.8 m/s, then
+# 37.5 -> 18.9 m) onto stationary reflectors 12-24 m short of the lead we kept measuring, and _match_moving adopted them
+# as fresh identities at once. Right after such a jump a fresh stationary-class track that sits between us and a central
+# moving front track is left to _match_stationary for a few frames; a track continuous with last frame's lead is not fresh.
+VISION_LEAD_MAX_POSITION_JUMP_M = 2.5
+VISION_LEAD_MAX_SPEED_JUMP_MPS = 3.0
+VISION_LEAD_MAX_GAP_S = 0.15
+FRESH_STATIONARY_VISION_CONTINUITY_FRAMES = 3  # the recorded phantoms lasted 1, 1, 3 and 1 frames
+FRESH_STATIONARY_GATE_MAX_ABS_VLEAD_MPS = 1.5   # reflectors read 0.0-0.2 m/s; a car creeping at 3 m/s is not gated
+MOVING_LEAD_SHIELD_MAX_DPATH_M = 1.0
+MOVING_LEAD_SHIELD_MAX_GAP_M = 40.0            # the lead was 12-24 m beyond the reflectors; a car far ahead is no shield
 STATIONARY_TURN_MIN_ABS_YAW_RATE_RAD_S = 0.10
 STATIONARY_TURN_CORNER_MIN_VISION_PROB = 0.80
 STATIONARY_HELD_CORNER_MAX_ABS_VLEAD_MPS = 8.0
@@ -822,11 +833,18 @@ class _RadarPositionEvidence:
 class VisionRadarMatcher:
   """Match vision/radar leads and confirm no-vision moving radar leads."""
 
-  def __init__(self) -> None:
+  def __init__(self, *, enable_fresh_stationary_shield: bool = False) -> None:
+    self.enable_fresh_stationary_shield = bool(enable_fresh_stationary_shield)
     self._closing_range_history: dict[tuple[str, int], tuple[float, float, RadarPointSnapshot]] = {}
     self.closing_range_match: VisionRadarMatch | None = None
     self.last_identity: tuple[str, int] | None = None
     self.low_probability_hold_frames = 0
+    # fresh stationary-class tracks 3..40 m short of this are left to _match_stationary this frame (-inf: none)
+    self._fresh_stationary_shield_d_rel = -math.inf
+    self._match_time_s: float | None = None
+    self._vision_previous: tuple[float, VisionLead] | None = None
+    self._vision_continuous_frames = 0
+    self._moving_selected: tuple[float, RadarPointSnapshot] | None = None  # last point _match_moving returned
     self.stationary_identity: tuple[str, int] | None = None
     self._stationary_pending_identity: tuple[str, int] | None = None
     self._stationary_pending_since_s: float | None = None
@@ -889,7 +907,15 @@ class VisionRadarMatcher:
     ) = None
     self._rejected_radar_only_moving_last_time_s: float | None = None
 
+  def _reset_refinement_history(self) -> None:
+    self._fresh_stationary_shield_d_rel = -math.inf
+    self._match_time_s = None
+    self._vision_previous = None
+    self._vision_continuous_frames = 0
+    self._moving_selected = None
+
   def reset(self) -> None:
+    self._reset_refinement_history()
     self._closing_range_history.clear()
     self.closing_range_match = None
     self._reset_moving()
@@ -3574,6 +3600,8 @@ class VisionRadarMatcher:
       held_identity = identity == self.last_identity
       if holding_previous and not held_identity:
         continue
+      if self.enable_fresh_stationary_shield and not held_identity and self._fresh_stationary_blocked(point):
+        continue  # stationary acquisition stays with _match_stationary and its confirmation dwell
       if not 0.5 < point.d_rel < 180.0:
         continue
       score = (
@@ -3638,12 +3666,79 @@ class VisionRadarMatcher:
     self.low_probability_hold_frames = (
       self.low_probability_hold_frames + 1 if holding_previous else 0
     )
+    if self.enable_fresh_stationary_shield and self._match_time_s is not None:
+      self._moving_selected = (self._match_time_s, selected[0])
     return VisionRadarMatch(
       point=selected[0],
       probability=vision.probability,
       score=selected[1],
       d_path=selected[2],
     )
+
+  def _fresh_stationary_blocked(self, point: RadarPointSnapshot) -> bool:
+    """A stationary track 3..40 m short of the shield (set only in the frames after a vision jump) that is not the
+    lead we matched last frame under a new id."""
+    return (
+      abs(point.v_lead) <= FRESH_STATIONARY_GATE_MAX_ABS_VLEAD_MPS
+      and point.d_rel + STATIONARY_CLOSER_THAN_MOVING_MIN_DREL_GAIN_M
+      < self._fresh_stationary_shield_d_rel
+      <= point.d_rel + MOVING_LEAD_SHIELD_MAX_GAP_M
+      and not self._continues_last_selection(point)
+    )
+
+  def _continues_last_selection(self, point: RadarPointSnapshot) -> bool:
+    """The radar re-numbered the lead we matched last frame (a braking lead crossing 4 m/s): same car, not fresh."""
+    if self._moving_selected is None or self._match_time_s is None:
+      return False
+    last_s, last = self._moving_selected
+    dt = self._match_time_s - last_s
+    return (
+      0.0 < dt <= VISION_LEAD_MAX_GAP_S
+      and abs(point.d_rel - (last.d_rel + last.v_rel * dt)) <= VISION_LEAD_MAX_POSITION_JUMP_M
+      and abs(point.y_rel - last.y_rel) <= MOVING_LEAD_SHIELD_MAX_DPATH_M
+      and abs(point.v_lead - last.v_lead) <= VISION_LEAD_MAX_SPEED_JUMP_MPS
+    )
+
+  def _vision_jumped(self, vision: VisionLead | None, time_s: float | None, v_ego: float | None) -> bool:
+    """The vision lead moved implausibly since the previous frame (a new object or a model glitch); an appearance from
+    nothing is not a jump, so a jam tail seen for the first time is unaffected."""
+    if vision is None or time_s is None or self._vision_previous is None:
+      return False
+    last_s, last = self._vision_previous
+    dt = time_s - last_s
+    if not 0.0 < dt <= VISION_LEAD_MAX_GAP_S:
+      return True
+    position_ok = v_ego is None or (
+      abs(vision.d_rel - (last.d_rel + (last.velocity - v_ego) * dt)) <= VISION_LEAD_MAX_POSITION_JUMP_M
+    )
+    return not position_ok or abs(vision.velocity - last.velocity) > VISION_LEAD_MAX_SPEED_JUMP_MPS
+
+  def _moving_lead_shield_d_rel(
+    self,
+    points: Iterable[RadarPointSnapshot],
+    path: Sequence[tuple[float, float]],
+    time_s: float | None,
+  ) -> float:
+    """Nearest frontRadar track that is measured, moving, central, confirmed and observed for
+    VISION_CORROBORATED_MIN_OBSERVED_S; -inf when there is none."""
+    shield = -math.inf
+    if time_s is None:
+      return shield
+    for point in points:
+      if (
+        point.source != "frontRadar"
+        or not point.measured
+        or point.radar_track_state < STATIONARY_RADAR_ONLY_FRONT_MIN_TRACK_STATE
+        or not 0.5 < point.d_rel < 180.0
+        or point.v_lead <= STATIONARY_MAX_ABS_VLEAD_MPS
+        or time_s - self._observed_since_s.get(self._identity(point), time_s)
+        < VISION_CORROBORATED_MIN_OBSERVED_S
+        or abs(project_to_model_path(path, point.d_rel, point.y_rel).d_path)
+        > MOVING_LEAD_SHIELD_MAX_DPATH_M
+      ):
+        continue
+      shield = point.d_rel if shield == -math.inf else min(shield, point.d_rel)
+    return shield
 
   def _stationary_closer_handoff_ready(
     self,
@@ -3812,6 +3907,23 @@ class VisionRadarMatcher:
     vision = vision_lead_from_model(model)
     self._update_vision_fallback(vision)
     point_values = tuple(points)
+    if self.enable_fresh_stationary_shield:
+      # Do not let a reset, reversed/invalid clock or old stream carry a shield into a new sequence.
+      if time_s is None or not math.isfinite(time_s):
+        self._reset_refinement_history()
+      else:
+        if self._match_time_s is not None and not 0.0 < time_s - self._match_time_s <= VISION_LEAD_MAX_GAP_S:
+          self._reset_refinement_history()
+        self._match_time_s = time_s
+        v_ego = next((p.v_lead - p.v_rel for p in point_values if p.measured), None)
+        if vision is None or self._vision_jumped(vision, time_s, v_ego):
+          self._vision_continuous_frames = 0
+        elif self._vision_previous is None:
+          # First sight of a queue tail or cut-in is not a jump from a measured lead.
+          self._vision_continuous_frames = FRESH_STATIONARY_VISION_CONTINUITY_FRAMES
+        else:
+          self._vision_continuous_frames += 1
+        self._vision_previous = None if vision is None else (time_s, vision)
     stationary_values = (
       point_values
       if stationary_points is None
@@ -3913,6 +4025,12 @@ class VisionRadarMatcher:
       prefer_primary_stationary,
       yaw_rate_rad_s,
       allowed_output_sources,
+    )
+    self._fresh_stationary_shield_d_rel = (
+      self._moving_lead_shield_d_rel(point_values, path, time_s)
+      if self.enable_fresh_stationary_shield and self._match_time_s is not None
+      and self._vision_continuous_frames < FRESH_STATIONARY_VISION_CONTINUITY_FRAMES
+      else -math.inf
     )
     moving = self._match_moving(vision, point_values, path)
     output_values = (

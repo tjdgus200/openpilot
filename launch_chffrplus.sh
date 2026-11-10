@@ -500,8 +500,17 @@ function heal_scons_cache {
 # remove them. Request creation must not require a working build environment.
 REBUILD_REQUEST="/data/rebuild_all.request"
 REBUILD_LOG="/data/rebuild_all.last.log"
+PV5_BUILD_MARKER="/data/carrot_pv5_build.inprogress"
+PV5_BUILD_RECOVERY=0
 
 function consume_rebuild_request {
+  if [ "$PV5_BUILD_RECOVERY" = "1" ]; then
+    if [ -f "$PV5_BUILD_MARKER" ] && [ ! -f "$REBUILD_REQUEST" ]; then
+      echo "Previous PV5 build did not finish; requesting Rebuild All"
+      echo "interrupted PV5 build" > "$REBUILD_REQUEST" || return 1
+    fi
+    : > "$PV5_BUILD_MARKER" && sync -f "$PV5_BUILD_MARKER" || echo "Cannot arm PV5 build recovery marker"
+  fi
   [ -f "$REBUILD_REQUEST" ] || return 0
   # Keep the request if cleanup fails or is interrupted. This function never
   # reboots; successful cleanup consumes it before compilation starts.
@@ -660,6 +669,10 @@ function launch {
     show_startup_failure "SCons cache is unusable and could not be removed: /data/scons_cache"
     return 1
   fi
+  # Maintenance uses the last identified PV5. Unknown/other cars keep their original startup behavior.
+  if python3 "$DIR/openpilot/system/manager/pv5_build_recovery.py"; then
+    PV5_BUILD_RECOVERY=1
+  fi
   if ! consume_rebuild_request; then
     show_startup_failure "Rebuild All cleanup failed; see /data/rebuild_all.last.log"
     return 1
@@ -715,6 +728,9 @@ function launch {
   if ! run_startup_command python3 "$DIR/openpilot/system/manager/params_check.py"; then
     echo "Native Params still do not match this checkout; not starting manager."
     show_startup_failure "Native Params do not match this checkout"
+  fi
+  if [ "$PV5_BUILD_RECOVERY" = "1" ]; then
+    rm -f "$PV5_BUILD_MARKER"
   fi
   start_big_model_update
   if ! run_startup_command start_manager; then

@@ -116,7 +116,7 @@ STATIONARY_HANDOFF_MAX_YREL_DELTA_M = 1.5
 VALIDATION_SETTINGS_ENV = "CARROT_RADAR_VALIDATION_SETTINGS"
 VALIDATION_MOTION_MODES = ("normal", "front")
 VALIDATION_DEFAULT_SENSITIVITY = 3
-VISUAL_REPLAY_CACHE_VERSION = 6
+VISUAL_REPLAY_CACHE_VERSION = 7
 LEAD_ONE_RADAR_RGB = (246, 142, 55)
 LEAD_ONE_VISION_RGB = (72, 145, 255)
 LEAD_ONE_VISION_WEAK_RGB = (104, 205, 255)
@@ -1260,7 +1260,7 @@ class RadarMotionShadowSelector:
         output.lead_one for output in production_outputs
       )
     elif lead_one_outputs is None:
-      matcher = VisionRadarMatcher()
+      matcher = VisionRadarMatcher(enable_fresh_stationary_shield=_pv5_refinements_enabled(frames))
       lead_one_results = []
       for frame in frames:
         aligned_points = radar_points_at_model_time(frame)
@@ -2606,6 +2606,13 @@ def _copy_recorded_lead(lead: Any) -> RecordedLead:
   )
 
 
+def _pv5_refinements_enabled(frames: Sequence[RadarFrame]) -> bool:
+  """Unknown or mixed vehicle metadata must retain the original Carrot policy."""
+  return bool(frames) and all(
+    frame.car_brand == "hyundai" and frame.car_fingerprint == "KIA_PV5" for frame in frames
+  )
+
+
 def _production_controller_replay(
   frames: Sequence[RadarFrame],
   *,
@@ -2618,6 +2625,7 @@ def _production_controller_replay(
     prefer_corner_radar=motion_sensor == "corner",
     enable_radar_tracks=enable_radar_tracks,
     cut_in_sensitivity=cut_in_sensitivity,
+    pv5_refinements=_pv5_refinements_enabled(frames),
   )
   outputs = []
   estimates = []

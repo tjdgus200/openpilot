@@ -1,5 +1,29 @@
 # Repository memory
 
+- 2026-11-10 explicit owner port from joongyu01/carrot-wip-dev bd9f3048:
+  preserve PV5-only SCC/front same-body identity continuity (72c77527), the
+  fresh-stationary shield after vision discontinuity (9727f3bc/0e262a28),
+  >=0.30s angle-driver press counting (4bc712ea), and interrupted/empty-output
+  build recovery (9a103994/58f0bb92). Default helper behavior remains original;
+  live and complete-consistent-metadata replay opt in only hyundai/KIA_PV5.
+  Keep common 0.20s coherent vision handover for all existing DPath cars.
+  Reset new history across missing path/reset/invalid/reversed/gapped time.
+  Disclose the synthetic stopped-side-entry three-frame (150ms at20Hz) cost;
+  do not call PC output parity road-safety evidence. Driver yielding remains
+  immediate; the optional simple-recovery toggle and every steering limit stay.
+  Boot repair reads bounded real CarParamsPersistent before native Params;
+  unknown/corrupt/other-car scope keeps original behavior. Retain a PV5-only
+  marker until build AND Params verification succeed. Under the existing cache
+  lock remove only empty regular .o/.os/.a; never follow links or remove sources,
+  nonempty objects or .so; retry without cache once at one build job.
+  Additional BSD fix: only PV5 native CCNC uses steady red5 plus red lane
+  highlight5 200ms-on/200ms-off and same-side BCA indication, even if model lane
+  visibility is absent. Keep OEM alerts, off-phase stock warnings, paddle
+  priority, native cadence/CRC/counters and non-PV5 bytes. Native PV5 palette
+  acceptance is not established by PC packets. Jetson HUD gradient/bracket,
+  packages, camera/model/FOV/AE, BLE, signal-stop object and firmware unchanged.
+  See docs/pv5_dev_refinements_20261110.md and permanent model checklist.
+
 - 2026-11-10 owner explicitly adopts the synthetic3m signal-stop CAN object
   for KIA_PV5 only. Port the complete request/publish/final-SCC/feedback/schema
   chain from7d337b plus f3564347's publish-local freshness fix; never import

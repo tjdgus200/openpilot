@@ -217,6 +217,7 @@ class CarController(CarControllerBase):
     self.lkas_max_torque = 0
     self.angle_max_torque = 250
     self.steering_pressed_prev = False
+    self.steering_pressed_frames = 0
     self.recovering_from_override = False
     self.full_recovery_frames = 0
     self.repeated_override_count = 0
@@ -350,11 +351,20 @@ class CarController(CarControllerBase):
     angle_torque_cap = self.angle_max_torque
 
     steering_pressed_rising = CS.out.steeringPressed and not self.steering_pressed_prev
+    pv5_override_filter = self.CP.brand == "hyundai" and self.CP.carFingerprint == CAR.KIA_PV5 and angle_control
+    self.steering_pressed_frames = (
+      self.steering_pressed_frames + 1 if pv5_override_filter and CS.out.steeringPressed and CC.latActive else 0
+    )
     if steering_pressed_rising:
+      # Yield immediately; only the repeated-override recovery penalty needs a sustained press.
+      self.recovering_from_override = True
+    counted_override = (
+      self.steering_pressed_frames == int(0.3 / DT_CTRL) if pv5_override_filter else steering_pressed_rising
+    )
+    if counted_override:
       if 0 < self.full_recovery_frames < int(5.0 / DT_CTRL):
         self.repeated_override_count = min(self.repeated_override_count + 1, 3)
       self.full_recovery_frames = 0
-      self.recovering_from_override = True
 
     torque_threshold = max(self.params.STEER_THRESHOLD, 1.0)
     # Filter signed torque so alternating sensor noise cancels out before its

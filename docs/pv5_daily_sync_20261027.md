@@ -1,5 +1,13 @@
 # PV5 daily source sync, 2026-10-27
 
+2026-11-10 owner-approved additional PV5-only differences: development-branch
+SCC/front track continuity, discontinuous-vision stationary confirmation,
+sustained driver-press counting and startup build repair. Preserve native BSD
+steady red background and2.5Hz guide independent of model lane visibility.
+The common Carrot0.20s vision handover remains common to existing DPath cars.
+Scope, confirmation cost, source pins and PC-only evidence are recorded in
+[the selective port](pv5_dev_refinements_20261110.md); retain all prior features.
+
 2026-10-30 preserved difference12 adds three selective Jetlink defenses:
 post-parser finite validation, device-free joining/fallback regression gates,
 and default-attempt coherent QCOM warp output with actual flags/pixel admission
