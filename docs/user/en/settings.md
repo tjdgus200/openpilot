@@ -2,11 +2,11 @@
 
 [한국어](../ko/settings.md)
 
-The PV5 **Simple Steering Authority Recovery** option is retained. When enabled, it
-confirms low driver effort for 0.2s and restores the existing authority ceiling with
-a 1.2s full-range ramp (previously 1.5s). Switching OFF retains the 1.5s bounded return
-to legacy. Immediate driver yielding, original limits and input validation remain.
-These timings do not specify the physical steering-wheel recovery time.
+The PV5 **Simple Steering Authority Recovery** details now provide confirmation and
+recovery timing controls. Defaults are 200ms (0.20s) and 1500ms (1.50s) for the full
+authority range; the option itself remains off by default. Steering continues with
+the allowed authority during recovery. These times do not specify physical wheel
+or lane-return time. Vehicle safety remains unvalidated.
 
 > [!NOTE]
 > This is the canonical English user guide maintained with the `carrot-wip` code. When user-visible behavior changes, update this document together with the related code and tests.
@@ -432,16 +432,30 @@ Preparation releases when red evidence disappears or conflicts with green. The e
 ## PV5 simple steering authority recovery
 
 Open **Settings → PV5 → Driving Assist → Simple Steering Authority Recovery (Experimental)**.
-`Pv5SimpleSteerRecovery` defaults off, retaining combined recovery. On confirms low
-driver effort for 0.2 seconds, then uses a 1.5-second full-range authority ramp.
-Actual recovery time depends on starting authority and driver effort. Model uncertainty
+`Pv5SimpleSteerRecovery` defaults off, retaining combined recovery. Its details contain
+two timing controls, used only when enabled:
+
+| Setting | Trial adjustment range | Default |
+| --- | --- | --- |
+| Low-effort confirmation `Pv5SteerReleaseMs` | 100–500ms, 50ms steps | 200ms (0.20s) |
+| Full-range authority recovery `Pv5SteerRecoveryMs` | 1000–3000ms, 100ms steps | 1500ms (1.50s) |
+
+These are not vehicle-validated safe ranges. Shorter confirmation admits briefer drops
+in driver effort; shorter recovery increases authority faster. Longer settings can
+delay lane-following recovery. Use 0.20s/1.50s as the comparison baseline. Missing,
+corrupt, out-of-range and off-grid values use the respective default. Recovery sets
+a full-range increase rate, not a period without steering. Switching off keeps its
+fixed 1.5s bounded return. Actual recovery time depends on initial authority and effort. Model uncertainty
 and repeated-override history do not set its recovery rate; existing model freshness
 and validity admission remain. Existing driver and pre-override yielding are retained.
-The existing 50-frame settings poll applies in any gear or cruise state; live transitions
-start from the preceding output without an abrupt authority increase. Deactivation clears
+The existing 50-frame settings poll applies in any gear or cruise state. An ongoing
+confirmation/recovery keeps both timings from its first low-effort sample; changes apply
+to the next confirmation. Driver/pre-override intervention, effort rising during
+confirmation, invalid inputs and option transitions re-arm confirmation. Live ON/OFF
+transitions start from the preceding output without an abrupt authority increase. Deactivation clears
 authority and state. Other vehicles and torque steering ignore this option. Steering
 angle/rate, lateral acceleration/jerk, authority limits, Panda safety and model inputs
-are unchanged. Physical vehicle response and benefit are unvalidated.
+are unchanged. No lane-departure-adaptive recovery was added. Physical vehicle response and benefit are unvalidated.
 
 ## PV5 camera and exposure
 

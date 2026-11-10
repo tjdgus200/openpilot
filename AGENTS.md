@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-10 owner timing controls supersede the fixed1.2s ON ramp below.
+  PV5SimpleSteerRecovery stays default OFF/PV5 angle only. Web details expose
+  Pv5SteerReleaseMs100..500/step50/default200 and Pv5SteerRecoveryMs1000..3000/
+  step100/default1500. Trial bounds are not vehicle-validated safe bounds.
+  Native defaults match; missing/corrupt/off-grid/out-of-range uses defaults.
+  Read the two keys only at the existing50-frame poll when enabled for PV5 angle.
+  Latch both timings from the first low-effort sample through its recovery; edits
+  apply at the next confirmation after driver/pre-yield, interrupted confirmation,
+  input fault or mode reset. Preserve immediate yielding, all input/angle/authority
+  gates and fixed1.5s OFF return. No lane-departure-adaptive acceleration is enabled.
+  Confirm all steps/faults/live edits, default-OFF/non-PV5 CAN parity, menu grouping,
+  localized docs and permanent model checks; PC checks are not physical validation.
+
 - 2026-11-10 owner requests slightly faster PV5 simplified steering recovery.
   Preserve the opt-in/default-OFF scope and immediate driver/pre-override yield,
   0.20s low-effort confirmation, valid/fresh CAN/model gates and all limits.

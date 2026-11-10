@@ -9,7 +9,7 @@ from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.stopping import CanfdStopping
 from opendbc.car.hyundai.steering_handover import SteeringHandover
-from opendbc.car.hyundai.steering_recovery import SimpleSteeringRecovery
+from opendbc.car.hyundai.steering_recovery import SimpleSteeringRecovery, DEFAULT_RELEASE_MS, DEFAULT_RECOVERY_MS, read_recovery_settings
 from opendbc.car.carlog import carlog
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
@@ -232,6 +232,8 @@ class CarController(CarControllerBase):
     self.handover_model_time = 0
     self.simple_steer_recovery = SimpleSteeringRecovery()
     self.simple_steer_recovery_enabled = False
+    self.simple_steer_release_ms = DEFAULT_RELEASE_MS
+    self.simple_steer_recovery_ms = DEFAULT_RECOVERY_MS
     self.previous_steering_authority = 0.0
 
     self.lkas11_active = False
@@ -267,6 +269,8 @@ class CarController(CarControllerBase):
       self.simple_steer_recovery_enabled = bool(
         self.CP.carFingerprint == CAR.KIA_PV5 and self.CP.flags & HyundaiFlags.ANGLE_CONTROL
         and params.get_bool("Pv5SimpleSteerRecovery"))
+      if self.simple_steer_recovery_enabled:
+        self.simple_steer_release_ms, self.simple_steer_recovery_ms = read_recovery_settings(params)
       self.max_angle_frames = params.get_int("MaxAngleFrames")
       steerMax = params.get_int("CustomSteerMax")
       steerDeltaUp = params.get_int("CustomSteerDeltaUp")
@@ -505,6 +509,7 @@ class CarController(CarControllerBase):
                                         and model_valid),
           pressed=CS.out.steeringPressed, driver_ratio=torque_ratio,
           pre_override_yield=pre_override_yield,
+          release_ms=self.simple_steer_release_ms, recovery_ms=self.simple_steer_recovery_ms,
         )
       if self.frame % 100 == 0 or previous_handover_state != self.steer_handover.state:
         carlog.info("SteeringHandover mode=3 state=%s effort=%.3f error=%.3f legacy=%.1f cap=%.1f simple=%s",

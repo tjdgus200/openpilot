@@ -134,6 +134,29 @@ test("ATC add-on lives in the original mode selector's details", async () => {
   assert.deepEqual(model.getDetailEntries("ATC", parent.name).map((e) => e.item.name), [parent.name, child.name]);
 });
 
+test("PV5 recovery timing controls stay inside the opt-in recovery details", async () => {
+  const { createSettingsDerivedModel } = await import("../src/features/settings/derived_model.js");
+  const catalog = JSON.parse(readFileSync(new URL("../../carrot_settings.json", root), "utf8"));
+  const names = ["Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"];
+  const items = names.map((name) => catalog.params.find((item) => item.name === name));
+  const model = createSettingsDerivedModel({
+    catalog: { groups: [], categories: [], items_by_group: { PV5_ASSIST: items } },
+    language: "ko", favorites: [], profiles: [],
+  });
+  assert.equal(items[0].default, 0);
+  assert.deepEqual(model.getItemEntriesForGroup("PV5_ASSIST").map((e) => e.item.name), [names[0]]);
+  assert.deepEqual(model.getDetailEntries("PV5_ASSIST", names[0]).map((e) => e.item.name), names);
+  for (const [index, expected] of [[1, [100, 500, 50, 200]], [2, [1000, 3000, 100, 1500]]]) {
+    const item = items[index];
+    assert.deepEqual([item.min, item.max, item.unit, item.default], expected);
+    assert.equal(item.control, "slider");
+    assert.equal(item.display_unit, "timeMs");
+    for (const field of ["descr", "edescr", "cdescr"]) assert.ok(item[field].length > 30);
+  }
+  const pv5 = catalog.menu.find((category) => category.id === "PV5");
+  assert.ok(names.every((name) => pv5.groups.find((group) => group.id === "PV5_ASSIST").params.includes(name)));
+});
+
 
 test("live geometry is one directly adjustable setting with zero as vehicle default", async () => {
   const { createSettingsDerivedModel } = await import("../src/features/settings/derived_model.js");

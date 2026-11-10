@@ -6,9 +6,31 @@ Legacy recovery continues independently for a bounded return when switched off.
 import math
 
 
-RECOVERY_SECONDS = 1.2  # PV5 opt-in full-range recovery; low-force confirmation stays unchanged.
+DEFAULT_RELEASE_MS = 200
+DEFAULT_RECOVERY_MS = 1500
 RETURN_SECONDS = 1.5  # Preserve the existing bounded transition back to legacy when switched OFF.
-RELEASE_SECONDS = 0.2  # Existing low-driver-force confirmation.
+TIMING_SETTINGS = (
+  ("Pv5SteerReleaseMs", 100, 500, 50, DEFAULT_RELEASE_MS),
+  ("Pv5SteerRecoveryMs", 1000, 3000, 100, DEFAULT_RECOVERY_MS),
+)
+
+
+def _timing_ms(value, minimum, maximum, step, default):
+  # Missing, corrupt, off-grid and out-of-range values use the documented default.
+  return value if type(value) is int and minimum <= value <= maximum and (value - minimum) % step == 0 else default
+
+
+def read_recovery_settings(params):
+  values = []
+  for name, minimum, maximum, step, default in TIMING_SETTINGS:
+    try:
+      # Typed get validates the entire integer string; get_int's std::stoi can
+      # accept a numeric prefix in corrupt storage (for example "100junk").
+      value = params.get(name)
+    except (ValueError, TypeError, OverflowError, OSError):
+      value = default
+    values.append(_timing_ms(value, minimum, maximum, step, default))
+  return tuple(values)
 
 
 class SimpleSteeringRecovery:
@@ -22,9 +44,13 @@ class SimpleSteeringRecovery:
     self.low_seconds = 0.0
     self.released = False
     self.last_time = None
+    self.timing_locked = False
+    self.release_seconds = DEFAULT_RELEASE_MS / 1000
+    self.recovery_seconds = DEFAULT_RECOVERY_MS / 1000
 
   def update(self, *, enabled, now, legacy, previous, minimum, maximum, active,
-             valid, pressed, driver_ratio, pre_override_yield):
+             valid, pressed, driver_ratio, pre_override_yield,
+             release_ms=DEFAULT_RELEASE_MS, recovery_ms=DEFAULT_RECOVERY_MS):
     if not active:
       self.reset()
       return legacy
@@ -38,6 +64,7 @@ class SimpleSteeringRecovery:
       self.cap = previous
       self.low_seconds = 0.0
       self.released = False
+      self.timing_locked = False
     dt = now - self.last_time if self.last_time is not None else 0.0
     self.last_time = now
     numbers = (now, dt, legacy, previous, minimum, maximum, driver_ratio, pre_override_yield)
@@ -47,6 +74,7 @@ class SimpleSteeringRecovery:
     if not sane:
       self.low_seconds = 0.0
       self.released = False
+      self.timing_locked = False
       self.cap = 0.0
       return 0.0
     self.cap = min(maximum, max(minimum, self.cap))
@@ -59,10 +87,16 @@ class SimpleSteeringRecovery:
     if not valid or not 0 < dt <= .03:
       self.low_seconds = 0.0
       self.released = False
+      self.timing_locked = False
       self.cap = min(self.cap, legacy, minimum)
       return self.cap
 
-    rise = (maximum - minimum) * dt / (RETURN_SECONDS if self.returning else RECOVERY_SECONDS)
+    if not self.returning and not self.timing_locked:
+      # Freeze both settings from the first low-effort sample through recovery.
+      # Editing a setting cannot shorten confirmation or accelerate a current ramp.
+      self.release_seconds = _timing_ms(release_ms, *TIMING_SETTINGS[0][1:]) / 1000
+      self.recovery_seconds = _timing_ms(recovery_ms, *TIMING_SETTINGS[1][1:]) / 1000
+    rise = (maximum - minimum) * dt / (RETURN_SECONDS if self.returning else self.recovery_seconds)
     if self.returning:
       # A background legacy ramp cannot cause a sudden authority increase.
       if pressed or pre_override_yield > 0:
@@ -77,12 +111,15 @@ class SimpleSteeringRecovery:
     if pressed or pre_override_yield > 0:
       self.low_seconds = 0.0
       self.released = False
+      self.timing_locked = False
       # Preserve the existing immediate override/pre-override decrement.
       fall = 20.0 if pressed else 10.0 * pre_override_yield
       self.cap = max(minimum, self.cap - fall)
     else:
+      if not self.released:
+        self.timing_locked = driver_ratio < .6
       self.low_seconds = self.low_seconds + dt if driver_ratio < .6 else 0.0
-      self.released = self.released or self.low_seconds + 1e-9 >= RELEASE_SECONDS
+      self.released = self.released or self.low_seconds + 1e-9 >= self.release_seconds
       if self.released:
         taper = min(1.0, max(0.0, (.8 - driver_ratio) / .2))
         self.cap = min(maximum, self.cap + rise * taper)

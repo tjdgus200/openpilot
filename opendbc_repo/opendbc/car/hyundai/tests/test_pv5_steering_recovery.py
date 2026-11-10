@@ -11,7 +11,8 @@ def setup(monkeypatch, enabled, **kwargs):
   controller, cs, cc, settings = setup_controller(monkeypatch, **kwargs)
   controller.CP.carFingerprint = CAR.KIA_PV5
   settings['Pv5SimpleSteerRecovery'] = enabled
-  params = NS(get_int=lambda key: settings.get(key, 0), get_bool=lambda key: bool(settings.get(key, False)))
+  params = NS(get=lambda key: settings.get(key), get_int=lambda key: settings.get(key, 0),
+              get_bool=lambda key: bool(settings.get(key, False)))
   monkeypatch.setattr(carcontroller, 'Params', lambda: params)
   monkeypatch.setattr(hyundaicanfd, 'Params', lambda: params)
   return controller, cs, cc, settings
@@ -119,13 +120,11 @@ def test_other_platforms_and_torque_control_ignore_toggle(monkeypatch, angle, pv
 
 
 @pytest.mark.parametrize('camera', (False, True))
-def test_faster_simple_ramp_does_not_change_off_controller_or_can(monkeypatch, camera):
-  from opendbc.car.hyundai import steering_recovery
-
+def test_timing_settings_do_not_change_off_controller_or_can(monkeypatch, camera):
   traces = []
-  for seconds in (1.5, 1.2):
-    monkeypatch.setattr(steering_recovery, 'RECOVERY_SECONDS', seconds)
-    controller, cs, cc, _ = setup(monkeypatch, False, camera=camera)
+  for release, recovery in ((100, 1000), (500, 3000)):
+    controller, cs, cc, settings = setup(monkeypatch, False, camera=camera)
+    settings.update(Pv5SteerReleaseMs=release, Pv5SteerRecoveryMs=recovery)
     trace = []
     for frame in range(600):
       cs.out.steeringPressed = frame % 210 < 35
@@ -136,3 +135,81 @@ def test_faster_simple_ramp_does_not_change_off_controller_or_can(monkeypatch, c
       trace.append((output.to_dict(), messages))
     traces.append(trace)
   assert traces[0] == traces[1]
+
+
+@pytest.mark.parametrize('camera', (False, True))
+def test_settings_reach_controller_and_can_with_same_angle_commands(monkeypatch, camera):
+  traces = []
+  for release, recovery in ((100, 1000), (200, 1500), (500, 3000)):
+    controller, cs, cc, settings = setup(monkeypatch, True, camera=camera)
+    settings.update(Pv5SteerReleaseMs=release, Pv5SteerRecoveryMs=recovery)
+    trace = []
+    for frame in range(500):
+      cs.out.steeringPressed = frame < 100
+      cs.out.steeringTorque = 350 if frame < 100 else 0
+      output, messages = step(controller, cs, cc)
+      address, byte = (0xCB, 6) if camera else (0x12A, 12)
+      payload = next(data for addr, data, _ in messages if addr == address)
+      assert abs(payload[byte] - output.torqueOutputCan) <= .5
+      assert 25 <= output.torqueOutputCan <= 250
+      trace.append((output.steeringAngleDeg, output.torqueOutputCan))
+    assert controller.simple_steer_release_ms == release
+    assert controller.simple_steer_recovery_ms == recovery
+    assert trace[-1][1] == 250
+    traces.append(trace)
+  assert [x[0] for x in traces[0]] == [x[0] for x in traces[1]] == [x[0] for x in traces[2]]
+  assert next(i for i, x in enumerate(traces[0]) if i > 100 and x[1] == 250) < next(
+    i for i, x in enumerate(traces[1]) if i > 100 and x[1] == 250) < next(
+    i for i, x in enumerate(traces[2]) if i > 100 and x[1] == 250)
+
+
+@pytest.mark.parametrize('enabled,angle,pv5', ((True, True, True), (False, True, True), (True, False, True), (True, True, False)))
+def test_extra_settings_reads_only_existing_poll_for_enabled_pv5_angle(monkeypatch, enabled, angle, pv5):
+  controller, cs, cc, settings = setup(monkeypatch, enabled, angle=angle)
+  if not pv5:
+    controller.CP.carFingerprint = CAR.KIA_EV6
+  reads = []
+
+  def get(key):
+    if key in ('Pv5SteerReleaseMs', 'Pv5SteerRecoveryMs'):
+      reads.append((controller.frame, key))
+      raise ValueError('corrupt test setting')
+    return settings.get(key, 0)
+
+  params = NS(get=get, get_int=lambda key: settings.get(key, 0), get_bool=lambda key: bool(settings.get(key, False)))
+  monkeypatch.setattr(carcontroller, 'Params', lambda: params)
+  for _ in range(120):
+    step(controller, cs, cc)
+  expected = [(frame, key) for frame in (0, 50, 100) for key in ('Pv5SteerReleaseMs', 'Pv5SteerRecoveryMs')]
+  assert reads == (expected if enabled and angle and pv5 else [])
+  assert controller.simple_steer_release_ms == 200
+  assert controller.simple_steer_recovery_ms == 1500
+
+
+def test_polled_live_edits_wait_for_next_driver_release(monkeypatch):
+  controller, cs, cc, settings = setup(monkeypatch, True)
+  settings.update(Pv5SteerReleaseMs=500, Pv5SteerRecoveryMs=3000)
+  for frame in range(180):
+    cs.out.steeringPressed = frame < 100
+    cs.out.steeringTorque = 350 if frame < 100 else 0
+    step(controller, cs, cc)
+  assert controller.simple_steer_recovery.timing_locked
+  settings.update(Pv5SteerReleaseMs=100, Pv5SteerRecoveryMs=1000)
+  for _ in range(80):
+    previous = controller.previous_steering_authority
+    output, _ = step(controller, cs, cc)
+    assert output.torqueOutputCan <= previous + .75 + 1e-8
+  assert controller.simple_steer_release_ms == 100
+  assert controller.simple_steer_recovery_ms == 1000
+  assert controller.simple_steer_recovery.release_seconds == .5
+  assert controller.simple_steer_recovery.recovery_seconds == 3
+  cs.out.steeringPressed = True
+  cs.out.steeringTorque = 350
+  for _ in range(100):
+    step(controller, cs, cc)
+  cs.out.steeringPressed = False
+  cs.out.steeringTorque = 0
+  for _ in range(30):
+    step(controller, cs, cc)
+  assert controller.simple_steer_recovery.release_seconds == .1
+  assert controller.simple_steer_recovery.recovery_seconds == 1

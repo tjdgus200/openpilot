@@ -85,7 +85,7 @@ class WikiSettingsGeneratorTest(unittest.TestCase):
       catalog_commit=COMMIT,
       generated_at=STAMP,
     )
-    setting_count = 215
+    setting_count = 221
     self.assertEqual(len(result.generated_settings), setting_count)
     self.assertIn("TeslaAutoTurnSignals", result.index["settings"])
     self.assertIn("JetsonHudFps", result.index["settings"])
@@ -94,6 +94,8 @@ class WikiSettingsGeneratorTest(unittest.TestCase):
     self.assertIn("CommaPedalEnabled", result.index["settings"])
     self.assertIn("Pv5LaneCenterAssist", result.index["settings"])
     self.assertIn("Pv5SimpleSteerRecovery", result.index["settings"])
+    self.assertIn("Pv5SteerReleaseMs", result.index["settings"])
+    self.assertIn("Pv5SteerRecoveryMs", result.index["settings"])
     self.assertIn("Pv5WideModelFov", result.index["settings"])
     self.assertIn("Pv5FovPreviewPitch", result.index["settings"])
     self.assertIn("Pv5CameraFovPreview", result.index["settings"])
