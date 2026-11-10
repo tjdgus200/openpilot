@@ -15,13 +15,29 @@ which runs every 250 ms.
 The PV5 fork applies a small additive lateral acceleration request before the existing
 curvature smoothing and limiting. It requires active lateral control (including
 AlwaysLateral with cruise disabled), valid Drive
-gear while moving forward, gentle curvature, two confident lane lines and agreement
+gear while moving forward, two usable lane lines and agreement
 between the lane center and the model path. It yields to existing lane-line
 mode, driver steering or braking, turn signals, maneuver intent, blind spots,
 driver monitoring alerts, nearby tracked leads, and stale input. The extra
 request is capped at 0.08 m/s² and ramps in after 0.5 seconds of eligibility.
 When eligibility is lost, the extra request becomes zero and the existing
 curvature filter and rate limits govern the transition.
+
+2026-11-10에는 [여러 지점 곡률 보정](pv5_lane_center_fit_20261110.md)을 적용했습니다.
+전방 9지점의 차선 중앙과 모델 경로·조향 곡률을 함께 비교합니다. 양쪽 차선 확률
+50% 이상·표준편차 0.6m 미만이 필요하며, 낮은 쪽의 확률과 불확실성으로 강도를
+줄입니다. 85%를 오가는 작은 변화만으로 진입 확인을 다시 시작하지 않습니다.
+기존 0.6m/s² 커브 차단과 전방 중앙 위치 0.75m 차단은 곡선 기하 검사로 대체합니다.
+앞차·BSD·운전자·기동·신선도·기존 레인모드 차단, 0.08m/s² 상한과 기본 OFF는 유지합니다.
+한쪽 차선 추정과 원본의 회피 이력 판단은 이번 범위에 포함하지 않습니다.
+
+The 2026-11-10 fit compares nine forward lane-center samples with both model path
+and action curvature. Both inner lines must have probability at least50% and
+standard deviation below0.6m. Bilateral probability/std quality scales the bounded
+correction; rising quality recovers gradually. The former0.6m/s² curve veto and
+0.75m absolute forward-center veto are replaced by curved-road geometry checks.
+All obstacle/driver/freshness/maneuver/lane-mode gates, default OFF and0.08m/s²
+ceiling remain. This is a scoped adaptation, not the full Blendful policy.
 
 보정 전용 속도 제한은 없습니다. 저속에서는 곡률 환산에 사용하는 속도의 하한을 적용해 보정값이 커지는 것을 막습니다.
 The assist follows the existing steering activation speed rules. Curvature

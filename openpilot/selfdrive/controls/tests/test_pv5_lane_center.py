@@ -68,7 +68,7 @@ def test_correction_without_separate_speed_gate(kph):
   for i in range(140):
     cc = tick(new_model=i % 5 == 0)
   if kph > 0:
-    assert cc.actuators.curvature == pytest.approx(.06 / max(kph / 3.6, 5.0)**2, rel=.02)
+    assert .065 < cc.actuators.curvature * max(kph / 3.6, 5.0)**2 <= MAX_CORRECTION_ACCEL
     assert control.pv5_lane_center.status == 'correcting'
   else:
     assert control.pv5_lane_center.target == 0.
@@ -112,7 +112,7 @@ def test_full_control_loop_bounded_correction_and_release(offset, cruise_active)
     assert abs(cc.actuators.curvature) * 20**2 <= MAX_CORRECTION_ACCEL + 1e-6
     if i < 49:
       assert cc.actuators.curvature == 0
-  assert cc.actuators.curvature * 20**2 == pytest.approx(math.copysign(.06, offset), abs=.001)
+  assert .065 < math.copysign(1, offset) * cc.actuators.curvature * 20**2 <= MAX_CORRECTION_ACCEL
   settings[PARAM] = 0
   for i in range(26):
     tick(new_model=i % 5 == 0)
@@ -128,7 +128,7 @@ def test_full_control_loop_bounded_correction_and_release(offset, cruise_active)
   assert control.pv5_lane_center.enabled
   for i in range(130):
     cc = tick(new_model=i % 5 == 0)
-  assert cc.actuators.curvature * 20**2 == pytest.approx(math.copysign(.06, offset), abs=.001)
+  assert .065 < math.copysign(1, offset) * cc.actuators.curvature * 20**2 <= MAX_CORRECTION_ACCEL
 
 
 @pytest.mark.parametrize('condition', ['blinker', 'blindspot', 'driver', 'radar', 'radar_fault', 'model_lead', 'desire',
@@ -186,7 +186,7 @@ def test_cruise_release_preserves_admitted_lateral_correction():
   assert cc.latActive and not cc.enabled and not cc.longActive
   assert control.pv5_lane_center.status == 'correcting'
   assert control.pv5_lane_center.eligible_since == eligible_since
-  assert cc.actuators.curvature * 20**2 == pytest.approx(.06, abs=.001)
+  assert .065 < cc.actuators.curvature * 20**2 <= MAX_CORRECTION_ACCEL
 
 
 @pytest.mark.parametrize('inhibit', ['lat_disabled', 'always_lateral_off', 'temporary_fault', 'permanent_fault',
@@ -230,4 +230,38 @@ def test_cruise_off_preserves_lateral_admission_and_restarts_dwell(inhibit):
   for i in range(100):
     cc = tick(new_model=i % 5 == 0)
   assert control.pv5_lane_center.status == 'correcting'
-  assert cc.actuators.curvature * 20**2 == pytest.approx(.06, abs=.001)
+  assert .065 < cc.actuators.curvature * 20**2 <= MAX_CORRECTION_ACCEL
+
+
+def test_crossing_old_85_percent_threshold_keeps_dwell_but_reduces_authority():
+  control, _, tick = setup_control(.27)
+  drive(control)
+  for i in range(250):
+    tick(new_model=i % 5 == 0)
+  assist = control.pv5_lane_center
+  before, since = assist.target, assist.eligible_since
+  control.sm['modelV2'].laneLineProbs = [0., .84, .84, 0.]
+  tick()
+  assert assist.eligible_since == since and assist.status == 'correcting'
+  assert 0 < assist.target < before
+  control.sm['modelV2'].laneLineProbs = [0., .49, .84, 0.]
+  tick()
+  assert assist.target == 0 and assist.trust == 0 and assist.eligible_since is None
+
+
+def test_new_curve_correction_still_yields_immediately_to_bsd():
+  from openpilot.selfdrive.controls.tests.test_pv5_lane_center_fit import frame
+  control, _, tick = setup_control(.1)
+  drive(control)
+  md = control.sm['modelV2']
+  source = frame(curvature=.002, offset=.1)
+  md.position.x, md.position.y = source.position.x, source.position.y
+  for i in (1, 2):
+    md.laneLines[i].x, md.laneLines[i].y = source.laneLines[i].x, source.laneLines[i].y
+  md.action.desiredCurvature = .002
+  for i in range(180):
+    tick(new_model=i % 5 == 0)
+  assert control.pv5_lane_center.target > 0
+  control.sm['carState'].leftBlindspot = True
+  tick(new_model=False)
+  assert control.pv5_lane_center.target == 0 and control.pv5_lane_center.status == 'blindspot'

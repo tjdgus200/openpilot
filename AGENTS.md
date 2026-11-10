@@ -1,5 +1,22 @@
 # Repository memory
 
+- 2026-11-10 owner approves the scoped Blendful-style PV5 center update.
+  Preserve default-OFF Pv5LaneCenterAssist, live250ms toggle/actual lateral
+  admission, bilateral lines, lead/BSD/driver/maneuver/freshness/lane-mode gates,
+  dwell/ramp, 0.08m/s2 cap, low-speed normalization and all downstream limits.
+  Fit nine forward samples against a30..50% model-plan/action-curvature mix;
+  published per-line stds scale bilateral trust rather than inventing per-point
+  uncertainty. Both probabilities>=0.5/std<0.6; quality drops immediately and
+  rises through0.5s filtering. Replace old0.6m/s2 and forward-center0.75m
+  straight-road vetoes with curved-road width/path-agreement checks. Reset on
+  clock/frame faults. Do not port single-line inference, learned width or
+  Blendful avoidance history; do not loosen obstacle gates or restore18km/h.
+  No model/FOV/Jetson packages/extra inference/worker/polling/telemetry changes.
+  Preserve OFF/non-PV5 behavior and permanent cross-model/fit checks. Disclose
+  both accurate-lane96-case improvement and confidently-wrong-lane16-case
+  regression; synthetic models/EPS and PC timing are not vehicle safety proof.
+  See docs/pv5_lane_center_fit_20261110.md.
+
 - 2026-11-10 owner additionally approves bounded error-trend shaping inside the
   existing opt-in PV5 simple recovery. Filter requested AND limited-command
   absolute-error rates, require their trends to agree and bound look-ahead to

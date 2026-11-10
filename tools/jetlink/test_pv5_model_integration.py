@@ -152,7 +152,7 @@ def center_scenario(spec, offset):
     if frame < 10:
       assert correction == 0.
   assert assist.status == 'correcting'
-  assert correction * 20**2 == pytest.approx(np.copysign(.06, offset), abs=1e-6)
+  assert .065 < np.copysign(1., offset) * correction * 20**2 <= MAX_CORRECTION_ACCEL
   assert not sm['selfdriveState'].active  # Cruise OFF does not override admitted lateral control.
   return assist, enabled, sm, md_event, cs_event, now, correction
 
@@ -227,7 +227,7 @@ def test_each_model_center_and_lanes_survive_hud_wire_and_stale_clear(model_spec
   source._live_cluster_alert = lambda *_: None
   state = source._with_live_hud_state(standby_state())
   assert state.pv5_lane_center_status == 'correcting'
-  assert state.pv5_lane_center_fraction == pytest.approx(.75)
+  assert state.pv5_lane_center_fraction == pytest.approx(correction * 20**2 / MAX_CORRECTION_ACCEL)
   assert state.left_lane_probability == pytest.approx(.99)
   assert state.right_lane_probability == pytest.approx(.99)
   assert state.steering_output_normalized == pytest.approx(.002 * 20**2 / 3.)

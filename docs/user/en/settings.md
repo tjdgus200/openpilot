@@ -2,6 +2,13 @@
 
 [한국어](../ko/settings.md)
 
+PV5 **Lane Center Assist (Experimental)** compares multiple forward lane-center
+points with the model path and action curvature. Both lines' probability and
+uncertainty scale correction, including eligible curves. Missing lines, nearby
+leads, BSD, driver intervention, maneuvers or expired inputs stop extra correction.
+Default OFF, existing steering limits and the0.08m/s² additive acceleration ceiling
+remain. Physical vehicle safety has not been validated.
+
 The PV5 **Simple Steering Authority Recovery** details now provide confirmation and
 recovery timing controls. Defaults are 200ms (0.20s) and 1500ms (1.50s) for the full
 authority range; the option itself remains off by default. Steering continues with
