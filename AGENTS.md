@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-10 explicit owner exception: classify44306cae coherent vision
+  handover as common Carrot functionality, not a PV5-only custom feature.
+  Restore the exact carrot-wip controller and live constructor for all cars
+  using the existing DPath path; restore common replay and invalidate caches.
+  This supersedes only the vision-transition vehicle gate recorded below.
+  Keep0.20s camera-time confirmation, measured radar state, continuity
+  revocation and immediate ordinary radar handoffs. Do not enable another
+  radar mode or import unrelated vehicle changes. Other new vehicle behavior
+  remains PV5-only, including default-OFF Pv5SimpleSteerRecovery. Verify
+  upstream source identity, live/replay/mode/MPC regressions, paired synthetic
+  output parity and the permanent model checklist. PC tests are not road proof.
+  See docs/carrot_vision_transition_20261110.md.
+
 - 2026-11-09 owner correction supersedes f70b2b44's lane-interior weighting:
   Pv5RoadLaneExposure/Pv5WideLaneExposure now translate the WHOLE fixed-size
   selected metering rectangle horizontally to geometric lane center15/25/35m.
@@ -43,7 +56,8 @@
   other vehicles' prior behavior through explicit vehicle admission and tests.
   Upstream approval/history is not authority to modify other cars or branches.
   This supersedes older broad synchronization scope for future PV5 integrations.
-  The owner now authorizes 44306cae's complete vision-transition algorithm on
+  Historical policy, superseded for this algorithm by2026-11-10 above:
+  the owner authorized44306cae's complete vision-transition algorithm on
   PV5 only: preserve its 0.20s camera-time confirmation, current measured radar
   kinematics, continuity revocation and immediate ordinary radar handoffs.
   DPathRadarController defaults OFF; live and replay boundaries enable only

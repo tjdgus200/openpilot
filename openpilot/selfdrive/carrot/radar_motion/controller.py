@@ -120,11 +120,6 @@ FORCED_SCC_REJECT_HOLD_S = 1.0
 LANE_CHANGE_ACTIVE_STATES = frozenset(("preLaneChange", "laneChangeStarting", "laneChangeFinishing"))
 
 
-def pv5_vision_transition_enabled(car_brand: str, car_fingerprint: str) -> bool:
-  """Vehicle scope shared by live RadarD and recorded-input replay."""
-  return car_brand == "hyundai" and car_fingerprint == "KIA_PV5"
-
-
 def _is_corner(point: RadarPointSnapshot) -> bool:
   return point.source.startswith("corner")
 
@@ -531,10 +526,7 @@ class DPathRadarController:
     front_radar_measurement_delay_s: float = 0.0,
     corner_radar_measurement_delay_s: float = CORNER_RADAR_MEASUREMENT_DELAY_S,
     production_live_tracks: bool = False,
-    confirm_vision_transition: bool = False,
   ) -> None:
-    # Opt in only at the PV5 vehicle/replay boundary; all other cars keep legacy selection.
-    self.confirm_vision_transition = bool(confirm_vision_transition)
     self.primary_matcher = VisionRadarMatcher()
     self.scc_primary_fallback_matcher = VisionRadarMatcher()
     self.forced_scc_rejected_s: float | None = None  # last frame mode 3 refused a beside-path SCC body
@@ -1103,15 +1095,14 @@ class DPathRadarController:
     else:
       self.scc_primary_fallback_matcher.reset()
     vision_candidate = None
-    if (primary_match is None or self.confirm_vision_transition) and vision is not None and (
+    if vision is not None and (
       vision_only_lead_allowed(self.enable_radar_tracks)
       or _central_vision_fallback_allowed(vision, path)
     ):
       vision_candidate = lead_from_vision(
         vision, path, v_ego, model_v_ego=_model_ego_speed(model, v_ego),
       )
-    if self.confirm_vision_transition:
-      primary_match = self._confirm_vision_transition(primary_match, vision_candidate, points, path, time_s)
+    primary_match = self._confirm_vision_transition(primary_match, vision_candidate, points, path, time_s)
     lead_one = vision_candidate
     if primary_match is not None:
       lead_one = self._lead_from_radar_point(

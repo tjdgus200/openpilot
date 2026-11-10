@@ -1,5 +1,11 @@
 # PV5-only coherent vision handover — 2026-11-09
 
+**Superseded scope,2026-11-10:** the owner explicitly requested the common
+Carrot policy for every vehicle using this DPath path. The new implementation
+removes the PV5 admission switch and matches upstream. See
+[current policy and verification](carrot_vision_transition_20261110.md).
+The PV5-only scope and disabled/default parity results below are historical.
+
 ## Scope and provenance
 
 The owner explicitly requests item1, the0.20s coherent-vision lead handover,
