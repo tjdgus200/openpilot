@@ -1,5 +1,14 @@
 # Repository memory
 
+- 2026-11-10 owner requests slightly faster PV5 simplified steering recovery.
+  Preserve the opt-in/default-OFF scope and immediate driver/pre-override yield,
+  0.20s low-effort confirmation, valid/fresh CAN/model gates and all limits.
+  Only the ON full-range authority ramp changes from1.5s to1.2s; the OFF return
+  to legacy stays1.5s. At25..250/100Hz ON rises at most1.875 CAN units/tick,
+  OFF return at most1.5. Do not interpret this as a new angle/torque command or
+  a faster physical centering guarantee. Record PC-only timing/re-entry/fault/
+  ON/OFF/CAN checks and preserve the earlier0.30s repeated-press filter.
+
 - 2026-11-10 explicit owner port from joongyu01/carrot-wip-dev bd9f3048:
   preserve PV5-only SCC/front same-body identity continuity (72c77527), the
   fresh-stationary shield after vision discontinuity (9727f3bc/0e262a28),

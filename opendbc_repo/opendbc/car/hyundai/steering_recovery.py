@@ -6,7 +6,8 @@ Legacy recovery continues independently for a bounded return when switched off.
 import math
 
 
-RECOVERY_SECONDS = 1.5  # Existing legacy fallback recovery time.
+RECOVERY_SECONDS = 1.2  # PV5 opt-in full-range recovery; low-force confirmation stays unchanged.
+RETURN_SECONDS = 1.5  # Preserve the existing bounded transition back to legacy when switched OFF.
 RELEASE_SECONDS = 0.2  # Existing low-driver-force confirmation.
 
 
@@ -61,7 +62,7 @@ class SimpleSteeringRecovery:
       self.cap = min(self.cap, legacy, minimum)
       return self.cap
 
-    rise = (maximum - minimum) * dt / RECOVERY_SECONDS
+    rise = (maximum - minimum) * dt / (RETURN_SECONDS if self.returning else RECOVERY_SECONDS)
     if self.returning:
       # A background legacy ramp cannot cause a sudden authority increase.
       if pressed or pre_override_yield > 0:

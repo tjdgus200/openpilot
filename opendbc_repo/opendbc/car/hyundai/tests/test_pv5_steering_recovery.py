@@ -81,7 +81,7 @@ def test_live_switching_is_bounded_and_deactivation_still_clears_can(monkeypatch
   last = output.torqueOutputCan
   for _ in range(55):
     output, _ = step(controller, cs, cc)
-    assert output.torqueOutputCan <= last + 1.5 + 1e-8
+    assert output.torqueOutputCan <= last + 1.875 + 1e-8
     last = output.torqueOutputCan
   assert controller.simple_steer_recovery_enabled
   settings['Pv5SimpleSteerRecovery'] = False
@@ -115,4 +115,24 @@ def test_other_platforms_and_torque_control_ignore_toggle(monkeypatch, angle, pv
       trace.append((output.steeringAngleDeg, output.torqueOutputCan, messages))
     traces.append(trace)
     assert not controller.simple_steer_recovery_enabled
+  assert traces[0] == traces[1]
+
+
+@pytest.mark.parametrize('camera', (False, True))
+def test_faster_simple_ramp_does_not_change_off_controller_or_can(monkeypatch, camera):
+  from opendbc.car.hyundai import steering_recovery
+
+  traces = []
+  for seconds in (1.5, 1.2):
+    monkeypatch.setattr(steering_recovery, 'RECOVERY_SECONDS', seconds)
+    controller, cs, cc, _ = setup(monkeypatch, False, camera=camera)
+    trace = []
+    for frame in range(600):
+      cs.out.steeringPressed = frame % 210 < 35
+      cs.out.steeringTorque = 350 if cs.out.steeringPressed else 0
+      cs.out.steeringAngleDeg = 12 if frame < 200 else -3
+      cc.actuators.steeringAngleDeg = 20 if frame < 200 else -10
+      output, messages = step(controller, cs, cc)
+      trace.append((output.to_dict(), messages))
+    traces.append(trace)
   assert traces[0] == traces[1]

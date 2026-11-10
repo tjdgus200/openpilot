@@ -39,11 +39,11 @@ def test_fixed_recovery_requires_low_force_then_has_bounded_rise():
   assert trace.step() == 25
   for _ in range(19):
     assert trace.step() == 25
-  assert trace.step() == pytest.approx(26.5)
+  assert trace.step() == pytest.approx(26.875)
   previous = trace.previous
   for _ in range(180):
     value = trace.step()
-    assert 0 <= value - previous <= 1.5 + 1e-9
+    assert 0 <= value - previous <= 1.875 + 1e-9
     previous = value
   assert previous == 250
 
@@ -91,7 +91,30 @@ def test_driver_force_taper_stops_recovery_and_reactivation_clears_history():
     trace.step()
   previous = trace.previous
   assert trace.step(driver_ratio=.8) == previous
-  assert trace.step(driver_ratio=.7) == pytest.approx(previous + .75)
+  assert trace.step(driver_ratio=.7) == pytest.approx(previous + .9375)
   assert trace.step(active=False, legacy=0) == 0
   assert trace.step() == 25
   assert not trace.helper.released
+
+
+def test_faster_full_range_recovery_keeps_confirmation_and_has_no_overshoot(monkeypatch):
+  from opendbc.car.hyundai import steering_recovery
+
+  times = []
+  for seconds in (1.5, 1.2):
+    monkeypatch.setattr(steering_recovery, 'RECOVERY_SECONDS', seconds)
+    trace = Trace()
+    trace.step(pressed=True)
+    start = trace.now
+    samples = []
+    for _ in range(200):
+      samples.append(trace.step())
+      if trace.previous == 250.:
+        break
+    assert samples[:19] == [25.] * 19
+    assert all(25. <= value <= 250. for value in samples)
+    assert samples == sorted(samples)
+    times.append(trace.now - start)
+  assert times[0] == pytest.approx(1.7, abs=.02)
+  assert times[1] == pytest.approx(1.4, abs=.02)
+  assert times[0] - times[1] == pytest.approx(.3, abs=.01)

@@ -2,6 +2,12 @@
 
 [한국어](../ko/settings.md)
 
+The PV5 **Simple Steering Authority Recovery** option is retained. When enabled, it
+confirms low driver effort for 0.2s and restores the existing authority ceiling with
+a 1.2s full-range ramp (previously 1.5s). Switching OFF retains the 1.5s bounded return
+to legacy. Immediate driver yielding, original limits and input validation remain.
+These timings do not specify the physical steering-wheel recovery time.
+
 > [!NOTE]
 > This is the canonical English user guide maintained with the `carrot-wip` code. When user-visible behavior changes, update this document together with the related code and tests.
 

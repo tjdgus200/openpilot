@@ -62,7 +62,7 @@
       ]
     },
     "resources_and_state": {
-      "preserve": "Full diagnostics OFF, 1Hz HUD resource and inference timing readouts, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates. PV5-angle-only sustained 0.30s press confirmation affects repeated-override penalties only, never immediate driver yielding, original limits or the optional simple-recovery toggle. PV5-only boot build repair uses identified real-car persisted metadata, no native Params before compilation, fail-closed scope and a retained interruption marker; at most one empty-object/cache-disabled retry, with existing cache locks and other-car behavior preserved.",
+      "preserve": "Full diagnostics OFF, 1Hz HUD resource and inference timing readouts, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates. PV5-angle-only sustained 0.30s press confirmation affects repeated-override penalties only, never immediate driver yielding, original limits or the optional simple-recovery toggle. PV5-only boot build repair uses identified real-car persisted metadata, no native Params before compilation, fail-closed scope and a retained interruption marker; at most one empty-object/cache-disabled retry, with existing cache locks and other-car behavior preserved. Simple PV5 recovery ON uses a 1.2s full-range authority ramp after the unchanged 0.2s low-force confirmation; OFF return stays1.5s. Check timing, immediate yield and bounded live transitions without changing angle, authority or validity limits.",
       "tests": [
         "tools/jetlink/test_optimization_defaults.py",
         "tools/jetlink/test_device_state.py",
