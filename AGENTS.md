@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-10 radar audit: compare measured CAN/radar tracks, timing, selection,
+  stationary/cut-in/cut-out evidence, fast updates and longitudinal lead response
+  against carrot-wip c8454993, not just the vision-transition helper. At6c282e37,
+  all50 audited runtime/helper sources and RadarData/RadarState match upstream.
+  PC37-file regressions2724pass; paired MPC preparation108cases and SCC packet
+  bytes128cases agree without requesting the absent synthetic signal-stop object.
+  Native optimizer/vehicle braking were not tested. No runtime/model/package or
+  saved setting changes were needed. Keep existing PV5 display/steering/exposure
+  customizations. Upstream synthetic3m signal-stop CAN objects, Tesla traffic-stop
+  and separate Panda/Casper fault admission are distinct adjacent features, not
+  missing measured-radar processing. This audit grants no unrelated vehicle port.
+  See docs/pv5_radar_audit_20261110.md and its public-source hash manifest.
+
 - 2026-11-10 explicit owner exception: classify44306cae coherent vision
   handover as common Carrot functionality, not a PV5-only custom feature.
   Restore the exact carrot-wip controller and live constructor for all cars

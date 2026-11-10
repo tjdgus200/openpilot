@@ -1,0 +1,293 @@
+{
+  "source_commit": "6c282e3734ce9b5dc37cc246ef375496da3bf499",
+  "upstream_commit": "c8454993d2dbebe79010dcea0f3bfc5954f37222",
+  "core_file_count": 50,
+  "exactly_matching_core_files": 50,
+  "files": {
+    "opendbc_repo/opendbc/car/chrysler/radar_interface.py": {
+      "identical": true,
+      "sha256": "74af3b3876a68f19b24b3f7271fe18fd729cbc81ddf5f7ce57f799423d5298de",
+      "upstream_sha256": "74af3b3876a68f19b24b3f7271fe18fd729cbc81ddf5f7ce57f799423d5298de"
+    },
+    "opendbc_repo/opendbc/car/ford/radar_interface.py": {
+      "identical": true,
+      "sha256": "ac39857d8984e1b2006c6f7189743a6d90d15ba479ad1ec83666e503ed4d827e",
+      "upstream_sha256": "ac39857d8984e1b2006c6f7189743a6d90d15ba479ad1ec83666e503ed4d827e"
+    },
+    "opendbc_repo/opendbc/car/gm/radar_interface.py": {
+      "identical": true,
+      "sha256": "78a6ebb5f4deb07a9ceefee51bc844b6ef3551d1baa5021131835eeca5b37674",
+      "upstream_sha256": "78a6ebb5f4deb07a9ceefee51bc844b6ef3551d1baa5021131835eeca5b37674"
+    },
+    "opendbc_repo/opendbc/car/honda/radar_interface.py": {
+      "identical": true,
+      "sha256": "c33ba7908fb8dbab770336f95f786a3e1a39c2477866a4edfe43a3bb50eb031e",
+      "upstream_sha256": "c33ba7908fb8dbab770336f95f786a3e1a39c2477866a4edfe43a3bb50eb031e"
+    },
+    "opendbc_repo/opendbc/car/hyundai/radar_bosch.py": {
+      "identical": true,
+      "sha256": "8c4cf75bcf371980cedc77432d22950c5ca490eff8a300a97685f2f84419a2f6",
+      "upstream_sha256": "8c4cf75bcf371980cedc77432d22950c5ca490eff8a300a97685f2f84419a2f6"
+    },
+    "opendbc_repo/opendbc/car/hyundai/radar_group3.py": {
+      "identical": true,
+      "sha256": "1ff566a48e55884dcc6ecefe55daddcca70dbf5eccf77d70eaaf99870ad4c0d4",
+      "upstream_sha256": "1ff566a48e55884dcc6ecefe55daddcca70dbf5eccf77d70eaaf99870ad4c0d4"
+    },
+    "opendbc_repo/opendbc/car/hyundai/radar_interface.py": {
+      "identical": true,
+      "sha256": "aced89b68c779fff7a352ee6fda3a082beb966b4730dfd3b6afb1f546e712ddb",
+      "upstream_sha256": "aced89b68c779fff7a352ee6fda3a082beb966b4730dfd3b6afb1f546e712ddb"
+    },
+    "opendbc_repo/opendbc/car/radar_lead_filter.py": {
+      "identical": true,
+      "sha256": "55ab0ad700459c3c9b02fcfb8f9dcae54fd8626aee515d4b3e473422c70d5528",
+      "upstream_sha256": "55ab0ad700459c3c9b02fcfb8f9dcae54fd8626aee515d4b3e473422c70d5528"
+    },
+    "opendbc_repo/opendbc/car/radar_tracks.py": {
+      "identical": true,
+      "sha256": "26778cfae38be1966712dd7ce5df75731f626bfa08a95a12ec659058b014a028",
+      "upstream_sha256": "26778cfae38be1966712dd7ce5df75731f626bfa08a95a12ec659058b014a028"
+    },
+    "opendbc_repo/opendbc/car/rivian/radar_interface.py": {
+      "identical": true,
+      "sha256": "7452659d7c3cf69947a24caf40a47bcc278422a5b258661b17ca0bbb21783eb1",
+      "upstream_sha256": "7452659d7c3cf69947a24caf40a47bcc278422a5b258661b17ca0bbb21783eb1"
+    },
+    "opendbc_repo/opendbc/car/tesla/radar_interface.py": {
+      "identical": true,
+      "sha256": "412038b7e06d4d2c3ca5b1a6817a61a1d6f50287b3b355e03ef30b979053d4c8",
+      "upstream_sha256": "412038b7e06d4d2c3ca5b1a6817a61a1d6f50287b3b355e03ef30b979053d4c8"
+    },
+    "opendbc_repo/opendbc/car/toyota/radar_interface.py": {
+      "identical": true,
+      "sha256": "36625edeeb9cbf7813efda8ffcbf423669da1fff033c18ef521863e560540e20",
+      "upstream_sha256": "36625edeeb9cbf7813efda8ffcbf423669da1fff033c18ef521863e560540e20"
+    },
+    "opendbc_repo/opendbc/car/volkswagen/radar_interface.py": {
+      "identical": true,
+      "sha256": "f62e1d42f40f57286b3651eb526c3c32b3649c1622c6badf3ff6f7ca5ad539ee",
+      "upstream_sha256": "f62e1d42f40f57286b3651eb526c3c32b3649c1622c6badf3ff6f7ca5ad539ee"
+    },
+    "openpilot/selfdrive/carrot/radar/__init__.py": {
+      "identical": true,
+      "sha256": "385173f506f09b757518be268aab7f6d8acfbd81ba9105dd0ead285785808834",
+      "upstream_sha256": "385173f506f09b757518be268aab7f6d8acfbd81ba9105dd0ead285785808834"
+    },
+    "openpilot/selfdrive/carrot/radar/can_batch.py": {
+      "identical": true,
+      "sha256": "ea6aa66434381489aff0bcec592b803d2016fb76e7c4b00df9ba63fca1d1fe66",
+      "upstream_sha256": "ea6aa66434381489aff0bcec592b803d2016fb76e7c4b00df9ba63fca1d1fe66"
+    },
+    "openpilot/selfdrive/carrot/radar/lateral.py": {
+      "identical": true,
+      "sha256": "8e3a487eb797e3d3940d83480befd8e0ef30b78129651d5497b1d03d6ca88841",
+      "upstream_sha256": "8e3a487eb797e3d3940d83480befd8e0ef30b78129651d5497b1d03d6ca88841"
+    },
+    "openpilot/selfdrive/carrot/radar/radarcan.py": {
+      "identical": true,
+      "sha256": "9e490a3995763dc9e706124c71c19f3aaaf869ce8b3f115caa3a81b45988647c",
+      "upstream_sha256": "9e490a3995763dc9e706124c71c19f3aaaf869ce8b3f115caa3a81b45988647c"
+    },
+    "openpilot/selfdrive/carrot/radar/radard_dpath.py": {
+      "identical": true,
+      "sha256": "24ff27247cdb2a084ca24b7b57ec4526da777b8a9435ce5e194f9797c6558366",
+      "upstream_sha256": "24ff27247cdb2a084ca24b7b57ec4526da777b8a9435ce5e194f9797c6558366"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/SConscript": {
+      "identical": true,
+      "sha256": "51936fb453de7f8f5c7d26c52d2f5126e52594e12c89ed5124d1db2bba4d2b04",
+      "upstream_sha256": "51936fb453de7f8f5c7d26c52d2f5126e52594e12c89ed5124d1db2bba4d2b04"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/__init__.py": {
+      "identical": true,
+      "sha256": "880eaac4cc2ec3cad1c4f324a1d07410249ffc95c144295e7a6212bb4e9f0619",
+      "upstream_sha256": "880eaac4cc2ec3cad1c4f324a1d07410249ffc95c144295e7a6212bb4e9f0619"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/_motion_native.pyx": {
+      "identical": true,
+      "sha256": "c1f0465eae2f4373d5a4db09bef814b8bd4456ec3ca4ac9fb09d9036a2b8b05f",
+      "upstream_sha256": "c1f0465eae2f4373d5a4db09bef814b8bd4456ec3ca4ac9fb09d9036a2b8b05f"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/controller.py": {
+      "identical": true,
+      "sha256": "9860db6815e65355be42f05f4cef33daa860e92daea01198ba228a6625c1ad39",
+      "upstream_sha256": "9860db6815e65355be42f05f4cef33daa860e92daea01198ba228a6625c1ad39"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/coordinates.py": {
+      "identical": true,
+      "sha256": "574b5dc215ac2a3b07310bce2697a50e5506bfdca17526b8841b80723a605648",
+      "upstream_sha256": "574b5dc215ac2a3b07310bce2697a50e5506bfdca17526b8841b80723a605648"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/in_lane.py": {
+      "identical": true,
+      "sha256": "5bfa66052b74e51e2829c98f792beb6a65407d3e60635c0bdcc93534b06e95fe",
+      "upstream_sha256": "5bfa66052b74e51e2829c98f792beb6a65407d3e60635c0bdcc93534b06e95fe"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/lane_change_gap.py": {
+      "identical": true,
+      "sha256": "4d84cdcc57c6f69cebf617d02393147cbce7e316f8a84df3ef226167b86b2423",
+      "upstream_sha256": "4d84cdcc57c6f69cebf617d02393147cbce7e316f8a84df3ef226167b86b2423"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/lead_dynamics.py": {
+      "identical": true,
+      "sha256": "39d44d9779b39b3107851191e359d64fe505225b0be179cf079341845ca3028d",
+      "upstream_sha256": "39d44d9779b39b3107851191e359d64fe505225b0be179cf079341845ca3028d"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/lead_selection.py": {
+      "identical": true,
+      "sha256": "8ddfe4ac1b876382f628a17f491c12951727f0dfcce2e6dca8ca77fb738ce16a",
+      "upstream_sha256": "8ddfe4ac1b876382f628a17f491c12951727f0dfcce2e6dca8ca77fb738ce16a"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/native.py": {
+      "identical": true,
+      "sha256": "3c20d0e099bcee2fc966d57aee84185b9ec1901988fe782b0b6854e3e48a78fb",
+      "upstream_sha256": "3c20d0e099bcee2fc966d57aee84185b9ec1901988fe782b0b6854e3e48a78fb"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/occupancy_v2.py": {
+      "identical": true,
+      "sha256": "1e015610eee180bd397f08836848f6ac0d84e46c05d8fc4de45790ca147d2eb8",
+      "upstream_sha256": "1e015610eee180bd397f08836848f6ac0d84e46c05d8fc4de45790ca147d2eb8"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/occupancy_v3.py": {
+      "identical": true,
+      "sha256": "e18c56cbe48f01306d99f53fcfc7f825a263354032b588a90c890031047e5e89",
+      "upstream_sha256": "e18c56cbe48f01306d99f53fcfc7f825a263354032b588a90c890031047e5e89"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/predictor.py": {
+      "identical": true,
+      "sha256": "5f418828df0ba253bbc8a6292b3af2617839e935361dd46063e290d923b402de",
+      "upstream_sha256": "5f418828df0ba253bbc8a6292b3af2617839e935361dd46063e290d923b402de"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/primary.py": {
+      "identical": true,
+      "sha256": "669d5a817494a630df58140a614d3c95c85a31b550ff8da24ee5fbb68cfb7ea3",
+      "upstream_sha256": "669d5a817494a630df58140a614d3c95c85a31b550ff8da24ee5fbb68cfb7ea3"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/stationary_lane.py": {
+      "identical": true,
+      "sha256": "7ba9d2cf198423ca5a8c75a5b1c9efd3a46e5427706d7dfa24fed2d12fdd3fd3",
+      "upstream_sha256": "7ba9d2cf198423ca5a8c75a5b1c9efd3a46e5427706d7dfa24fed2d12fdd3fd3"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/timing.py": {
+      "identical": true,
+      "sha256": "547cf2d9e31b9d1e4d98cb5a6c182d408be365c8c1978bfef89ade5fbe8e1acd",
+      "upstream_sha256": "547cf2d9e31b9d1e4d98cb5a6c182d408be365c8c1978bfef89ade5fbe8e1acd"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/trajectory_cutin.py": {
+      "identical": true,
+      "sha256": "6919d3ac5ec45c737bb5307c09a5be8094e077990b6a3ab1767168d6f529183c",
+      "upstream_sha256": "6919d3ac5ec45c737bb5307c09a5be8094e077990b6a3ab1767168d6f529183c"
+    },
+    "openpilot/selfdrive/carrot/radar_motion/trajectory_cutout.py": {
+      "identical": true,
+      "sha256": "4274e60fff049bf5e7d323ed23de4825dba237c966182ed10aa84e53851d2b12",
+      "upstream_sha256": "4274e60fff049bf5e7d323ed23de4825dba237c966182ed10aa84e53851d2b12"
+    },
+    "openpilot/selfdrive/controls/lib/longcontrol.py": {
+      "identical": true,
+      "sha256": "15c6aa56c299aecdfab7be13487e723c423fcb7604941b5f64cf89037c77a10b",
+      "upstream_sha256": "15c6aa56c299aecdfab7be13487e723c423fcb7604941b5f64cf89037c77a10b"
+    },
+    "openpilot/selfdrive/controls/lib/longitudinal_preview.py": {
+      "identical": true,
+      "sha256": "229897fa8bf5b1fdb46dbed314faa488ce8aae607d6b0bc03fa4ba0d71c4bc2f",
+      "upstream_sha256": "229897fa8bf5b1fdb46dbed314faa488ce8aae607d6b0bc03fa4ba0d71c4bc2f"
+    },
+    "openpilot/selfdrive/controls/lib/longitudinal_stopping_lead.py": {
+      "identical": true,
+      "sha256": "2175c5c4f4fd15c8b7fb5bd002414dffa5a7d3dd905e756d0568a3b321a93cb6",
+      "upstream_sha256": "2175c5c4f4fd15c8b7fb5bd002414dffa5a7d3dd905e756d0568a3b321a93cb6"
+    },
+    "openpilot/selfdrive/controls/lib/longitudinal_gap_recovery.py": {
+      "identical": true,
+      "sha256": "63148147330c8eb80e58d5a33172b03bb0eb97447f24cb199173c3b179896318",
+      "upstream_sha256": "63148147330c8eb80e58d5a33172b03bb0eb97447f24cb199173c3b179896318"
+    },
+    "openpilot/selfdrive/controls/lib/longitudinal_braking_gap.py": {
+      "identical": true,
+      "sha256": "f34346c1bc3dcca9c98ecc8eef0050aa5deba39d4c600b934c5942787bb987eb",
+      "upstream_sha256": "f34346c1bc3dcca9c98ecc8eef0050aa5deba39d4c600b934c5942787bb987eb"
+    },
+    "openpilot/selfdrive/controls/lib/longitudinal_fast_radar.py": {
+      "identical": true,
+      "sha256": "a94b23100999adbad02b38df123a640011d1f82037117ac4bd7a3ba118a1f568",
+      "upstream_sha256": "a94b23100999adbad02b38df123a640011d1f82037117ac4bd7a3ba118a1f568"
+    },
+    "openpilot/selfdrive/controls/lib/longitudinal_cutout.py": {
+      "identical": true,
+      "sha256": "bdf90b0ea1db35f44717d6d5968e8fd0bdb819200aeb414487f421b18d421af6",
+      "upstream_sha256": "bdf90b0ea1db35f44717d6d5968e8fd0bdb819200aeb414487f421b18d421af6"
+    },
+    "openpilot/selfdrive/controls/lib/cutin_predecel.py": {
+      "identical": true,
+      "sha256": "e2ca157eb4cb6b659ec0560c95214853d6dcb76d8d179346bd43b3fc58689317",
+      "upstream_sha256": "e2ca157eb4cb6b659ec0560c95214853d6dcb76d8d179346bd43b3fc58689317"
+    },
+    "openpilot/selfdrive/controls/lib/cutin_helpers.py": {
+      "identical": true,
+      "sha256": "fa7558f0ff4878e390e55a3560c675831064755b20869ee3bc345c3d92b00e16",
+      "upstream_sha256": "fa7558f0ff4878e390e55a3560c675831064755b20869ee3bc345c3d92b00e16"
+    },
+    "openpilot/selfdrive/controls/lib/cruise_coasting.py": {
+      "identical": true,
+      "sha256": "3a926ae96bcc9100e86f2bd97f4b3291933cd60ded6bcb6da617550e65414718",
+      "upstream_sha256": "3a926ae96bcc9100e86f2bd97f4b3291933cd60ded6bcb6da617550e65414718"
+    },
+    "openpilot/selfdrive/carrot/lead_brake_lights.py": {
+      "identical": true,
+      "sha256": "eeafbe2b60624ca7002bc446e84f17cffbc8aab569d5b0ffaf934b53a6991af1",
+      "upstream_sha256": "eeafbe2b60624ca7002bc446e84f17cffbc8aab569d5b0ffaf934b53a6991af1"
+    },
+    "opendbc_repo/opendbc/car/hyundai/interface.py": {
+      "identical": true,
+      "sha256": "a2dfdfdc5307c1f2fbee34b14cec84f141002f7af4b10d49bce40b699e551348",
+      "upstream_sha256": "a2dfdfdc5307c1f2fbee34b14cec84f141002f7af4b10d49bce40b699e551348"
+    },
+    "opendbc_repo/opendbc/car/hyundai/values.py": {
+      "identical": true,
+      "sha256": "cd328f5694da58e738a0b8ab57a0f97b6570aa973fbccec39eab72b3fce9be95",
+      "upstream_sha256": "cd328f5694da58e738a0b8ab57a0f97b6570aa973fbccec39eab72b3fce9be95"
+    },
+    "openpilot/selfdrive/controls/radar_constants.py": {
+      "identical": true,
+      "sha256": "1221b0ba6849f84dbc1de6624a20dcfe0705f30cf38c5c02974f9e4bb5bba605",
+      "upstream_sha256": "1221b0ba6849f84dbc1de6624a20dcfe0705f30cf38c5c02974f9e4bb5bba605"
+    }
+  },
+  "schemas": {
+    "RadarState": true,
+    "RadarData": true
+  },
+  "scope": "Production radar ingestion/selection and common lead-response helpers; source comparison is not a hardware test",
+  "adjacent_differences": {
+    "replay": "Metadata retained and cache version6; production replay controller matches upstream",
+    "planner_mpc": "Tesla traffic-stop branch absent; excluded other-vehicle behavior, PV5 paired preparation checked separately",
+    "hyundai_scc": "Upstream signal-stop synthetic3m object absent; not a measured radar observation",
+    "fault_monitor": "Separate Panda/Casper controller-fault feature remains outside this radar-input/selection audit",
+    "display_steering": "Owner PV5 cluster and steering options retained"
+  },
+  "mpc_preparation": {
+    "cases": 108,
+    "differing_inputs": 0,
+    "scope": "Production MPC preparation with recording solver; not native solve or physical braking"
+  },
+  "scc_packets": {
+    "cases": 128,
+    "differing_packets": 0,
+    "scope": "Production SCC packer bytes, existing PV5 path without synthetic signal-stop request; no vehicle"
+  },
+  "regressions": {
+    "tests": 2724,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "previous_model_preservation": {
+    "code_source_commit": "6c282e3734ce9b5dc37cc246ef375496da3bf499",
+    "passed": 1709,
+    "failed": 0,
+    "skipped": 0,
+    "rerun_for_this_documentation_only_change": false
+  }
+}
