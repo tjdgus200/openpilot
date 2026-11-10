@@ -62,7 +62,7 @@
       ]
     },
     "resources_and_state": {
-      "preserve": "Full diagnostics OFF, 1Hz HUD resource and inference timing readouts, model-priority HUD, state/reset/finite checks and exact N16-only optimization gates. PV5-angle-only sustained 0.30s press confirmation affects repeated-override penalties only, never immediate driver yielding, original limits or the optional simple-recovery toggle. PV5-only boot build repair uses identified real-car persisted metadata, no native Params before compilation, fail-closed scope and a retained interruption marker; at most one empty-object/cache-disabled retry, with existing cache locks and other-car behavior preserved. Simple PV5 recovery ON uses a 1.2s full-range authority ramp after the unchanged 0.2s low-force confirmation; OFF return stays1.5s. Check timing, immediate yield and bounded live transitions without changing angle, authority or validity limits.",
+      "preserve": "Full diagnostics OFF, 1Hz HUD resource/inference readouts, model-priority HUD, finite/reset checks and exact N16 optimization gates. PV5-angle0.30s press confirmation counts repeated overrides only, never delays yielding. Boot repair remains identified-PV5-only with retained marker, original locks and one bounded retry. PV5 simple recovery defaults OFF; confirmation100..500ms/default200 and base ramp1000..3000ms/default1500 are latched per episode. Persistent concordant requested/limited angle errors may slew extra recovery to at most1.5x base and a1s full-range rate. Driver/pre-yield, force, reversal/disagreement, geometry/fault/time/mode changes clear extra evidence. OFF return stays1.5s; original angle/rate/physics/authority limits and other-car/default-OFF CAN outputs remain. No extra model, profiler or Params polling; full authority skips error work. Synthetic EPS/vehicle simulation is not road-safety validation.",
       "tests": [
         "tools/jetlink/test_optimization_defaults.py",
         "tools/jetlink/test_device_state.py",
@@ -75,6 +75,7 @@
         "tools/jetlink/test_hud_media.py",
         "tools/jetlink/test_pv5_drive_report.py",
         "opendbc_repo/opendbc/car/hyundai/tests/test_steering_recovery.py",
+        "opendbc_repo/opendbc/car/hyundai/tests/test_pv5_adaptive_recovery.py",
         "openpilot/common/tests/test_pv5_build_recovery.py"
       ]
     },
@@ -93,6 +94,7 @@
     "Validate the exact published archive alone: both model spec filenames and source commit, server imports, native HUD font initialization and first real render; re-download/hash all public assets.",
     "Run the full control-loop tests: test_pv5_lane_center.py, test_lateral_startup_control.py and test_lateral_readiness.py in the native PC test environment.",
     "Run PV5 steering recovery/controller and angle-limit tests, including OFF full-CAN replay equivalence, live switching, driver priority, stale/fault inputs and non-PV5 exclusion.",
+    "Run test_pv5_recovery_simulation.py offline with all48 synthetic speed/direction/EPS/delay/curve cases. Compare fixed versus adaptive authority and lateral metrics; disclose unchanged/worse outcomes and remaining large errors. Confirm both real CAN paths, held-driver priority, angle output parity and adaptive qualification/slew/reset/rate ceilings. Do not equate the uncalibrated plant or absence of relative regression with lane-keeping success.",
     "Check PV5 recovery timing native/web defaults200ms/1500ms, all permitted steps, corrupt/default values, first-low-effort episode latching, mid-confirmation/ramp edits, re-entry, fixed1.5s OFF return and enabled-PV5-only50-frame settings reads. Trial ranges and PC packets do not prove vehicle safety; no adaptive lane-departure recovery is enabled.",
     "Run test_stop_object.py and test_stopping.py in the prepared PC CAN/Params boundary environment; include complete publish-to-SCC execution, actual packet field/CRC/accel checks, non-PV5/no-request parity, release, finite raw/wheel-speed boundaries, missing templates and wire tags. Never run heavy validation on the vehicle.",
     "Run PV5 override-filter/controller, CCNC packet and paired pre-port radar/steering output comparisons. Check actual 2.5Hz CAN guide timing, side/end/stale inputs, unchanged other-car frames and model/camera/Jetson source hashes. Do not equate synthetic replay with road safety or hardware inference latency.",

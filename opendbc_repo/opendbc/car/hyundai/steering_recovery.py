@@ -9,6 +9,10 @@ import math
 DEFAULT_RELEASE_MS = 200
 DEFAULT_RECOVERY_MS = 1500
 RETURN_SECONDS = 1.5  # Preserve the existing bounded transition back to legacy when switched OFF.
+FASTEST_RECOVERY_SECONDS = 1.0  # Existing selectable full-range rate ceiling, not a physical recovery guarantee.
+MAX_RECOVERY_FACTOR = 1.5
+ERROR_CONFIRM_SECONDS = 0.1
+BOOST_SLEW_SECONDS = 0.2
 TIMING_SETTINGS = (
   ("Pv5SteerReleaseMs", 100, 500, 50, DEFAULT_RELEASE_MS),
   ("Pv5SteerRecoveryMs", 1000, 3000, 100, DEFAULT_RECOVERY_MS),
@@ -47,10 +51,38 @@ class SimpleSteeringRecovery:
     self.timing_locked = False
     self.release_seconds = DEFAULT_RELEASE_MS / 1000
     self.recovery_seconds = DEFAULT_RECOVERY_MS / 1000
+    self._reset_boost()
+
+  def _reset_boost(self):
+    self.error_direction = 0
+    self.error_seconds = 0.0
+    self.recovery_boost = 0.0
+
+  def _update_boost(self, dt, target_error, command_error, speed, wheelbase, steer_ratio):
+    # A raw request beyond the angle/rate limits cannot itself speed recovery.
+    # Both errors must agree; missing geometry or a reversal discards old evidence.
+    values = (target_error, command_error, speed, wheelbase, steer_ratio)
+    if (not all(math.isfinite(value) for value in values) or speed <= 0 or
+        wheelbase <= 0 or steer_ratio <= 0 or target_error * command_error <= 0):
+      self._reset_boost()
+      return
+    direction = 1 if command_error > 0 else -1
+    if direction != self.error_direction:
+      self._reset_boost()
+      self.error_direction = direction
+    # Speed-normalized wheel-angle tolerance (heuristic, not measured lateral error).
+    margin = min(5.0, max(1.0, math.degrees(math.atan(0.3 * wheelbase / max(speed * speed, 25.0))) * steer_ratio))
+    error = min(abs(target_error), abs(command_error))
+    demand = min(1.0, max(0.0, (error / margin - 1.0) / 2.0))
+    self.error_seconds = self.error_seconds + dt if demand > 0 else 0.0
+    target = demand if self.error_seconds + 1e-9 >= ERROR_CONFIRM_SECONDS else 0.0
+    step = dt / BOOST_SLEW_SECONDS
+    self.recovery_boost += max(-step, min(step, target - self.recovery_boost))
 
   def update(self, *, enabled, now, legacy, previous, minimum, maximum, active,
              valid, pressed, driver_ratio, pre_override_yield,
-             release_ms=DEFAULT_RELEASE_MS, recovery_ms=DEFAULT_RECOVERY_MS):
+             release_ms=DEFAULT_RELEASE_MS, recovery_ms=DEFAULT_RECOVERY_MS,
+             target_error=0.0, command_error=0.0, speed=0.0, wheelbase=0.0, steer_ratio=0.0):
     if not active:
       self.reset()
       return legacy
@@ -65,6 +97,7 @@ class SimpleSteeringRecovery:
       self.low_seconds = 0.0
       self.released = False
       self.timing_locked = False
+      self._reset_boost()
     dt = now - self.last_time if self.last_time is not None else 0.0
     self.last_time = now
     numbers = (now, dt, legacy, previous, minimum, maximum, driver_ratio, pre_override_yield)
@@ -75,6 +108,7 @@ class SimpleSteeringRecovery:
       self.low_seconds = 0.0
       self.released = False
       self.timing_locked = False
+      self._reset_boost()
       self.cap = 0.0
       return 0.0
     self.cap = min(maximum, max(minimum, self.cap))
@@ -88,12 +122,13 @@ class SimpleSteeringRecovery:
       self.low_seconds = 0.0
       self.released = False
       self.timing_locked = False
+      self._reset_boost()
       self.cap = min(self.cap, legacy, minimum)
       return self.cap
 
     if not self.returning and not self.timing_locked:
       # Freeze both settings from the first low-effort sample through recovery.
-      # Editing a setting cannot shorten confirmation or accelerate a current ramp.
+      # Editing a setting cannot shorten confirmation or change its base rate.
       self.release_seconds = _timing_ms(release_ms, *TIMING_SETTINGS[0][1:]) / 1000
       self.recovery_seconds = _timing_ms(recovery_ms, *TIMING_SETTINGS[1][1:]) / 1000
     rise = (maximum - minimum) * dt / (RETURN_SECONDS if self.returning else self.recovery_seconds)
@@ -112,6 +147,7 @@ class SimpleSteeringRecovery:
       self.low_seconds = 0.0
       self.released = False
       self.timing_locked = False
+      self._reset_boost()
       # Preserve the existing immediate override/pre-override decrement.
       fall = 20.0 if pressed else 10.0 * pre_override_yield
       self.cap = max(minimum, self.cap - fall)
@@ -120,7 +156,12 @@ class SimpleSteeringRecovery:
         self.timing_locked = driver_ratio < .6
       self.low_seconds = self.low_seconds + dt if driver_ratio < .6 else 0.0
       self.released = self.released or self.low_seconds + 1e-9 >= self.release_seconds
+      if driver_ratio < .6 and self.cap < maximum:
+        self._update_boost(dt, target_error, command_error, speed, wheelbase, steer_ratio)
+      else:
+        self._reset_boost()
       if self.released:
         taper = min(1.0, max(0.0, (.8 - driver_ratio) / .2))
-        self.cap = min(maximum, self.cap + rise * taper)
+        factor = 1.0 + (min(MAX_RECOVERY_FACTOR, self.recovery_seconds / FASTEST_RECOVERY_SECONDS) - 1.0) * self.recovery_boost
+        self.cap = min(maximum, self.cap + rise * taper * factor)
     return self.cap

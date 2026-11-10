@@ -1,5 +1,18 @@
 # Repository memory
 
+- 2026-11-10 owner explicitly requests PV5 opt-in angle-error authority recovery.
+  After the unchanged low-force confirmation, require finite requested AND limited
+  command errors in the same direction for0.1s. Normalize tolerance by speed/geometry
+  and use the smaller error; slew extra weight over0.2s. At most1.5x configured base
+  rate and never faster than a1s full-range ramp. Driver/pre-yield, residual effort,
+  reversal/disagreement/invalid geometry, faults/time/mode resets clear extra evidence.
+  Keep default OFF/PV5 angle scope, timing latching, fixed1.5s OFF return and every
+  original model freshness, angle/rate/physics/authority limit. Do not change desired
+  or transmitted angles, model/FOV/HUD/Jetson/radar paths. Skip extra math at full cap.
+  Require helper/controller/CAN/non-PV5 parity, fixed-input timing, 48-condition
+  uncalibrated closed-loop PC comparison and all-model checklist. Show all outcomes,
+  including remaining large lateral errors. No road-safety or physical EPS claim.
+
 - 2026-11-10 owner timing controls supersede the fixed1.2s ON ramp below.
   PV5SimpleSteerRecovery stays default OFF/PV5 angle only. Web details expose
   Pv5SteerReleaseMs100..500/step50/default200 and Pv5SteerRecoveryMs1000..3000/

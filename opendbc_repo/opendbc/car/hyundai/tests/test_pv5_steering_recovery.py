@@ -213,3 +213,33 @@ def test_polled_live_edits_wait_for_next_driver_release(monkeypatch):
     step(controller, cs, cc)
   assert controller.simple_steer_recovery.release_seconds == .1
   assert controller.simple_steer_recovery.recovery_seconds == 1
+
+
+@pytest.mark.parametrize('camera', (False, True))
+@pytest.mark.parametrize('direction', (-1, 1))
+def test_feedback_accelerates_both_real_can_paths_without_changing_angle_commands(monkeypatch, camera, direction):
+  traces = []
+  for adaptive in (False, True):
+    controller, cs, cc, _ = setup(monkeypatch, True, camera=camera)
+    cs.out.vEgoRaw = 15.
+    cs.out.steeringAngleDeg = direction * 20.
+    cc.actuators.steeringAngleDeg = direction * 30.
+    if not adaptive:
+      monkeypatch.setattr(controller.simple_steer_recovery, '_update_boost', lambda *args: None)
+    trace = []
+    for frame in range(480):
+      cs.out.steeringPressed = frame < 100
+      cs.out.steeringTorque = direction * 350 if frame < 100 else 0
+      output, messages = step(controller, cs, cc)
+      address, byte = (0xCB, 6) if camera else (0x12A, 12)
+      payload = next(data for addr, data, _ in messages if addr == address)
+      assert abs(payload[byte] - output.torqueOutputCan) <= .5
+      assert 25 <= output.torqueOutputCan <= 250
+      trace.append((output.steeringAngleDeg, output.torqueOutputCan))
+    traces.append(trace)
+  assert [x[0] for x in traces[0]] == [x[0] for x in traces[1]]
+  assert [x[1] for x in traces[0][:120]] == [x[1] for x in traces[1][:120]]
+  def reaches(trace, cap):
+    return next(i for i, sample in enumerate(trace) if i >= 100 and sample[1] >= cap)
+  assert reaches(traces[1], 80) < reaches(traces[0], 80)
+  assert reaches(traces[1], 250) < reaches(traces[0], 250)

@@ -489,13 +489,14 @@ class CarController(CarControllerBase):
                      len(model.position.yStd) > 10 and np.isfinite(model.position.yStd[10]) and
                      0 <= model.position.yStd[10] <= 0.3)
       previous_handover_state = self.steer_handover.state
+      target_error = actuators.steeringAngleDeg - CS.out.steeringAngleDeg
+      command_error = apply_angle - CS.out.steeringAngleDeg
       steering_authority = self.steer_handover.update(
         # Combined convergence/release recovery is standard for angle control.
         mode=3, now=now_nanos * 1e-9, baseline=self.lkas_max_torque,
         minimum=self.params.ANGLE_MIN_TORQUE, maximum=self.angle_max_torque,
         driver=driver_torque, threshold=torque_threshold, pressed=CS.out.steeringPressed,
-        target_error=actuators.steeringAngleDeg - CS.out.steeringAngleDeg,
-        command_error=apply_angle - CS.out.steeringAngleDeg, speed=CS.out.vEgoRaw,
+        target_error=target_error, command_error=command_error, speed=CS.out.vEgoRaw,
         wheelbase=self.CP.wheelbase, steer_ratio=self.CP.steerRatio, active=CC.latActive,
         valid=bool(CS.out.canValid and not CS.out.steerFaultTemporary and not CS.out.steerFaultPermanent and model_valid),
       )
@@ -510,6 +511,8 @@ class CarController(CarControllerBase):
           pressed=CS.out.steeringPressed, driver_ratio=torque_ratio,
           pre_override_yield=pre_override_yield,
           release_ms=self.simple_steer_release_ms, recovery_ms=self.simple_steer_recovery_ms,
+          target_error=target_error, command_error=command_error, speed=CS.out.vEgoRaw,
+          wheelbase=self.CP.wheelbase, steer_ratio=self.CP.steerRatio,
         )
       if self.frame % 100 == 0 or previous_handover_state != self.steer_handover.state:
         carlog.info("SteeringHandover mode=3 state=%s effort=%.3f error=%.3f legacy=%.1f cap=%.1f simple=%s",

@@ -8,6 +8,11 @@ authority range; the option itself remains off by default. Steering continues wi
 the allowed authority during recovery. These times do not specify physical wheel
 or lane-return time. Vehicle safety remains unvalidated.
 
+When enabled, persistent agreement of requested and limited-command angle errors
+can smoothly accelerate authority recovery up to 1.5 times the base rate, capped
+at a one-second full-range rate. Low-effort confirmation, immediate yielding and
+all original steering limits remain.
+
 > [!NOTE]
 > This is the canonical English user guide maintained with the `carrot-wip` code. When user-visible behavior changes, update this document together with the related code and tests.
 
@@ -445,7 +450,15 @@ in driver effort; shorter recovery increases authority faster. Longer settings c
 delay lane-following recovery. Use 0.20s/1.50s as the comparison baseline. Missing,
 corrupt, out-of-range and off-grid values use the respective default. Recovery sets
 a full-range increase rate, not a period without steering. Switching off keeps its
-fixed 1.5s bounded return. Actual recovery time depends on initial authority and effort. Model uncertainty
+fixed 1.5s bounded return. Actual recovery time depends on initial authority and effort.
+Requested and limited-command errors relative to measured steering must agree for
+0.1s. Speed-normalized error then smoothly increases the rate, at most 1.5 times
+the selected base rate and no faster than one second across the full authority
+range. Thus 1.5s can approach 1s and 3s can approach 2s. Falling error reduces the
+extra rate. Disagreement, reversal, invalid inputs and driver/pre-override intervention
+clear acceleration evidence. Extra recovery is allowed only at low driver effort.
+No extra neural model, profiler or settings poll is added; full authority skips
+the extra error calculation. Model uncertainty
 and repeated-override history do not set its recovery rate; existing model freshness
 and validity admission remain. Existing driver and pre-override yielding are retained.
 The existing 50-frame settings poll applies in any gear or cruise state. An ongoing
@@ -455,7 +468,8 @@ confirmation, invalid inputs and option transitions re-arm confirmation. Live ON
 transitions start from the preceding output without an abrupt authority increase. Deactivation clears
 authority and state. Other vehicles and torque steering ignore this option. Steering
 angle/rate, lateral acceleration/jerk, authority limits, Panda safety and model inputs
-are unchanged. No lane-departure-adaptive recovery was added. Physical vehicle response and benefit are unvalidated.
+are unchanged. This changes authority recovery only, without lane-departure prediction
+or target-angle correction. Physical vehicle response and benefit are unvalidated.
 
 ## PV5 camera and exposure
 
