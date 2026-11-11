@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-motion-loop-ctv3m-20261111-9a888abf",
-  "source_commit": "9a888abf7582ade8c8fd1867106362ed09842d77",
+  "profile": "jetson-pv5-hud-camera-static-ctv3m-20261111-b140d23c",
+  "source_commit": "b140d23c3d6354a2e75c41f2b46e03ec35fda880",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-motion-loop-ctv3m-20261111-9a888abf/host.tar.gz",
-    "sha256": "83eb80f37c0fd6e663b5fce362227ff729ab3d87c37514e7725fb579ac9bc8ba",
-    "size": 65315352
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-camera-static-ctv3m-20261111-b140d23c/host.tar.gz",
+    "sha256": "df2174e91f576291431b91b3321024b61de304cf0d3f34756b34300f0951757b",
+    "size": 65321305
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
