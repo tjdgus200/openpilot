@@ -126,8 +126,9 @@ class AlertRenderer(Widget):
       return
 
     alert_rect = self._get_alert_rect(rect, alert.size)
-    alert_rect = attention_panel_rect(alert_rect, bool(icon_scale) and alert.size != AlertSize.full
-                                     and getattr(ui_state.CP, 'carFingerprint', '') == 'KIA_PV5')
+    avoid_speed_panel = (bool(icon_scale) and alert.size != AlertSize.full
+                         and getattr(ui_state.CP, 'carFingerprint', '') == 'KIA_PV5')
+    alert_rect = attention_panel_rect(alert_rect, avoid_speed_panel)
     self._draw_background(alert_rect, alert)
 
     text_rect = rl.Rectangle(
@@ -143,7 +144,7 @@ class AlertRenderer(Widget):
                                  icon_height * icon_scale)
       text_rect.width -= text_left - text_rect.x
       text_rect.x = text_left
-    self._draw_text(text_rect, alert)
+    self._draw_text(text_rect, alert, fit_width=avoid_speed_panel)
 
   def _get_alert_rect(self, rect: rl.Rectangle, size: int) -> rl.Rectangle:
     if size == AlertSize.full:
@@ -162,14 +163,14 @@ class AlertRenderer(Widget):
     else:
       rl.draw_rectangle_rec(rect, color)
 
-  def _draw_text(self, rect: rl.Rectangle, alert: Alert) -> None:
+  def _draw_text(self, rect: rl.Rectangle, alert: Alert, *, fit_width: bool = False) -> None:
     if alert.size == AlertSize.small:
-      self._draw_centered(alert.text1, rect, self.font_bold, ALERT_FONT_MEDIUM)
+      self._draw_centered(alert.text1, rect, self.font_bold, ALERT_FONT_MEDIUM, fit_width=fit_width)
 
     elif alert.size == AlertSize.mid:
-      self._draw_centered(alert.text1, rect, self.font_bold, ALERT_FONT_BIG, center_y=False)
+      self._draw_centered(alert.text1, rect, self.font_bold, ALERT_FONT_BIG, center_y=False, fit_width=fit_width)
       rect.y += ALERT_FONT_BIG + ALERT_LINE_SPACING
-      self._draw_centered(alert.text2, rect, self.font_regular, ALERT_FONT_SMALL, center_y=False)
+      self._draw_centered(alert.text2, rect, self.font_regular, ALERT_FONT_SMALL, center_y=False, fit_width=fit_width)
 
     else:
       is_long = len(alert.text1) > 15
@@ -186,8 +187,11 @@ class AlertRenderer(Widget):
       self._full_text2_label.set_text(alert.text2)
       self._full_text2_label.render(subtitle_rect)
 
-  def _draw_centered(self, text, rect, font, font_size, center_y=True, color=rl.WHITE) -> None:
+  def _draw_centered(self, text, rect, font, font_size, center_y=True, color=rl.WHITE, *, fit_width=False) -> None:
     text_size = measure_text_cached(font, text, font_size)
+    if fit_width and text_size.x > rect.width:
+      font_size = max(1., font_size * max(1., rect.width) / text_size.x)
+      text_size = measure_text_cached(font, text, font_size)
     x = rect.x + (rect.width - text_size.x) / 2
     y = rect.y + ((rect.height - text_size.y) / 2 if center_y else 0)
     rl.draw_text_ex(font, text, rl.Vector2(x, y), font_size, 0, color)
