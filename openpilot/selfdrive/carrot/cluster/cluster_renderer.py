@@ -4150,7 +4150,7 @@ class ClusterUiRenderer:
         self._draw_text('|', separator, 121, 66, (155, 160, 165), anchor='center')
         self._draw_text(number('min_temp_c', suffix='°C'), minimum_x, 121, 66, battery_temperature_color(minimum), anchor='center')
         spread = f'{maximum - minimum:.0f}°C' if maximum is not None and minimum is not None else '--°C'
-        self._draw_text(f"{labels['spread']} {spread}", separator, 169, 20, theme.muted, anchor='center')
+        self._draw_text(f"{labels['spread']} {spread}", separator + 16, 169, 20, theme.muted)
         power = data.value('pack_power_kw')
         power_text = '-- kW' if power is None else f'{power:.1f} kW'
         power_label = (labels['charging_power'] if data.value('charge_mode') in ('ac', 'dc') else

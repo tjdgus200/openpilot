@@ -58,7 +58,7 @@ def test_trip_soc_is_larger_diagonally_below_soc_and_preserves_base_panel(monkey
   assert base == [True]
   args, kw = texts[0]
   assert args[0] == hud.trip_soc_label(2.5, language)
-  assert args[1] == renderer._information_panel_x(hud.NAVI_LIVE_PANEL_X) + hud.NAVI_LIVE_PANEL_W*.5 - 24
+  assert args[1] == renderer._information_panel_x(hud.NAVI_LIVE_PANEL_X) + hud.NAVI_LIVE_PANEL_W*.30
   assert args[2:4] == (169, 28) and kw['anchor'] == 'right'
 
 

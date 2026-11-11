@@ -189,9 +189,9 @@ class HealthRenderer(ClusterUiRenderer):
   def _draw_battery_panel(self, state):
     super()._draw_battery_panel(state)
     used = getattr(self, '_trip_soc_used', None)
-    right = self._information_panel_x(NAVI_LIVE_PANEL_X) + NAVI_LIVE_PANEL_W * .5 - 24
+    right = self._information_panel_x(NAVI_LIVE_PANEL_X) + NAVI_LIVE_PANEL_W * .30
     self._draw_text(self._ellipsize_text(trip_soc_label(used, self.language), 28,
-                                      NAVI_LIVE_PANEL_W * .5 - 48), right, 169, 28,
+                                      NAVI_LIVE_PANEL_W * .30 - 48), right, 169, 28,
                     NORMAL if used is not None and used < 0 else self._current_theme().muted,
                     anchor='right')
 

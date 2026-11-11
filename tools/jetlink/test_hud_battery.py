@@ -405,7 +405,7 @@ def test_temperature_pair_keeps_large_type_and_small_spread_without_fabricating_
     assert len(details) == 1 and details[0][1][2] == 20
     expected_spread = f'{maximum-minimum}°C' if maximum is not None and minimum is not None else '--°C'
     assert details[0][0].endswith(expected_spread)
-    assert details[0][1][0] == positions[1]
+    assert positions[1] < details[0][1][0] < positions[2]
 
 
 @pytest.mark.parametrize('stored_mode,enabled', [(None, True), (b'8', True), (b'0', False), (b'7', False)])

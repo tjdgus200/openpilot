@@ -1,3 +1,5 @@
+- 2026-11-11 battery layout follow-up: place20px spread at the lower-left of the minimum-temperature column; shift28px trip-used percent toward SOC, wholly left of max temperature. Preserve all sizes, owner colors, SOC baseline, field expiry/collection and inference/control. Verify actual font bounds in both panel positions.
+
 - 2026-11-11 final battery temperature HUD release: max | min both66px,
   spread below20px; owner colors <5 blue,5..9 light blue,10..30 white,
   31..34 yellow,>=35 red on shown integers, unknown gray. DROP1s caption

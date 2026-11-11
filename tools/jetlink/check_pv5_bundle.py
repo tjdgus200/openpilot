@@ -164,6 +164,11 @@ try:
     assert any(text==labels['minimum'] and args[1:3]==(76,22) for text,args,_ in temperature_texts)
     detail=next((text,args) for text,args,_ in temperature_texts if text.startswith(labels['spread']+' '))
     assert detail[1][1:3]==(169,20)
+    assert values[1][1][0]<detail[1][0]<values[2][1][0]
+    usage=next((text,args,kwargs) for text,args,kwargs in temperature_texts if args[1:3]==(169,28))
+    assert usage[2].get('anchor')=='right'
+    assert usage[1][0] <= left+hud_health.NAVI_LIVE_PANEL_W*.30
+    assert usage[1][0]+24<boxes[0][0] and usage[1][0]+40<detail[1][0]
  ui.set_display_preferences('ko',True)
  ui.set_panel_layout(0)
  ui.set_theme_mode('light')
