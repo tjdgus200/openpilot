@@ -24,6 +24,9 @@ _MOTION_ENTER_HZ = 20
 _MOTION_REPEAT_HZ = 10
 _MOTION_REPEAT_GAIN = .08
 STATIC_CAMERA_ASSET = 'images/hud_camera_static.png'
+STATIC_NOTICE_ASSET = 'images/hud_notice_static.png'
+STATIC_NOTICE_SIZE = (128, 96)
+STATIC_NOTICE_ROWS = {'cutin': 0, 'cutinTrack': 1, 'cutinBrake': 2, 'leadBrake': 2, 'section': 3, 'school': 4}
 DRIVING_NOTICE_TEXT = {
   'cutin': '옆차 끼어들기 경계 중',
   'cutinTrack': '끼어들기 차량\n선행차로 추적 중',
@@ -41,22 +44,15 @@ _MOTION_RING = tuple((math.cos(i * math.tau / 12), math.sin(i * math.tau / 12)) 
 _LANE_ARROW = ((-.9, -.6), (-.65, -.3), (-.4, 0), (-.65, .3), (-.9, .6),
                (0., -.8), (.35, -.5), (.65, -.25), (.95, 0.), (.65, .25), (.35, .5), (0., .8))
 _MOTION_DOTS = {
-  'cutin': ((-.95, -.85), (-.7, -.55), (-.45, -.28), (-.23, 0.),
-            (.95, -.85), (.7, -.55), (.45, -.28), (.23, 0.),
-            (-.23, .34), (.23, .34), (-.23, .72), (.23, .72)),
   'laneRight': _LANE_ARROW,
   'laneLeft': tuple((-x, y) for x, y in _LANE_ARROW),
-  'leadBrake': tuple((x, y) for y in (-.68, 0., .68) for x in (-.82, -.27, .27, .82)),
   'curve': tuple((.56 * math.sin(i * math.tau / 11), .95 - 1.9 * i / 11) for i in range(12)),
   'bump': tuple((-1. + 2. * i / 11, -.75 * math.sin(i * math.pi / 11)) for i in range(12)),
-  'section': tuple((x, y) for x in (-.67, .67) for y in (-.85, -.51, -.17, .17, .51, .85)),
 }
 _DECELERATION_MOTION = {
   'cam': 'camera', 'waze': 'camera', 'vturn': 'curve', 'route': 'curve',
-  'turn': 'curve', 'model': 'curve', 'bump': 'bump', 'section': 'section', 'school': 'section',
+  'turn': 'curve', 'model': 'curve', 'bump': 'bump', 'section': 'section', 'school': 'school',
 }
-_MOTION_DOTS['cutinTrack'] = _MOTION_DOTS['cutin']
-_MOTION_DOTS['cutinBrake'] = _MOTION_DOTS['leadBrake']
 
 
 @lru_cache(maxsize=2)
@@ -92,7 +88,7 @@ def driving_popup_motion(notice: str | None, deceleration_label: str | None, lan
   if notice == 'laneChange':
     return {'left': 'laneLeft', 'right': 'laneRight'}.get(lane_direction)
   if notice is not None:
-    return notice if notice in _MOTION_DOTS else None
+    return notice if notice in _MOTION_DOTS or notice in STATIC_NOTICE_ROWS else None
   return _DECELERATION_MOTION.get(deceleration_label)
 
 

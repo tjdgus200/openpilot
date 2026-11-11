@@ -3,7 +3,7 @@ import time
 import pyray as rl
 
 from openpilot.cereal import log
-from openpilot.common.hud_attention_icon import DriverAttentionIcon, draw_driver_attention_icon
+from openpilot.common.hud_attention_icon import CRITICAL_BACKGROUND, DriverAttentionIcon, draw_driver_attention_icon
 from openpilot.selfdrive.ui.onroad.alert_renderer import (
   ALERT_CRITICAL_TIMEOUT, SELFDRIVE_STATE_TIMEOUT, SELFDRIVE_UNRESPONSIVE_TIMEOUT,
 )
@@ -48,7 +48,8 @@ def draw_critical_alert(ui_state) -> bool:
     return False
 
   width, height = gui_app.width, gui_app.height
-  rl.draw_rectangle(0, 0, width, height, rl.Color(183, 0, 24, 255))
+  rl.draw_rectangle(0, 0, width, height, rl.Color(*CRITICAL_BACKGROUND))
+  icon_scale = icon_scale or 1.  # Every critical cause has an immediate visible exclamation.
   font = gui_app.font(FontWeight.BOLD)
   title, detail, _ = alert
   icon_height = min(height * .24, width * .15) if icon_scale else 0.

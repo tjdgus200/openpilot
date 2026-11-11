@@ -2,7 +2,7 @@ import time
 import pyray as rl
 from dataclasses import dataclass
 from openpilot.cereal import messaging, log
-from openpilot.common.hud_attention_icon import DriverAttentionIcon, draw_driver_attention_icon
+from openpilot.common.hud_attention_icon import DriverAttentionIcon, attention_panel_rect, draw_driver_attention_icon
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.hardware import TICI
 from openpilot.system.ui.lib.application import gui_app, FontWeight, TextAlignment, TextAlignmentVertical
@@ -126,6 +126,8 @@ class AlertRenderer(Widget):
       return
 
     alert_rect = self._get_alert_rect(rect, alert.size)
+    alert_rect = attention_panel_rect(alert_rect, bool(icon_scale) and alert.size != AlertSize.full
+                                     and getattr(ui_state.CP, 'carFingerprint', '') == 'KIA_PV5')
     self._draw_background(alert_rect, alert)
 
     text_rect = rl.Rectangle(

@@ -14,11 +14,12 @@ from pathlib import Path
 import numpy as np
 import pyray as rl
 
-from openpilot.common.hud_attention_icon import DriverAttentionIcon, draw_driver_attention_icon
+from openpilot.common.hud_attention_icon import CRITICAL_BACKGROUND, DriverAttentionIcon, draw_driver_attention_icon
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.common.hud_driving_feedback import (
-    DrivingNoticeTracker, DrivingPopupSlide, STATIC_CAMERA_ASSET, driving_popup_colors,
+    DrivingNoticeTracker, DrivingPopupSlide, STATIC_CAMERA_ASSET, STATIC_NOTICE_ASSET, STATIC_NOTICE_ROWS, STATIC_NOTICE_SIZE,
+    driving_popup_colors,
     lane_confidence_score, lane_confidence_grade, lane_probability_text,
 )
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
@@ -121,6 +122,7 @@ VEHICLE_MODEL_PATH = CLUSTER_DIR / "assets" / "models" / "cybertruck" / "cybertr
 TPMS_CAR_ICON_PATH = CLUSTER_DIR / "assets" / "images" / "tpms_toy_car.png"
 SPEED_BG_PATH = SELFDRIVE_DIR / "assets" / "images" / "speed_bg.png"
 STATIC_CAMERA_ICON_PATH = SELFDRIVE_DIR / "assets" / STATIC_CAMERA_ASSET
+STATIC_NOTICE_ICON_PATH = SELFDRIVE_DIR / "assets" / STATIC_NOTICE_ASSET
 TRAFFIC_RED_ICON_PATH = SELFDRIVE_DIR / "assets" / "images" / "traffic_red.png"
 TRAFFIC_GREEN_ICON_PATH = SELFDRIVE_DIR / "assets" / "images" / "traffic_green.png"
 FOLLOW_VEHICLE_ICON_PATH = SELFDRIVE_DIR / "assets" / "icons_mici" / "carrot_cruse_gap_trimmed.png"
@@ -973,6 +975,7 @@ class ClusterUiRenderer:
         self._scene_cache: ClusterScene | None = None
         self._speed_bg_texture = None
         self._camera_static_texture = None
+        self._notice_static_texture = None
         self._traffic_red_texture = None
         self._traffic_green_texture = None
         self._follow_vehicle_texture = None
@@ -1317,6 +1320,9 @@ class ClusterUiRenderer:
         if self._camera_static_texture is not None:
             rl.unload_texture(self._camera_static_texture)
             self._camera_static_texture = None
+        if self._notice_static_texture is not None:
+            rl.unload_texture(self._notice_static_texture)
+            self._notice_static_texture = None
         if self._traffic_red_texture is not None:
             rl.unload_texture(self._traffic_red_texture)
             self._traffic_red_texture = None
@@ -2949,6 +2955,8 @@ class ClusterUiRenderer:
             self._speed_bg_texture = self._load_icon_texture(SPEED_BG_PATH, "Speed background")
         if self._camera_static_texture is None:
             self._camera_static_texture = self._load_icon_texture(STATIC_CAMERA_ICON_PATH, "Static camera")
+        if self._notice_static_texture is None:
+            self._notice_static_texture = self._load_icon_texture(STATIC_NOTICE_ICON_PATH, "Static driving notices")
         if self._traffic_red_texture is None:
             self._traffic_red_texture = self._load_alpha_cropped_icon_texture(TRAFFIC_RED_ICON_PATH, "Red traffic light")
         if self._traffic_green_texture is None:
@@ -4189,7 +4197,8 @@ class ClusterUiRenderer:
         self._draw_text(self._ellipsize_text(text, 16, width), left, 462, 16, color)
 
     def _draw_alert_overlay(self, alert: ClusterAlert | None) -> None:
-        if alert is None or alert.size <= 0 or not (alert.text1 or alert.text2):
+        critical = alert is not None and alert.status == 2
+        if alert is None or (not critical and (alert.size <= 0 or not (alert.text1 or alert.text2))):
             self._attention_icon.reset()
             return
         icon_scale = self._attention_icon.scale(alert.alert_type, time.monotonic())
@@ -4199,6 +4208,21 @@ class ClusterUiRenderer:
         rl.rl_push_matrix()
         rl.rl_scalef(sx, sy, 1.0)
         try:
+            if critical:
+                # Final opaque layer: also covers the information panel, footer and other notices.
+                rl.draw_rectangle(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT, rl.Color(*CRITICAL_BACKGROUND))
+                center = DESIGN_WIDTH * .5
+                draw_driver_attention_icon(center, 94, 136 * (icon_scale or 1.))
+                title, reason = self._cluster_alert_text(alert)
+                title = title or ('즉시 직접 운전하세요' if self.language == 'ko' else 'TAKE CONTROL IMMEDIATELY')
+                title, title_size = self._fit_alert_text(title, 84., DESIGN_WIDTH - 160., 36.)
+                reason, reason_size = self._fit_alert_text(reason, 44., DESIGN_WIDTH - 160., 26.)
+                self._draw_text_with_stroke(title, center, 244 if reason else 270, title_size,
+                                            WHITE, WHITE, 1, anchor="center", cache=True)
+                if reason:
+                    self._draw_text_with_stroke(reason, center, 350, reason_size,
+                                                WHITE, WHITE, 1, anchor="center", cache=True)
+                return
             panel_x = self._driving_panel_offset_design_x()
             panel_w = CAMERA_BACKGROUND_W
             panel_center_x = panel_x + panel_w * 0.5
@@ -7579,7 +7603,7 @@ class ClusterUiRenderer:
     def _draw_driving_popup(self, state: ClusterUiState, screen_mode: int) -> bool:
         now = time.monotonic()
         warning = state.steering_warning
-        blocked = not state.onroad or (state.alert is not None and state.alert.size > 0)
+        blocked = not state.onroad or (state.alert is not None and (state.alert.size > 0 or state.alert.status == 2))
         notice = self._driving_notices.update(state.driving_notices, now, blocked=bool(warning or blocked),
                                               decelerating=bool(state.deceleration_banner))
         if blocked:
@@ -7593,10 +7617,11 @@ class ClusterUiRenderer:
         text, warning, motion = popup.text, popup.warning, popup.motion
         dots = self._popup_slide.motion_dots(motion, now)
         camera = motion == 'camera'
+        static = camera or motion in STATIC_NOTICE_ROWS
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
         title, _, detail = text.partition("\n")
         width, height, settled_top = (660 if detail else 620 if warning >= 2 else 500), (112 if detail else 76), 82
-        icon_space = 68 if dots or camera else 0
+        icon_space = 68 if dots or static else 0
         width += icon_space
         top = self._popup_slide.top(now, settled_top, height, urgent=warning >= 2)
         left = center_x - width * 0.5
@@ -7608,9 +7633,11 @@ class ClusterUiRenderer:
             rl.begin_scissor_mode(0, clip_y, self.width, self.height - clip_y)
         try:
             self._rounded_rect(left, top, width, height, 16, background, accent, 2 if warning else 3)
-            texture = self._camera_static_texture
-            if camera and texture is not None and texture.id > 0:
-                rl.draw_texture_pro(texture, rl.Rectangle(0, 0, texture.width, texture.height),
+            texture = self._camera_static_texture if camera else self._notice_static_texture
+            if static and texture is not None and texture.id > 0:
+                tile_w, tile_h = STATIC_NOTICE_SIZE
+                source = rl.Rectangle(0, 0 if camera else STATIC_NOTICE_ROWS[motion] * tile_h, tile_w, tile_h)
+                rl.draw_texture_pro(texture, source,
                                     rl.Rectangle(left + 12, top + height / 2 - 20.25, 54, 40.5),
                                     rl.Vector2(0, 0), 0., rl_color(accent))
             elif dots:
@@ -7620,7 +7647,7 @@ class ClusterUiRenderer:
                     rl.draw_circle_v(position, 2.4, ink)
             else:
                 self._rounded_rect(left + 14, top + 17, 5, height - 34, 2, accent)
-            text_center = center_x + (icon_space / 2 if dots or camera else 5)
+            text_center = center_x + (icon_space / 2 if dots or static else 5)
             self._draw_text_with_stroke(title, text_center, top + height * (0.34 if detail else 0.5), 40 if detail else 46,
                                         WHITE, (5, 9, 12), 2, anchor="center", cache=True)
             if detail:

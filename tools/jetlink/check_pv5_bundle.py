@@ -317,6 +317,9 @@ try:
   assert (177,220,255) in rgb.crop((205,100,275,175)).getdata()
  assert DRIVING_POPUP_MOTION_SECONDS==1. and DRIVING_POPUP_REPEAT_SECONDS==2.5
  assert ui._camera_static_texture.id>0
+ assert ui._notice_static_texture.id>0
+ assert (ui._notice_static_texture.width,ui._notice_static_texture.height)==(128,480)
+ notice_texture_id=ui._notice_static_texture.id
  assert (ui._camera_static_texture.width,ui._camera_static_texture.height)==(128,96)
  ui._popup_slide.reset()
  ui._driving_notices.reset()
@@ -351,7 +354,63 @@ try:
  ui.render_to_file(replace(braking,alert=attention),attention_path)
  assert attention.text1 in texts and attention.text2 in texts and camera_title not in texts
  with Image.open(attention_path) as frame:
-  assert (255,225,91) in frame.convert('RGB').crop((470,55,650,175)).getdata()
+  rgb=frame.convert('RGB')
+  assert (255,225,91) in rgb.crop((870,20,1050,175)).getdata()
+  assert all(rgb.getpixel(p)==(183,0,24) for p in ((0,0),(1919,0),(0,479),(1919,479),(1800,440)))
+ # All critical causes and reported sizes preempt every dashboard/popup, not only DM.
+ critical_path=popup_path.with_name('hud-critical.png')
+ for alert_size in (0,1,2,3):
+  critical=ClusterAlert('즉시 직접 운전하세요','조향 제어 연결 오류',size=alert_size,status=2,alert_type='controlsMismatch/immediateDisable')
+  texts.clear()
+  ui.render_to_file(replace(braking,alert=critical,steering_warning=3,driving_notices=('cutin',)),critical_path)
+  assert critical.text1 in texts and critical.text2 in texts
+  assert ui._popup_slide._popup is None
+  with Image.open(critical_path) as frame:
+   rgb=frame.convert('RGB')
+   assert all(rgb.getpixel(p)==(183,0,24) for p in ((0,0),(1919,0),(0,479),(1919,479),(1800,440)))
+   assert (255,225,91) in rgb.crop((870,20,1050,175)).getdata()
+ texts.clear()
+ ui.render_to_file(replace(braking,alert=ClusterAlert('','',size=0,status=2)),critical_path)
+ assert '즉시 직접 운전하세요' in texts
+ for mode,theme in ((0,'dark'),(3,'light'),(8,'light')):
+  ui.set_screen_mode(mode)
+  ui.set_theme_mode(theme)
+  ui.render_to_file(replace(braking,alert=critical),critical_path)
+  with Image.open(critical_path) as frame:
+   rgb=frame.convert('RGB')
+   assert all(rgb.getpixel(p)==(183,0,24) for p in ((0,0),(1919,0),(0,479),(1919,479),(1800,440)))
+ ui.set_screen_mode(8)
+ ui.set_theme_mode('dark')
+ texts.clear()
+ long_title='즉시 직접 운전하세요 ' * 20
+ long_reason='조향 제어 연결을 확인하세요 ' * 20
+ ui.render_to_file(replace(braking,alert=ClusterAlert(long_title,long_reason,size=3,status=2)),critical_path)
+ assert any(text.endswith('...') for text in texts)
+ # Retain a readable source-reason screenshot, then clear back to the normal dashboard.
+ ui.render_to_file(replace(braking,alert=critical),critical_path)
+ ui.render_to_file(replace(braking,alert=None),popup_path)
+ with Image.open(popup_path) as frame:
+  assert frame.convert('RGB').getpixel((1800,440))!=(183,0,24)
+ # Atlas rows remain static over time; each row is separately recognizable.
+ notice_path=popup_path.with_name('hud-notice-static.png')
+ for notice,source_label,row in (('cutin',None,0),('cutinTrack',None,1),('cutinBrake',None,2),
+                                 ('leadBrake',None,2),(None,'section',3),(None,'school',4)):
+  ui._popup_slide.reset()
+  ui._driving_notices.reset()
+  candidate=replace(state,driving_notices=(notice,) if notice else (),
+                    deceleration_banner='구역 감속' if not notice else None,cruise_override_label=source_label)
+  samples=[]
+  for now in (2000.,2001.3,2002.2,2004.7):
+   with patch('time.monotonic',return_value=now):
+    ui.render_to_file(candidate,notice_path)
+   if now>2000.:
+    with Image.open(notice_path) as image:
+     # Icon position depends on the one/two-line notice reservation.
+     x=196 if notice in ('cutinTrack','cutinBrake') else 276
+     samples.append(image.convert('RGB').crop((x+5,100,x+66,175)).tobytes())
+  assert samples[0]==samples[1]==samples[2]
+  assert ui._notice_static_texture.id==notice_texture_id
+  assert ui._popup_slide._motion_enter==ui._popup_slide._motion_repeat==()
  camera_state=replace(braking,driving_notices=())
  expired_state=replace(camera_state,deceleration_banner=None)
  with patch('time.monotonic',return_value=1000.):
@@ -367,7 +426,7 @@ try:
    assert (max(abs(a-b) for a,b in zip(pixel,(31,70,143),strict=True))<=2)==at_rest, (now,pixel)
 finally:
  ui.close()
-assert ui._telemetry_font is None and not ui._window_open and ui._camera_static_texture is None
+assert ui._telemetry_font is None and not ui._window_open and ui._camera_static_texture is None and ui._notice_static_texture is None
 '''
 
 
@@ -450,13 +509,15 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-popup.png', args.output / 'hud-popup.png')
     shutil.copyfile(root / 'hud-camera-decel.png', args.output / 'hud-camera-decel.png')
     shutil.copyfile(root / 'hud-driver-attention.png', args.output / 'hud-driver-attention.png')
+    shutil.copyfile(root / 'hud-critical.png', args.output / 'hud-critical.png')
+    shutil.copyfile(root / 'hud-notice-static.png', args.output / 'hud-notice-static.png')
     for color in ('white', 'orange', 'red'):
       shutil.copyfile(root / f'hud-ms-{color}.png', args.output / f'hud-ms-{color}.png')
     shutil.copyfile(root / 'hud-battery-temperatures.png', args.output / 'hud-battery-temperatures.png')
     shutil.copyfile(root / 'hud-battery-temperatures-light.png', args.output / 'hud-battery-temperatures-light.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, static_camera_icon=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, static_camera_icon=True, static_notice_icons=True, critical_fullscreen=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

@@ -1,3 +1,15 @@
+- 2026-11-11 notice readability/critical release supersedes affected dot icons:
+  keep cam static; cutin risk/tracked/braking, lead braking, section and school
+  use cached fixed128x96 atlas tiles, no morph/repeat tables. Keep lane arrows,
+  curve and bump1s morph/2.5s gentle repeat, original popup/alert timing and FPS.
+  PV5 C3X noncritical attention panel clears the lower-left speed display;
+  preserve other-vehicle layouts and immediate attention glyph. Every critical
+  C3X/HUD alert has an exclamation. HUD critical status2 is a final opaque
+  full1920x480 red layer, large white title and existing short reason; no cause
+  inference, wait/slide or lower-priority content above it. Clear it when the
+  fresh alert clears. Test blank/long copy, all sizes, theme/layout/priority,
+  asset lifetime and exact5 archives. No model/control/audio/BLE changes.
+
 - 2026-11-11 camera enforcement icon supersedes the camera part of dot motion:
   cam/HDA/Waze use a fixed128x96 transparent PNG (one textured quad/frame).
   Load once with existing UI resources and release through their lifecycle;

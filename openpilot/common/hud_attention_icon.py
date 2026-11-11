@@ -7,6 +7,15 @@ _ATTENTION_EVENTS = frozenset(
   for stage in (1, 2, 3)
 )
 _ENTER_SECONDS = .36
+CRITICAL_BACKGROUND = (183, 0, 24, 255)
+
+
+def attention_panel_rect(rect: rl.Rectangle, avoid_speed_panel: bool) -> rl.Rectangle:
+  """Keep PV5's noncritical attention panel clear of the lower-left speed display."""
+  if not avoid_speed_panel:
+    return rect
+  inset = min(600., rect.width * .32)
+  return rl.Rectangle(rect.x + inset, rect.y, rect.width - inset, rect.height)
 
 
 class DriverAttentionIcon:

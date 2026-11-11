@@ -366,9 +366,9 @@ def test_popup_motion_repeats_gently_and_uses_actual_lane_change_direction():
   assert start != halfway != settled and len(settled) == 12
   assert slide.motion_dots('curve', 102.) != settled
   assert slide.motion_dots('curve', 101. + DRIVING_POPUP_REPEAT_SECONDS) is settled
-  assert slide.motion_dots('cutin', 103.) == start
+  assert slide.motion_dots('bump', 103.) == start
   assert slide.motion_dots(None, 103.1) == ()
-  assert slide.motion_dots('cutin', 104.) == start
+  assert slide.motion_dots('bump', 104.) == start
   assert driving_popup_motion(None, 'road', None) is None
   assert driving_popup_motion(None, 'bump', None) == 'bump'
   assert driving_popup_motion('laneChange', 'cam', None) is None
@@ -384,8 +384,7 @@ def test_popup_motion_repeats_gently_and_uses_actual_lane_change_direction():
   assert driving_popup_colors(2, left) == ((156, 18, 27, 255), (255, 78, 85, 255))
 
 
-@pytest.mark.parametrize('key', ('cutin', 'cutinTrack', 'cutinBrake', 'laneLeft', 'laneRight',
-                               'leadBrake', 'curve', 'bump', 'section'))
+@pytest.mark.parametrize('key', ('laneLeft', 'laneRight', 'curve', 'bump'))
 def test_popup_cached_repeat_preserves_shape_count_bounds_and_period(key):
   import math
   slide = DrivingPopupSlide()
@@ -428,17 +427,60 @@ def test_popup_motion_clock_faults_reset_without_restarting_text_or_growing_cach
   assert _motion_frames.cache_info().currsize <= 2
 
 
-def test_static_camera_never_prepares_animation_tables(monkeypatch):
+@pytest.mark.parametrize('key', ('camera', 'cutin', 'cutinTrack', 'cutinBrake', 'leadBrake', 'section', 'school'))
+def test_static_icons_never_prepare_animation_tables(key, monkeypatch):
   from openpilot.common import hud_driving_feedback as motion
   def forbidden(*args):
     raise AssertionError('Static camera must not prepare an animation table')
   monkeypatch.setattr(motion, '_motion_frames', forbidden)
   slide = DrivingPopupSlide()
   for now in (0., .5, 1., 2.2, 3600., float('nan'), float('inf')):
-    assert slide.motion_dots('camera', now) == ()
+    assert slide.motion_dots(key, now) == ()
   assert driving_popup_motion(None, 'cam', None) == 'camera'
   assert driving_popup_motion(None, 'waze', None) == 'camera'
+  assert driving_popup_motion(None, 'section', None) == 'section'
+  assert driving_popup_motion(None, 'school', None) == 'school'
   assert slide._motion_enter == slide._motion_repeat == ()
+
+
+@pytest.mark.parametrize('key', ('cutin', 'cutinTrack', 'cutinBrake', 'leadBrake', 'section', 'school'))
+def test_static_notice_draws_one_atlas_tile_and_keeps_copy(key, monkeypatch):
+  from openpilot.common.hud_driving_feedback import STATIC_NOTICE_ROWS
+  sm = braking_messages()
+  state = SimpleNamespace(CP=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
+                          started=True, started_frame=10, sm=sm)
+  overlay = Pv5DrivingFeedbackOverlay()
+  overlay.notice_texture = SimpleNamespace(id=1, width=128, height=480)
+  monkeypatch.setattr(feedback.time, 'monotonic', lambda: 100.)
+  monkeypatch.setattr(feedback, 'pv5_steering_warning', lambda *args, **kwargs: 0)
+  notice = key if key not in ('section', 'school') else None
+  monkeypatch.setattr(feedback, 'driving_notice_events', lambda *args, **kwargs: (notice,) if notice else ())
+  monkeypatch.setattr(feedback, 'sample_deceleration_popup', lambda *args: '구역 감속' if notice is None else None)
+  sm['carrotMan'].desiredSource = key if notice is None else 'road'
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded', lambda *_: None)
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
+  def no_dots(*args):
+    raise AssertionError('Static notice must not draw animated dots')
+  monkeypatch.setattr(feedback.rl, 'draw_circle_v', no_dots)
+  # Stage confirmation affects timing, not the final shape or text.
+  if notice in ('cutinTrack', 'cutinBrake'):
+    overlay._popup_started_frame = 10
+    overlay._driving_notices.update((notice,), 99.)
+  with patch.object(feedback.rl, 'draw_texture_pro') as draw, patch.object(feedback, 'draw_text_ui_style') as text:
+    overlay.draw_popup(rl.Rectangle(30, 30, 2100, 1020), None, state, 80.)
+    assert draw.call_count == 1 and text.call_count >= 1
+    source = draw.call_args.args[1]
+    assert (source.x, source.y, source.width, source.height) == (0, 96 * STATIC_NOTICE_ROWS[key], 128, 96)
+    assert overlay.popup_slide._motion_enter == overlay.popup_slide._motion_repeat == ()
+
+
+def test_attention_panel_clears_pv5_speed_box_and_preserves_other_layouts():
+  from openpilot.common.hud_attention_icon import attention_panel_rect
+  rect = rl.Rectangle(70, 670, 2020, 340)
+  moved = attention_panel_rect(rect, True)
+  assert moved.x > 600 and moved.x + moved.width == rect.x + rect.width
+  assert moved.y == rect.y and moved.height == rect.height
+  assert attention_panel_rect(rect, False) is rect
 
 
 def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):
