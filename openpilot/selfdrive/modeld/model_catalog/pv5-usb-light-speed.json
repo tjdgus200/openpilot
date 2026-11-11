@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-camera-static-light-speed-20261111-bfab8b0c",
-  "source_commit": "bfab8b0c1bebc68c24e64d6e56658b5eaca83066",
+  "profile": "jetson-pv5-hud-icon-critical-light-speed-20261111-5777987b",
+  "source_commit": "5777987b071d3483119235e69c4a3aa177c992d1",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-camera-static-light-speed-20261111-bfab8b0c/host.tar.gz",
-    "sha256": "3a937d3ffeff02946a73e60d68ab7490d14b9e42bb7008214d3ca5d9b20119b5",
-    "size": 65321302
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-icon-critical-light-speed-20261111-5777987b/host.tar.gz",
+    "sha256": "2946599ad82cc76dcdb3786525029a48a59d86021d763b7fd19b89be1555b0c4",
+    "size": 65336564
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
