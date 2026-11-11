@@ -4169,6 +4169,12 @@ class ClusterUiRenderer:
             # Reserve a fixed right column so English/Korean labels cannot overlap values.
             self._draw_text(self._ellipsize_text(label, 20, width * 0.56), left, y, 20, theme.muted)
             color = (80, 235, 140) if y == 219 and power is not None and power < 0 else theme.text
+            if y == 273:
+                color = battery_temperature_color(data.value('coolant_inlet_c'))
+                if not theme.is_dark:
+                    # Match the temperature columns' contrast for white/light-blue values.
+                    self._rounded_rect(right - width * 0.25 - 6, y - 19, width * 0.25 + 12, 38,
+                                       6, (18, 23, 29), (18, 23, 29), 0)
             self._draw_text(self._ellipsize_text(value, 26, width * 0.4), right, y, 26, color, anchor='right')
         self._draw_battery_status(labels[data.status], left, width - 48, theme.muted)
 

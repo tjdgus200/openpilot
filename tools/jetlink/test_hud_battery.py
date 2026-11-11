@@ -388,7 +388,8 @@ def test_temperature_pair_keeps_large_type_and_small_spread_without_fabricating_
     ui._ellipsize_text = lambda text, *a: text
     ui._draw_text = lambda text, *args, **kw: texts.append((text, args, kw))
     monkeypatch.setattr(renderer.rl, 'draw_line_ex', lambda *a: None)
-    metrics = {name: (value, 10) for name, value in (('max_temp_c', maximum), ('min_temp_c', minimum)) if value is not None}
+    metrics = {name: (value, 10) for name, value in (('max_temp_c', maximum), ('min_temp_c', minimum),
+                                                  ('coolant_inlet_c', maximum)) if value is not None}
     data = panel_from_wire(packet_from_metrics(metrics, 10))
     ui._draw_battery_panel(replace(standby_state(), battery=data))
     temperatures = [(text, args, kw) for text, args, kw in texts if args[1] == 121 and args[2] == 66 and text != '--%']
@@ -397,6 +398,9 @@ def test_temperature_pair_keeps_large_type_and_small_spread_without_fabricating_
     assert all(kw.get('anchor') == 'center' for _, _, kw in temperatures)
     assert temperatures[0][1][3] == battery_temperature_color(maximum)
     assert temperatures[2][1][3] == battery_temperature_color(minimum)
+    coolant = next((text, args, kw) for text, args, kw in texts if args[1:3] == (273, 26))
+    assert coolant[0] == (f'{maximum}°C' if maximum is not None else '--°C')
+    assert coolant[1][3] == battery_temperature_color(maximum) and coolant[2].get('anchor') == 'right'
     positions = [args[0] for _, args, _ in temperatures]
     assert positions == sorted(positions) and positions[1] - positions[0] == pytest.approx(positions[2] - positions[1])
     panel_x = ui._information_panel_x(renderer.NAVI_LIVE_PANEL_X)

@@ -139,7 +139,7 @@ try:
    ui.set_panel_layout(layout)
    for maximum,minimum in ((36.,28.),(0.,-10.),(30.,10.),(9.,5.),(34.,31.),(4.,-10.),(130.,-50.),(None,None)):
     metrics={'soc_percent':(77.,record['sent'])}
-    for key,value in (('max_temp_c',maximum),('min_temp_c',minimum)):
+    for key,value in (('max_temp_c',maximum),('min_temp_c',minimum),('coolant_inlet_c',maximum)):
      if value is not None:
       metrics[key]=(value,record['sent'])
     record['battery_hud']=packet_from_metrics(metrics,record['sent'])
@@ -153,6 +153,9 @@ try:
     assert len(values)==3 and all(kwargs.get('anchor')=='center' for _,_,kwargs in values)
     assert values[0][1][3]==battery_temperature_color(maximum)
     assert values[2][1][3]==battery_temperature_color(minimum)
+    coolant=next((text,args,kwargs) for text,args,kwargs in temperature_texts if args[1:3]==(273,26))
+    assert coolant[0]==(format(maximum,'.0f')+'°C' if maximum is not None else '--°C')
+    assert coolant[1][3]==battery_temperature_color(maximum) and coolant[2].get('anchor')=='right'
     boxes=[]
     for text,args,kwargs in values:
      width=ui._measure_text(text,args[2])[0]
@@ -173,11 +176,13 @@ try:
  ui.set_panel_layout(0)
  ui.set_theme_mode('light')
  record['battery_hud']=packet_from_metrics({'soc_percent':(77.,record['sent']),
-     'max_temp_c':(36.,record['sent']),'min_temp_c':(28.,record['sent'])},record['sent'])
+     'max_temp_c':(36.,record['sent']),'min_temp_c':(28.,record['sent']),
+     'coolant_inlet_c':(9.,record['sent'])},record['sent'])
  light_temperature_path=Path(sys.argv[2]).with_name('hud-battery-temperatures-light.png')
  ui.render_to_file(state,light_temperature_path)
  from PIL import Image
  assert Image.open(light_temperature_path).convert('RGB').getpixel((1420,95))==(18,23,29)
+ assert Image.open(light_temperature_path).convert('RGB').getpixel((1800,257))==(18,23,29)
  ui.set_theme_mode('dark')
  record.pop('battery_hud',None)
  ui._draw_text=battery_draw
@@ -423,7 +428,7 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-battery-temperatures-light.png', args.output / 'hud-battery-temperatures-light.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

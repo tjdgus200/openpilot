@@ -1,3 +1,10 @@
+- 2026-11-11 owner coolant display colors: use the existing battery temperature
+  color function for coolant_inlet_c, including shown-integer bands and gray
+  missing/expired readings. Keep26px right-aligned values and light-theme
+  contrast. Preserve detail positions, field TTL/collection, thermal control,
+  models/FOV/vehicle controls; refresh all five paired HUD packages.
+  These are display references, not coolant operating/protection limits.
+
 - 2026-11-11 final battery detail placement release: keep20px spread at
   lower-left of minimum temperature (separator+16,left aligned); keep28px
   trip-used percent toward SOC (panel30%,right aligned), clear of maximum
