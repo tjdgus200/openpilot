@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-layout-light-speed-20261111-3361b46a",
-  "source_commit": "3361b46a27e886857fc098ce0ae3f15130b1db85",
+  "profile": "jetson-pv5-hud-coolant-light-speed-20261111-384367e5",
+  "source_commit": "384367e5c312b18f163d4df319b0946008db5a5e",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-layout-light-speed-20261111-3361b46a/host.tar.gz",
-    "sha256": "f01828c0c282db179e58a2c59120ea37570ad0e473a0c9bb8c149d49864611d2",
-    "size": 65314532
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-coolant-light-speed-20261111-384367e5/host.tar.gz",
+    "sha256": "ae69c6f8a4a76136290af107a59607dc282bd1e89d62eadb3003e66c62ca9c76",
+    "size": 65314509
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
