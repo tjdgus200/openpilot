@@ -565,6 +565,7 @@ only in the existing preview, updates at most twice per second and clears stale 
 reasons. No extra switch is needed. Existing vehicle/speed/calibration gates still close the preview
 and hide this line when preview admission fails.
 `Pv5WideModelDown` is under **PV5 → Camera & Exposure → Model Input & Exposure → Wide Model View Down**.
+The wide preview's cyan label always shows the decoded angle, including `DOWN 0.0°`. Typed integer and legacy byte/string settings use the same decoding in the preview and model input; invalid values restore 0°.
 Default0; range0..100 in0.1° units (10=1° down, 100=10° down). It changes the actual virtual wide input, cyan footprint and enabled wide FOV metering.
 Narrow input, stored calibration and tensor sizes stay unchanged. The shared comma/Jetson/eGPU preprocessing updates in about0.25s.
 Perception and vehicle commands may differ; physical safety/improvement are unvalidated. Set0 to restore the previous input.

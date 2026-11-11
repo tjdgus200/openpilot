@@ -14,7 +14,7 @@ from jetlink.spec import ModelSpec
 from openpilot.cereal import log
 from openpilot.common import big_model_catalog as catalog
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
-from openpilot.common.transformations.model import WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX, get_warp_matrix, wider_model_warp, wide_model_pitch
+from openpilot.common.transformations.model import WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX, get_warp_matrix, wider_model_warp, wide_model_pitch, parse_wide_model_down
 from openpilot.selfdrive.controls.lib.pv5_lane_boundary import Pv5LaneBoundary
 from openpilot.selfdrive.modeld.tests.test_blendful import frame as blendful_frame
 from openpilot.selfdrive.modeld.fill_model_msg import PublishState, fill_model_msg
@@ -47,7 +47,7 @@ def fov_loop():
 
 @pytest.mark.parametrize('selection', range(5))
 @pytest.mark.parametrize('moving', [False, True])
-@pytest.mark.parametrize('down', [0, 10, 30, 50, 100])
+@pytest.mark.parametrize('down', [0, 10, 30, 50, 100, b'10', '100'])
 def test_each_model_receives_live_fov_only_in_wide_transform(model_spec, selection, moving, down, monkeypatch):
   sm = type('Messages', (dict,), {})(
     liveCalibration=NS(rpyCalib=[.01, -.02, .005], calStatus=log.LiveCalibrationData.Status.calibrated),
@@ -57,7 +57,7 @@ def test_each_model_receives_live_fov_only_in_wide_transform(model_spec, selecti
   setting = {'Pv5WideModelFov': 0, 'Pv5WideModelDown': 0}
   namespace = dict(np=np, log=log, DEVICE_CAMERAS=DEVICE_CAMERAS, get_warp_matrix=get_warp_matrix,
                    wider_model_warp=wider_model_warp, WIDE_MODEL_FOV_CHOICES=WIDE_MODEL_FOV_CHOICES,
-                   wide_model_pitch=wide_model_pitch, WIDE_MODEL_DOWN_MAX=WIDE_MODEL_DOWN_MAX,
+                   wide_model_pitch=wide_model_pitch, parse_wide_model_down=parse_wide_model_down, WIDE_MODEL_DOWN_MAX=WIDE_MODEL_DOWN_MAX,
                    CP=NS(carFingerprint='KIA_PV5', notCar=False), wide_model_down=0,
                    sm=sm, params=NS(get_int=setting.__getitem__, get=setting.__getitem__), loop_start=100., next_wide_fov_poll=0.,
                    wide_fov_index=0, camera_yaw_trim_deg=0., main_wide_camera=False, use_extra_client=True,
@@ -70,7 +70,7 @@ def test_each_model_receives_live_fov_only_in_wide_transform(model_spec, selecti
   namespace['loop_start'] = 100.26
   sm.updated['liveCalibration'] = False  # Setting alone must update, without a new calibration.
   exec(code, namespace)
-  base = get_warp_matrix(wide_model_pitch(np.array(sm['liveCalibration'].rpyCalib, np.float32), down),
+  base = get_warp_matrix(wide_model_pitch(np.array(sm['liveCalibration'].rpyCalib, np.float32), int(down)),
                          DEVICE_CAMERAS['tici', 'os04c10'].ecam.intrinsics, True)
   expected = wider_model_warp(base, WIDE_MODEL_FOV_CHOICES[selection-1]) if selection else base.astype(np.float32)
   np.testing.assert_array_equal(namespace['transforms']['img'], narrow)

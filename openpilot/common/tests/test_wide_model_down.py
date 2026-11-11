@@ -8,7 +8,7 @@ import pytest
 
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.model import (WIDE_MODEL_DOWN_MAX, WIDE_MODEL_FOV_CHOICES,
-  get_warp_matrix, wide_model_pitch, wider_model_warp)
+  get_warp_matrix, wide_model_pitch, wider_model_warp, parse_wide_model_down)
 
 ROOT = Path(__file__).resolve().parents[2]
 CORNERS = np.array([[0, 511, 511, 0], [0, 0, 255, 255], [1, 1, 1, 1]])
@@ -65,7 +65,8 @@ def live_loop(fingerprint='KIA_PV5', not_car=False, dual=True):
   sm.seen = {'roadCameraState': True, 'deviceState': True}
   state = dict(np=np, log=NS(LiveCalibrationData=NS(Status=NS(calibrated=1))),
     DEVICE_CAMERAS=DEVICE_CAMERAS, get_warp_matrix=get_warp_matrix, wider_model_warp=wider_model_warp,
-    wide_model_pitch=wide_model_pitch, WIDE_MODEL_FOV_CHOICES=WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX=WIDE_MODEL_DOWN_MAX,
+    wide_model_pitch=wide_model_pitch, parse_wide_model_down=parse_wide_model_down,
+    WIDE_MODEL_FOV_CHOICES=WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX=WIDE_MODEL_DOWN_MAX,
     CP=NS(carFingerprint=fingerprint, notCar=not_car), sm=sm, params=NS(get_int=settings.__getitem__, get=settings.__getitem__),
     loop_start=10., next_wide_fov_poll=0., wide_fov_index=0, wide_model_down=0,
     camera_yaw_trim_deg=0., main_wide_camera=False, use_extra_client=dual)
@@ -105,3 +106,31 @@ def test_setting_is_persistent_default_zero_and_separate_from_preview():
   assert '{"Pv5WideModelDown", {PERSISTENT, INT, "0"}}' in (ROOT / 'common/params_keys.h').read_text()
   source = (ROOT / 'selfdrive/modeld/modeld.py').read_text()
   assert 'Pv5FovPreviewPitch' not in source
+
+
+@pytest.mark.parametrize('raw', [b'10', '10', b'100', '100'])
+def test_native_and_legacy_param_values_apply_the_same_live_input(raw):
+  code, state, settings = live_loop()
+  narrow = state['model_transform_main'].copy()
+  settings['Pv5WideModelDown'] = int(raw)
+  state['loop_start'] += .3
+  exec(code, state)
+  expected = state['model_transform_extra'].copy()
+  settings['Pv5WideModelDown'] = raw
+  state['loop_start'] += .3
+  exec(code, state)
+  np.testing.assert_array_equal(state['model_transform_extra'], expected)
+  np.testing.assert_array_equal(state['model_transform_main'], narrow)
+
+
+@pytest.mark.parametrize('encode', [int, str, lambda v: str(v).encode('ascii')])
+def test_all_saved_steps_decode_identically(encode):
+  for value in range(101):
+    assert parse_wide_model_down(encode(value)) == value
+
+
+@pytest.mark.parametrize('bad', [None, True, False, 1.5, np.nan, -1, 101, b'', '', b'101', '999',
+                               b'-1', '+1', ' 10', '10 ', b'10.0', '1e1', '１０', '١٠',
+                               b'\xff', b'10\x00', '0' * 10000, bytearray(b'10')])
+def test_bad_saved_values_fall_back_to_original_input(bad):
+  assert parse_wide_model_down(bad) == 0

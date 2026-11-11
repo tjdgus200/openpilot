@@ -114,6 +114,36 @@ def test_actual_wide_down_moves_cyan_but_keeps_road_and_relative_candidate(previ
   np.testing.assert_array_equal(viewer._polygon, wide)
 
 
+@pytest.mark.parametrize('raw', [b'10', '10', b'100', '100'])
+def test_c3x_legacy_param_encoding_keeps_cyan_at_actual_down_angle(preview, raw):
+  viewer, update, _, settings, polygon = preview
+  sm = viewer._test_state.sm
+  sm['deviceState'].deviceType = 'tizi'
+  sm['roadCameraState'].sensor = 'ox03c10'
+  settings['Pv5WideModelDown'] = raw
+  update(10.)
+  rpy = np.array([0., -np.radians(int(raw) * .1), 0.], dtype=np.float32)
+  lens = DEVICE_CAMERAS['tizi', 'ox03c10'].ecam
+  expected = wider_model_warp(get_warp_matrix(rpy, lens.intrinsics, True), 80)
+  np.testing.assert_allclose(viewer._polygon, polygon(expected), atol=1e-5)
+  assert f'DOWN {int(raw) * .1:.1f}°' in viewer._label
+
+
+def test_wide_label_shows_zero_and_corrupt_setting_resets_both_geometry_and_label(preview):
+  viewer, update, _, settings, _ = preview
+  update(10., road=False)
+  original = viewer._polygon.copy()
+  assert 'DOWN 0.0°' in viewer._label
+  settings['Pv5WideModelDown'] = b'100'
+  update(10.3, road=False)
+  assert 'DOWN 10.0°' in viewer._label
+  assert np.all(viewer._polygon[:, 1] > original[:, 1])
+  settings['Pv5WideModelDown'] = b'100.0'
+  update(10.6, road=False)
+  np.testing.assert_array_equal(viewer._polygon, original)
+  assert 'DOWN 0.0°' in viewer._label
+
+
 def test_c3x_exposure_overlay_uses_fresh_correct_lens_and_never_changes_warp(preview):
   viewer, update, _, _, polygon = preview
   state = viewer._test_state

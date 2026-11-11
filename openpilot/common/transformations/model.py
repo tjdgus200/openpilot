@@ -45,6 +45,20 @@ WIDE_MODEL_FOV_CHOICES = (65, 70, 75, 80)
 WIDE_MODEL_DOWN_MAX = 100  # Stored tenths of a degree; experimental, not a calibration correction.
 
 
+def parse_wide_model_down(value) -> int:
+  """Read the same bounded setting from typed Params or legacy raw Params."""
+  if type(value) is int:
+    return value if 0 <= value <= WIDE_MODEL_DOWN_MAX else 0
+  if type(value) not in (bytes, str) or not 1 <= len(value) <= 3:
+    return 0
+  # Match camerad's ASCII integer reader; reject signs, whitespace, floats and
+  # oversized inputs instead of coercing corrupt values into a model transform.
+  if not value.isascii() or not value.isdigit():
+    return 0
+  down = int(value)
+  return down if down <= WIDE_MODEL_DOWN_MAX else 0
+
+
 def wide_model_pitch(rpy: np.ndarray, down: int) -> np.ndarray:
   """Tilt only the virtual wide model view down, leaving live calibration untouched."""
   if not isinstance(down, (int, np.integer)) or isinstance(down, bool) or not 0 <= down <= WIDE_MODEL_DOWN_MAX:

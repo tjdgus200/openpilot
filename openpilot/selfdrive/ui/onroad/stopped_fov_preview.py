@@ -7,7 +7,7 @@ import pyray as rl
 from openpilot.cereal import log
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.exposure import exposure_rectangle, exposure_label, fov_status_label
-from openpilot.common.transformations.model import SBIGMODEL_INPUT_SIZE, WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX, get_warp_matrix, wider_model_warp, wide_model_pitch
+from openpilot.common.transformations.model import SBIGMODEL_INPUT_SIZE, WIDE_MODEL_FOV_CHOICES, get_warp_matrix, wider_model_warp, wide_model_pitch, parse_wide_model_down
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
 _WIDTH, _HEIGHT = SBIGMODEL_INPUT_SIZE
@@ -61,8 +61,7 @@ class StoppedFovPreview:
       self._selection = state.params.get_int("Pv5WideModelFov")
       self._yaw_trim = state.params.get_float("CameraYawTrimDeg") * 0.01
       self._pitch_preview = max(-30, min(30, state.params.get_int("Pv5FovPreviewPitch")))
-      down = state.params.get("Pv5WideModelDown")
-      self._wide_model_down = down if type(down) is int and 0 <= down <= WIDE_MODEL_DOWN_MAX else 0
+      self._wide_model_down = parse_wide_model_down(state.params.get("Pv5WideModelDown"))
       self._wide_enabled = bool(state.params.get("UseWideCamera", return_default=True))
       self._always_preview = state.params.get_bool("Pv5CameraFovPreview")
       self._fov_exposure = state.params.get_int("Pv5ModelFovExposure")
@@ -143,7 +142,7 @@ class StoppedFovPreview:
     self.active = self._polygon is not None
     self._source_size = lens.size
     self._label = (f"MODEL WIDE {fov}°" if fov else "MODEL WIDE ~59°") if self.wide else "MODEL ROAD ~31°"
-    if self.wide and self._wide_model_down:
+    if self.wide:
       self._label += f" | DOWN {self._wide_model_down * 0.1:.1f}°"
 
   def _project(self, rpy, lens, fov):

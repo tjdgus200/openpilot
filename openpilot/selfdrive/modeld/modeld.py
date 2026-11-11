@@ -19,7 +19,7 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import config_realtime_process, DT_MDL
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
-from openpilot.common.transformations.model import WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX, get_warp_matrix, wider_model_warp, wide_model_pitch
+from openpilot.common.transformations.model import WIDE_MODEL_FOV_CHOICES, get_warp_matrix, wider_model_warp, wide_model_pitch, parse_wide_model_down
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.selfdrive.controls.lib.desire_lib.boundary_observer import BoundaryObserver
 from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value, get_curvature_from_plan
@@ -479,10 +479,10 @@ def main(demo=False):
       selection = selection if 1 <= selection <= len(WIDE_MODEL_FOV_CHOICES) else 0
       wide_fov_changed = selection != wide_fov_index
       wide_fov_index = selection
-      # Typed get returns None for missing/corrupt values; native get_int uses
-      # std::stoi without exception translation and must not read this new option.
+      # Keep typed and legacy raw Params compatible, without native get_int's
+      # std::stoi exception path for a missing/corrupt setting.
       down = params.get("Pv5WideModelDown") if CP.carFingerprint == "KIA_PV5" and not CP.notCar else 0
-      down = down if type(down) is int and 0 <= down <= WIDE_MODEL_DOWN_MAX else 0
+      down = parse_wide_model_down(down)
       wide_fov_changed |= down != wide_model_down
       wide_model_down = down
 
