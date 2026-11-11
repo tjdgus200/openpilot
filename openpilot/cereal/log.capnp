@@ -1084,6 +1084,13 @@ struct ModelDataV2 {
   # e2e lateral planner
   action @26: Action;
   pv5LaneCenter @27 :LaneCenterData; # modeld-owned upstream Blendful; display telemetry only
+  frameDropStats @28 :FrameDropStats; # display only, counted at the publisher, not HUD packet loss
+
+  struct FrameDropStats {
+    valid @0 :Bool; # false during startup/reset/unobservable window
+    count @1 :UInt32; # gaps observed in the preceding 1s capture-time window, refreshed at 1Hz
+    windowEndMonoTime @2 :UInt64;
+  }
 
   struct LaneCenterData {
     valid @0 :Bool;

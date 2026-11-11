@@ -3,6 +3,7 @@ import capnp
 import numpy as np
 import math
 from openpilot.cereal import log
+from openpilot.common.model_frame_drops import ModelFrameDropWindow
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan, Meta
 
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
@@ -15,6 +16,7 @@ class PublishState:
     self.disengage_buffer = np.zeros(ModelConstants.CONFIDENCE_BUFFER_LEN*ModelConstants.DISENGAGE_WIDTH, dtype=np.float32)
     self.prev_brake_5ms2_probs = np.zeros(ModelConstants.FCW_5MS2_PROBS_WIDTH, dtype=np.float32)
     self.prev_brake_3ms2_probs = np.zeros(ModelConstants.FCW_3MS2_PROBS_WIDTH, dtype=np.float32)
+    self.frame_drops = ModelFrameDropWindow()
 
 def fill_xyzt(builder, t, x, y, z, x_std=None, y_std=None, z_std=None):
   builder.t = t
@@ -85,6 +87,11 @@ def fill_model_msg(msg: capnp._DynamicStructBuilder, net_output_data: dict[str, 
   modelV2.frameDropPerc = frame_drop_perc
   modelV2.timestampEof = timestamp_eof
   modelV2.modelExecutionTime = model_execution_time
+  # Metadata only: use the existing camera ID/time, no new timer/IPC/inference.
+  drops = publish_state.frame_drops.update(vipc_frame_id, timestamp_eof)
+  modelV2.frameDropStats.valid = drops is not None
+  if drops is not None:
+    modelV2.frameDropStats.count, modelV2.frameDropStats.windowEndMonoTime = drops
 
   # plan
   fill_xyzt(modelV2.position, ModelConstants.T_IDXS, *net_output_data['plan'][0,:,Plan.POSITION].T, *net_output_data['plan_stds'][0,:,Plan.POSITION].T)

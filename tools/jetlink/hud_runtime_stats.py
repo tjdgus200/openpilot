@@ -171,6 +171,8 @@ def metric_color(value, kind):
     return UNKNOWN
   # Display-only headroom cues, never fault classification or control input.
   # High GPU utilization alone is not an error or a reason to reduce inference.
+  if kind == 'comma_infer':
+    return HIGH if value >= 44 else CAUTION if value > 40 else NORMAL
   warn, high = {'cpu': (80, 90), 'memory': (80, 90), 'infer': (35, 50)}.get(kind, (math.inf, math.inf))
   return HIGH if value >= high else CAUTION if value >= warn else NORMAL
 
@@ -188,7 +190,7 @@ def footer_segments(vehicle, host, language='ko'):
   return tuple(result)
 
 
-def inference_segments(host, *, comma_ms=None, include_comma=False):
+def inference_segments(host, *, comma_ms=None, comma_drops=None, include_comma=False):
   from hud_quality import SHORT_NAMES
   quality = host.get('quality') or {}
   if quality.get('kind') == 'fps-q92':
@@ -204,15 +206,19 @@ def inference_segments(host, *, comma_ms=None, include_comma=False):
   if type(best) is int and 0 <= best < 8:
     result.append((f' B:{SHORT_NAMES[best]}', NORMAL))
   if include_comma:
-    result.extend(((' | COMMA ', TEXT), ('--' if comma_ms is None else f'{comma_ms:.1f}', metric_color(comma_ms, 'infer')),
-                   (' ms', TEXT)))
+    valid_ms = type(comma_ms) in (int, float) and math.isfinite(comma_ms) and 0 < comma_ms <= 10000
+    valid_drops = type(comma_drops) is int and 0 <= comma_drops <= 0xffffffff
+    result.extend(((' | ', TEXT),
+                   (f"COMMA {comma_ms:.1f} ms" if valid_ms else 'COMMA -- ms',
+                    metric_color(round(comma_ms, 1) if valid_ms else None, 'comma_infer')),
+                   (' | ', TEXT), (f"DROP 1s:{comma_drops}" if valid_drops else 'DROP 1s:--', HIGH)))
   return tuple(result)
 
 
-def model_call_sample(snapshot, now):
-  """Read the existing comma model event and its local expiry."""
+def model_diagnostics_sample(snapshot, now):
+  """Decode the existing model event once, at the renderer's 1Hz cadence."""
   if snapshot is None:
-    return None
+    return None, None
   from capnp import KjException
   from hud_protocol import snapshot_event_bytes
   from openpilot.cereal import log
@@ -221,18 +227,27 @@ def model_call_sample(snapshot, now):
   try:
     name = 'modelV2'
     if not (record['valid'][name] and record['alive'][name]):
-      return None
+      return None, None
     source_age = record['sent'] - record['received'][name]
     received = packet_time - source_age
     if not (0 <= source_age < .5 and 0 <= now - packet_time and now - received < .5):
-      return None
+      return None, None
     with log.Event.from_bytes(snapshot_event_bytes(record, name)) as event:
-      seconds = event.modelV2.modelExecutionTime if event.which() == name and event.valid else 0.
-    if 0 < seconds <= 10:
-      return seconds * 1000, received + 1.5
-  except (KjException, KeyError, TypeError, ValueError):
+      if event.which() != name or not event.valid:
+        return None, None
+      seconds = event.modelV2.modelExecutionTime
+      call = (seconds * 1000, received + 1.5) if 0 < seconds <= 10 else None
+      drops = event.modelV2.frameDropStats
+      age = record['sent'] - drops.windowEndMonoTime * 1e-9
+      loss = (drops.count, packet_time + 2.5 - age) if drops.valid and 0 <= age < 2.5 else None
+      return call, loss
+  except (KjException, KeyError, TypeError, ValueError, AttributeError):
     pass
-  return None
+  return None, None
+
+
+def model_call_sample(snapshot, now):
+  return model_diagnostics_sample(snapshot, now)[0]
 
 
 def footer_lines(vehicle, host, language='ko'):

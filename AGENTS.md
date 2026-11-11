@@ -1,3 +1,12 @@
+- 2026-11-11 HUD follow-up: COMMA call time colors use the displayed decimal,
+  <=40ms white, >40/<44 orange, >=44 red; keep TRT thresholds unchanged.
+  Add red | DROP 1s:N at existing1Hz decode cadence. Count source model-output
+  frame-ID gaps with existing capture timestamps in bounded64-event metadata,
+  never HUD packet skips or filtered percentage. Startup/reset/stall/stale is
+  unknown, not zero. No extra inference/timer/IPC/logging, controller consumer
+  or model-input change. Verify all five model publishers, 1Hz renderer, old
+  packets/faults, exact archives/native colors and public release integrity.
+
 - 2026-11-11 lane-edge release: publish and pin all five model-paired HUD
   bundles with native lane-edge wording checks, unique source identities
   on one source tree, unchanged neural/runtime identities and20 anonymous

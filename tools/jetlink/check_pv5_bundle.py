@@ -60,6 +60,7 @@ with log.Event.from_bytes(base64.b64decode(record['events']['modelV2'])) as even
  model_event=event.as_builder()
 model_event.modelV2.meta.laneChangeState='laneChangeStarting'
 model_event.modelV2.meta.laneChangeDirection='left'
+model_event.modelV2.frameDropStats={'valid':True,'count':3,'windowEndMonoTime':int((record['sent']-.5)*1e9)}
 add_event('modelV2',model_event)
 add_event('carParams',log.Event.new_message(carParams={'carFingerprint':'KIA_PV5'}))
 add_event('radarState',log.Event.new_message(radarState={'leadCutInRisk':{'status':True,'radar':True,'dRel':18.}}))
@@ -92,9 +93,11 @@ ui=hud_health.HealthRenderer(theme_mode='dark',screen_mode=8)
 ui._host_metrics=lambda:{'timing':{'window_s':10.,'count':200,'last_frame_age_s':.1,
  'infer_ms':{'mean':25.,'p99':28.,'max':31.},'server_ms':{'mean':27.,'p99':30.,'max':33.}}}
 lines={}
+segments_drawn={}
 draw=ui._draw_runtime_line
 def capture(segments,*layout):
  lines[layout[-1]]=''.join(text for text,_ in segments)
+ segments_drawn[layout[-1]]=segments
  draw(segments,*layout)
 ui._draw_runtime_line=capture
 try:
@@ -104,7 +107,21 @@ try:
  ui.render_to_file(state,Path(sys.argv[2]))
  assert 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms' in lines['infer']
  assert '| COMMA 40.0 ms' in lines['infer']
- assert sum(ui._runtime_line_layouts['infer'][2]) < 520
+ assert '| DROP 1s:3' in lines['infer']
+ assert sum(ui._runtime_line_layouts['infer'][2]) < 740
+ from hud_runtime_stats import NORMAL,CAUTION,HIGH
+ for ms,color,suffix,loss in ((40.,NORMAL,'white',0),(42.,CAUTION,'orange',2),(44.,HIGH,'red',3)):
+  model_event.modelV2.modelExecutionTime=ms/1000
+  model_event.modelV2.frameDropStats.count=loss
+  add_event('modelV2',model_event)
+  ui._next_model_call=0.
+  ui.render_to_file(state,Path(sys.argv[2]).with_name('hud-ms-'+suffix+'.png'))
+  assert ('COMMA '+format(ms,'.1f')+' ms',color) in segments_drawn['infer']
+  assert ('DROP 1s:'+str(loss),HIGH) in segments_drawn['infer']
+ model_event.modelV2.modelExecutionTime=.04
+ model_event.modelV2.frameDropStats.count=3
+ add_event('modelV2',model_event)
+ ui._next_model_call=0.
  # A telemetry gap is an in-place unavailable dashboard, never a panel reopen.
  window_font=ui._telemetry_font.texture.id
  draw_text=ui._draw_text
@@ -341,9 +358,11 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-popup.png', args.output / 'hud-popup.png')
     shutil.copyfile(root / 'hud-camera-decel.png', args.output / 'hud-camera-decel.png')
     shutil.copyfile(root / 'hud-driver-attention.png', args.output / 'hud-driver-attention.png')
+    for color in ('white', 'orange', 'red'):
+      shutil.copyfile(root / f'hud-ms-{color}.png', args.output / f'hud-ms-{color}.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

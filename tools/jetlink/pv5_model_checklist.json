@@ -73,6 +73,7 @@
         "tools/jetlink/test_input_overlap.py",
         "tools/jetlink/test_parsed_output_guard.py",
         "tools/jetlink/test_hud_runtime_stats.py",
+        "tools/jetlink/test_model_frame_drops.py",
         "tools/jetlink/test_performance_diagnostics.py",
         "tools/jetlink/test_hud_inference_priority.py",
         "tools/jetlink/test_daemon_timing.py",

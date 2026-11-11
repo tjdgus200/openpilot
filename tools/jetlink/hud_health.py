@@ -241,10 +241,11 @@ class HealthRenderer(ClusterUiRenderer):
     now = time.monotonic()
     if not self._vehicle_data_current:
       self._model_call = None
+      self._model_drops = None
       self._next_model_call = 0.
     elif now >= getattr(self, '_next_model_call', 0.):
-      from hud_runtime_stats import model_call_sample
-      self._model_call = model_call_sample(snapshot, now)
+      from hud_runtime_stats import model_diagnostics_sample
+      self._model_call, self._model_drops = model_diagnostics_sample(snapshot, now)
       self._next_model_call = now + 1.
     self._bsd_warning = warning_sides(state, snapshot, now)
     if not hasattr(self, '_bsd_pulse'):
@@ -358,9 +359,11 @@ class HealthRenderer(ClusterUiRenderer):
         from hud_runtime_stats import inference_segments
         call = getattr(self, '_model_call', None)
         comma_ms = call[0] if call and time.monotonic() < call[1] else None
+        drops = getattr(self, '_model_drops', None)
+        comma_drops = drops[0] if drops and time.monotonic() < drops[1] else None
         right_margin = 208 if self._panel_swap_active() else 24
-        self._draw_runtime_line(inference_segments(self._host_metrics(), comma_ms=comma_ms, include_comma=True),
-                                DESIGN_WIDTH - right_margin, 28, 520, 18, 'infer')
+        self._draw_runtime_line(inference_segments(self._host_metrics(), comma_ms=comma_ms, comma_drops=comma_drops, include_comma=True),
+                                DESIGN_WIDTH - right_margin, 28, 740, 18, 'infer')
       if message and not vehicle_alert:
         rl.draw_rectangle(0, 0, int(DESIGN_WIDTH), 32, rl_color((0, 0, 0), 220))
         self._draw_text(self._ellipsize_text(message, 22, DESIGN_WIDTH - 40),

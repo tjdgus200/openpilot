@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'tools/jetlink'), str(ROOT / 'third_party/jetlink'), str(ROOT / 'openpilot/selfdrive/carrot/cluster')]
 from hud_runtime_stats import (
-  gpu_percent, footer_lines, inference_segments, model_call_sample, valid_timing,
+  gpu_percent, footer_lines, inference_segments, model_call_sample, model_diagnostics_sample, valid_timing,
   RuntimeFooterSampler, metric_color, NORMAL, CAUTION, HIGH, UNKNOWN,
 )
 from jetlink.server.session import FrameStats
@@ -118,9 +118,91 @@ def test_sampler_accepts_real_top_level_control_reply_and_skips_events():
 
 def test_timing_readout_separates_host_window_from_latest_comma_sample():
   text = ''.join(text for text, _ in inference_segments({'timing': timing()}, comma_ms=48.9, include_comma=True))
-  assert text == 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms | COMMA 48.9 ms'
+  assert text == 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms | COMMA 48.9 ms | DROP 1s:--'
   text = ''.join(text for text, _ in inference_segments({}, include_comma=True))
-  assert text == 'TRT 10s AVG:-- P99:-- MAX:-- ms | COMMA -- ms'
+  assert text == 'TRT 10s AVG:-- P99:-- MAX:-- ms | COMMA -- ms | DROP 1s:--'
+
+
+@pytest.mark.parametrize('ms,color', [(0.1, NORMAL), (39.9, NORMAL), (40., NORMAL),
+                                   (40.1, CAUTION), (43., CAUTION), (43.9, CAUTION), (44., HIGH), (90., HIGH)])
+def test_comma_thresholds_match_the_visible_decimal_and_do_not_change_trt(ms, color):
+  parts = inference_segments({'timing': timing()}, comma_ms=ms, comma_drops=3, include_comma=True)
+  assert (f'COMMA {ms:.1f} ms', color) in parts
+  assert ('DROP 1s:3', HIGH) in parts and parts[-2] == (' | ', (215, 220, 225))
+  assert metric_color(35, 'infer') == CAUTION and metric_color(50, 'infer') == HIGH
+
+
+@pytest.mark.parametrize('ms', [None, True, -1, 0, float('nan'), float('inf'), 10001])
+def test_invalid_comma_timing_is_unknown_and_invalid_loss_never_looks_like_zero(ms):
+  parts = inference_segments({}, comma_ms=ms, comma_drops=True, include_comma=True)
+  assert ('COMMA -- ms', UNKNOWN) in parts and ('DROP 1s:--', HIGH) in parts
+
+
+def diagnostic_snapshot(ms=44., **stats):
+  from openpilot.cereal import log
+  event = log.Event.new_message(valid=True, modelV2={'modelExecutionTime': ms / 1000,
+                               'frameDropStats': {'valid': True, 'count': 3, 'windowEndMonoTime': 7_500_000_000, **stats}})
+  record = {'sent': 8., 'received': {'modelV2': 7.9}, 'valid': {'modelV2': True},
+            'alive': {'modelV2': True}, 'events': {'modelV2': base64.b64encode(event.to_bytes()).decode()}}
+  return 100., record
+
+
+def test_source_count_survives_hud_skips_and_float32_threshold_rounding():
+  snapshot = diagnostic_snapshot()
+  call, loss = model_diagnostics_sample(snapshot, 100.1)
+  assert call == pytest.approx((44., 101.4)) and loss == (3, 102.)
+  # Resampling cannot count the same publication as another lost frame.
+  assert model_diagnostics_sample(snapshot, 100.2)[1] == loss
+  assert ('COMMA 44.0 ms', HIGH) in inference_segments({}, comma_ms=call[0], include_comma=True)
+
+
+@pytest.mark.parametrize('stats', [{'valid': False}, {'windowEndMonoTime': 0},
+                                  {'windowEndMonoTime': 8_100_000_000}, {'windowEndMonoTime': 5_500_000_000}])
+def test_unknown_reset_future_and_expired_source_window_are_not_zero(stats):
+  call, loss = model_diagnostics_sample(diagnostic_snapshot(**stats), 100.1)
+  assert call is not None and loss is None
+
+
+def test_old_model_packet_is_compatible_and_missing_or_stale_input_clears_diagnostics():
+  snapshot = diagnostic_snapshot()
+  assert model_diagnostics_sample(snapshot, 100.5) == (None, None)
+  assert model_diagnostics_sample(None, 100.) == (None, None)
+  snapshot[1]['alive']['modelV2'] = False
+  assert model_diagnostics_sample(snapshot, 100.1) == (None, None)
+
+
+def test_legacy_packet_without_drop_metadata_displays_unknown_not_zero():
+  from openpilot.cereal import log
+  snapshot = diagnostic_snapshot()
+  event = log.Event.new_message(valid=True, modelV2={'modelExecutionTime': .04})
+  snapshot[1]['events']['modelV2'] = base64.b64encode(event.to_bytes()).decode()
+  assert model_diagnostics_sample(snapshot, 100.1)[0] is not None
+  assert model_diagnostics_sample(snapshot, 100.1)[1] is None
+
+
+def test_renderer_decodes_once_per_second_and_clears_on_vehicle_gap(monkeypatch):
+  import hud_health as hud
+  import hud_protocol
+  from cluster_live import standby_state
+
+  clock, connected, calls = [100.], [True], []
+  def snapshot():
+    return clock[0], {'events': {'carState': 'present'}, 'alive': {'carState': connected[0]},
+                     'valid': {'carState': connected[0]}, 'sent': clock[0]}
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', snapshot)
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: clock[0])
+  monkeypatch.setattr(hud, '_fresh', lambda *_: {})
+  monkeypatch.setattr(hud.ClusterUiRenderer, 'render', lambda *_: None)
+  monkeypatch.setattr(sys.modules['hud_runtime_stats'], 'model_diagnostics_sample',
+                      lambda snapshot, now: calls.append(now) or ((40., now+1.5), (3, now+2.)))
+  renderer = hud.HealthRenderer()
+  for now in (100., 100.05, 100.5, 100.99, 101., 101.5):
+    clock[0] = now
+    renderer.render(standby_state())
+  assert calls == [100., 101.] and renderer._model_drops[0] == 3
+  connected[0], clock[0] = False, 101.6
+  renderer.render(standby_state())
+  assert renderer._model_call is renderer._model_drops is None
 
 
 def test_comma_timing_uses_fresh_existing_model_event():
