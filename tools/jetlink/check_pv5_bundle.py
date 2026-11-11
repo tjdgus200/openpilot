@@ -411,6 +411,8 @@ try:
   assert samples[0]==samples[1]==samples[2]
   assert ui._notice_static_texture.id==notice_texture_id
   assert ui._popup_slide._motion_enter==ui._popup_slide._motion_repeat==()
+ ui._popup_slide.reset()
+ ui._driving_notices.reset()
  camera_state=replace(braking,driving_notices=())
  expired_state=replace(camera_state,deceleration_banner=None)
  with patch('time.monotonic',return_value=1000.):
