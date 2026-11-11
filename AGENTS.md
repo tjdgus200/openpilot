@@ -1,3 +1,11 @@
+- 2026-11-11 final battery detail placement release: keep20px spread at
+  lower-left of minimum temperature (separator+16,left aligned); keep28px
+  trip-used percent toward SOC (panel30%,right aligned), clear of maximum
+  temperature. Preserve fonts/colors/SOC baseline/calculation/TTL/collection,
+  models/FOV/control and alert priority. All5 exact native archives and20
+  public assets verified. See docs/hud_battery_detail_positions_20261111.md.
+  PC rendering is not device/road/performance proof.
+
 - 2026-11-11 battery layout follow-up: place20px spread at the lower-left of the minimum-temperature column; shift28px trip-used percent toward SOC, wholly left of max temperature. Preserve all sizes, owner colors, SOC baseline, field expiry/collection and inference/control. Verify actual font bounds in both panel positions.
 
 - 2026-11-11 final battery temperature HUD release: max | min both66px,
