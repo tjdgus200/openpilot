@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-coolant-ctv3m-20261111-b0ab5283",
-  "source_commit": "b0ab52837ca2ac58d474750c6f0f0c699be3adfa",
+  "profile": "jetson-pv5-hud-motion-loop-ctv3m-20261111-9a888abf",
+  "source_commit": "9a888abf7582ade8c8fd1867106362ed09842d77",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-coolant-ctv3m-20261111-b0ab5283/host.tar.gz",
-    "sha256": "2b174a698e07af47e265223fc587e8de468bd130e4fadb078519a96f2f5a0e32",
-    "size": 65313913
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-motion-loop-ctv3m-20261111-9a888abf/host.tar.gz",
+    "sha256": "83eb80f37c0fd6e663b5fce362227ff729ab3d87c37514e7725fb579ac9bc8ba",
+    "size": 65315352
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
