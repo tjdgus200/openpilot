@@ -18,7 +18,7 @@ from openpilot.common.hud_attention_icon import DriverAttentionIcon, draw_driver
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.common.hud_driving_feedback import (
-    DrivingNoticeTracker, DrivingPopupSlide, driving_popup_colors,
+    DrivingNoticeTracker, DrivingPopupSlide, STATIC_CAMERA_ASSET, driving_popup_colors,
     lane_confidence_score, lane_confidence_grade, lane_probability_text,
 )
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
@@ -120,6 +120,7 @@ JETBRAINS_MONO_FONT_PATH = OPENPILOT_FONT_DIR / "JetBrainsMono-Medium.ttf"
 VEHICLE_MODEL_PATH = CLUSTER_DIR / "assets" / "models" / "cybertruck" / "cybertruck_cluster.obj"
 TPMS_CAR_ICON_PATH = CLUSTER_DIR / "assets" / "images" / "tpms_toy_car.png"
 SPEED_BG_PATH = SELFDRIVE_DIR / "assets" / "images" / "speed_bg.png"
+STATIC_CAMERA_ICON_PATH = SELFDRIVE_DIR / "assets" / STATIC_CAMERA_ASSET
 TRAFFIC_RED_ICON_PATH = SELFDRIVE_DIR / "assets" / "images" / "traffic_red.png"
 TRAFFIC_GREEN_ICON_PATH = SELFDRIVE_DIR / "assets" / "images" / "traffic_green.png"
 FOLLOW_VEHICLE_ICON_PATH = SELFDRIVE_DIR / "assets" / "icons_mici" / "carrot_cruse_gap_trimmed.png"
@@ -971,6 +972,7 @@ class ClusterUiRenderer:
         self._scene_cache_key: tuple[object, ...] | None = None
         self._scene_cache: ClusterScene | None = None
         self._speed_bg_texture = None
+        self._camera_static_texture = None
         self._traffic_red_texture = None
         self._traffic_green_texture = None
         self._follow_vehicle_texture = None
@@ -1312,6 +1314,9 @@ class ClusterUiRenderer:
         if self._speed_bg_texture is not None:
             rl.unload_texture(self._speed_bg_texture)
             self._speed_bg_texture = None
+        if self._camera_static_texture is not None:
+            rl.unload_texture(self._camera_static_texture)
+            self._camera_static_texture = None
         if self._traffic_red_texture is not None:
             rl.unload_texture(self._traffic_red_texture)
             self._traffic_red_texture = None
@@ -2942,6 +2947,8 @@ class ClusterUiRenderer:
     def _load_drive_status_textures(self) -> None:
         if self._speed_bg_texture is None:
             self._speed_bg_texture = self._load_icon_texture(SPEED_BG_PATH, "Speed background")
+        if self._camera_static_texture is None:
+            self._camera_static_texture = self._load_icon_texture(STATIC_CAMERA_ICON_PATH, "Static camera")
         if self._traffic_red_texture is None:
             self._traffic_red_texture = self._load_alpha_cropped_icon_texture(TRAFFIC_RED_ICON_PATH, "Red traffic light")
         if self._traffic_green_texture is None:
@@ -7585,10 +7592,11 @@ class ClusterUiRenderer:
             return False
         text, warning, motion = popup.text, popup.warning, popup.motion
         dots = self._popup_slide.motion_dots(motion, now)
+        camera = motion == 'camera'
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
         title, _, detail = text.partition("\n")
         width, height, settled_top = (660 if detail else 620 if warning >= 2 else 500), (112 if detail else 76), 82
-        icon_space = 68 if dots else 0
+        icon_space = 68 if dots or camera else 0
         width += icon_space
         top = self._popup_slide.top(now, settled_top, height, urgent=warning >= 2)
         left = center_x - width * 0.5
@@ -7600,14 +7608,19 @@ class ClusterUiRenderer:
             rl.begin_scissor_mode(0, clip_y, self.width, self.height - clip_y)
         try:
             self._rounded_rect(left, top, width, height, 16, background, accent, 2 if warning else 3)
-            if dots:
+            texture = self._camera_static_texture
+            if camera and texture is not None and texture.id > 0:
+                rl.draw_texture_pro(texture, rl.Rectangle(0, 0, texture.width, texture.height),
+                                    rl.Rectangle(left + 12, top + height / 2 - 20.25, 54, 40.5),
+                                    rl.Vector2(0, 0), 0., rl_color(accent))
+            elif dots:
                 ink = rl_color(accent)
                 for dot_x, dot_y in dots:
                     position = rl.Vector2(left + 39 + dot_x * 20, top + height / 2 + dot_y * 20)
                     rl.draw_circle_v(position, 2.4, ink)
             else:
                 self._rounded_rect(left + 14, top + 17, 5, height - 34, 2, accent)
-            text_center = center_x + (icon_space / 2 if dots else 5)
+            text_center = center_x + (icon_space / 2 if dots or camera else 5)
             self._draw_text_with_stroke(title, text_center, top + height * (0.34 if detail else 0.5), 40 if detail else 46,
                                         WHITE, (5, 9, 12), 2, anchor="center", cache=True)
             if detail:

@@ -360,12 +360,12 @@ def test_driver_attention_icon_is_immediate_and_animates_once_per_stage(name):
 
 def test_popup_motion_repeats_gently_and_uses_actual_lane_change_direction():
   slide = DrivingPopupSlide()
-  start = slide.motion_dots('camera', 100.)
-  halfway = slide.motion_dots('camera', 100. + DRIVING_POPUP_MOTION_SECONDS / 2)
-  settled = slide.motion_dots('camera', 101.)
+  start = slide.motion_dots('curve', 100.)
+  halfway = slide.motion_dots('curve', 100. + DRIVING_POPUP_MOTION_SECONDS / 2)
+  settled = slide.motion_dots('curve', 101.)
   assert start != halfway != settled and len(settled) == 12
-  assert slide.motion_dots('camera', 102.) != settled
-  assert slide.motion_dots('camera', 101. + DRIVING_POPUP_REPEAT_SECONDS) is settled
+  assert slide.motion_dots('curve', 102.) != settled
+  assert slide.motion_dots('curve', 101. + DRIVING_POPUP_REPEAT_SECONDS) is settled
   assert slide.motion_dots('cutin', 103.) == start
   assert slide.motion_dots(None, 103.1) == ()
   assert slide.motion_dots('cutin', 104.) == start
@@ -384,7 +384,7 @@ def test_popup_motion_repeats_gently_and_uses_actual_lane_change_direction():
   assert driving_popup_colors(2, left) == ((156, 18, 27, 255), (255, 78, 85, 255))
 
 
-@pytest.mark.parametrize('key', ('camera', 'cutin', 'cutinTrack', 'cutinBrake', 'laneLeft', 'laneRight',
+@pytest.mark.parametrize('key', ('cutin', 'cutinTrack', 'cutinBrake', 'laneLeft', 'laneRight',
                                'leadBrake', 'curve', 'bump', 'section'))
 def test_popup_cached_repeat_preserves_shape_count_bounds_and_period(key):
   import math
@@ -409,23 +409,36 @@ def test_popup_cached_repeat_preserves_shape_count_bounds_and_period(key):
 def test_popup_motion_clock_faults_reset_without_restarting_text_or_growing_cache():
   from openpilot.common.hud_driving_feedback import _MOTION_DOTS, _motion_frames
   slide = DrivingPopupSlide()
-  popup = slide.update(100., deceleration='Camera250m', decel_label='cam')
+  popup = slide.update(100., deceleration='Curve250m', decel_label='vturn')
   slide.top(100., 24., 100., urgent=False)
   start = slide.motion_dots(popup.motion, 100.)
   slide.top(100.3, 24., 100., urgent=False)
   hold_until = slide._hold_until
   later = slide.motion_dots(popup.motion, 102.2)
-  slide.update(102.2, deceleration='Camera200m', decel_label='cam')
+  slide.update(102.2, deceleration='Curve200m', decel_label='vturn')
   assert slide._hold_until == hold_until and slide.motion_dots(popup.motion, 102.2) is later
   for bad in (float('nan'), float('inf'), -float('inf')):
-    assert len(slide.motion_dots('camera', bad)) == 12
-    assert slide.motion_dots('camera', 103.) == start
-  assert slide.motion_dots('camera', 99.) == start
+    assert len(slide.motion_dots('curve', bad)) == 12
+    assert slide.motion_dots('curve', 103.) == start
+  assert slide.motion_dots('curve', 99.) == start
   assert slide.motion_dots('unsupported', 104.) == ()
   for key in _MOTION_DOTS:
     slide.motion_dots(key, 105.)
     slide.motion_dots(key, 106.2)
   assert _motion_frames.cache_info().currsize <= 2
+
+
+def test_static_camera_never_prepares_animation_tables(monkeypatch):
+  from openpilot.common import hud_driving_feedback as motion
+  def forbidden(*args):
+    raise AssertionError('Static camera must not prepare an animation table')
+  monkeypatch.setattr(motion, '_motion_frames', forbidden)
+  slide = DrivingPopupSlide()
+  for now in (0., .5, 1., 2.2, 3600., float('nan'), float('inf')):
+    assert slide.motion_dots('camera', now) == ()
+  assert driving_popup_motion(None, 'cam', None) == 'camera'
+  assert driving_popup_motion(None, 'waze', None) == 'camera'
+  assert slide._motion_enter == slide._motion_repeat == ()
 
 
 def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):
@@ -501,12 +514,17 @@ def test_camera_popup_uses_final_camera_target_and_live_distance(source, monkeyp
   monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
   monkeypatch.setattr(feedback.rl, 'draw_circle_v', lambda *_: None)
   overlay = Pv5DrivingFeedbackOverlay()
+  overlay.camera_texture = SimpleNamespace(id=1, width=128, height=96)
+  textures = []
+  monkeypatch.setattr(feedback.rl, 'draw_texture_pro', lambda *args: textures.append(args))
   with patch.object(feedback, 'draw_text_ui_style') as draw:
     overlay.draw_popup(rl.Rectangle(30, 30, 2100, 1020), None, state, 80.)
     title, detail = (call.args for call in draw.call_args_list)
     assert title[0] == '과속카메라 단속 50 km/h 감속 중'
     assert detail[0] == '250 m 남음' and detail[2] > title[2]
     assert right_edges[0] < 1680
+    assert len(textures) == 1 and textures[0][0] is overlay.camera_texture
+    assert overlay.popup_slide._motion_enter == overlay.popup_slide._motion_repeat == ()
   carrot.decelCameraDistanceM = 120
   assert sample_deceleration_popup(sm, 10, 100., 80.).endswith('120 m 남음')
   carrot.decelCameraDistanceM = 0

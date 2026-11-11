@@ -23,6 +23,7 @@ DRIVING_POPUP_REPEAT_SECONDS = 2.5
 _MOTION_ENTER_HZ = 20
 _MOTION_REPEAT_HZ = 10
 _MOTION_REPEAT_GAIN = .08
+STATIC_CAMERA_ASSET = 'images/hud_camera_static.png'
 DRIVING_NOTICE_TEXT = {
   'cutin': '옆차 끼어들기 경계 중',
   'cutinTrack': '끼어들기 차량\n선행차로 추적 중',
@@ -40,8 +41,6 @@ _MOTION_RING = tuple((math.cos(i * math.tau / 12), math.sin(i * math.tau / 12)) 
 _LANE_ARROW = ((-.9, -.6), (-.65, -.3), (-.4, 0), (-.65, .3), (-.9, .6),
                (0., -.8), (.35, -.5), (.65, -.25), (.95, 0.), (.65, .25), (.35, .5), (0., .8))
 _MOTION_DOTS = {
-  'camera': tuple((.88 * x, .88 * y) for x, y in _MOTION_RING[:8]) +
-            ((-.6, -.10), (-.2, -.10), (.2, -.10), (.6, -.10)),
   'cutin': ((-.95, -.85), (-.7, -.55), (-.45, -.28), (-.23, 0.),
             (.95, -.85), (.7, -.55), (.45, -.28), (.23, 0.),
             (-.23, .34), (.23, .34), (-.23, .72), (.23, .72)),

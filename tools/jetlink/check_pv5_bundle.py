@@ -102,6 +102,8 @@ def capture(segments,*layout):
 ui._draw_runtime_line=capture
 try:
  ui.open(hidden=True)
+ static_camera_texture_id=ui._camera_static_texture.id
+ assert static_camera_texture_id>0
  assert ui._telemetry_font is not None
  assert ui._telemetry_font.texture.id!=hud_health.rl.get_font_default().texture.id
  ui.render_to_file(state,Path(sys.argv[2]))
@@ -314,6 +316,8 @@ try:
   assert max(abs(a-b) for a,b in zip(rgb.getpixel((315,175)),(31,70,143),strict=True))<=2
   assert (177,220,255) in rgb.crop((205,100,275,175)).getdata()
  assert DRIVING_POPUP_MOTION_SECONDS==1. and DRIVING_POPUP_REPEAT_SECONDS==2.5
+ assert ui._camera_static_texture.id>0
+ assert (ui._camera_static_texture.width,ui._camera_static_texture.height)==(128,96)
  ui._popup_slide.reset()
  ui._driving_notices.reset()
  repeat_frames=[]
@@ -323,6 +327,19 @@ try:
   if now>1000.:
    with Image.open(camera_path) as camera:
     repeat_frames.append(camera.convert('RGB').crop((205,100,275,175)).tobytes())
+ assert repeat_frames[0]==repeat_frames[1]==repeat_frames[2]
+ assert ui._camera_static_texture.id==static_camera_texture_id
+ assert ui._popup_slide._motion_enter==ui._popup_slide._motion_repeat==()
+ ui._popup_slide.reset()
+ ui._driving_notices.reset()
+ repeat_frames=[]
+ curve_state=replace(braking,deceleration_banner=None,driving_notices=('curve',),curve_approach_speed_kph=55.)
+ for now in (1000.,1001.,1002.2,1004.7):
+  with patch('time.monotonic',return_value=now):
+   ui.render_to_file(curve_state,popup_path)
+  if now>1000.:
+   with Image.open(popup_path) as frame:
+    repeat_frames.append(frame.convert('RGB').crop((205,100,275,175)).tobytes())
  assert repeat_frames[0]!=repeat_frames[1] and repeat_frames[1]==repeat_frames[2]
  add_event('carrotMan',log.Event.new_message(carrotMan={'desiredSource':'vturn','desiredSpeed':60}))
  record['mono']['carrotMan']+=1
@@ -350,7 +367,7 @@ try:
    assert (max(abs(a-b) for a,b in zip(pixel,(31,70,143),strict=True))<=2)==at_rest, (now,pixel)
 finally:
  ui.close()
-assert ui._telemetry_font is None and not ui._window_open
+assert ui._telemetry_font is None and not ui._window_open and ui._camera_static_texture is None
 '''
 
 
@@ -439,7 +456,7 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-battery-temperatures-light.png', args.output / 'hud-battery-temperatures-light.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, static_camera_icon=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

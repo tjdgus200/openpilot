@@ -1,3 +1,12 @@
+- 2026-11-11 camera enforcement icon supersedes the camera part of dot motion:
+  cam/HDA/Waze use a fixed128x96 transparent PNG (one textured quad/frame).
+  Load once with existing UI resources and release through their lifecycle;
+  no camera point/morph/repeat tables or clock-based shutter work.
+  Keep other notice motion,220ms popup entry/exit, source freshness, minimum
+  hold, text/direction, urgent/driver/vehicle priority and existing FPS.
+  Preserve model/FOV/control/BLE and refresh/check all5 paired HUD archives.
+  Static texture uses48KiB RGBA; no extra inference/timer/worker/IPC/logging.
+
 - 2026-11-11 popup dot motion supersedes the single480ms policy: morph over1s
   with smoothstep, then repeat a gentle2.5s pulse of at most8% size while
   the existing popup is active. Both C3X and Jetson use the shared helper.

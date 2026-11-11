@@ -207,6 +207,7 @@ class Pv5DrivingFeedbackOverlay:
     self.popup_slide = DrivingPopupSlide()
     self._driving_notices = DrivingNoticeTracker()
     self._popup_started_frame = -1
+    self.camera_texture = None  # Owned and unloaded by the existing gui_app texture cache.
 
   def _pv5_started(self, ui_state) -> bool:
     cp = ui_state.CP
@@ -257,25 +258,33 @@ class Pv5DrivingFeedbackOverlay:
       return
     text, warning, motion = popup.text, popup.warning, popup.motion
     dots = self.popup_slide.motion_dots(motion, now)
+    camera = motion == 'camera'
     title, _, detail = text.partition('\n')
     if detail:
       width, height, size = (346, 67, 21) if self.compact else (1160, 176, 60)
     else:
       width, height, size = (330, 42, 24) if self.compact else (1080, 136, 70)
-    icon_space = (40 if self.compact else 84) if dots else 0
+    icon_space = (40 if self.compact else 84) if dots or camera else 0
     width += icon_space
     scale = min(1., rect.width / (width + 40))
     width, height, size = width * scale, height * scale, size * scale
     x = rect.x + (rect.width - width) / 2 - (15 if self.compact else 0)
     # Leave space at the right for the Jetson badge on the wide display.
-    if not self.compact and dots and getattr(ui_state, 'jetlink_badge', None):
+    if not self.compact and (dots or camera) and getattr(ui_state, 'jetlink_badge', None):
       x = max(rect.x, x - 44 * scale)
     y = self.popup_slide.top(now, rect.y + (6 if self.compact else 24), height, urgent=warning >= 2, clip_top=rect.y)
     background, accent = (rl.Color(*color) for color in driving_popup_colors(warning, motion))
     box = rl.Rectangle(x, y, width, height)
     rl.draw_rectangle_rounded(box, 0.26, 8, background)
     rl.draw_rectangle_rounded_lines_ex(box, 0.26, 8, (2 if warning else 3) * scale, accent)
-    if dots:
+    if camera and self.camera_texture is not None and self.camera_texture.id > 0:
+      radius = (10 if self.compact else 24) * scale
+      cx, cy = x + icon_space * .63 * scale, y + height / 2
+      texture = self.camera_texture
+      rl.draw_texture_pro(texture, rl.Rectangle(0, 0, texture.width, texture.height),
+                          rl.Rectangle(cx - 1.35 * radius, cy - 1.0125 * radius, 2.7 * radius, 2.025 * radius),
+                          rl.Vector2(0, 0), 0., accent)
+    elif dots:
       radius = (10 if self.compact else 24) * scale
       for dot_x, dot_y in dots:
         position = rl.Vector2(x + icon_space * .63 * scale + dot_x * radius, y + height / 2 + dot_y * radius)

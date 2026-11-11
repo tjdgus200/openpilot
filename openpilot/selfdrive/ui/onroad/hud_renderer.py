@@ -2,6 +2,7 @@ import time
 import pyray as rl
 from dataclasses import dataclass
 from openpilot.common.constants import CV
+from openpilot.common.hud_driving_feedback import STATIC_CAMERA_ASSET
 from openpilot.selfdrive.carrot.deceleration_source import deceleration_source_presentation
 from openpilot.selfdrive.ui.onroad.exp_button import ExpButton
 from openpilot.selfdrive.ui.onroad.obd_debug import ObdDebugOverlay
@@ -168,6 +169,7 @@ class HudRenderer(Widget):
     self._exp_button = ExpButton(UI_CONFIG.button_size, UI_CONFIG.wheel_icon_size)
 
     self._txt_speed_bg = gui_app.texture('images/speed_bg.png')
+    self._driving_feedback.camera_texture = gui_app.texture(STATIC_CAMERA_ASSET)
 
     # traffic light icon들 이름은 실제 프로젝트 리소스 이름에 맞춰 수정 가능
     self._traffic_red_icon = gui_app.texture('images/traffic_red.png')
