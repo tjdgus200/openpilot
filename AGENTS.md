@@ -1,3 +1,10 @@
+- 2026-11-11 lane-edge release: publish and pin all five model-paired HUD
+  bundles with native lane-edge wording checks, unique source identities
+  on one source tree, unchanged neural/runtime identities and20 anonymous
+  asset hash/size verifications. Preserve the no-added18kmh policy and all
+  existing admission/driver/steering limits. Keep previous releases for
+  rollback; see docs/pv5_lane_edge_release_20261111.md. No vehicle install.
+
 - 2026-11-11 follow-up: remove the lane-edge helper's added18km/h gate.
   Keep exact-zero/standstill/Drive, existing lateral admission, signal/driver yield
   and every steering/CAN limit. Use max(v,1)^2 only as numeric normalization,

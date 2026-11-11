@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-drive-feedback-light-speed-2-20261108-c606ca01",
-  "source_commit": "c606ca01d0537d186af2f8040074502605a7e26d",
+  "profile": "jetson-pv5-lane-edge-light-speed-2-20261111-406886df",
+  "source_commit": "406886df5be811928c760c148ff31a18e4823fc6",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-drive-feedback-light-speed-2-20261108-c606ca01/host.tar.gz",
-    "sha256": "0921280ec5e5831a59b0f7de4154b18688928ade9ebbcb2ba137b025a215687a",
-    "size": 65298898
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-edge-light-speed-2-20261111-406886df/host.tar.gz",
+    "sha256": "5dfedb28240db0b25d1ba68a8aaf44142e25ecdc098062d7aae864d433912200",
+    "size": 65307896
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/ea306f534159ac9a3caab0ac3bd4a5f82f9cd805/ea2f516f-f758-42be-a245-913bb818a64f/32768/big_driving_supercombo.onnx",
