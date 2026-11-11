@@ -1,5 +1,7 @@
 # Driver monitoring
 
+PV5 Lane Edge Assist clears its extra correction on driver steering. Existing DM monitoring, warnings and lateral admission are unchanged. The old centering ON value is not migrated to the new default-OFF option.
+
 `DriverMonitoringEnabled` defaults to ON and saves your choice across drives and restarts. While monitoring is enabled, `DriverMonitoringMode` defaults to `0: Standard`; select `1: Experimental` separately. Mode changes apply live at roughly half-second intervals without rebooting. Switching preserves accumulated monitoring time, warning counts and lockout, and ends the previous interaction grace and forward-attention streak. Old `DisableDM` values do not opt into experimental monitoring.
 
 > [!CAUTION]

@@ -29,7 +29,7 @@ class DrivingFeedback:
   left_lane_probability: float | None = None
   right_lane_probability: float | None = None
   steer: float | None = None
-  center_label: str = '중앙 보정 --'
+  center_label: str = '차선 보정 --'
   center: float | None = None
 
   @property
@@ -59,10 +59,10 @@ def sample_driving_feedback(sm, started_frame: int, now: float, max_lateral_acce
       status = 'waiting'
   center = controls.pv5LaneCenterFraction
   if status == 'correcting' and 0 < abs(center) <= 1.0:
-    center_label = '중앙 보정 ' + ('<' if center < 0 else '>')
+    center_label = '차선 보정 ' + ('<' if center < 0 else '>')
   else:
     center = None
-    center_label = LANE_CENTER_STATUS.get(status, ('중앙 보정 꺼짐' if status == 'off' else '중앙 보정 --', ''))[0]
+    center_label = LANE_CENTER_STATUS.get(status, ('차선 보정 꺼짐' if status == 'off' else '차선 보정 --', ''))[0]
 
   steer = None
   kind = controls.lateralControlState.which()

@@ -364,6 +364,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"UseLaneLineSpeed", {PERSISTENT, INT, "0"}},
     {"UseLaneLineCurveSpeed", {PERSISTENT, INT, "0"}},
     {"Pv5LaneCenterAssist", {PERSISTENT, BOOL, "0"}},
+    {"Pv5LaneBoundaryAssist", {PERSISTENT, BOOL, "0"}},
     {"Pv5SimpleSteerRecovery", {PERSISTENT, BOOL, "0"}},
     {"Pv5SteerReleaseMs", {PERSISTENT, INT, "200"}},
     {"Pv5SteerRecoveryMs", {PERSISTENT, INT, "1500"}},

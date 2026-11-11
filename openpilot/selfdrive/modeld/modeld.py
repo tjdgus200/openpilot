@@ -411,8 +411,6 @@ def main(demo=False):
   else:
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   cloudlog.info("modeld got CarParams: %s", CP.brand)
-  from openpilot.selfdrive.modeld.pv5_blendful import for_vehicle
-  lane_center = for_vehicle(CP, params)
 
   # TODO this needs more thought, use .2s extra for now to estimate other delays
   # TODO Move smooth seconds to action function
@@ -598,14 +596,11 @@ def main(demo=False):
 
       action = get_action_from_model(
         model_output, prev_action, lat_action_t, long_action_t, v_ego, lat_smooth_seconds_dynamic, vEgoStopping,
-        blendful=lane_center.callback(model_output, v_ego, desire, DH.lane_change_state, loop_start) if lane_center is not None else None,
       )
       prev_action = action
       fill_model_msg(modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
                      frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen)
-      if lane_center is not None:
-        lane_center.fill(modelv2_send.modelV2.pv5LaneCenter)
 
       desire_state = modelv2_send.modelV2.meta.desireState
       l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]

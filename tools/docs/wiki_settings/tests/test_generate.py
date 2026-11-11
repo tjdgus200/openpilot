@@ -92,7 +92,7 @@ class WikiSettingsGeneratorTest(unittest.TestCase):
     self.assertIn("JetsonInputFusion", result.index["settings"])
     self.assertIn("NNFF", result.index["settings"])
     self.assertIn("CommaPedalEnabled", result.index["settings"])
-    self.assertIn("Pv5LaneCenterAssist", result.index["settings"])
+    self.assertIn("Pv5LaneBoundaryAssist", result.index["settings"])
     self.assertIn("Pv5SimpleSteerRecovery", result.index["settings"])
     self.assertIn("Pv5SteerReleaseMs", result.index["settings"])
     self.assertIn("Pv5SteerRecoveryMs", result.index["settings"])

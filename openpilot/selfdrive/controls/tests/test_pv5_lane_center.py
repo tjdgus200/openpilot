@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from openpilot.cereal import log
-from openpilot.selfdrive.controls.lib.pv5_lane_center import PARAM, Pv5LaneCenter
+from openpilot.selfdrive.controls.lib.pv5_lane_boundary import PARAM, Pv5LaneBoundary
 from openpilot.selfdrive.controls.tests.test_lateral_startup_control import control_fixture
 
 
@@ -13,7 +13,7 @@ def setup_control(offset, selected=1):
   settings = {PARAM: selected}
   get_bool = control.params.get_bool
   control.params.get_bool = lambda key: settings[key] == 1 if key in settings else get_bool(key)
-  control.pv5_lane_center = Pv5LaneCenter(control.params)
+  control.pv5_lane_center = Pv5LaneBoundary(control.params)
   sm = control.sm
   cs = sm['carState']
   cs.canValid = True
@@ -24,7 +24,7 @@ def setup_control(offset, selected=1):
   sm['radarState'] = log.RadarState.new_message()
   sm['driverMonitoringState'] = log.DriverMonitoringState.new_message()
   model = sm['modelV2']
-  xs = [0., 20., 60.]
+  xs = [0., 5., 10., 15., 20., 40., 60.]
   model.position.x = xs
   model.position.y = [0.] * len(xs)
   model.init('laneLines', 4)
@@ -44,7 +44,10 @@ def setup_control(offset, selected=1):
       model.frameId += 1
     if new_model or repeated:
       sm.recv_frame['modelV2'] = sm.frame
+    last_model_time = getattr(sm, 'recv_time', {}).get('modelV2', clock.now)
     sm.recv_time = dict.fromkeys(sm, clock.now)
+    if not (new_model or repeated):
+      sm.recv_time['modelV2'] = last_model_time
     if stale:
       sm.recv_time[stale] -= .3
     return step()[0]
@@ -72,19 +75,16 @@ def test_default_or_legacy_model_message_matches_unchanged_controls(cruise):
   assert control.pv5_lane_center.status == 'off'
 
 
-@pytest.mark.parametrize('correction', [-.001, .001])
-@pytest.mark.parametrize('context', ['ordinary', 'bsd', 'lead', 'dm', 'driver'])
-def test_controls_uses_model_action_once_and_reader_does_not_rewrite_it(correction, context):
-  control, _, tick = setup_control(.27)
-  other, _, other_tick = setup_control(.27)
+@pytest.mark.parametrize('offset', [-.65, .65])
+@pytest.mark.parametrize('context', ['ordinary', 'bsd', 'lead', 'dm'])
+def test_controls_applies_inward_edge_correction_without_rewriting_model(offset, context):
+  control, _, tick = setup_control(offset)
+  other, _, other_tick = setup_control(offset)
   other.pv5_lane_center = None
   for item in (control, other):
     drive(item)
     md = item.sm['modelV2']
-    md.action.desiredCurvature = .002+correction
-    md.pv5LaneCenter.valid = md.pv5LaneCenter.enabled = md.pv5LaneCenter.active = True
-    md.pv5LaneCenter.curvature = correction
-    md.pv5LaneCenter.trust = .9
+    md.action.desiredCurvature = 0.
     if context == 'bsd':
       item.sm['carState'].rightBlindspot = True
     elif context == 'lead':
@@ -93,12 +93,51 @@ def test_controls_uses_model_action_once_and_reader_does_not_rewrite_it(correcti
     elif context == 'dm':
       item.sm['driverMonitoringState'].activePolicy = 'vision'
       item.sm['driverMonitoringState'].visionPolicyState.isDistracted = True
-    elif context == 'driver':
-      item.sm['carState'].steeringPressed = True
+  for _ in range(140):
+    cc = tick()
+    other_tick()
+    assert control.sm['modelV2'].action.desiredCurvature == 0.
+    assert offset*cc.actuators.curvature >= 0
+  assert control.pv5_lane_center.status == 'correcting'
+  assert abs(control.pv5_lane_center.accel) <= .30
+  assert offset*(control.desired_curvature-other.desired_curvature) > 0
+
+
+@pytest.mark.parametrize('offset', [-.4, 0., .4])
+def test_inside_lane_uses_exact_baseline_control_output(offset):
+  control, _, tick = setup_control(offset)
+  other, _, other_tick = setup_control(offset)
+  other.pv5_lane_center = None
+  drive(control)
+  drive(other)
   for _ in range(140):
     assert tick().to_dict() == other_tick().to_dict()
-  assert control.pv5_lane_center.status == 'correcting'
-  assert control.pv5_lane_center.accel == pytest.approx(correction*400)
+  assert control.pv5_lane_center.status == 'centered'
+
+
+@pytest.mark.parametrize('context', ['driver', 'leftBlinker', 'rightBlinker'])
+def test_active_edge_push_yields_immediately_to_driver_and_signals(context):
+  control, _, tick = setup_control(.65)
+  drive(control)
+  for _ in range(100):
+    tick()
+  assert control.pv5_lane_center.accel > 0
+  setattr(control.sm['carState'], 'steeringPressed' if context == 'driver' else context, True)
+  tick()
+  assert control.pv5_lane_center.accel == 0
+
+
+def test_missing_selected_lane_plan_clears_cached_push_and_status():
+  control, _, tick = setup_control(.65)
+  drive(control)
+  for _ in range(100):
+    tick()
+  assert control.pv5_lane_center.accel > 0
+  control.sm['lateralPlan'].useLaneLines = True
+  control.sm['lateralPlan'].curvatures = []
+  tick()
+  assert control.pv5_lane_center.accel == 0
+  assert control.pv5_lane_center.status == 'inputs'
 
 
 @pytest.mark.parametrize('fault', ['can', 'temporary', 'permanent', 'inactive'])

@@ -661,7 +661,7 @@
           "ko": "주행 보조",
           "en": "Driving Assist",
           "zh": "驾驶辅助",
-          "params": ["Pv5LaneCenterAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
+          "params": ["Pv5LaneBoundaryAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
         },
         {
           "id": "PV5_CAMERA",
@@ -901,15 +901,15 @@
     },
     {
       "group": "PV5",
-      "name": "Pv5LaneCenterAssist",
-      "title": "차로 중앙 보정 (실험)",
-      "descr": "PV5에 원본 Blendful 중앙 보정을 적용합니다. 차로 폭 학습·한쪽 차선 처리·모델 회피 경로 존중·보정 변화율을 원본대로 사용하며, 18km/h 미만에서는 보정을 감쇠합니다. 별도의 0.08m/s² 상한과 앞차·BSD·DM 추가 차단은 없습니다. 차량 자체 조향 허용·운전자 개입 양보·조향 한계와 기존 레인모드의 경로 선택은 유지됩니다. 켜기·끄기는 약 0.25초 내 반영됩니다. 실차 검증 전에는 끄고 주행하세요.",
+      "name": "Pv5LaneBoundaryAssist",
+      "title": "차선 접근 보정 (실험)",
+      "descr": "중앙 유지를 대신하는 PV5 전용 차선 경계 보정입니다. 선택한 경로가 차체 가장자리 기준 약 20cm 이내로 차선에 접근할 것으로 추정될 때만 안쪽으로 추가 보정하며, 설정한 여유 안에서는 추가 보정이 0입니다. 기본 끔이며 이전 중앙 보정 ON 값은 승계하지 않습니다. 18km/h 이상·D단·기존 횡제어 활성·신선하고 신뢰할 수 있는 차선에서만 동작합니다. 깜빡이와 해제 후 1초·방향 전환·운전자 조향 개입 중에는 양보합니다. 추가 보정 최대 0.30m/s²·증가율 0.50m/s³는 실험값이며 실제 차선 이탈 방지를 보장하지 않습니다. 기존 조향 한계·레인모드·모델 입력은 유지합니다. 개입 방향과 대기 사유는 콤마/HUD에 표시합니다. 오인식·급커브·장애물 회피에서 한계가 있으므로 실차 검증 전에는 끄세요. 켜기·끄기는 약 0.25초 내 적용됩니다.",
       "egroup": "PV5",
-      "etitle": "Lane Center Assist (Experimental)",
-      "edescr": "PV5 uses upstream Blendful unchanged: learned width, single-line handling, model-avoidance yielding and original correction slew, fading below 18km/h. No separate 0.08m/s² cap or extra lead/BSD/DM gate. Vehicle steering admission, driver override, steering limits and existing Carrot lane-mode selection remain. The toggle applies within about 0.25s. Keep off on the road pending vehicle validation.",
+      "etitle": "Lane Edge Assist (Experimental)",
+      "edescr": "PV5-only replacement for continuous centering. Add inward correction only if the selected path approaches a detected line within an estimated 20cm of the body; zero extra correction inside the corridor. Default OFF, without inheriting the old center toggle. Requires existing lateral control, Drive, at least 18km/h and fresh reliable lines. Yield during indicators and for 1s afterwards, model maneuvers and driver steering. Trial extra acceleration/slew limits are 0.30m/s2 and 0.50m/s3, not physically validated prevention guarantees. Retains model inputs, planner selection and every vehicle steering limit. Comma/HUD show direction and wait reason. False lines, sharp curves and avoidance remain limitations; keep off pending vehicle validation. Live toggle within about 0.25s.",
       "cgroup": "PV5",
-      "ctitle": "车道居中辅助（实验）",
-      "cdescr": "PV5 使用原版 Blendful：车道宽度学习、单侧车道处理、尊重模型避让路径及原版变化率；低于18km/h时衰减。没有额外0.08m/s²上限或前车、BSD、DM门限。保留车辆横向控制许可、驾驶员介入让步、转向限制及 Carrot 车道模式路径选择。开关约0.25秒内生效，实车验证前请关闭。",
+      "ctitle": "车道边界辅助（实验）",
+      "cdescr": "仅PV5使用。替代持续居中：预测车身距车道线不足约20cm时才向内修正，安全区域内额外修正为零。默认关闭，不继承旧居中开关。需D挡、18km/h以上、原横向控制已启用及新鲜可靠车道线。转向灯及关闭后1秒、模型转向或驾驶员介入时让步。额外加速度0.30m/s2与增长率0.50m/s3为实验值，不保证防止偏离。保留模型输入、路径选择和全部转向限制；约0.25秒内切换，实车验证前请关闭。",
       "control": "toggle",
       "risk": "high",
       "min": 0,

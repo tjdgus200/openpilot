@@ -1,3 +1,5 @@
+> Historical: superseded on2026-11-11 by PV5 lane-edge assist. Original core remains an offline reference, not the production controller. See [current policy](pv5_lane_boundary_20261111.md).
+
 # PV5 원본 Blendful 전체 포팅
 
 이 문서는 같은 날의 `3817c32d` 근사 구현을 대체한다. 사용자의 최종 지시는

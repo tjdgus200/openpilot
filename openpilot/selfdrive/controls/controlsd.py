@@ -26,7 +26,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
 from openpilot.selfdrive.controls.lib.steer_ratio import resolve_vehicle_model_steer_ratio
 from openpilot.selfdrive.controls.lib.lateral_readiness import LateralStartupGate, lateral_vehicle_parameters
-from openpilot.selfdrive.controls.lib.pv5_lane_center import Pv5LaneCenter
+from openpilot.selfdrive.controls.lib.pv5_lane_boundary import Pv5LaneBoundary
 
 
 from openpilot.common.realtime import DT_CTRL, DT_MDL
@@ -68,7 +68,7 @@ class Controls:
     self.CI = interfaces[self.CP.carFingerprint](self.CP)
     self.physical_blinker_hold = HoldReader(self.CP.carFingerprint, self.params)
     if self.CP.carFingerprint == 'KIA_PV5' and not self.CP.notCar:
-      self.pv5_lane_center = Pv5LaneCenter(self.params)
+      self.pv5_lane_center = Pv5LaneBoundary(self.params)
 
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
@@ -206,15 +206,19 @@ class Controls:
       if steer_actuator_delay == 0.0:
         steer_actuator_delay = self.sm['liveDelay'].lateralDelay
     
+    boundary_evaluated = False
+
     def smooth_value(val, prev_val, tau):
+      nonlocal boundary_evaluated
+      if self.pv5_lane_center is not None:
+        # Correct the selected raw path once, before its existing low-pass and
+        # all final limits. Adding after this filter would accumulate feedback.
+        val += self.pv5_lane_center.update(
+          self.sm, CS, model_v2, time.monotonic(), active=CC.latActive, curvature=val,
+        )
+        boundary_evaluated = True
       alpha = 1 - np.exp(-DT_CTRL / tau) if tau > 0 else 1
       return alpha * val + (1 - alpha) * prev_val
-
-    if self.pv5_lane_center is not None:
-      self.pv5_lane_center.observe(
-        self.sm, CS, model_v2, time.monotonic(), active=CC.latActive,
-        lane_mode=self.lanefull_mode_enabled,
-      )
 
     if not CC.latActive:
       new_desired_curvature = self.curvature
@@ -238,6 +242,10 @@ class Controls:
       model_curvature = model_v2.action.desiredCurvature
       new_desired_curvature = smooth_value(model_curvature, self.desired_curvature, 0.1)
 
+    if self.pv5_lane_center is not None and not boundary_evaluated:
+      self.pv5_lane_center.update(self.sm, CS, model_v2, time.monotonic(), active=False, curvature=self.curvature)
+      if CC.latActive:
+        self.pv5_lane_center.clear('inputs')  # selected planner has no usable path
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     self.pv5_lane_center_accel = self.pv5_lane_center.accel if self.pv5_lane_center is not None else 0.
 

@@ -95,10 +95,11 @@ def test_action_insertion_is_before_existing_smoothing_and_longitudinal_is_uncha
     assert getattr(corrected, key) == getattr(baseline, key)
 
 
-def test_model_publisher_and_control_reader_do_not_apply_correction_twice():
+def test_retired_blendful_has_no_runtime_injection_and_edge_correction_is_before_smoothing():
   root = Path(__file__).parents[3]
   modeld = (root/'selfdrive/modeld/modeld.py').read_text(encoding='utf-8')
   controls = (root/'selfdrive/controls/controlsd.py').read_text(encoding='utf-8')
-  assert 'lane_center.callback(model_output, v_ego, desire, DH.lane_change_state' in modeld
-  assert 'lane_center.fill(modelv2_send.modelV2.pv5LaneCenter)' in modeld
+  assert 'lane_center.callback' not in modeld and 'pv5_blendful import' not in modeld
+  assert 'lane_center.fill' not in modeld
+  assert controls.count('val += self.pv5_lane_center.update(') == 1
   assert 'model_curvature += correction' not in controls

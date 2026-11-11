@@ -1,3 +1,19 @@
+- 2026-11-11 owner replaces continuous central correction with PV5-only
+  lane-edge assist. Supersedes the2026-11-10 runtime Blendful policy below.
+  New default-OFF Pv5LaneBoundaryAssist; never migrate Pv5LaneCenterAssist ON.
+  Remove runtime modeld injection; retain original core only as offline reference.
+  Correct chosen raw model/Carrot lane-mode curvature once before existing smoothing
+  and every steering limit. Zero extra inside the estimated body-clearance corridor
+  and when the selected path already returns inward. Trial20cm margin,0.30m/s2 extra
+  cap,0.50m/s3 build; >=18kmh/Drive/existing lateral admission/fresh real lines only.
+  Signal and1s post-signal, maneuvers, driver steering, invalid/stale/time/geometry
+  inputs clear extra correction. No standalone engagement or invented opposite line.
+  Geometry once per fresh model frame, scalar corridor projection per control tick.
+  Preserve model inputs/outputs, longitudinal, driver authority, recovery, angle/rate/
+  physics/CAN and other-car behavior. Keep cross-model/control/HUD/fault tests and
+  disclose confidently-wrong lines/curve/avoidance limitations. PC is not road proof.
+  See docs/pv5_lane_boundary_20261111.md. Legacy wire names stay compatible.
+
 # Repository memory
 
 - 2026-11-10 final owner correction SUPERSEDES the scoped center-fit entry below.

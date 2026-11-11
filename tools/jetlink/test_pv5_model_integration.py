@@ -15,8 +15,7 @@ from openpilot.cereal import log
 from openpilot.common import big_model_catalog as catalog
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.model import WIDE_MODEL_FOV_CHOICES, get_warp_matrix, wider_model_warp
-from openpilot.selfdrive.controls.lib.pv5_lane_center import Pv5LaneCenter
-from openpilot.selfdrive.modeld.pv5_blendful import Pv5Blendful
+from openpilot.selfdrive.controls.lib.pv5_lane_boundary import Pv5LaneBoundary
 from openpilot.selfdrive.modeld.tests.test_blendful import frame as blendful_frame
 from openpilot.selfdrive.modeld.fill_model_msg import PublishState, fill_model_msg
 from openpilot.selfdrive.modeld.jetlink.contracts import parse_outputs
@@ -135,56 +134,50 @@ def eligible_model(spec, offset):
 
 
 def center_scenario(spec, offset):
+  # All five real parsers produce untouched model messages; correction is now
+  # applied only to the final chosen control path, not injected into modeld.
   parsed = parse_outputs(Parser(), spec, np.zeros(spec.output_nelem, np.float32))
   geometry = blendful_frame(center=offset, probs=(.99, .99))
   for key in ('lane_lines', 'lane_lines_stds', 'lane_lines_prob'):
     parsed[key] = geometry[key]
   parsed['plan'][0, :, :3] = geometry['plan'][0]
   enabled = [True]
-  owner = Pv5Blendful(NS(get_bool=lambda _: enabled[0]))
-  event = log.Event.new_message()
-  event.init('modelV2')
+  assist = Pv5LaneBoundary(NS(get_bool=lambda _: enabled[0]))
   cs_event = log.Event.new_message(carState={'canValid': True, 'gearShifter': 'drive', 'vEgo': 20.})
-  sm = type('Messages', (dict,), {})(modelV2=event.modelV2, carState=cs_event.carState,
+  sm = type('Messages', (dict,), {})(carState=cs_event.carState,
        radarState=log.RadarState.new_message(), driverMonitoringState=log.DriverMonitoringState.new_message(),
-       lateralPlan=log.LateralPlan.new_message(), selfdriveState=log.SelfdriveState.new_message())
+       lateralPlan=log.LateralPlan.new_message(), selfdriveState=log.SelfdriveState.new_message(), modelV2=None)
   sm.seen = sm.valid = sm.alive = dict.fromkeys(sm, True)
   sm.recv_frame = {'modelV2': 0}
-  assist = Pv5LaneCenter()
   for count in range(120):
     now = 100. + count*.05
-    correction = owner.callback(parsed, 20., log.Desire.none, log.LaneChangeState.off, now)(0.)
-    # Match modeld's fresh message per frame; reusing a Cap'n Proto arena here
-    # retains old allocated lists and falsely exceeds the real HUD byte limit.
     event = log.Event.new_message()
     event.init('modelV2')
     sm['modelV2'] = event.modelV2
-    action = log.ModelDataV2.Action.new_message(desiredCurvature=correction)
+    action = log.ModelDataV2.Action.new_message(desiredCurvature=0.)
     fill_model_msg(event, parsed, action, PublishState(), count+1, count+1, count+1, 0., 123, .04, True)
-    owner.fill(event.modelV2.pv5LaneCenter)
     sm.recv_time = dict.fromkeys(sm, now)
-    assist.observe(sm, cs_event.carState, event.modelV2, now, active=True, lane_mode=False)
+    original_action = event.modelV2.action.to_dict()
+    correction = assist.update(sm, cs_event.carState, event.modelV2, now, active=True, curvature=0.)
+    assert event.modelV2.action.to_dict() == original_action
   assert assist.status == 'correcting'
   assert np.copysign(1., offset)*correction > 0
-  assist.owner, assist.parsed = owner, parsed
   return assist, enabled, sm, event, cs_event, now, correction
 
 
-@pytest.mark.parametrize('offset', [-.27, .27])
+@pytest.mark.parametrize('offset', [-.65, .65])
 def test_each_model_corrects_both_directions_and_obeys_live_off(model_spec, offset):
   assist, enabled, sm, event, cs_event, now, _ = center_scenario(model_spec, offset)
   enabled[0] = False
   now += .26
-  assert assist.owner.callback({}, 20., log.Desire.none, log.LaneChangeState.off, now)(0.) == 0.
-  assist.owner.fill(event.modelV2.pv5LaneCenter)
   sm.recv_time = dict.fromkeys(sm, now)
-  assist.observe(sm, cs_event.carState, event.modelV2, now, active=True, lane_mode=False)
+  assert assist.update(sm, cs_event.carState, event.modelV2, now, active=True, curvature=0.) == 0.
   assert assist.status == 'off' and assist.fraction == 0.
 
 
 @pytest.mark.parametrize('context', ['bsd', 'dm', 'lead'])
 def test_each_model_has_no_added_obstacle_or_dm_policy(model_spec, context):
-  assist, _, sm, event, cs_event, now, _ = center_scenario(model_spec, .27)
+  assist, _, sm, event, cs_event, now, _ = center_scenario(model_spec, .65)
   if context == 'bsd':
     cs_event.carState.leftBlindspot = True
   elif context == 'dm':
@@ -194,21 +187,23 @@ def test_each_model_has_no_added_obstacle_or_dm_policy(model_spec, context):
     sm['radarState'].leadOne.status = True
     sm['radarState'].leadOne.dRel = 10.
   now += .05
-  correction = assist.owner.callback(assist.parsed, 20., log.Desire.none, log.LaneChangeState.off, now)(0.)
-  assert correction*400 > .08
-  assist.owner.fill(event.modelV2.pv5LaneCenter)
+  event.modelV2.frameId += 1
   sm.recv_time = dict.fromkeys(sm, now)
-  assist.observe(sm, cs_event.carState, event.modelV2, now, active=True, lane_mode=False)
+  correction = assist.update(sm, cs_event.carState, event.modelV2, now, active=True, curvature=0.)
+  assert .08 < correction*400 <= .30
   assert assist.status == 'correcting' and assist.accel == pytest.approx(correction*400)
 
 
-@pytest.mark.parametrize('context', ['stale', 'inactive', 'lane_mode'])
+@pytest.mark.parametrize('context', ['stale', 'inactive', 'signal'])
 def test_each_model_unapplied_or_stale_gauge_does_not_change_action(model_spec, context):
-  assist, _, sm, event, cs_event, now, _ = center_scenario(model_spec, .27)
+  assist, _, sm, event, cs_event, now, _ = center_scenario(model_spec, .65)
   action = event.modelV2.action.to_dict()
-  if context == 'stale':
-    sm.recv_time['modelV2'] -= .3
-  assist.observe(sm, cs_event.carState, event.modelV2, now, active=context != 'inactive', lane_mode=context == 'lane_mode')
+  now += .05
+  event.modelV2.frameId += 1
+  sm.recv_time = dict.fromkeys(sm, now)
+  if context == 'stale': sm.recv_time['modelV2'] -= .3
+  if context == 'signal': cs_event.carState.leftBlinker = True
+  assist.update(sm, cs_event.carState, event.modelV2, now, active=context != 'inactive', curvature=0.)
   assert event.modelV2.action.to_dict() == action and assist.fraction == 0.
 
 
@@ -231,7 +226,7 @@ def test_each_model_center_and_lanes_survive_hud_wire_and_stale_clear(model_spec
   from cluster_live import OpenpilotLiveSource, standby_state
   from hud_health import HealthRenderer, ClusterUiRenderer
 
-  assist, _, sm, md, car, now, correction = center_scenario(model_spec, .27)
+  assist, _, sm, md, car, now, correction = center_scenario(model_spec, .65)
   controls = publish_center(assist, correction, 20.)
   controls.controlsState.lateralControlState.init('angleState')
   controls.controlsState.desiredCurvature = .002
@@ -271,7 +266,7 @@ def test_each_model_center_and_lanes_survive_hud_wire_and_stale_clear(model_spec
   import hud_health
   monkeypatch.setattr(hud_health.rl, 'draw_rectangle', lambda *_: None)
   renderer._draw_steering_output_block(state)
-  assert any('중앙 보정' in text and '›' in text for text in texts)
+  assert any('차선 보정' in text and '›' in text for text in texts)
   snapshot[0] = None
   remote.update()
   stale = source._with_live_hud_state(state)

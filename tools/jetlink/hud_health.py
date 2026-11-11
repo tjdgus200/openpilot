@@ -208,7 +208,7 @@ class HealthRenderer(ClusterUiRenderer):
     active = status == 'correcting' and math.isfinite(fraction) and 0 < abs(fraction) <= 1.0
     ko = self.language == 'ko'
     if active:
-      label = ('중앙 보정 ' if ko else 'Center ') + ('‹' if fraction < 0 else '›')
+      label = ('차선 보정 ' if ko else 'Edge ') + ('‹' if fraction < 0 else '›')
     elif status in LANE_CENTER_STATUS:
       label = LANE_CENTER_STATUS[status][0 if ko else 1]
     else:

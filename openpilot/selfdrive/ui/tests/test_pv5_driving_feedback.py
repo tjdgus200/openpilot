@@ -144,11 +144,11 @@ def test_feedback_uses_live_model_steering_and_center_status():
   assert data.right_lane_probability == pytest.approx(0.82)
   assert data.lane_confidence == pytest.approx(0.82)
   assert data.steer == pytest.approx(-1 / 6)
-  assert data.center_label == '중앙 · 입력 대기'
+  assert data.center_label == '차선 · 입력 대기'
   assert data.center is None
 
   controls.pv5LaneCenterStatus = 'blindspot'
-  assert sample_driving_feedback(sm, 10, 100.1, 3.0).center_label == '중앙 · BSD 대기'
+  assert sample_driving_feedback(sm, 10, 100.1, 3.0).center_label == '차선 · BSD 대기'
 
   controls.pv5LaneCenterStatus = 'correcting'
   controls.pv5LaneCenterFraction = -0.75
@@ -169,7 +169,7 @@ def test_stale_and_previous_drive_samples_are_not_displayed():
     assert data.lane_confidence is None
     assert data.steer is None
     assert data.center is None
-    assert data.center_label == '중앙 보정 --'
+    assert data.center_label == '차선 보정 --'
 
 
 def test_overlay_is_visible_only_onroad_on_a_real_pv5():
