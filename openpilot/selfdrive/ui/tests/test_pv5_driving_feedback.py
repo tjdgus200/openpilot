@@ -7,7 +7,8 @@ import pyray as rl
 from openpilot.cereal import log
 from openpilot.common.hud_attention_icon import DriverAttentionIcon
 from openpilot.common.hud_driving_feedback import (
-  DRIVING_POPUP_ENTER_SECONDS, DRIVING_POPUP_EXIT_SECONDS, DRIVING_POPUP_MOTION_SECONDS, STEERING_WARNING_SERVICES,
+  DRIVING_POPUP_ENTER_SECONDS, DRIVING_POPUP_EXIT_SECONDS, DRIVING_POPUP_MOTION_SECONDS,
+  DRIVING_POPUP_REPEAT_SECONDS, STEERING_WARNING_SERVICES,
   DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_notice_text, driving_popup_colors, driving_popup_motion,
   pv5_steering_warning,
 )
@@ -357,13 +358,14 @@ def test_driver_attention_icon_is_immediate_and_animates_once_per_stage(name):
   assert icon.scale(f'{name}3/permanent', 105.) == pytest.approx(.82)
 
 
-def test_popup_motion_settles_and_uses_actual_lane_change_direction():
+def test_popup_motion_repeats_gently_and_uses_actual_lane_change_direction():
   slide = DrivingPopupSlide()
   start = slide.motion_dots('camera', 100.)
   halfway = slide.motion_dots('camera', 100. + DRIVING_POPUP_MOTION_SECONDS / 2)
   settled = slide.motion_dots('camera', 101.)
   assert start != halfway != settled and len(settled) == 12
-  assert slide.motion_dots('camera', 102.) is settled
+  assert slide.motion_dots('camera', 102.) != settled
+  assert slide.motion_dots('camera', 101. + DRIVING_POPUP_REPEAT_SECONDS) is settled
   assert slide.motion_dots('cutin', 103.) == start
   assert slide.motion_dots(None, 103.1) == ()
   assert slide.motion_dots('cutin', 104.) == start
@@ -380,6 +382,50 @@ def test_popup_motion_settles_and_uses_actual_lane_change_direction():
   assert len({driving_popup_colors(0, motion) for motion in ('camera', 'cutin', left)}) == 3
   assert driving_popup_colors(1, 'cutin') == ((77, 46, 9, 255), (255, 184, 66, 255))
   assert driving_popup_colors(2, left) == ((156, 18, 27, 255), (255, 78, 85, 255))
+
+
+@pytest.mark.parametrize('key', ('camera', 'cutin', 'cutinTrack', 'cutinBrake', 'laneLeft', 'laneRight',
+                               'leadBrake', 'curve', 'bump', 'section'))
+def test_popup_cached_repeat_preserves_shape_count_bounds_and_period(key):
+  import math
+  slide = DrivingPopupSlide()
+  slide.motion_dots(key, 100.)
+  base = slide.motion_dots(key, 101.)
+  frames = [slide.motion_dots(key, 101. + i / 10) for i in range(25)]
+  assert all(len(frame) == len(base) == 12 for frame in frames)
+  assert any(frame != base for frame in frames)
+  for frame in frames:
+    for (x, y), (bx, by) in zip(frame, base, strict=True):
+      assert math.hypot(x, y) <= math.hypot(bx, by) * 1.080001
+      assert x * by == pytest.approx(y * bx)  # shape directions never rotate
+  assert slide.motion_dots(key, 102.2) is slide.motion_dots(key, 104.7)
+  assert slide.motion_dots(key, 102.201) is slide.motion_dots(key, 102.202)
+  slide._exit_started = 104.8
+  assert slide.motion_dots(key, 104.9) is base
+  slide.reset()
+  assert slide.motion_dots(None, 105.) == ()
+
+
+def test_popup_motion_clock_faults_reset_without_restarting_text_or_growing_cache():
+  from openpilot.common.hud_driving_feedback import _MOTION_DOTS, _motion_frames
+  slide = DrivingPopupSlide()
+  popup = slide.update(100., deceleration='Camera250m', decel_label='cam')
+  slide.top(100., 24., 100., urgent=False)
+  start = slide.motion_dots(popup.motion, 100.)
+  slide.top(100.3, 24., 100., urgent=False)
+  hold_until = slide._hold_until
+  later = slide.motion_dots(popup.motion, 102.2)
+  slide.update(102.2, deceleration='Camera200m', decel_label='cam')
+  assert slide._hold_until == hold_until and slide.motion_dots(popup.motion, 102.2) is later
+  for bad in (float('nan'), float('inf'), -float('inf')):
+    assert len(slide.motion_dots('camera', bad)) == 12
+    assert slide.motion_dots('camera', 103.) == start
+  assert slide.motion_dots('camera', 99.) == start
+  assert slide.motion_dots('unsupported', 104.) == ()
+  for key in _MOTION_DOTS:
+    slide.motion_dots(key, 105.)
+    slide.motion_dots(key, 106.2)
+  assert _motion_frames.cache_info().currsize <= 2
 
 
 def test_comma_popup_draws_lane_change_only_after_start(monkeypatch):

@@ -1,5 +1,6 @@
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 
 STEERING_WARNING_SERVICES = ('carParams', 'carControl', 'controlsState', 'carState',
@@ -17,7 +18,11 @@ _LANE_POPUP_COLORS = ((7, 89, 86, 255), (115, 251, 224, 255))
 DRIVING_POPUP_ENTER_SECONDS = 0.22
 DRIVING_POPUP_HOLD_SECONDS = 1.0
 DRIVING_POPUP_EXIT_SECONDS = 0.22
-DRIVING_POPUP_MOTION_SECONDS = 0.48
+DRIVING_POPUP_MOTION_SECONDS = 1.0
+DRIVING_POPUP_REPEAT_SECONDS = 2.5
+_MOTION_ENTER_HZ = 20
+_MOTION_REPEAT_HZ = 10
+_MOTION_REPEAT_GAIN = .08
 DRIVING_NOTICE_TEXT = {
   'cutin': '옆차 끼어들기 경계 중',
   'cutinTrack': '끼어들기 차량\n선행차로 추적 중',
@@ -29,8 +34,8 @@ DRIVING_NOTICE_TEXT = {
 DRIVING_NOTICE_OVER_DECEL = ('cutinBrake', 'cutinTrack', 'cutin', 'laneChange')
 _POPUP_PRIORITY = {name: rank for rank, name in enumerate((*DRIVING_NOTICE_OVER_DECEL, 'deceleration', 'leadBrake', 'curve'))}
 
-# Coordinates are normalized to the icon radius. Precompute the static shapes
-# so the popup does no interpolation after the entrance settles.
+# Coordinates are normalized to the icon radius. Animation tables are created
+# lazily by the display consumer, never by model/control callers importing us.
 _MOTION_RING = tuple((math.cos(i * math.tau / 12), math.sin(i * math.tau / 12)) for i in range(12))
 _LANE_ARROW = ((-.9, -.6), (-.65, -.3), (-.4, 0), (-.65, .3), (-.9, .6),
                (0., -.8), (.35, -.5), (.65, -.25), (.95, 0.), (.65, .25), (.35, .5), (0., .8))
@@ -53,6 +58,25 @@ _DECELERATION_MOTION = {
 }
 _MOTION_DOTS['cutinTrack'] = _MOTION_DOTS['cutin']
 _MOTION_DOTS['cutinBrake'] = _MOTION_DOTS['leadBrake']
+
+
+@lru_cache(maxsize=2)
+def _motion_frames(key: str):
+  """Bounded display-only cache; no per-frame point allocation or trig."""
+  target = _MOTION_DOTS[key]
+  steps = round(DRIVING_POPUP_MOTION_SECONDS * _MOTION_ENTER_HZ)
+  enter = []
+  for step in range(steps):
+    fraction = step / steps
+    progress = fraction * fraction * (3. - 2. * fraction)
+    enter.append(tuple((x + (end_x - x) * progress, y + (end_y - y) * progress)
+                       for (x, y), (end_x, end_y) in zip(_MOTION_RING, target, strict=True)))
+  repeat = [target]
+  repeat_steps = round(DRIVING_POPUP_REPEAT_SECONDS * _MOTION_REPEAT_HZ)
+  for step in range(1, repeat_steps):
+    scale = 1. + _MOTION_REPEAT_GAIN * .5 * (1. - math.cos(math.tau * step / repeat_steps))
+    repeat.append(tuple((x * scale, y * scale) for x, y in target))
+  return tuple(enter), tuple(repeat)
 
 
 def driving_popup_colors(warning: int, motion: str | None):
@@ -99,6 +123,7 @@ class DrivingPopupSlide:
     self._exit_started = None
     self._motion_key = None
     self._motion_started = 0.
+    self._motion_enter = self._motion_repeat = ()
 
   def update(self, now: float, *, warning: int = 0, notice: str | None = None, curve_speed: float | None = None,
              deceleration: str | None = None, decel_label: str | None = None,
@@ -129,18 +154,26 @@ class DrivingPopupSlide:
     return self._popup
 
   def motion_dots(self, key: str | None, now: float) -> tuple[tuple[float, float], ...]:
-    if key != self._motion_key:
-      self._motion_key = key
-      self._motion_started = now
-    if key is None:
+    target = _MOTION_DOTS.get(key)
+    if target is None:
+      self._motion_key = None
       return ()
-    target = _MOTION_DOTS[key]
-    elapsed = now - self._motion_started
-    if elapsed >= DRIVING_POPUP_MOTION_SECONDS:
+    if not math.isfinite(now):
+      self._motion_key = None
       return target
-    progress = 1. - (1. - max(0., elapsed) / DRIVING_POPUP_MOTION_SECONDS) ** 3
-    return tuple((x + (end_x - x) * progress, y + (end_y - y) * progress)
-                 for (x, y), (end_x, end_y) in zip(_MOTION_RING, target, strict=True))
+    if key != self._motion_key or now < self._motion_started:
+      self._motion_key, self._motion_started = key, now
+      self._motion_enter, self._motion_repeat = _motion_frames(key)
+    elapsed = now - self._motion_started
+    if not math.isfinite(elapsed):
+      self._motion_key = None
+      return target
+    if self._exit_started is not None:
+      return target
+    if elapsed < DRIVING_POPUP_MOTION_SECONDS:
+      return self._motion_enter[min(int(elapsed * _MOTION_ENTER_HZ), len(self._motion_enter) - 1)]
+    phase = (elapsed - DRIVING_POPUP_MOTION_SECONDS) % DRIVING_POPUP_REPEAT_SECONDS
+    return self._motion_repeat[min(int(phase * _MOTION_REPEAT_HZ), len(self._motion_repeat) - 1)]
 
   def top(self, now: float, top: float, height: float, *, urgent: bool, clip_top: float | None = None) -> float:
     if self._exit_started is not None:

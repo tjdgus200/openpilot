@@ -28,7 +28,7 @@ from model_pin import read_spec
 from cluster_live import OpenpilotLiveSource,standby_state
 from cluster_models import ClusterAlert
 from openpilot.cereal import log
-from openpilot.common.hud_driving_feedback import DRIVING_NOTICE_TEXT
+from openpilot.common.hud_driving_feedback import DRIVING_NOTICE_TEXT, DRIVING_POPUP_MOTION_SECONDS, DRIVING_POPUP_REPEAT_SECONDS
 from openpilot.selfdrive.carrot import signal_mode
 from openpilot.common.performance_diagnostics import ENABLED
 assert not ENABLED and not server.PERF_DIAGNOSTICS
@@ -313,6 +313,17 @@ try:
   rgb=camera.convert('RGB')
   assert max(abs(a-b) for a,b in zip(rgb.getpixel((315,175)),(31,70,143),strict=True))<=2
   assert (177,220,255) in rgb.crop((205,100,275,175)).getdata()
+ assert DRIVING_POPUP_MOTION_SECONDS==1. and DRIVING_POPUP_REPEAT_SECONDS==2.5
+ ui._popup_slide.reset()
+ ui._driving_notices.reset()
+ repeat_frames=[]
+ for now in (1000.,1001.,1002.2,1004.7):
+  with patch('time.monotonic',return_value=now):
+   ui.render_to_file(replace(braking,driving_notices=()),camera_path)
+  if now>1000.:
+   with Image.open(camera_path) as camera:
+    repeat_frames.append(camera.convert('RGB').crop((205,100,275,175)).tobytes())
+ assert repeat_frames[0]!=repeat_frames[1] and repeat_frames[1]==repeat_frames[2]
  add_event('carrotMan',log.Event.new_message(carrotMan={'desiredSource':'vturn','desiredSpeed':60}))
  record['mono']['carrotMan']+=1
  remote.update()
@@ -428,7 +439,7 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-battery-temperatures-light.png', args.output / 'hud-battery-temperatures-light.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

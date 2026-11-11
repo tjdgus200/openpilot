@@ -1,3 +1,14 @@
+- 2026-11-11 popup dot motion supersedes the single480ms policy: morph over1s
+  with smoothstep, then repeat a gentle2.5s pulse of at most8% size while
+  the existing popup is active. Both C3X and Jetson use the shared helper.
+  Lazy display-only LRU2 tables use20Hz entrance/10Hz repeat; frame calls
+  only index immutable12-point tuples, with no per-frame trig/point allocation.
+  Preserve text/direction,existing220ms entry,1s minimum hold,
+  220ms exit, driver attention/critical preemption and all source freshness.
+  No new inference, timer, worker, IPC, log or output FPS. Refresh all5
+  packages; show native old/new GIF and PC cost/cache results, never claim
+  physical zero overhead without hardware timing.
+
 - 2026-11-11 owner coolant display colors: use the existing battery temperature
   color function for coolant_inlet_c, including shown-integer bands and gray
   missing/expired readings. Keep26px right-aligned values and light-theme
