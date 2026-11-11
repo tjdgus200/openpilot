@@ -185,7 +185,7 @@ public:
     count = 0;
     min_x = width; max_x = -1;
     status = ModelFovStatus::UNSUPPORTED;
-    if (width != 1928 || height != 1208 || selection < 0 || selection > 4 || wide_model_down < 0 || wide_model_down > 30) return false;
+    if (width != 1928 || height != 1208 || selection < 0 || selection > 4 || wide_model_down < 0 || wide_model_down > 100) return false;
     stride = stride ? stride : width;
     if (stride < width || stride > 8192) return false;
     minimum_bytes = static_cast<size_t>(stride) * (height - 1) + width;

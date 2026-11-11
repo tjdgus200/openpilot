@@ -42,7 +42,7 @@ sbigmodel_intrinsics = np.array([
   [0.0,  0.0,                                     1.0]])
 
 WIDE_MODEL_FOV_CHOICES = (65, 70, 75, 80)
-WIDE_MODEL_DOWN_MAX = 30  # Stored tenths of a degree; experimental, not a calibration correction.
+WIDE_MODEL_DOWN_MAX = 100  # Stored tenths of a degree; experimental, not a calibration correction.
 
 
 def wide_model_pitch(rpy: np.ndarray, down: int) -> np.ndarray:

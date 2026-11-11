@@ -47,7 +47,7 @@ def fov_loop():
 
 @pytest.mark.parametrize('selection', range(5))
 @pytest.mark.parametrize('moving', [False, True])
-@pytest.mark.parametrize('down', [0, 10, 30])
+@pytest.mark.parametrize('down', [0, 10, 30, 50, 100])
 def test_each_model_receives_live_fov_only_in_wide_transform(model_spec, selection, moving, down, monkeypatch):
   sm = type('Messages', (dict,), {})(
     liveCalibration=NS(rpyCalib=[.01, -.02, .005], calStatus=log.LiveCalibrationData.Status.calibrated),

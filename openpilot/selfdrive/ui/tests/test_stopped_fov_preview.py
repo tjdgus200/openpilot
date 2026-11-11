@@ -93,18 +93,19 @@ def test_stopped_preview_keeps_available_camera(preview):
   assert viewer.active and not viewer.wide
 
 
-def test_actual_wide_down_moves_cyan_but_keeps_road_and_relative_candidate(preview):
+@pytest.mark.parametrize('down', [20, 100])
+def test_actual_wide_down_moves_cyan_but_keeps_road_and_relative_candidate(preview, down):
   viewer, update, _, settings, _ = preview
   update(10.)
   wide = viewer._polygon.copy()
   update(12.)
   road = viewer._polygon.copy()
-  settings['Pv5WideModelDown'] = 20
+  settings['Pv5WideModelDown'] = down
   settings['Pv5FovPreviewPitch'] = 10
   update(14.)
   assert np.all(viewer._polygon[:, 1] > wide[:, 1])
   assert np.all(viewer._candidate[:, 1] > viewer._polygon[:, 1])
-  assert 'DOWN 2.0°' in viewer._label
+  assert f'DOWN {down * .1:.1f}°' in viewer._label
   update(16.)
   np.testing.assert_array_equal(viewer._polygon, road)
   assert 'DOWN' not in viewer._label

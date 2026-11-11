@@ -27,7 +27,7 @@ extern "C" int mailbox_check() {
     for (uint64_t i = 1; i < 100000; ++i) {
       ModelFovSnapshot value;
       value.ready = i % 2; value.selection = i % 5;
-      value.wide_model_down = i % 31;
+      value.wide_model_down = i % 101;
       value.generation = i; value.valid_until = i + 1; value.sessions = {i * 7, i * 9}; value.mode = i % 4;
       value.status = static_cast<ModelFovStatus>(i % 22); value.assist_mode = (i / 4) % 4;
       value.rpy = {double(i), double(i * 2), double(i * 3)};
@@ -44,7 +44,7 @@ extern "C" int mailbox_check() {
     if (mailbox.read(value) && value.generation) {
       const auto i = value.generation;
       good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 &&
-              value.wide_model_down == int(i % 31) &&
+              value.wide_model_down == int(i % 101) &&
               value.sessions[0] == i * 7 && value.sessions[1] == i * 9 && value.mode == int(i % 4) &&
               static_cast<int>(value.status) == int(i % 22) && value.assist_mode == int((i / 4) % 4) &&
               value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3 && value.lane_mode == int(i%4);
@@ -362,7 +362,7 @@ def test_long_valid_episode_does_not_expire_or_add_a_new_switch(native):
 
 @pytest.mark.parametrize('wide', [False, True])
 @pytest.mark.parametrize('selection', range(5))
-@pytest.mark.parametrize('down', [0, 1, 10, 30])
+@pytest.mark.parametrize('down', [0, 1, 10, 30, 50, 100])
 def test_actual_down_native_meter_matches_model_warp_and_road_is_unchanged(native, wide, selection, down):
   rpy = np.array([.005, -.005, .005], dtype=float)
   lens = DEVICE_CAMERAS['tizi', 'ox03c10'].ecam if wide else DEVICE_CAMERAS['tizi', 'ox03c10'].fcam
@@ -379,9 +379,27 @@ def test_actual_down_native_meter_matches_model_warp_and_road_is_unchanged(nativ
     np.testing.assert_array_equal(values, native(wide=False, rpy=rpy, selection=selection, down=0)[1])
 
 
-@pytest.mark.parametrize('down', [-1, 31, 999])
+@pytest.mark.parametrize('down', [-1, 101, 999])
 def test_native_meter_rejects_bad_actual_down(native, down):
   assert native(down=down)[0] == 0
+
+
+@pytest.mark.parametrize('selection', range(5))
+def test_ten_degree_clipping_keeps_existing_meter_fallback(native, selection):
+  # Deliberately steep assumed calibration. Increasing the UI range must not
+  # weaken the existing 90%-inside-image requirement or sample out of bounds.
+  rpy = (0., -.5, 0.)
+  camera = DEVICE_CAMERAS['tizi', 'ox03c10'].ecam
+  adjusted = wide_model_pitch(np.array(rpy), 100)
+  warp = get_warp_matrix(adjusted, camera.intrinsics, True)
+  if selection:
+    warp = wider_model_warp(warp, (65, 70, 75, 80)[selection - 1])
+  points = [(511 * (col + .5) / 64, 255 * (row + .5) / 36) for row in range(36) for col in range(64)]
+  rays = warp @ np.vstack((np.array(points).T, np.ones(len(points))))
+  pixels = (rays[:2] / rays[2]).T
+  valid = ((pixels >= 0) & (pixels < [1928, 1208])).all(axis=1).sum()
+  assert valid * 10 < 2304 * 9
+  assert native(wide=True, rpy=rpy, selection=selection, down=100)[0] == 0
 
 
 def test_camera_owner_keeps_ipc_and_disk_reads_out_of_frame_delivery():
@@ -755,7 +773,7 @@ int main() {
   values["Pv5ModelFovExposure"] = "1"; clock_now += 250000000ULL;
   cal_time = dev_time = clock_now; new_calibration = true;
   context.update(true); assert(context.ready && context.sessions[0] == 3 && context.sessions[1] == 3);
-  for (const auto &entry : std::vector<std::pair<std::string, int>>{{"10", 10}, {"30", 30}, {"-1", 0}, {"31", 0}, {"bad", 0}, {"", 0}}) {
+  for (const auto &entry : std::vector<std::pair<std::string, int>>{{"10", 10}, {"30", 30}, {"50", 50}, {"99", 99}, {"100", 100}, {"-1", 0}, {"101", 0}, {"bad", 0}, {"", 0}}) {
     values["Pv5WideModelDown"] = entry.first;
     clock_now += 250000000ULL; cal_time = dev_time = clock_now;
     context.update(true);

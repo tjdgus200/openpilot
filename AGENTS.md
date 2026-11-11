@@ -1,5 +1,5 @@
 - 2026-11-11 PV5 actual wide model view down: Pv5WideModelDown defaults0,
-  range0..30 in tenths of a degree. Tilt only the virtual wide model input;
+  range0..100 in tenths of a degree. Tilt only the virtual wide model input;
   keep narrow input, saved calibration and input/output formats unchanged.
   Apply at existing250ms modeld poll/calibration changes before all internal,
   Jetson/eGPU submission; do not add inference/copies/IPC/per-frame transforms.

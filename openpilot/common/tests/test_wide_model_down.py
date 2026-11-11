@@ -27,7 +27,7 @@ def test_all_steps_move_every_corner_down_and_preserve_calibration(selection, rp
   original = rpy.copy()
   lens = DEVICE_CAMERAS['tizi', 'ox03c10'].ecam
   previous = None
-  for down in range(31):
+  for down in range(101):
     adjusted = wide_model_pitch(rpy, down)
     warp = get_warp_matrix(adjusted, lens.intrinsics, True)
     if selection:
@@ -43,7 +43,7 @@ def test_all_steps_move_every_corner_down_and_preserve_calibration(selection, rp
     previous = points
 
 
-@pytest.mark.parametrize('bad', [-1, 31, 1000, 1.5, np.nan, True, None])
+@pytest.mark.parametrize('bad', [-1, 101, 1000, 1.5, np.nan, True, None])
 def test_geometry_rejects_invalid_offset(bad):
   with pytest.raises(ValueError):
     wide_model_pitch(np.zeros(3), bad)
@@ -74,7 +74,7 @@ def live_loop(fingerprint='KIA_PV5', not_car=False, dual=True):
   return code, state, settings
 
 
-@pytest.mark.parametrize('down', [1, 10, 30, -1, 31, 999, None, 1.5, True])
+@pytest.mark.parametrize('down', [1, 10, 30, 50, 99, 100, -1, 101, 999, None, 1.5, True])
 @pytest.mark.parametrize('scope', ['pv5', 'other', 'notcar', 'single'])
 def test_real_loop_live_poll_scope_restore_and_narrow_parity(down, scope):
   code, state, settings = live_loop('HYUNDAI_IONIQ_5' if scope == 'other' else 'KIA_PV5', scope == 'notcar', scope != 'single')
@@ -86,7 +86,7 @@ def test_real_loop_live_poll_scope_restore_and_narrow_parity(down, scope):
   state['loop_start'] += .2
   exec(code, state)
   np.testing.assert_array_equal(state['model_transform_main'], narrow)
-  applied = scope == 'pv5' and type(down) is int and 1 <= down <= 30
+  applied = scope == 'pv5' and type(down) is int and 1 <= down <= 100
   assert np.array_equal(state['model_transform_extra'], wide) is not applied
   if applied:
     assert (polygon(state['model_transform_extra'])[:, 1] > polygon(wide)[:, 1]).all()
@@ -100,7 +100,7 @@ def test_setting_is_persistent_default_zero_and_separate_from_preview():
   import json
   params = {p['name']: p for p in json.loads((ROOT / 'selfdrive/carrot_settings.json').read_text())['params']}
   p = params['Pv5WideModelDown']
-  assert (p['default'], p['min'], p['max'], p['unit']) == (0, 0, 30, 1)
+  assert (p['default'], p['min'], p['max'], p['unit']) == (0, 0, 100, 1)
   assert p['risk'] == 'high'
   assert '{"Pv5WideModelDown", {PERSISTENT, INT, "0"}}' in (ROOT / 'common/params_keys.h').read_text()
   source = (ROOT / 'selfdrive/modeld/modeld.py').read_text()
