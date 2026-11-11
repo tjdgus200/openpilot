@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-drops-ctv3m-20261111-b17717b0",
-  "source_commit": "b17717b0398236a6614a236067324b764870820c",
+  "profile": "jetson-pv5-hud-temps-ctv3m-20261111-2086670b",
+  "source_commit": "2086670bbf4bf08f02fdb0ecd5c7f833010a9100",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-drops-ctv3m-20261111-b17717b0/host.tar.gz",
-    "sha256": "59cbb2d2bb15f9500f8a01a9327af9472b88f766dce732704740fe67672830d9",
-    "size": 65311606
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-temps-ctv3m-20261111-2086670b/host.tar.gz",
+    "sha256": "7e74c68688a78a3499ce73b513269fff6ce3e50e3ae315cea73107ddd205ce66",
+    "size": 65313879
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",

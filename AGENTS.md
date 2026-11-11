@@ -1,3 +1,11 @@
+- 2026-11-11 final battery temperature HUD release: max | min both66px,
+  spread below20px; owner colors <5 blue,5..9 light blue,10..30 white,
+  31..34 yellow,>=35 red on shown integers, unknown gray. DROP1s caption
+  white, valid counts including0 red, unknown gray. Keep SOC/trip, field TTL,
+  OBD cadence,1Hz source-frame semantics, model/control/alert behavior and
+  light-theme contrast. All5 native archives and20 public assets verified.
+  See docs/hud_battery_temperatures_20261111.md; PC is not device proof.
+
 - 2026-11-11 owner temperature colors (displayed integer): 10..30C white, <5C blue, >=35C red; 5..9C light blue,31..34C yellow. Apply independently to max/min; missing/invalid stays gray. Display reference only, no BMS/vehicle thermal control or alert thresholds change. Supersedes the unapproved temporary0/40/50 proposal.
 
 - 2026-11-11 follow-up supersedes the red DROP caption rule below: DROP 1s: is white, only valid nonnegative counts (including0) are red; unknown/invalid -- is gray. Preserve 1Hz/source-count semantics.
