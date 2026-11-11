@@ -68,7 +68,7 @@
       ]
     },
     "resources_and_state": {
-      "preserve": "Full diagnostics OFF, 1Hz HUD resource/inference readouts, model-priority HUD, finite/reset checks and exact N16 optimization gates. PV5-angle0.30s press confirmation counts repeated overrides only, never delays yielding. Boot repair remains identified-PV5-only with retained marker, original locks and one bounded retry. PV5 simple recovery defaults OFF; confirmation100..500ms/default200 and base ramp1000..3000ms/default1500 are latched per episode. Persistent concordant requested/limited angle errors may slew extra recovery to at most1.5x base and a1s full-range rate. Driver/pre-yield, force, reversal/disagreement, geometry/fault/time/mode changes clear extra evidence. OFF return stays1.5s; original angle/rate/physics/authority limits and other-car/default-OFF CAN outputs remain. No extra model, profiler or Params polling; full authority skips error work. Synthetic EPS/vehicle simulation is not road-safety validation. Filter both concordant angle-error trends; bound look-ahead and retain magnitude qualification, base rate, resets and all maxima.",
+      "preserve": "Full diagnostics OFF, 1Hz HUD resource/inference readouts, model-priority HUD, finite/reset checks and exact N16 optimization gates. PV5-angle0.30s press confirmation counts repeated overrides only, never delays yielding. Boot repair remains identified-PV5-only with retained marker, original locks and one bounded retry. PV5 simple recovery defaults OFF; confirmation100..500ms/default200 and base ramp1000..3000ms/default1500 are latched per episode. Persistent concordant requested/limited angle errors may slew extra recovery to at most1.5x base and a1s full-range rate. Driver/pre-yield, force, reversal/disagreement, geometry/fault/time/mode changes clear extra evidence. OFF return stays1.5s; original angle/rate/physics/authority limits and other-car/default-OFF CAN outputs remain. No extra model, profiler or Params polling; full authority skips error work. Synthetic EPS/vehicle simulation is not road-safety validation. Filter both concordant angle-error trends; bound look-ahead and retain magnitude qualification, base rate, resets and all maxima. Incident reporting is opt-in/default OFF, PV5-only and analysis-only; fresh actual zero CAN speed permits transmission in every gear, with no cruise gate. Bounded32-row/64KiB/24h queue, authenticated8KiB batches, cancellable low-priority upload and backoff must not enter model/control loops. No automatic vehicle remote session, install or code push.",
       "tests": [
         "tools/jetlink/test_optimization_defaults.py",
         "tools/jetlink/test_device_state.py",
@@ -84,7 +84,8 @@
         "opendbc_repo/opendbc/car/hyundai/tests/test_steering_recovery.py",
         "opendbc_repo/opendbc/car/hyundai/tests/test_pv5_adaptive_recovery.py",
         "opendbc_repo/opendbc/car/hyundai/tests/test_pv5_trend_recovery.py",
-        "openpilot/common/tests/test_pv5_build_recovery.py"
+        "openpilot/common/tests/test_pv5_build_recovery.py",
+        "tools/pv5_incidents/test_incidents.py"
       ]
     },
     "power_and_boot": {

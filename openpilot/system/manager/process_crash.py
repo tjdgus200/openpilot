@@ -11,6 +11,7 @@ import re
 import signal
 import socket
 import subprocess
+import sys
 import threading
 import time
 from collections import deque
@@ -176,6 +177,10 @@ class CrashCollector:
         old.with_suffix('.txt').unlink(missing_ok=True)
         old.unlink(missing_ok=True)
         self.retry_at.pop(old.name, None)
+    # Optional coded summaries only; original captures/destinations stay intact.
+    reporter = sys.modules.get('openpilot.system.pv5_incidents.runtime')
+    if reporter is not None:
+      reporter.notify_crash(event)
 
   def upload_pending(self, now=None):
     now = time.monotonic() if now is None else now

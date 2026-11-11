@@ -664,6 +664,15 @@
           "params": ["Pv5LaneBoundaryAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
         },
         {
+          "id": "PV5_MAINTENANCE",
+          "ko": "오류 제보",
+          "en": "Incident Reports",
+          "zh": "故障报告",
+          "params": [
+            "Pv5IncidentReporting"
+          ]
+        },
+        {
           "id": "PV5_CAMERA",
           "ko": "카메라·노출",
           "en": "Camera & Exposure",
@@ -689,6 +698,23 @@
     }
   ],
   "params": [
+    {
+      "group": "PV5",
+      "name": "Pv5IncidentReporting",
+      "title": "오류 자동 제보 (분석만)",
+      "descr": "기기 등록과 PC 수신 설정 후 켜고 콤마를 재부팅하세요. PV5의 경고·프로세스 종료 코드를 중복 집계하고, 최신 CAN 속도 0이면 기어·크루즈 활성 여부와 무관하게 첫 전송을 시도합니다. 움직임·속도 정보 이상이면 전송을 멈춥니다. 최대32종·64KB·24시간 보관, 제한된 재전송으로 쌓이는 부담을 줄입니다. PC에서는 원인·해결안만 Discord로 보고하며 코드 자동 수정·푸시·차량 설치는 하지 않습니다. 영상·위치·원문 로그·자격증명은 보내지 않습니다. 끄기는 실행 중에도 약1초 내 반영됩니다.",
+      "egroup": "PV5",
+      "etitle": "Automatic Incident Reports (Analysis Only)",
+      "edescr": "Enroll this device and configure the PC receiver, then enable and reboot comma. Deduplicate PV5 warning/process-exit codes; first upload is attempted at fresh zero CAN speed in any gear, including engaged cruise. Motion or invalid/stale speed cancels transmission. Keep at most32 types/64KiB/24h with bounded retry. PC reports causes and suggestions to Discord only: no automatic code edits, push or vehicle installation. No video, location, raw logs or credentials. OFF is observed within about1s.",
+      "cgroup": "PV5",
+      "ctitle": "自动故障报告（仅分析）",
+      "cdescr": "完成设备注册及PC接收配置后开启并重启comma。PV5警告及进程退出代码去重，最新CAN速度为0时不限挡位或巡航状态尝试上传；移动或速度数据失效则停止。最多32类/64KiB/24小时，限制重试。PC仅向Discord报告原因及建议，不自动改代码、推送或安装。不发送视频、位置、原始日志或凭据。关闭约1秒内生效。",
+      "control": "toggle",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
     {
       "group": "PV5",
       "name": "Pv5SimpleSteerRecovery",

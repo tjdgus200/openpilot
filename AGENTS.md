@@ -3889,3 +3889,14 @@
   parameter name. Run the Wiki validator and focused generator tests after editing.
 - Generated setting pages carry the same authoring-guide URL in a hidden `CARROT:AUTHORING` marker
   so an agent working from the Wiki checkout alone can discover the canonical rules.
+- 2026-11-11 PV5 incident reports: user chose analysis-only. Default OFF,
+  enrollment required; use existing tombstoned low-priority threads, no model/
+  control-loop I/O or profilers. Send coded metadata at fresh actual CAN0 speed
+  in ANY gear even with cruise engaged; stale/invalid/moving cancels, recheck
+  after connect. This does NOT change manual Park-only Tailscale/SSH policy.
+  Keep32-row/64KiB/24h queue, bounded8KiB batches,5s success spacing and2..300s
+  failure backoff; no unbounded files/retries/threads. PC caps64 kinds/2MiB DB,
+  deduplicates/reconciles Discord receipts, analyzes at most3 per5min,30min same
+  cause cooldown. Never auto edit/commit/push/install/reboot for future incidents.
+  Preserve all5 models, vehicle limits and existing crash capture. PC contracts
+  are not device CPU/latency or road-safety evidence. See tools/pv5_incidents.

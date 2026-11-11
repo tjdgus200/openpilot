@@ -85,7 +85,7 @@ class WikiSettingsGeneratorTest(unittest.TestCase):
       catalog_commit=COMMIT,
       generated_at=STAMP,
     )
-    setting_count = 222
+    setting_count = 223
     self.assertEqual(len(result.generated_settings), setting_count)
     self.assertIn("TeslaAutoTurnSignals", result.index["settings"])
     self.assertIn("JetsonHudFps", result.index["settings"])

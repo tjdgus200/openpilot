@@ -145,6 +145,8 @@ def main() -> NoReturn:
   # Capture and HTTP run in separate diagnostic threads, never in manager.
   from openpilot.system.manager.process_crash import start_crash_reporting
   start_crash_reporting()
+  from openpilot.system.pv5_incidents import start_incident_reporting
+  start_incident_reporting()
   should_report = sentry.init(sentry.SentryProject.SELFDRIVE_NATIVE)
 
   # Clear apport folder on start, otherwise duplicate crashes won't register
