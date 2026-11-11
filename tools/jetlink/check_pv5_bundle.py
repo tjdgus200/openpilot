@@ -118,11 +118,64 @@ try:
   ui._next_model_call=0.
   ui.render_to_file(state,Path(sys.argv[2]).with_name('hud-ms-'+suffix+'.png'))
   assert ('COMMA '+format(ms,'.1f')+' ms',color) in segments_drawn['comma-infer']
-  assert ('DROP 1s:'+str(loss),HIGH) in segments_drawn['comma-infer']
+  assert ('DROP 1s:',NORMAL) in segments_drawn['comma-infer']
+  assert (str(loss),HIGH) in segments_drawn['comma-infer']
  model_event.modelV2.modelExecutionTime=.04
  model_event.modelV2.frameDropStats.count=3
  add_event('modelV2',model_event)
  ui._next_model_call=0.
+ # Real fonts and both panel positions: large max/min values remain separate
+ # at signed/extreme/missing values, with the smaller delta below.
+ from cluster_battery import packet_from_metrics,panel_labels,remote_panel,battery_temperature_color
+ battery_draw=ui._draw_text
+ temperature_texts=[]
+ def capture_temperature(text,*args,**kwargs):
+  temperature_texts.append((text,args,kwargs))
+  return battery_draw(text,*args,**kwargs)
+ ui._draw_text=capture_temperature
+ for language in ('ko','en'):
+  ui.set_display_preferences(language,True)
+  for layout in (0,1):
+   ui.set_panel_layout(layout)
+   for maximum,minimum in ((36.,28.),(0.,-10.),(30.,10.),(9.,5.),(34.,31.),(4.,-10.),(130.,-50.),(None,None)):
+    metrics={'soc_percent':(77.,record['sent'])}
+    for key,value in (('max_temp_c',maximum),('min_temp_c',minimum)):
+     if value is not None:
+      metrics[key]=(value,record['sent'])
+    record['battery_hud']=packet_from_metrics(metrics,record['sent'])
+    temperature_texts.clear()
+    path=Path(sys.argv[2]).with_name('hud-battery-temperature-check.png')
+    if language=='ko' and layout==0 and maximum==36.:
+     path=path.with_name('hud-battery-temperatures.png')
+    ui.render_to_file(state,path)
+    values=[(text,args,kwargs) for text,args,kwargs in temperature_texts
+            if args[1:3]==(121,66) and (text.endswith('°C') or text=='|')]
+    assert len(values)==3 and all(kwargs.get('anchor')=='center' for _,_,kwargs in values)
+    assert values[0][1][3]==battery_temperature_color(maximum)
+    assert values[2][1][3]==battery_temperature_color(minimum)
+    boxes=[]
+    for text,args,kwargs in values:
+     width=ui._measure_text(text,args[2])[0]
+     boxes.append((args[0]-width/2,args[0]+width/2))
+    assert boxes[0][1]<boxes[1][0] and boxes[1][1]<boxes[2][0]
+    left=ui._information_panel_x(hud_health.NAVI_LIVE_PANEL_X)
+    assert left+24<boxes[0][0] and boxes[2][1]<left+hud_health.NAVI_LIVE_PANEL_W-24
+    labels=panel_labels(remote_panel(hud.read_snapshot(),time.monotonic()),language)
+    assert any(text==labels['minimum'] and args[1:3]==(76,22) for text,args,_ in temperature_texts)
+    detail=next((text,args) for text,args,_ in temperature_texts if text.startswith(labels['spread']+' '))
+    assert detail[1][1:3]==(169,20)
+ ui.set_display_preferences('ko',True)
+ ui.set_panel_layout(0)
+ ui.set_theme_mode('light')
+ record['battery_hud']=packet_from_metrics({'soc_percent':(77.,record['sent']),
+     'max_temp_c':(36.,record['sent']),'min_temp_c':(28.,record['sent'])},record['sent'])
+ light_temperature_path=Path(sys.argv[2]).with_name('hud-battery-temperatures-light.png')
+ ui.render_to_file(state,light_temperature_path)
+ from PIL import Image
+ assert Image.open(light_temperature_path).convert('RGB').getpixel((1420,95))==(18,23,29)
+ ui.set_theme_mode('dark')
+ record.pop('battery_hud',None)
+ ui._draw_text=battery_draw
  # A telemetry gap is an in-place unavailable dashboard, never a panel reopen.
  window_font=ui._telemetry_font.texture.id
  draw_text=ui._draw_text
@@ -361,9 +414,11 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-driver-attention.png', args.output / 'hud-driver-attention.png')
     for color in ('white', 'orange', 'red'):
       shutil.copyfile(root / f'hud-ms-{color}.png', args.output / f'hud-ms-{color}.png')
+    shutil.copyfile(root / 'hud-battery-temperatures.png', args.output / 'hud-battery-temperatures.png')
+    shutil.copyfile(root / 'hud-battery-temperatures-light.png', args.output / 'hud-battery-temperatures-light.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

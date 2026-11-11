@@ -36,6 +36,26 @@ def finite_number(value):
         return False
 
 
+def battery_temperature_color(value):
+    """Display reference only, not Kia BMS protection/operating thresholds.
+
+    Classify the shown integer, matching the overview's existing .0f format.
+    Unknown/out-of-contract input stays gray, never a white normal reading.
+    """
+    if not valid_value('max_temp_c', value):
+        return (155, 160, 165)
+    shown = round(value)
+    if shown < 5:
+        return (95, 175, 255)
+    if shown >= 35:
+        return (255, 80, 80)
+    if shown < 10:
+        return (160, 215, 255)
+    if shown > 30:
+        return (255, 215, 70)
+    return (255, 255, 255)
+
+
 def valid_value(name, value):
     if name == 'thermal_mode':
         return isinstance(value, str) and value in THERMAL_MODES
@@ -215,7 +235,7 @@ def panel_labels(data, language='en'):
     if language == 'ko':
         return {
             'title': '배터리 종합', 'soc': '잔량', 'maximum': '최고 온도',
-            'minimum': '최저', 'spread': '온도차', 'consumption': '전체 소비 전력',
+            'minimum': '최저 온도', 'spread': '온도차', 'consumption': '전체 소비 전력',
             'regeneration': '전체 회생 전력', 'coolant': '배터리 냉각수 입구',
             'charging_power': '배터리 충전 전력',
             'thermal': '열관리 상태 · 소비 전력', 'charge80': '급속충전 80% 예상 시간', 'minutes': '분',
@@ -228,7 +248,7 @@ def panel_labels(data, language='en'):
     if language == 'zh':
         return {
             'title': '电池信息', 'soc': '电量', 'maximum': '最高温度',
-            'minimum': '最低', 'spread': '温差', 'consumption': '总耗电功率',
+            'minimum': '最低温度', 'spread': '温差', 'consumption': '总耗电功率',
             'regeneration': '总回收功率', 'coolant': '电池冷却液入口',
             'charging_power': '电池充电功率',
             'thermal': '热管理状态 · 功率', 'charge80': '快充至80%预计时间', 'minutes': '分钟',
@@ -240,7 +260,7 @@ def panel_labels(data, language='en'):
         }
     return {
         'title': 'Battery overview', 'soc': 'Charge', 'maximum': 'Maximum temp',
-        'minimum': 'Min', 'spread': 'Spread', 'consumption': 'Total battery draw',
+        'minimum': 'Minimum temp', 'spread': 'Spread', 'consumption': 'Total battery draw',
         'regeneration': 'Total regeneration', 'coolant': 'Battery coolant inlet',
         'charging_power': 'Battery charge power',
         'thermal': 'Thermal mode / electrical power', 'charge80': 'DC charge to 80% / estimate', 'minutes': 'min',

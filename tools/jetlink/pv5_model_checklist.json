@@ -58,6 +58,7 @@
     "battery_and_ble": {
       "preserve": "108 voltage channels, 15 temperatures, progressive heatmaps, trip SOC, zero-speed/P/charging view and per-field TTL; sequential BLE requests and recovery.",
       "tests": [
+        "tools/jetlink/test_hud_battery.py",
         "tools/jetlink/test_battery_heatmap.py",
         "tools/jetlink/test_battery_retention.py",
         "tools/jetlink/test_stationary_battery.py",

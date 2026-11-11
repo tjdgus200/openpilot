@@ -24,7 +24,7 @@ from openpilot.common.hud_driving_feedback import (
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
 from openpilot.selfdrive.carrot.signal_display import SignalDisplayReader, project_box
 from openpilot.selfdrive.carrot.lead_brake_lights import BrakeDisplayReader
-from cluster_battery import BatteryPanelData, HeatmapLabels, panel_labels
+from cluster_battery import BatteryPanelData, HeatmapLabels, panel_labels, battery_temperature_color
 
 from cluster_gles_dmabuf import DirectNv12DmabufError, create_tici_nv12_dmabuf_pool
 from cluster_gles_readback import DirectNv12ReadbackError, create_tici_direct_readback
@@ -4122,7 +4122,6 @@ class ClusterUiRenderer:
         x = self._information_panel_x(NAVI_LIVE_PANEL_X)
         width = NAVI_LIVE_PANEL_W
         left, right = x + 24.0, x + width - 24.0
-        middle = x + width * 0.5
         self._rounded_rect(x, 1.0, width, DESIGN_HEIGHT - 2.0, 10.0, theme.panel_bg, theme.faint, 1.0)
         self._draw_text(labels['title'], left, 32, 27, theme.text)
 
@@ -4135,12 +4134,23 @@ class ClusterUiRenderer:
 
         self._draw_text(labels['soc'], left, 76, 22, theme.muted)
         self._draw_text(number('soc_percent', suffix='%'), left, 121, 66, theme.text)
-        self._draw_text(labels['maximum'], middle + 18, 76, 22, theme.muted)
-        self._draw_text(number('max_temp_c', suffix='°C'), middle + 18, 121, 66, theme.text)
+        # Reserve two equal temperature columns; keep the original large type
+        # even for signed/three-digit values, separately from SOC/trip usage.
+        temperature_left = x + width * 0.36
+        separator = (temperature_left + right) * 0.5
+        maximum_x, minimum_x = (temperature_left + separator) * 0.5, (separator + right) * 0.5
         maximum, minimum = data.value('max_temp_c'), data.value('min_temp_c')
+        self._draw_text(labels['maximum'], maximum_x, 76, 22, theme.muted, anchor='center')
+        self._draw_text(labels['minimum'], minimum_x, 76, 22, theme.muted, anchor='center')
+        if not theme.is_dark:
+            # White/light-blue readings still need contrast in the light theme.
+            self._rounded_rect(temperature_left, 86, right-temperature_left, 70, 6,
+                               (18, 23, 29), (18, 23, 29), 0)
+        self._draw_text(number('max_temp_c', suffix='°C'), maximum_x, 121, 66, battery_temperature_color(maximum), anchor='center')
+        self._draw_text('|', separator, 121, 66, (155, 160, 165), anchor='center')
+        self._draw_text(number('min_temp_c', suffix='°C'), minimum_x, 121, 66, battery_temperature_color(minimum), anchor='center')
         spread = f'{maximum - minimum:.0f}°C' if maximum is not None and minimum is not None else '--°C'
-        detail = f"{labels['minimum']} {number('min_temp_c', suffix='°C')}   {labels['spread']} {spread}"
-        self._draw_text(detail, middle + 18, 169, 20, theme.muted)
+        self._draw_text(f"{labels['spread']} {spread}", separator, 169, 20, theme.muted, anchor='center')
         power = data.value('pack_power_kw')
         power_text = '-- kW' if power is None else f'{power:.1f} kW'
         power_label = (labels['charging_power'] if data.value('charge_mode') in ('ac', 'dc') else

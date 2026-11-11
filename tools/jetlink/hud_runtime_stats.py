@@ -211,7 +211,8 @@ def inference_segments(host, *, comma_ms=None, comma_drops=None, include_comma=F
     result.extend(((' | ', TEXT),
                    (f"COMMA {comma_ms:.1f} ms" if valid_ms else 'COMMA -- ms',
                     metric_color(round(comma_ms, 1) if valid_ms else None, 'comma_infer')),
-                   (' | ', TEXT), (f"DROP 1s:{comma_drops}" if valid_drops else 'DROP 1s:--', HIGH)))
+                   (' | ', TEXT), ('DROP 1s:', NORMAL),
+                   (str(comma_drops) if valid_drops else '--', HIGH if valid_drops else UNKNOWN)))
   return tuple(result)
 
 

@@ -128,14 +128,26 @@ def test_timing_readout_separates_host_window_from_latest_comma_sample():
 def test_comma_thresholds_match_the_visible_decimal_and_do_not_change_trt(ms, color):
   parts = inference_segments({'timing': timing()}, comma_ms=ms, comma_drops=3, include_comma=True)
   assert (f'COMMA {ms:.1f} ms', color) in parts
-  assert ('DROP 1s:3', HIGH) in parts and parts[-2] == (' | ', (215, 220, 225))
+  assert parts[-3:] == ((' | ', (215, 220, 225)), ('DROP 1s:', NORMAL), ('3', HIGH))
   assert metric_color(35, 'infer') == CAUTION and metric_color(50, 'infer') == HIGH
 
 
 @pytest.mark.parametrize('ms', [None, True, -1, 0, float('nan'), float('inf'), 10001])
 def test_invalid_comma_timing_is_unknown_and_invalid_loss_never_looks_like_zero(ms):
   parts = inference_segments({}, comma_ms=ms, comma_drops=True, include_comma=True)
-  assert ('COMMA -- ms', UNKNOWN) in parts and ('DROP 1s:--', HIGH) in parts
+  assert ('COMMA -- ms', UNKNOWN) in parts and parts[-2:] == (('DROP 1s:', NORMAL), ('--', UNKNOWN))
+
+
+@pytest.mark.parametrize('count', [0, 1, 20, 0xffffffff])
+def test_drop_caption_white_and_zero_or_positive_number_red(count):
+  parts = inference_segments({}, comma_drops=count, include_comma=True)
+  assert parts[-2:] == (('DROP 1s:', NORMAL), (str(count), HIGH))
+
+
+@pytest.mark.parametrize('count', [None, -1, True, 1.5, float('nan'), 0x100000000])
+def test_missing_or_invalid_count_is_unknown_not_a_red_number(count):
+  parts = inference_segments({}, comma_drops=count, include_comma=True)
+  assert parts[-2:] == (('DROP 1s:', NORMAL), ('--', UNKNOWN))
 
 
 def diagnostic_snapshot(ms=44., **stats):

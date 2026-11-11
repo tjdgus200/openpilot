@@ -1,3 +1,14 @@
+- 2026-11-11 owner temperature colors (displayed integer): 10..30C white, <5C blue, >=35C red; 5..9C light blue,31..34C yellow. Apply independently to max/min; missing/invalid stays gray. Display reference only, no BMS/vehicle thermal control or alert thresholds change. Supersedes the unapproved temporary0/40/50 proposal.
+
+- 2026-11-11 follow-up supersedes the red DROP caption rule below: DROP 1s: is white, only valid nonnegative counts (including0) are red; unknown/invalid -- is gray. Preserve 1Hz/source-count semantics.
+
+- 2026-11-11 battery overview: show max | min at the original66px size,
+  with separate localized labels and small20px spread below. Reserve SOC/trip
+  space, both panel positions and signed/three-digit/zero/missing values.
+  Keep field validity/TTL, collection cadence, charging heatmaps, prior COMMA
+  timing/drop strip and alert priority. Presentation only, no new model/control
+  or OBD work. Require exact5-model native archive rendering and verified pins.
+
 - 2026-11-11 COMMA/drop HUD packages published and pinned for all five models.
   Preserve the displayed-decimal40/44ms colors, red source-observed1s frame-gap
   count, unknown startup/reset/stall/stale/old packets, shared1Hz decode and

@@ -12,6 +12,7 @@ sys.path[:0] = [str(Path(__file__).parent), str(ROOT / 'openpilot/selfdrive/carr
 import hud_battery as b
 import hud_protocol
 from cluster_battery import BatteryPanelData, finite_number, packet_from_metrics, panel_from_wire, remote_panel
+from cluster_battery import battery_temperature_color
 from cluster_config import CLUSTER_SCREEN_MODE_BATTERY, normalize_cluster_screen_mode
 from cluster_live import standby_state
 import cluster_renderer as renderer
@@ -270,6 +271,22 @@ def test_bad_temperature_is_never_formatted_as_real(value):
     assert panel_from_wire(record).value('max_temp_c') is None
 
 
+@pytest.mark.parametrize('value,color', [(-50, (95, 175, 255)), (0, (95, 175, 255)), (4, (95, 175, 255)),
+                                       (5, (160, 215, 255)), (9, (160, 215, 255)),
+                                       (10, (255, 255, 255)), (30, (255, 255, 255)),
+                                       (31, (255, 215, 70)), (34, (255, 215, 70)),
+                                       (35, (255, 80, 80)), (130, (255, 80, 80)),
+                                       (4.49, (95, 175, 255)), (4.5, (95, 175, 255)),
+                                       (9.5, (255, 255, 255)), (30.6, (255, 215, 70)), (34.6, (255, 80, 80))])
+def test_temperature_display_reference_colors_follow_visible_integer(value, color):
+    assert battery_temperature_color(value) == color
+
+
+@pytest.mark.parametrize('value', [True, None, '40', float('nan'), float('inf'), -51, 131])
+def test_unknown_or_invalid_temperature_is_gray(value):
+    assert battery_temperature_color(value) == (155, 160, 165)
+
+
 def test_remote_ages_do_not_require_synchronized_clocks_or_reset_each_snapshot():
     record = packet_from_metrics({'max_temp_c': (32, 99999)}, 100000)
     snapshot = 10.0, {'sent': 100001.0, 'battery_hud': record}
@@ -357,6 +374,38 @@ def test_mode_selection_defaults_and_valid_zero_rendering():
     state = replace(standby_state(), battery=data)
     assert state.battery.value('soc_percent') == 0
     assert isinstance(state.battery, BatteryPanelData)
+
+
+@pytest.mark.parametrize('language', ['ko', 'en', 'zh'])
+@pytest.mark.parametrize('layout', [0, 1])
+@pytest.mark.parametrize('maximum,minimum', [(36, 28), (0, -10), (130, -50), (None, 28), (36, None), (None, None)])
+def test_temperature_pair_keeps_large_type_and_small_spread_without_fabricating_missing_values(monkeypatch, language, layout, maximum, minimum):
+    ui = object.__new__(renderer.ClusterUiRenderer)
+    ui.language, ui.panel_layout, ui.screen_mode = language, layout, CLUSTER_SCREEN_MODE_BATTERY
+    ui.theme_mode, ui.width, ui.height = 1, 1920, 480
+    texts = []
+    ui._rounded_rect = lambda *a: None
+    ui._ellipsize_text = lambda text, *a: text
+    ui._draw_text = lambda text, *args, **kw: texts.append((text, args, kw))
+    monkeypatch.setattr(renderer.rl, 'draw_line_ex', lambda *a: None)
+    metrics = {name: (value, 10) for name, value in (('max_temp_c', maximum), ('min_temp_c', minimum)) if value is not None}
+    data = panel_from_wire(packet_from_metrics(metrics, 10))
+    ui._draw_battery_panel(replace(standby_state(), battery=data))
+    temperatures = [(text, args, kw) for text, args, kw in texts if args[1] == 121 and args[2] == 66 and text != '--%']
+    assert [text for text, _, _ in temperatures] == [f'{maximum}°C' if maximum is not None else '--°C', '|',
+                                                     f'{minimum}°C' if minimum is not None else '--°C']
+    assert all(kw.get('anchor') == 'center' for _, _, kw in temperatures)
+    assert temperatures[0][1][3] == battery_temperature_color(maximum)
+    assert temperatures[2][1][3] == battery_temperature_color(minimum)
+    positions = [args[0] for _, args, _ in temperatures]
+    assert positions == sorted(positions) and positions[1] - positions[0] == pytest.approx(positions[2] - positions[1])
+    panel_x = ui._information_panel_x(renderer.NAVI_LIVE_PANEL_X)
+    assert panel_x < positions[0] < positions[2] < panel_x + renderer.NAVI_LIVE_PANEL_W
+    details = [(text, args) for text, args, _ in texts if args[1] == 169]
+    assert len(details) == 1 and details[0][1][2] == 20
+    expected_spread = f'{maximum-minimum}°C' if maximum is not None and minimum is not None else '--°C'
+    assert details[0][0].endswith(expected_spread)
+    assert details[0][1][0] == positions[1]
 
 
 @pytest.mark.parametrize('stored_mode,enabled', [(None, True), (b'8', True), (b'0', False), (b'7', False)])
