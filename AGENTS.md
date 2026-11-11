@@ -1,3 +1,10 @@
+- 2026-11-11 COMMA/drop HUD packages published and pinned for all five models.
+  Preserve the displayed-decimal40/44ms colors, red source-observed1s frame-gap
+  count, unknown startup/reset/stall/stale/old packets, shared1Hz decode and
+  two-row18px layout. Native archives and20 public asset hashes verified.
+  No extra inference/timer/IPC/logger, no control consumer or model-input changes.
+  See docs/hud_comma_drops_20261111.md. PC render is not hardware timing/road proof.
+
 - 2026-11-11 HUD follow-up: COMMA call time colors use the displayed decimal,
   <=40ms white, >40/<44 orange, >=44 red; keep TRT thresholds unchanged.
   Add red | DROP 1s:N at existing1Hz decode cadence. Count source model-output
