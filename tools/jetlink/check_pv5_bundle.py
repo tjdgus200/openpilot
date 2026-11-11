@@ -314,7 +314,7 @@ try:
  with Image.open(camera_path) as camera:
   rgb=camera.convert('RGB')
   assert max(abs(a-b) for a,b in zip(rgb.getpixel((315,175)),(31,70,143),strict=True))<=2
-  assert (177,220,255) in rgb.crop((205,100,275,175)).getdata()
+  assert (177,220,255) in rgb.crop((150,100,255,176)).getdata()
  assert DRIVING_POPUP_MOTION_SECONDS==1. and DRIVING_POPUP_REPEAT_SECONDS==2.5
  assert ui._camera_static_texture.id>0
  assert ui._notice_static_texture.id>0
@@ -329,7 +329,7 @@ try:
    ui.render_to_file(replace(braking,driving_notices=()),camera_path)
   if now>1000.:
    with Image.open(camera_path) as camera:
-    repeat_frames.append(camera.convert('RGB').crop((205,100,275,175)).tobytes())
+    repeat_frames.append(camera.convert('RGB').crop((150,100,255,176)).tobytes())
  assert repeat_frames[0]==repeat_frames[1]==repeat_frames[2]
  assert ui._camera_static_texture.id==static_camera_texture_id
  assert ui._popup_slide._motion_enter==ui._popup_slide._motion_repeat==()
@@ -342,7 +342,7 @@ try:
    ui.render_to_file(curve_state,popup_path)
   if now>1000.:
    with Image.open(popup_path) as frame:
-    repeat_frames.append(frame.convert('RGB').crop((205,100,275,175)).tobytes())
+    repeat_frames.append(frame.convert('RGB').crop((155,95,253,181)).tobytes())
  assert repeat_frames[0]!=repeat_frames[1] and repeat_frames[1]==repeat_frames[2]
  add_event('carrotMan',log.Event.new_message(carrotMan={'desiredSource':'vturn','desiredSpeed':60}))
  record['mono']['carrotMan']+=1
@@ -393,6 +393,13 @@ try:
   assert frame.convert('RGB').getpixel((1800,440))!=(183,0,24)
  # Atlas rows remain static over time; each row is separately recognizable.
  notice_path=popup_path.with_name('hud-notice-static.png')
+ texture_draw=ui._notice_static_texture
+ texture_calls=[]
+ native_draw=hud_health.rl.draw_texture_pro
+ def track_notice(texture,source,destination,*args):
+  if texture.id==texture_draw.id:
+   texture_calls.append((source.y,(destination.x,destination.y,destination.width,destination.height)))
+  return native_draw(texture,source,destination,*args)
  for notice,source_label,row in (('cutin',None,0),('cutinTrack',None,1),('cutinBrake',None,2),
                                  ('leadBrake',None,2),(None,'section',3),(None,'school',4)):
   ui._popup_slide.reset()
@@ -401,13 +408,18 @@ try:
                     deceleration_banner='구역 감속' if not notice else None,cruise_override_label=source_label)
   samples=[]
   for now in (2000.,2001.3,2002.2,2004.7):
-   with patch('time.monotonic',return_value=now):
+   texture_calls.clear()
+   with patch('time.monotonic',return_value=now), patch.object(hud_health.rl,'draw_texture_pro',side_effect=track_notice):
     ui.render_to_file(candidate,notice_path)
    if now>2000.:
+    assert len(texture_calls)==1 and texture_calls[0][0]==row*96
+    x,y,w,h=texture_calls[0][1]
+    assert abs(w-97.2)<1e-3 and abs(h-72.9)<1e-3
+    assert 0<=x and y>=82 and x+w<937 and y+h<194
     with Image.open(notice_path) as image:
-     # Icon position depends on the one/two-line notice reservation.
-     x=196 if notice in ('cutinTrack','cutinBrake') else 276
-     samples.append(image.convert('RGB').crop((x+5,100,x+66,175)).tobytes())
+     crop=image.convert('RGB').crop((int(x),int(y),int(x+w)+1,int(y+h)+1))
+     assert len(crop.getcolors(10000))>5
+     samples.append(crop.tobytes())
   assert samples[0]==samples[1]==samples[2]
   assert ui._notice_static_texture.id==notice_texture_id
   assert ui._popup_slide._motion_enter==ui._popup_slide._motion_repeat==()
@@ -519,7 +531,7 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-battery-temperatures-light.png', args.output / 'hud-battery-temperatures-light.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, static_camera_icon=True, static_notice_icons=True, critical_fullscreen=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, static_camera_icon=True, static_notice_icons=True, large_popup_icons=True, critical_fullscreen=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

@@ -19,7 +19,7 @@ from openpilot.common.transformations.camera import DEVICE_CAMERAS, view_frame_f
 from openpilot.common.transformations.orientation import rot_from_euler
 from openpilot.common.hud_driving_feedback import (
     DrivingNoticeTracker, DrivingPopupSlide, STATIC_CAMERA_ASSET, STATIC_NOTICE_ASSET, STATIC_NOTICE_ROWS, STATIC_NOTICE_SIZE,
-    driving_popup_colors,
+    DRIVING_POPUP_ICON_SCALE, driving_popup_colors,
     lane_confidence_score, lane_confidence_grade, lane_probability_text,
 )
 from openpilot.selfdrive.carrot.deceleration_source import navigation_status_presentation
@@ -7621,7 +7621,10 @@ class ClusterUiRenderer:
         center_x = (DESIGN_WIDTH if screen_mode == CLUSTER_SCREEN_MODE_FULLSCREEN_3D else CAMERA_BACKGROUND_W) * 0.5
         title, _, detail = text.partition("\n")
         width, height, settled_top = (660 if detail else 620 if warning >= 2 else 500), (112 if detail else 76), 82
-        icon_space = 68 if dots or static else 0
+        icon_space = 124 if dots or static else 0
+        if icon_space:
+            height = max(height, 100)
+            center_x -= (icon_space - 68) / 2  # Preserve text/right edge and clear the side gauges.
         width += icon_space
         top = self._popup_slide.top(now, settled_top, height, urgent=warning >= 2)
         left = center_x - width * 0.5
@@ -7637,14 +7640,17 @@ class ClusterUiRenderer:
             if static and texture is not None and texture.id > 0:
                 tile_w, tile_h = STATIC_NOTICE_SIZE
                 source = rl.Rectangle(0, 0 if camera else STATIC_NOTICE_ROWS[motion] * tile_h, tile_w, tile_h)
+                icon_w, icon_h = 54 * DRIVING_POPUP_ICON_SCALE, 40.5 * DRIVING_POPUP_ICON_SCALE
                 rl.draw_texture_pro(texture, source,
-                                    rl.Rectangle(left + 12, top + height / 2 - 20.25, 54, 40.5),
+                                    rl.Rectangle(left + icon_space / 2 - icon_w / 2,
+                                                 top + height / 2 - icon_h / 2, icon_w, icon_h),
                                     rl.Vector2(0, 0), 0., rl_color(accent))
             elif dots:
                 ink = rl_color(accent)
                 for dot_x, dot_y in dots:
-                    position = rl.Vector2(left + 39 + dot_x * 20, top + height / 2 + dot_y * 20)
-                    rl.draw_circle_v(position, 2.4, ink)
+                    position = rl.Vector2(left + icon_space / 2 + dot_x * 20 * DRIVING_POPUP_ICON_SCALE,
+                                          top + height / 2 + dot_y * 20 * DRIVING_POPUP_ICON_SCALE)
+                    rl.draw_circle_v(position, 2.4 * DRIVING_POPUP_ICON_SCALE, ink)
             else:
                 self._rounded_rect(left + 14, top + 17, 5, height - 34, 2, accent)
             text_center = center_x + (icon_space / 2 if dots or static else 5)

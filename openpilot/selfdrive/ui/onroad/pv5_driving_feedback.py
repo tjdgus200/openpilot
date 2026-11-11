@@ -6,7 +6,7 @@ import pyray as rl
 from openpilot.common.constants import CV
 from openpilot.common.hud_driving_feedback import (
   DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_popup_colors,
-  STATIC_NOTICE_ROWS, STATIC_NOTICE_SIZE,
+  STATIC_NOTICE_ROWS, STATIC_NOTICE_SIZE, DRIVING_POPUP_ICON_SCALE,
   LANE_CENTER_STATUS, angle_steering_demand, lane_line_probabilities,
   lane_confidence_score, lane_confidence_grade, lane_probability_text, pv5_steering_warning,
 )
@@ -267,14 +267,14 @@ class Pv5DrivingFeedbackOverlay:
       width, height, size = (346, 67, 21) if self.compact else (1160, 176, 60)
     else:
       width, height, size = (330, 42, 24) if self.compact else (1080, 136, 70)
-    icon_space = (40 if self.compact else 84) if dots or static else 0
+    icon_space = (40 if self.compact else 152) if dots or static else 0
     width += icon_space
     scale = min(1., rect.width / (width + 40))
     width, height, size = width * scale, height * scale, size * scale
     x = rect.x + (rect.width - width) / 2 - (15 if self.compact else 0)
     # Leave space at the right for the Jetson badge on the wide display.
     if not self.compact and (dots or static) and getattr(ui_state, 'jetlink_badge', None):
-      x = max(rect.x, x - 44 * scale)
+      x = max(rect.x, x - (44 + (icon_space - 84) / 2) * scale)
     y = self.popup_slide.top(now, rect.y + (6 if self.compact else 24), height, urgent=warning >= 2, clip_top=rect.y)
     background, accent = (rl.Color(*color) for color in driving_popup_colors(warning, motion))
     box = rl.Rectangle(x, y, width, height)
@@ -282,17 +282,18 @@ class Pv5DrivingFeedbackOverlay:
     rl.draw_rectangle_rounded_lines_ex(box, 0.26, 8, (2 if warning else 3) * scale, accent)
     texture = self.camera_texture if camera else self.notice_texture
     if static and texture is not None and texture.id > 0:
-      radius = (10 if self.compact else 24) * scale
-      cx, cy = x + icon_space * .63 * scale, y + height / 2
+      radius = (10 if self.compact else 24 * DRIVING_POPUP_ICON_SCALE) * scale
+      cx, cy = x + icon_space * (.63 if self.compact else .5) * scale, y + height / 2
       tile_w, tile_h = STATIC_NOTICE_SIZE
       source = rl.Rectangle(0, 0 if camera else STATIC_NOTICE_ROWS[motion] * tile_h, tile_w, tile_h)
       rl.draw_texture_pro(texture, source,
                           rl.Rectangle(cx - 1.35 * radius, cy - 1.0125 * radius, 2.7 * radius, 2.025 * radius),
                           rl.Vector2(0, 0), 0., accent)
     elif dots:
-      radius = (10 if self.compact else 24) * scale
+      radius = (10 if self.compact else 24 * DRIVING_POPUP_ICON_SCALE) * scale
       for dot_x, dot_y in dots:
-        position = rl.Vector2(x + icon_space * .63 * scale + dot_x * radius, y + height / 2 + dot_y * radius)
+        position = rl.Vector2(x + icon_space * (.63 if self.compact else .5) * scale + dot_x * radius,
+                             y + height / 2 + dot_y * radius)
         rl.draw_circle_v(position, radius * .12, accent)
     text_center = x + (width + icon_space * scale) / 2
     draw_text_ui_style(title, text_center, y + height * (.34 if detail else .5), size, rl.WHITE,

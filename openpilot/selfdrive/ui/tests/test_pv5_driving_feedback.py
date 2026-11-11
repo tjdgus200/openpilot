@@ -471,7 +471,39 @@ def test_static_notice_draws_one_atlas_tile_and_keeps_copy(key, monkeypatch):
     assert draw.call_count == 1 and text.call_count >= 1
     source = draw.call_args.args[1]
     assert (source.x, source.y, source.width, source.height) == (0, 96 * STATIC_NOTICE_ROWS[key], 128, 96)
+    dest = draw.call_args.args[2]
+    assert dest.width == pytest.approx(116.64) and dest.height == pytest.approx(87.48)
     assert overlay.popup_slide._motion_enter == overlay.popup_slide._motion_repeat == ()
+
+
+@pytest.mark.parametrize('viewport', (800., 1400., 2100.))
+def test_large_camera_icon_stays_inside_popup_and_clear_of_copy(viewport, monkeypatch):
+  sm = braking_messages()
+  sm['carrotMan'].desiredSource = 'cam'
+  sm['carrotMan'].decelCameraTargetKph = 50
+  sm['carrotMan'].decelCameraDistanceM = 250
+  state = SimpleNamespace(CP=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
+                          started=True, started_frame=10, sm=sm, jetlink_badge=('jetSON', 'active'))
+  overlay = Pv5DrivingFeedbackOverlay()
+  overlay.camera_texture = SimpleNamespace(id=1, width=128, height=96)
+  now = 100.
+  monkeypatch.setattr(feedback.time, 'monotonic', lambda: now)
+  monkeypatch.setattr(feedback.rl, 'draw_rectangle_rounded_lines_ex', lambda *_: None)
+  with patch.object(feedback.rl, 'draw_rectangle_rounded') as box_draw, \
+       patch.object(feedback.rl, 'draw_texture_pro') as icon_draw, \
+       patch.object(feedback, 'draw_text_ui_style') as text_draw:
+    rect = rl.Rectangle(30, 30, viewport, 1020)
+    overlay.draw_popup(rect, None, state, 80.)
+    now = 100.3
+    overlay.draw_popup(rect, None, state, 80.)
+    box, icon = box_draw.call_args.args[0], icon_draw.call_args.args[2]
+    assert rect.x <= box.x <= icon.x and icon.x + icon.width < box.x + box.width <= rect.x + viewport
+    assert box.y < icon.y and icon.y + icon.height < box.y + box.height
+    title = text_draw.call_args_list[-2].args
+    # The reserved text column begins after the image, including at a narrow viewport.
+    scale = box.width / 1312.
+    text_left = box.x + 152 * scale
+    assert icon.x + icon.width + 8 * scale < text_left < title[1]
 
 
 def test_attention_panel_clears_pv5_speed_box_and_preserves_other_layouts():
@@ -566,6 +598,8 @@ def test_camera_popup_uses_final_camera_target_and_live_distance(source, monkeyp
     assert detail[0] == '250 m 남음' and detail[2] > title[2]
     assert right_edges[0] < 1680
     assert len(textures) == 1 and textures[0][0] is overlay.camera_texture
+    dest = textures[0][2]
+    assert dest.width == pytest.approx(64.8 * 1.8) and dest.height == pytest.approx(48.6 * 1.8)
     assert overlay.popup_slide._motion_enter == overlay.popup_slide._motion_repeat == ()
   carrot.decelCameraDistanceM = 120
   assert sample_deceleration_popup(sm, 10, 100., 80.).endswith('120 m 남음')
@@ -599,7 +633,7 @@ def test_popup_slides_once_and_urgent_or_vehicle_alert_takes_priority(monkeypatc
   monkeypatch.setattr(feedback.rl, 'draw_circle_v', lambda *args: dots.append(args))
   with patch.object(feedback, 'draw_text_ui_style') as label:
     overlay.draw_popup(rect, None, state, 80.)
-    assert frames[-1] == (-48., 1164., 136.)
+    assert frames[-1] == (-48., 1232., 136.)
     assert len(dots) == 12
     assert label.call_args.args[0] == '방지턱 감속'
     now += DRIVING_POPUP_ENTER_SECONDS / 2

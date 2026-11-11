@@ -1,3 +1,12 @@
+- 2026-11-11 enlarge ordinary popup icons1.8x on comma3X/Jetson HUD.
+  C3X reserves152px without shrinking copy; keep compact UI geometry unchanged.
+  HUD reserves124px, min100px height for icon notices; expand left to preserve
+  copy/right edge and clear side gauges. Increase static quads and existing dot
+  positions/radii only; same PNG/atlas bytes, draw count, cached paths and FPS.
+  Preserve popup timing, notice predicates, urgency/critical fullscreen, text,
+  source freshness/model/FOV/control/BLE/audio and resource lifecycles. Verify
+  native before/after size, padding/copy/gauge bounds, exact5 packages and pins.
+
 - 2026-11-11 notice readability/critical release supersedes affected dot icons:
   keep cam static; cutin risk/tracked/braking, lead braking, section and school
   use cached fixed128x96 atlas tiles, no morph/repeat tables. Keep lane arrows,
