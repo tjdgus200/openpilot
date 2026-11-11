@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-icon-critical-ctv3m-20261111-567eb2a3",
-  "source_commit": "567eb2a396f9c5e143c3dc3cd35752e2df4e123e",
+  "profile": "jetson-pv5-hud-large-icons-ctv3m-20261111-2594550c",
+  "source_commit": "2594550c0d957d438c0e80dda5dabbceb257ced5",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-icon-critical-ctv3m-20261111-567eb2a3/host.tar.gz",
-    "sha256": "cf3a5fbc39f2f1a2a72c252cb3db1a9a53e1c86c1dd6c9f4b759e564984ecfa4",
-    "size": 65336407
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-large-icons-ctv3m-20261111-2594550c/host.tar.gz",
+    "sha256": "c90bd61b4a846729d25e6a17cf87b457d6728ceb9bcdf3b37083cde3628ff2a8",
+    "size": 65337224
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
