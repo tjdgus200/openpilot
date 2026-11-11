@@ -175,7 +175,7 @@ def test_freshness_and_vehicle_alert_precedence(monkeypatch, tmp_path):
   renderer._host_metrics = lambda: {}
   renderer._draw_runtime_line = lambda *a: calls.append(a[-1])
   renderer._draw_alert_overlay(None)
-  assert calls == ['infer', 'vehicle']
+  assert calls == ['infer', 'comma-infer', 'vehicle']
 
 
 @pytest.mark.parametrize(

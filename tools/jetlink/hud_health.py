@@ -362,8 +362,10 @@ class HealthRenderer(ClusterUiRenderer):
         drops = getattr(self, '_model_drops', None)
         comma_drops = drops[0] if drops and time.monotonic() < drops[1] else None
         right_margin = 208 if self._panel_swap_active() else 24
-        self._draw_runtime_line(inference_segments(self._host_metrics(), comma_ms=comma_ms, comma_drops=comma_drops, include_comma=True),
-                                DESIGN_WIDTH - right_margin, 28, 740, 18, 'infer')
+        segments = inference_segments(self._host_metrics(), comma_ms=comma_ms, comma_drops=comma_drops, include_comma=True)
+        divider = next(i for i, (text, _) in enumerate(segments) if text == ' | ')
+        self._draw_runtime_line(segments[:divider], DESIGN_WIDTH - right_margin, 28, 520, 18, 'infer')
+        self._draw_runtime_line(segments[divider+1:], DESIGN_WIDTH - right_margin, 51, 520, 18, 'comma-infer')
       if message and not vehicle_alert:
         rl.draw_rectangle(0, 0, int(DESIGN_WIDTH), 32, rl_color((0, 0, 0), 220))
         self._draw_text(self._ellipsize_text(message, 22, DESIGN_WIDTH - 40),

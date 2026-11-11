@@ -106,9 +106,10 @@ try:
  assert ui._telemetry_font.texture.id!=hud_health.rl.get_font_default().texture.id
  ui.render_to_file(state,Path(sys.argv[2]))
  assert 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms' in lines['infer']
- assert '| COMMA 40.0 ms' in lines['infer']
- assert '| DROP 1s:3' in lines['infer']
- assert sum(ui._runtime_line_layouts['infer'][2]) < 740
+ assert 'COMMA 40.0 ms | DROP 1s:3' == lines['comma-infer']
+ for row in ('infer','comma-infer'):
+  assert sum(ui._runtime_line_layouts[row][2]) < 520
+  assert ui._runtime_line_layouts[row][1]==18 # keep readable text, no title overlap
  from hud_runtime_stats import NORMAL,CAUTION,HIGH
  for ms,color,suffix,loss in ((40.,NORMAL,'white',0),(42.,CAUTION,'orange',2),(44.,HIGH,'red',3)):
   model_event.modelV2.modelExecutionTime=ms/1000
@@ -116,8 +117,8 @@ try:
   add_event('modelV2',model_event)
   ui._next_model_call=0.
   ui.render_to_file(state,Path(sys.argv[2]).with_name('hud-ms-'+suffix+'.png'))
-  assert ('COMMA '+format(ms,'.1f')+' ms',color) in segments_drawn['infer']
-  assert ('DROP 1s:'+str(loss),HIGH) in segments_drawn['infer']
+  assert ('COMMA '+format(ms,'.1f')+' ms',color) in segments_drawn['comma-infer']
+  assert ('DROP 1s:'+str(loss),HIGH) in segments_drawn['comma-infer']
  model_event.modelV2.modelExecutionTime=.04
  model_event.modelV2.frameDropStats.count=3
  add_event('modelV2',model_event)
