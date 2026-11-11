@@ -8,7 +8,8 @@ body-to-line margin. Extra correction is zero inside it and when the base path
 already returns sufficiently inward. Default OFF; the separate new setting does
 not inherit the old center toggle. Indicators and a1s post-indicator hold, driver
 steering and model maneuvers yield immediately. Existing lateral admission, Drive,
-at least18km/h and fresh reliable lines are required. Extra acceleration0.30m/s²
+moving and fresh reliable lines are required. No additional18km/h threshold is
+imposed; existing vehicle lateral admission and standstill protection remain. Extra acceleration0.30m/s²
 and build rate0.50m/s³ are trial values, not validated vehicle limits. It changes
 neither neural inputs nor model outputs: correction is applied once to the chosen
 model/lane-mode control path before existing smoothing and all steering/CAN limits.

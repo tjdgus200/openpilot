@@ -76,7 +76,9 @@ source._current_carrot_navi=lambda _:None
 source._live_cluster_alert=lambda *_:None
 state=source._with_live_hud_state(replace(standby_state(),speed_kph=72.,gear_text='D'))
 assert state.pv5_lane_center_status=='correcting'
-assert abs(state.pv5_lane_center_fraction-.75)<1e-6
+with log.Event.from_bytes(base64.b64decode(record['events']['controlsState'])) as event:
+ expected_fraction=event.controlsState.pv5LaneCenterFraction
+assert 0<expected_fraction<=1 and abs(state.pv5_lane_center_fraction-expected_fraction)<1e-6
 assert abs(state.left_lane_probability-.99)<1e-6 and abs(state.right_lane_probability-.99)<1e-6
 assert state.steering_output_normalized is not None
 assert state.driving_notices==('cutin','laneChange')
@@ -172,6 +174,8 @@ try:
   draw_plain_text(text,*args,**kwargs)
  ui._draw_text=capture_plain_text
  ui.render_to_file(replace(state,driving_notices=notices),popup_path)
+ assert any('차선 보정' in text or 'Edge ' in text for text in texts)
+ assert not any('중앙 보정' in text for text in texts)
  assert DRIVING_NOTICE_TEXT['cutin'] in texts and DRIVING_NOTICE_TEXT['laneChange'] not in texts
  for stage in ('cutinTrack','cutinBrake'):
   ui._driving_notices.reset()
@@ -290,7 +294,7 @@ def main(argv=None):
     from jetlink.spec import ModelSpec
     from openpilot.cereal import log
     from test_pv5_model_integration import center_scenario, publish_center
-    assist, _, _, model, car, now, correction = center_scenario(ModelSpec.from_dict(spec), .27)
+    assist, _, _, model, car, now, correction = center_scenario(ModelSpec.from_dict(spec), .65)
     controls = publish_center(assist, correction, 20.)
     controls.controlsState.lateralControlState.init('angleState')
     controls.controlsState.desiredCurvature = .002
@@ -339,7 +343,7 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-driver-attention.png', args.output / 'hud-driver-attention.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, inference_readout=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

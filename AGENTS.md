@@ -1,3 +1,13 @@
+- 2026-11-11 follow-up: remove the lane-edge helper's added18km/h gate.
+  Keep exact-zero/standstill/Drive, existing lateral admission, signal/driver yield
+  and every steering/CAN limit. Use max(v,1)^2 only as numeric normalization,
+  not a new speed gate; report actual correction*v^2 acceleration. Preserve
+  >=1m/s command math. Verify crawl/underflow/zero/speed transitions and native
+  control admission. Owner also requests all five model-paired Jetson HUD bundles
+  with lane-edge wording: exact archive native renders, model/hash identity,
+  unique source commits, public download verification and final pinned checklist.
+  No neural changes, device installation or physical safety claim.
+
 - 2026-11-11 owner replaces continuous central correction with PV5-only
   lane-edge assist. Supersedes the2026-11-10 runtime Blendful policy below.
   New default-OFF Pv5LaneBoundaryAssist; never migrate Pv5LaneCenterAssist ON.

@@ -33,7 +33,7 @@ def scenario(offset=0., speed=20., k=0., enabled=True):
 
 
 @pytest.mark.parametrize('offset', [-.50, -.25, 0., .25, .50])
-@pytest.mark.parametrize('speed', [5., 10., 20., 30.])
+@pytest.mark.parametrize('speed', [.01, .1, .5, 1., 2., 4.9, 5., 10., 20., 30.])
 @pytest.mark.parametrize('k', [-.002, 0., .002])
 def test_inside_corridor_is_exactly_zero_even_off_center_and_in_curves(offset, speed, k):
   owner, _, _, _, _, tick = scenario(offset, speed, k)
@@ -44,7 +44,7 @@ def test_inside_corridor_is_exactly_zero_even_off_center_and_in_curves(offset, s
 
 @pytest.mark.parametrize('side', [-1., 1.])
 @pytest.mark.parametrize('gap', [-.1, 0., .1, MARGIN-.001])
-@pytest.mark.parametrize('speed', [5., 10., 20., 30.])
+@pytest.mark.parametrize('speed', [.01, .1, .5, 1., 2., 4.9, 5., 10., 20., 30.])
 def test_near_or_touching_edge_only_pushes_inward_and_is_bounded(side, gap, speed):
   owner, _, _, _, _, tick = scenario(side*(1.7-HALF_BODY-gap), speed)
   values = [tick() for _ in range(120)]
@@ -68,7 +68,7 @@ def test_predicted_drift_qualifies_but_already_inward_path_is_not_opposed(side):
     assert tick(side*.004) == 0.
 
 
-@pytest.mark.parametrize('fault', ['signalL', 'signalR', 'driver', 'inactive', 'low', 'reverse', 'can', 'timeout',
+@pytest.mark.parametrize('fault', ['signalL', 'signalR', 'driver', 'inactive', 'stopped', 'reverse', 'can', 'timeout',
                                   'nan', 'hugeSpeed', 'staleCar', 'staleModel', 'quality', 'geometry', 'turn', 'laneChange', 'off'])
 def test_every_abort_clears_a_built_correction(fault):
   owner, cs, md, sm, settings, tick = scenario(.65)
@@ -81,8 +81,8 @@ def test_every_abort_clears_a_built_correction(fault):
     cs.rightBlinker = True
   elif fault == 'driver':
     cs.steeringPressed = True
-  elif fault == 'low':
-    cs.vEgo = 4.9
+  elif fault == 'stopped':
+    cs.standstill = True
   elif fault == 'reverse':
     cs.gearShifter = 'reverse'
   elif fault == 'can':
@@ -163,6 +163,30 @@ def test_geometry_work_is_once_per_model_frame_not_per_control_tick(monkeypatch)
   for i in range(100):
     tick(fresh=i % 5 == 0)
   assert len(calls) == 20
+
+
+@pytest.mark.parametrize('speed', [np.nextafter(0., 1.), 1e-200, 1e-12, .01, .1, .5, 1., 4.99, 5.01])
+def test_low_speed_normalization_is_not_an_engagement_threshold(speed):
+  owner, _, _, _, _, tick = scenario(.65, speed)
+  for _ in range(120):
+    value = tick()
+    assert math.isfinite(value) and math.isfinite(owner.accel)
+    assert 0 <= owner.accel <= MAX_ACCEL
+    assert 0 <= value <= .2
+  assert value > 0 and owner.status == 'correcting'
+
+
+def test_speed_changes_through_old_threshold_and_to_zero_keep_finite_output():
+  owner, cs, _, _, _, tick = scenario(.65)
+  for speed in (20., 4.99, 5.01, .5, .01, 1e-200, 0., .5, 4.99, 20.):
+    cs.vEgo = speed
+    for _ in range(20):
+      result = tick()
+      assert math.isfinite(result) and abs(owner.accel) <= MAX_ACCEL+1e-12
+    if speed == 0:
+      assert result == owner.accel == 0
+    else:
+      assert result > 0
 
 
 @pytest.mark.parametrize('car,not_car', [('KIA_PV5', False), ('KIA_EV6', False), ('', False), ('KIA_PV5', True)])

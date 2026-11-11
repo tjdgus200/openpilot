@@ -140,6 +140,36 @@ def test_missing_selected_lane_plan_clears_cached_push_and_status():
   assert control.pv5_lane_center.status == 'inputs'
 
 
+@pytest.mark.parametrize('speed', [.31, .5, 1., 2., 4.9, 5.01])
+@pytest.mark.parametrize('cruise', [False, True])
+def test_existing_lateral_admission_can_use_edge_assist_below_18kph(speed, cruise):
+  control, _, tick = setup_control(.65)
+  drive(control, cruise)
+  control.sm['carState'].vEgo = speed
+  for _ in range(120):
+    cc = tick()
+  assert cc.latActive
+  assert control.pv5_lane_center.status == 'correcting'
+  assert control.pv5_lane_center.accel > 0 and cc.actuators.curvature > 0
+
+
+@pytest.mark.parametrize('speed', [0., .1, .29, .3])
+def test_no_change_to_existing_vehicle_lateral_speed_admission(speed):
+  control, _, tick = setup_control(.65)
+  baseline, _, baseline_tick = setup_control(.65)
+  baseline.pv5_lane_center = None
+  drive(control)
+  drive(baseline)
+  control.sm['carState'].vEgo = speed
+  baseline.sm['carState'].vEgo = speed
+  # carState stores Float32:0.3 rounds above Python's0.3. Compare the actual
+  # existing admission, rather than imposing a new rounded threshold in a test.
+  cc, previous = tick(), baseline_tick()
+  assert cc.latActive == previous.latActive
+  if not cc.latActive:
+    assert control.pv5_lane_center.accel == 0
+
+
 @pytest.mark.parametrize('fault', ['can', 'temporary', 'permanent', 'inactive'])
 def test_existing_vehicle_lateral_admission_still_disables_actuation(fault):
   control, _, tick = setup_control(.1)

@@ -11,7 +11,6 @@ import numpy as np
 PARAM = 'Pv5LaneBoundaryAssist'
 HALF_BODY = 1.895 / 2  # Kia KR PV5 Cargo specification, excludes mirrors
 MARGIN = .20  # m, experimental body-to-line clearance
-MIN_SPEED = 5.0  # preserve the previous 18km/h operating floor
 MAX_ACCEL = .30  # m/s^2, additional correction only; not a vehicle safety limit
 BUILD_JERK = .50  # m/s^3; existing final curvature slew is also retained
 
@@ -26,11 +25,11 @@ class Pv5LaneBoundary:
     self.last_frame = None
     self.last_signal = -math.inf
     self.bounds = None
-    self.target = self.accel = self.fraction = 0.
+    self.target = self.normalized_accel = self.accel = self.fraction = 0.
     self.status = 'off'
 
   def clear(self, status):
-    self.target = self.accel = self.fraction = 0.
+    self.target = self.normalized_accel = self.accel = self.fraction = 0.
     self.bounds = None
     self.status = status
     return 0.
@@ -104,7 +103,7 @@ class Pv5LaneBoundary:
       return self.clear('maneuver')
     if cs.steeringPressed:
       return self.clear('driver')
-    if cs.standstill or cs.vEgo < MIN_SPEED or str(cs.gearShifter) != 'drive':
+    if cs.standstill or cs.vEgo == 0. or str(cs.gearShifter) != 'drive':
       return self.clear('stopped')
     stamp, frame = sm.recv_time['modelV2'], model.frameId
     if self.last_stamp is not None and (stamp < self.last_stamp or frame < self.last_frame):
@@ -125,17 +124,23 @@ class Pv5LaneBoundary:
     # per fresh model frame. Planner switches immediately use the new base path.
     lower, upper = self.bounds
     desired = min(max(curvature, lower), upper)
-    self.target = min(MAX_ACCEL, max(-MAX_ACCEL, (desired-curvature)*cs.vEgo**2))
+    # Numeric normalization, NOT an engagement threshold. Below1m/s this keeps
+    # curvature slew finite without dividing by a tiny/underflowed speed squared.
+    # Above1m/s command/ramp math is identical to the preceding release.
+    scale = max(cs.vEgo, 1.)**2
+    self.target = min(MAX_ACCEL, max(-MAX_ACCEL, (desired-curvature)*scale))
     if not math.isfinite(self.target):
       return self.clear('inputs')
     if self.target == 0.:
-      self.accel = 0.
+      self.normalized_accel = 0.
       self.status = 'centered'
     else:
-      if self.accel * self.target < 0:
-        self.accel = 0.
+      if self.normalized_accel * self.target < 0:
+        self.normalized_accel = 0.
       step = BUILD_JERK * (now-previous)
-      self.accel = math.copysign(min(abs(self.target), abs(self.accel)+step), self.target)
+      self.normalized_accel = math.copysign(min(abs(self.target), abs(self.normalized_accel)+step), self.target)
       self.status = 'correcting'
+    correction = self.normalized_accel / scale
+    self.accel = correction * cs.vEgo**2
     self.fraction = self.accel / MAX_ACCEL
-    return self.accel / cs.vEgo**2
+    return correction

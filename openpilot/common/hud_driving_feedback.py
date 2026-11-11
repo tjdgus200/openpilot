@@ -246,7 +246,7 @@ def driving_notice_events(sm, now: float, *, started_frame: int | None = None) -
 LANE_CENTER_STATUS = {
   'waiting': ('차선 보정 대기', 'Edge · Ready'),
   'inactive': ('차선 · 제어 꺼짐', 'Edge · Inactive'),
-  'stopped': ('차선 · 저속/정차', 'Edge · Low speed'),
+  'stopped': ('차선 · 정차/기어', 'Edge · Stop/gear'),
   'laneMode': ('차선 · 레인모드', 'Edge · Lane mode'),
   'blindspot': ('차선 · BSD 대기', 'Edge · BSD hold'),
   'inputs': ('차선 · 입력 대기', 'Edge · Inputs'),
