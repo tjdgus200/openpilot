@@ -42,6 +42,17 @@ sbigmodel_intrinsics = np.array([
   [0.0,  0.0,                                     1.0]])
 
 WIDE_MODEL_FOV_CHOICES = (65, 70, 75, 80)
+WIDE_MODEL_DOWN_MAX = 30  # Stored tenths of a degree; experimental, not a calibration correction.
+
+
+def wide_model_pitch(rpy: np.ndarray, down: int) -> np.ndarray:
+  """Tilt only the virtual wide model view down, leaving live calibration untouched."""
+  if not isinstance(down, (int, np.integer)) or isinstance(down, bool) or not 0 <= down <= WIDE_MODEL_DOWN_MAX:
+    raise ValueError(f"Unsupported wide model down offset: {down}")
+  result = rpy.copy()
+  if down:
+    result[1] -= math.radians(down * 0.1)
+  return result
 
 
 def wider_model_warp(stock_warp: np.ndarray, fov: int) -> np.ndarray:

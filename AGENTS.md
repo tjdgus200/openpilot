@@ -1,3 +1,14 @@
+- 2026-11-11 PV5 actual wide model view down: Pv5WideModelDown defaults0,
+  range0..30 in tenths of a degree. Tilt only the virtual wide model input;
+  keep narrow input, saved calibration and input/output formats unchanged.
+  Apply at existing250ms modeld poll/calibration changes before all internal,
+  Jetson/eGPU submission; do not add inference/copies/IPC/per-frame transforms.
+  Cyan preview and enabled wide FOV metering must match; preserve the separate
+  yellow preview-only pitch, AE stability/latches and all vehicle limits.
+  Default/invalid/non-PV5/notCar/single-camera parity and all5-model delivery,
+  native meter/mailbox and menu checks are permanent. No Jetson runtime change
+  or new model weights: retain verified5 package pins. PC is not road proof.
+
 - 2026-11-11 enlarge ordinary popup icons1.8x on comma3X/Jetson HUD.
   C3X reserves152px without shrinking copy; keep compact UI geometry unchanged.
   HUD reserves124px, min100px height for icon notices; expand left to preserve

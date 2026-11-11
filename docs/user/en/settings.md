@@ -564,7 +564,11 @@ reason, including expired calibration, clipped geometry and repeated-failure loc
 only in the existing preview, updates at most twice per second and clears stale or previous-lens
 reasons. No extra switch is needed. Existing vehicle/speed/calibration gates still close the preview
 and hide this line when preview admission fails.
-The yellow `Pv5FovPreviewPitch` comparison is display-only and changes neither model input
+`Pv5WideModelDown` is under **PV5 → Camera & Exposure → Model Input & Exposure → Wide Model View Down**.
+Default0; range0..30 in0.1° units (10=1° down). It changes the actual virtual wide input, cyan footprint and enabled wide FOV metering.
+Narrow input, stored calibration and tensor sizes stay unchanged. The shared comma/Jetson/eGPU preprocessing updates in about0.25s.
+Perception and vehicle commands may differ; physical safety/improvement are unvalidated. Set0 to restore the previous input.
+The yellow `Pv5FovPreviewPitch` comparison remains display-only and changes neither model input
 nor exposure geometry. Metering camera selection and preview are independent. See the [design record](../../pv5_fov_exposure_20261108.md).
 
 ## Safe adjustment order

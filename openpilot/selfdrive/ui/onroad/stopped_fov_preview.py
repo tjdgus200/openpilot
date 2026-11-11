@@ -7,7 +7,7 @@ import pyray as rl
 from openpilot.cereal import log
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.common.transformations.exposure import exposure_rectangle, exposure_label, fov_status_label
-from openpilot.common.transformations.model import SBIGMODEL_INPUT_SIZE, WIDE_MODEL_FOV_CHOICES, get_warp_matrix, wider_model_warp
+from openpilot.common.transformations.model import SBIGMODEL_INPUT_SIZE, WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX, get_warp_matrix, wider_model_warp, wide_model_pitch
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
 
 _WIDTH, _HEIGHT = SBIGMODEL_INPUT_SIZE
@@ -31,6 +31,7 @@ class StoppedFovPreview:
     self._selection = 0
     self._yaw_trim = 0.0
     self._pitch_preview = 0
+    self._wide_model_down = 0
     self._wide_enabled = True
     self._key = None
     self._polygon = None
@@ -60,6 +61,8 @@ class StoppedFovPreview:
       self._selection = state.params.get_int("Pv5WideModelFov")
       self._yaw_trim = state.params.get_float("CameraYawTrimDeg") * 0.01
       self._pitch_preview = max(-30, min(30, state.params.get_int("Pv5FovPreviewPitch")))
+      down = state.params.get("Pv5WideModelDown")
+      self._wide_model_down = down if type(down) is int and 0 <= down <= WIDE_MODEL_DOWN_MAX else 0
       self._wide_enabled = bool(state.params.get("UseWideCamera", return_default=True))
       self._always_preview = state.params.get_bool("Pv5CameraFovPreview")
       self._fov_exposure = state.params.get_int("Pv5ModelFovExposure")
@@ -124,11 +127,13 @@ class StoppedFovPreview:
           self._exposure_text += ' | STOCK (FOV waiting/fallback)' if requested and not self._exposure_status_text else ' | STOCK'
     fov = (WIDE_MODEL_FOV_CHOICES[self._selection - 1]
            if self.wide and 1 <= self._selection <= len(WIDE_MODEL_FOV_CHOICES) else None)
-    key = lens, self.wide, sm.recv_frame["liveCalibration"], fov, self._yaw_trim, self._pitch_preview
+    key = lens, self.wide, sm.recv_frame["liveCalibration"], fov, self._yaw_trim, self._pitch_preview, self._wide_model_down
     if key != self._key:
       self._key = key
       rpy = np.array(calib.rpyCalib, dtype=np.float32)
       rpy[2] -= np.radians(self._yaw_trim)
+      if self.wide:
+        rpy = wide_model_pitch(rpy, self._wide_model_down)
       self._polygon = self._project(rpy, lens, fov)
       self._candidate = None
       if self._pitch_preview:
@@ -138,6 +143,8 @@ class StoppedFovPreview:
     self.active = self._polygon is not None
     self._source_size = lens.size
     self._label = (f"MODEL WIDE {fov}°" if fov else "MODEL WIDE ~59°") if self.wide else "MODEL ROAD ~31°"
+    if self.wide and self._wide_model_down:
+      self._label += f" | DOWN {self._wide_model_down * 0.1:.1f}°"
 
   def _project(self, rpy, lens, fov):
     warp = get_warp_matrix(rpy, lens.intrinsics, self.wide)

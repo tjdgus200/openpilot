@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
-from openpilot.common.transformations.model import get_warp_matrix, wider_model_warp
+from openpilot.common.transformations.model import get_warp_matrix, wider_model_warp, wide_model_pitch
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -27,6 +27,7 @@ extern "C" int mailbox_check() {
     for (uint64_t i = 1; i < 100000; ++i) {
       ModelFovSnapshot value;
       value.ready = i % 2; value.selection = i % 5;
+      value.wide_model_down = i % 31;
       value.generation = i; value.valid_until = i + 1; value.sessions = {i * 7, i * 9}; value.mode = i % 4;
       value.status = static_cast<ModelFovStatus>(i % 22); value.assist_mode = (i / 4) % 4;
       value.rpy = {double(i), double(i * 2), double(i * 3)};
@@ -43,6 +44,7 @@ extern "C" int mailbox_check() {
     if (mailbox.read(value) && value.generation) {
       const auto i = value.generation;
       good &= value.ready == bool(i % 2) && value.selection == int(i % 5) && value.valid_until == i + 1 &&
+              value.wide_model_down == int(i % 31) &&
               value.sessions[0] == i * 7 && value.sessions[1] == i * 9 && value.mode == int(i % 4) &&
               static_cast<int>(value.status) == int(i % 22) && value.assist_mode == int((i / 4) % 4) &&
               value.rpy[0] == i && value.rpy[1] == i * 2 && value.rpy[2] == i * 3 && value.lane_mode == int(i%4);
@@ -57,9 +59,9 @@ extern "C" int mailbox_check() {
   return good && mailbox.read(last) && last.generation == 99999;
 }
 extern "C" int meter(int width, int height, bool wide, double roll, double pitch, double yaw,
-                     int selection, int stride, const uint8_t *pixels, size_t size, float *output) {
+                     int selection, int stride, const uint8_t *pixels, size_t size, int down, float *output) {
   ModelFovMeter meter;
-  if (!meter.configure(width, height, wide, {roll, pitch, yaw}, selection, stride)) return 0;
+  if (!meter.configure(width, height, wide, {roll, pitch, yaw}, selection, stride, {}, down)) return 0;
   for (int i = 0; i < 8; ++i) output[i] = meter.polygon[i];
   if (!pixels) return 1;
   if (!meter.measure(pixels, size)) return -1;
@@ -92,14 +94,14 @@ extern "C" void assist(bool wide, int selection, const uint8_t *pixels, size_t b
   module = ctypes.CDLL(str(library))
   func = module.meter
   func.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_bool, ctypes.c_double, ctypes.c_double, ctypes.c_double,
-                   ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_float)]
+                   ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
   func.restype = ctypes.c_int
 
-  def call(wide=True, rpy=(0., 0., 0.), selection=0, image=None, size=None, dimensions=(1928, 1208), stride=0):
+  def call(wide=True, rpy=(0., 0., 0.), selection=0, image=None, size=None, dimensions=(1928, 1208), stride=0, down=0):
     output = (ctypes.c_float * 11)()
     status = func(*dimensions, wide, *rpy, selection, stride or (image.strides[0] if image is not None else 0),
                   image.ctypes.data if image is not None else None,
-                  image.nbytes if size is None and image is not None else size or 0, output)
+                  image.nbytes if size is None and image is not None else size or 0, down, output)
     return status, np.array(output)
   call.mailbox_check = module.mailbox_check
   module.stability.argtypes = [ctypes.c_void_p] * 3 + [ctypes.c_size_t, ctypes.c_void_p]
@@ -358,6 +360,30 @@ def test_long_valid_episode_does_not_expire_or_add_a_new_switch(native):
   assert not output[:40].any() and (output[40:] == 1).all()
 
 
+@pytest.mark.parametrize('wide', [False, True])
+@pytest.mark.parametrize('selection', range(5))
+@pytest.mark.parametrize('down', [0, 1, 10, 30])
+def test_actual_down_native_meter_matches_model_warp_and_road_is_unchanged(native, wide, selection, down):
+  rpy = np.array([.005, -.005, .005], dtype=float)
+  lens = DEVICE_CAMERAS['tizi', 'ox03c10'].ecam if wide else DEVICE_CAMERAS['tizi', 'ox03c10'].fcam
+  adjusted = wide_model_pitch(rpy, down) if wide else rpy
+  warp = get_warp_matrix(adjusted, lens.intrinsics, wide)
+  if wide and selection:
+    warp = wider_model_warp(warp, (65, 70, 75, 80)[selection - 1])
+  rays = warp @ np.array([[0, 511, 511, 0], [0, 0, 255, 255], [1, 1, 1, 1]])
+  expected = (rays[:2] / rays[2]).T.reshape(-1)
+  status, values = native(wide=wide, rpy=rpy, selection=selection, down=down)
+  assert status == 1
+  np.testing.assert_allclose(values[:8], expected, atol=.0003)
+  if not wide:
+    np.testing.assert_array_equal(values, native(wide=False, rpy=rpy, selection=selection, down=0)[1])
+
+
+@pytest.mark.parametrize('down', [-1, 31, 999])
+def test_native_meter_rejects_bad_actual_down(native, down):
+  assert native(down=down)[0] == 0
+
+
 def test_camera_owner_keeps_ipc_and_disk_reads_out_of_frame_delivery():
   source = (ROOT / 'system/camerad/cameras/camera_qcom2.cc').read_text(encoding='utf-8')
   delivery = source.split('void CameraState::sendState(', 1)[1].split('void camerad_thread()', 1)[0]
@@ -382,7 +408,7 @@ def test_default_off_and_camera_menu_keep_display_separate_from_metering():
   assert all(len(options) == 4 for options in metering['options'].values())
   category = next(c for c in settings['menu'] if c['id'] == 'PV5')
   camera = next(g for g in category['groups'] if g['id'] == 'PV5_CAMERA')
-  assert camera['groups'][0]['params'] == ['Pv5WideModelFov', 'Pv5ModelFovExposure', 'Pv5RoadExposureAssist', 'Pv5WideExposureAssist', 'Pv5RoadLaneExposure', 'Pv5WideLaneExposure']
+  assert camera['groups'][0]['params'] == ['Pv5WideModelFov', 'Pv5WideModelDown', 'Pv5ModelFovExposure', 'Pv5RoadExposureAssist', 'Pv5WideExposureAssist', 'Pv5RoadLaneExposure', 'Pv5WideLaneExposure']
   assert camera['groups'][1]['params'] == ['Pv5CameraFovPreview', 'Pv5FovPreviewPitch']
   keys = (ROOT / 'common/params_keys.h').read_text(encoding='utf-8')
   for key in ('Pv5RoadExposureAssist', 'Pv5WideExposureAssist', 'Pv5RoadLaneExposure', 'Pv5WideLaneExposure'):
@@ -729,6 +755,13 @@ int main() {
   values["Pv5ModelFovExposure"] = "1"; clock_now += 250000000ULL;
   cal_time = dev_time = clock_now; new_calibration = true;
   context.update(true); assert(context.ready && context.sessions[0] == 3 && context.sessions[1] == 3);
+  for (const auto &entry : std::vector<std::pair<std::string, int>>{{"10", 10}, {"30", 30}, {"-1", 0}, {"31", 0}, {"bad", 0}, {"", 0}}) {
+    values["Pv5WideModelDown"] = entry.first;
+    clock_now += 250000000ULL; cal_time = dev_time = clock_now;
+    context.update(true);
+    assert(context.ready && context.wide_model_down == entry.second);
+    assert(context.sessions[0] == 3 && context.sessions[1] == 3 && context.rpy[1] == 0);
+  }
   // All sixteen live mode transitions preserve the unaffected camera's session.
   const bool selected[][2] = {{false, false}, {true, true}, {true, false}, {false, true}};
   for (int before = 0; before < 4; ++before) for (int after = 0; after < 4; ++after) {

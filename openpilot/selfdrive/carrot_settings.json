@@ -674,7 +674,7 @@
               "ko": "모델 입력·노출",
               "en": "Model Input & Exposure",
               "zh": "模型输入与曝光",
-              "params": ["Pv5WideModelFov", "Pv5ModelFovExposure", "Pv5RoadExposureAssist", "Pv5WideExposureAssist", "Pv5RoadLaneExposure", "Pv5WideLaneExposure"]
+              "params": ["Pv5WideModelFov", "Pv5WideModelDown", "Pv5ModelFovExposure", "Pv5RoadExposureAssist", "Pv5WideExposureAssist", "Pv5RoadLaneExposure", "Pv5WideLaneExposure"]
             },
             {
               "id": "PV5_CAMERA_PREVIEW",
@@ -875,6 +875,24 @@
       "max": 30,
       "default": 0,
       "unit": 5
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5WideModelDown",
+      "title": "광각 모델 입력 아래 이동 (0.1°·실험)",
+      "descr": "PV5 전용. 0은 기존 입력, 10은 1° 아래, 최대 30은 3° 아래입니다. 실제 광각 모델의 가상 시선을 아래로 기울이며 일반각·저장된 카메라 보정값·입력 크기는 유지합니다. 콤마 내부·Jetson·eGPU 경로에 약 0.25초 내 반영됩니다. 청록색 모델 영역과 켜 둔 광각 FOV 측광도 따라갑니다. 노란 상하 비교선은 별도 미리보기입니다. 인식·감속·조향이 달라질 수 있으며 실차 안전성·인식 개선은 미검증입니다. 0으로 원복하세요.",
+      "egroup": "PV5",
+      "etitle": "Wide Model View Down (0.1°·Experimental)",
+      "edescr": "PV5 only. 0 preserves the current input; 10 tilts down 1°, up to 30 for 3°. Changes the actual virtual wide model view, preserving narrow input, stored calibration and tensor sizes. Applies on comma, Jetson and eGPU paths within about 0.25s. Cyan input outline and enabled wide FOV metering follow it; the yellow comparison remains preview only. Perception and vehicle commands may change. Road safety and recognition improvement are unvalidated. Set 0 to restore.",
+      "cgroup": "PV5",
+      "ctitle": "广角模型视野下移（0.1°·实验）",
+      "cdescr": "仅PV5。0保持原输入，10向下1°，最大30向下3°。改变真实广角模型虚拟视线，保留窄角、已存标定和张量尺寸。comma、Jetson及eGPU路径约0.25秒内生效。青色输入轮廓及启用的广角FOV测光随动，黄色比较线仍仅预览。感知和车辆指令可能改变，实车安全及识别改善未经验证。设0恢复。",
+      "control": "slider",
+      "risk": "high",
+      "min": 0,
+      "max": 30,
+      "default": 0,
+      "unit": 1
     },
     {
       "group": "PV5",

@@ -22,6 +22,7 @@ enum class ModelFovStatus : uint8_t {
 struct ModelFovSnapshot {
   bool ready = false;
   int selection = 0, mode = 0, assist_mode = 0, lane_mode = 0;  // bits: road=1, wide=2
+  int wide_model_down = 0;  // Tenths of a degree, actual virtual wide input only.
   uint64_t generation = 0, valid_until = 0;
   std::array<uint64_t, 2> sessions = {};  // road, wide; unrelated option edges cannot rearm the other camera.
   std::array<double, 3> rpy = {};
@@ -50,6 +51,7 @@ public:
     ++version;
     ready.store(value.ready);
     selection.store(value.selection);
+    wide_model_down.store(value.wide_model_down);
     mode.store(value.mode);
     assist_mode.store(value.assist_mode);
     lane_mode.store(value.lane_mode);
@@ -71,6 +73,7 @@ public:
     ModelFovSnapshot next;
     next.ready = ready.load();
     next.selection = selection.load();
+    next.wide_model_down = wide_model_down.load();
     next.mode = mode.load();
     next.assist_mode = assist_mode.load();
     next.lane_mode = lane_mode.load();
@@ -94,6 +97,7 @@ private:
   std::array<std::atomic<uint64_t>, 2> sessions{};
   std::atomic<bool> ready{false};
   std::atomic<int> selection{0}, mode{0}, assist_mode{0}, lane_mode{0};
+  std::atomic<int> wide_model_down{0};
   std::array<std::atomic<bool>, 2> lane_valid{};
   std::array<std::atomic<uint64_t>, 2> lane_until{};
   std::array<std::atomic<float>, 2> lane_center{};
@@ -176,19 +180,20 @@ public:
   float grey = 0, black_fraction = 0, white_fraction = 0;
   ModelFovStatus status = ModelFovStatus::UNSUPPORTED;
 
-  bool configure(int width, int height, bool wide, const std::array<double, 3> &rpy, int selection, int stride = 0, ModelFovRegion region = {}) {
+  bool configure(int width, int height, bool wide, const std::array<double, 3> &rpy, int selection, int stride = 0, ModelFovRegion region = {}, int wide_model_down = 0) {
     valid = false;
     count = 0;
     min_x = width; max_x = -1;
     status = ModelFovStatus::UNSUPPORTED;
-    if (width != 1928 || height != 1208 || selection < 0 || selection > 4) return false;
+    if (width != 1928 || height != 1208 || selection < 0 || selection > 4 || wide_model_down < 0 || wide_model_down > 30) return false;
     stride = stride ? stride : width;
     if (stride < width || stride > 8192) return false;
     minimum_bytes = static_cast<size_t>(stride) * (height - 1) + width;
     status = ModelFovStatus::CALIBRATION_INVALID;
     for (double angle : rpy) if (!std::isfinite(angle) || std::abs(angle) > 0.5) return false;
     const double cr = std::cos(rpy[0]), sr = std::sin(rpy[0]);
-    const double cp = std::cos(rpy[1]), sp = std::sin(rpy[1]);
+    const double pitch = rpy[1] - (wide ? wide_model_down * std::acos(-1.0) / 1800.0 : 0.0);
+    const double cp = std::cos(pitch), sp = std::sin(pitch);
     const double cy = std::cos(rpy[2]), sy = std::sin(rpy[2]);
     const std::array<double, 9> rotation = {
       cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr,

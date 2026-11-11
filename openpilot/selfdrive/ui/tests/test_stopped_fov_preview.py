@@ -22,7 +22,7 @@ def preview():
   namespace = {"log": NS(LiveCalibrationData=NS(Status=NS(calibrated=calibrated)))}
   exec(compile(tree, str(source), "exec"), namespace)
   car = NS(canValid=True, canTimeout=False, vEgoRaw=0., vEgo=0.)
-  settings = {"Pv5WideModelFov": 4, "CameraYawTrimDeg": 0, "Pv5FovPreviewPitch": 0, "UseWideCamera": True,
+  settings = {"Pv5WideModelFov": 4, "Pv5WideModelDown": 0, "CameraYawTrimDeg": 0, "Pv5FovPreviewPitch": 0, "UseWideCamera": True,
               "Pv5CameraFovPreview": False, "Pv5ModelFovExposure": False, "Pv5RoadExposureAssist": False, "Pv5WideExposureAssist": False, "Pv5RoadLaneExposure": False, "Pv5WideLaneExposure": False}
   sm = type("Messages", (dict,), {})(carState=car, deviceState=NS(deviceType="mici"),
                                     roadCameraState=NS(sensor="os04c10"),
@@ -91,6 +91,26 @@ def test_stopped_preview_keeps_available_camera(preview):
   settings["UseWideCamera"] = False
   update(12.3)
   assert viewer.active and not viewer.wide
+
+
+def test_actual_wide_down_moves_cyan_but_keeps_road_and_relative_candidate(preview):
+  viewer, update, _, settings, _ = preview
+  update(10.)
+  wide = viewer._polygon.copy()
+  update(12.)
+  road = viewer._polygon.copy()
+  settings['Pv5WideModelDown'] = 20
+  settings['Pv5FovPreviewPitch'] = 10
+  update(14.)
+  assert np.all(viewer._polygon[:, 1] > wide[:, 1])
+  assert np.all(viewer._candidate[:, 1] > viewer._polygon[:, 1])
+  assert 'DOWN 2.0°' in viewer._label
+  update(16.)
+  np.testing.assert_array_equal(viewer._polygon, road)
+  assert 'DOWN' not in viewer._label
+  settings['Pv5WideModelDown'] = 0
+  update(18.)
+  np.testing.assert_array_equal(viewer._polygon, wide)
 
 
 def test_c3x_exposure_overlay_uses_fresh_correct_lens_and_never_changes_warp(preview):

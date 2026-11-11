@@ -19,7 +19,7 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import config_realtime_process, DT_MDL
 from openpilot.common.transformations.camera import DEVICE_CAMERAS
 from openpilot.system.camerad.cameras.nv12_info import get_nv12_info
-from openpilot.common.transformations.model import WIDE_MODEL_FOV_CHOICES, get_warp_matrix, wider_model_warp
+from openpilot.common.transformations.model import WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX, get_warp_matrix, wider_model_warp, wide_model_pitch
 from openpilot.selfdrive.controls.lib.desire_helper import DesireHelper
 from openpilot.selfdrive.controls.lib.desire_lib.boundary_observer import BoundaryObserver
 from openpilot.selfdrive.controls.lib.drive_helpers import get_accel_from_plan, smooth_value, get_curvature_from_plan
@@ -434,6 +434,7 @@ def main(demo=False):
   diagnostics = RuntimeDiagnostics('modeld', cloudlog.event)
   camera_gap = CameraGapTrace(cloudlog.event)
   wide_fov_index = 0
+  wide_model_down = 0
   stock_transform_extra = model_transform_extra
   has_wide_camera = False
   next_wide_fov_poll = 0.0
@@ -478,6 +479,12 @@ def main(demo=False):
       selection = selection if 1 <= selection <= len(WIDE_MODEL_FOV_CHOICES) else 0
       wide_fov_changed = selection != wide_fov_index
       wide_fov_index = selection
+      # Typed get returns None for missing/corrupt values; native get_int uses
+      # std::stoi without exception translation and must not read this new option.
+      down = params.get("Pv5WideModelDown") if CP.carFingerprint == "KIA_PV5" and not CP.notCar else 0
+      down = down if type(down) is int and 0 <= down <= WIDE_MODEL_DOWN_MAX else 0
+      wide_fov_changed |= down != wide_model_down
+      wide_model_down = down
 
     calibration_updated = sm.updated["liveCalibration"] and sm.seen['roadCameraState'] and sm.seen['deviceState']
     if calibration_updated:
@@ -496,9 +503,12 @@ def main(demo=False):
       live_calib_seen = True
 
     if calibration_updated or wide_fov_changed:
-      model_transform_extra = stock_transform_extra.astype(np.float32)
+      extra = stock_transform_extra
+      if has_wide_camera and wide_model_down:
+        extra = get_warp_matrix(wide_model_pitch(device_from_calib_euler, wide_model_down), dc.ecam.intrinsics, True)
+      model_transform_extra = extra.astype(np.float32)
       if has_wide_camera and wide_fov_index:
-        model_transform_extra = wider_model_warp(stock_transform_extra, WIDE_MODEL_FOV_CHOICES[wide_fov_index - 1])
+        model_transform_extra = wider_model_warp(extra, WIDE_MODEL_FOV_CHOICES[wide_fov_index - 1])
 
     traffic_convention = np.zeros(2)
     traffic_convention[int(is_rhd)] = 1

@@ -62,6 +62,10 @@ public:
       const std::string choice = enabled ? params.get("Pv5WideModelFov") : "";
       const int value = choice.size() == 1 && choice[0] >= '0' && choice[0] <= '4' ? choice[0] - '0' : 0;
       if (selection != value) { selection = value; ++generation; lane_wide_changed_at = now; }
+      const std::string down = enabled ? params.get("Pv5WideModelDown") : "";
+      int next_down = !down.empty() && down.size() <= 2 && std::all_of(down.begin(), down.end(), [](char c) { return c >= '0' && c <= '9'; }) ? std::stoi(down) : 0;
+      if (next_down > 30) next_down = 0;
+      if (wide_model_down != next_down) { wide_model_down = next_down; ++generation; lane_wide_changed_at = now; }
     }
     ready = false;
     status = ModelFovStatus::INPUT_UNAVAILABLE;
@@ -467,7 +471,7 @@ void CameraState::sendState(const ModelFovSnapshot &context) {
       fov_generation = context.generation;
       fov_configured = fov_meter.configure(camera.buf.out_img_width, camera.buf.out_img_height,
                                           camera.cc.stream_type == VISION_STREAM_WIDE_ROAD, context.rpy, context.selection,
-                                          camera.buf.cur_yuv_buf->stride, region);
+                                          camera.buf.cur_yuv_buf->stride, region, context.wide_model_down);
     }
     fov_valid = fov_configured && fov_meter.measure(camera.buf.cur_yuv_buf->y, camera.buf.cur_yuv_buf->len,
                                                  context.camera_assisted(wide),
