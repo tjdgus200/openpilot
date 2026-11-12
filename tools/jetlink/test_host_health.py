@@ -171,6 +171,7 @@ def test_power_half_second_cadence_preserves_slow_sensor_network_rate(tmp_path, 
   worker = object.__new__(h.HostHealth)
   worker.error = None
   worker.snapshot = {}
+  worker.power_setup = {'state': 'ready'}
   import pytest
 
   with pytest.raises(StopIteration):
@@ -207,6 +208,7 @@ def test_sensor_overrun_keeps_a_sleep_instead_of_busy_catch_up(tmp_path, monkeyp
   worker = object.__new__(h.HostHealth)
   worker.error = None
   worker.snapshot = {}
+  worker.power_setup = {'state': 'ready'}
   with pytest.raises(StopIteration):
     worker._run()
   assert sleeps == [0.05]

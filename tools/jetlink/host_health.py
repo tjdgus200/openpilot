@@ -15,6 +15,26 @@ POWER_POLL_SECONDS = .5
 SLOW_POLL_SECONDS = 1.
 
 
+def power_health(value, setup):
+  state = setup.get('state', 'setup_unavailable')
+  # Reuse existing health delivery; no new sampler, worker or per-frame I/O.
+  value['power_setup'] = {'state': state}
+  messages = {
+    'super_profile_missing': 'MAXN_SUPER profile missing: check Jetson image / QSPI firmware',
+    'unsupported_board': 'Automatic MAXN_SUPER needs the supported Orin Nano board',
+    'reboot_required': 'MAXN_SUPER pending: full Jetson reboot required',
+    'mode_apply_failed': 'MAXN_SUPER selection failed: check boot power setup',
+    'mode_verify_failed': 'MAXN_SUPER selection could not be verified',
+    'clock_apply_failed': 'MAXN_SUPER clock setup failed',
+    'firmware_clock_limit': 'MAXN_SUPER GPU ceiling below 1000MHz: check image / QSPI firmware',
+    'setup_failed': 'Jetson startup power setup failed',
+    'setup_unavailable': 'Jetson startup power setup result unavailable',
+  }
+  if state in messages:
+    value['reason'] = '; '.join(filter(None, [value.get('reason'), messages[state]]))[:240]
+    value.update(severity='error', power_error=True)
+
+
 def storage_health(value, status=Path('/run/carrot-storage.json'), marker=Path('/etc/carrot-jetlink-protected.json')):
   if not marker.exists():
     value['storage_mode'] = 'legacy-writable'
@@ -130,6 +150,8 @@ def network_addresses():
 
 class HostHealth:
   def __init__(self):
+    from power_setup import read_status
+    self.power_setup = read_status()  # Startup has finished; read once per process.
     self.error = None
     self.snapshot = {}
     threading.Thread(target=self._run, name='carrot-host-health', daemon=True).start()
@@ -150,6 +172,7 @@ class HostHealth:
       try:
         if started >= next_slow:
           slow = thermal_health()
+          power_health(slow, self.power_setup)
           storage_health(slow)
           try:
             slow['addresses'] = network_addresses()

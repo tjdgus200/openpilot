@@ -105,6 +105,13 @@ def validate_storage_compatibility(manifest):
 
 
 def probe_release(release, allowed=None):
+  # Only the already-installed, trusted bootstrap helper may run as root here.
+  # Never execute a candidate's power helper before its normal validation.
+  if Path('/etc/nv_tegra_release').is_file() and Path(__file__).with_name('power_setup.py').is_file():
+    from power_setup import run_once
+    run_once()
+    if allowed is not None and not allowed():
+      raise ActivationDeferred('Park permission expired during startup power setup')
   command = ['runuser', '-u', 'jetlink', '--', str(ROOT / 'venv/bin/python'),
              str(release / 'tools/jetlink/probe_release.py'), str(ROOT / 'cache')]
   process = subprocess.Popen(command, start_new_session=True)

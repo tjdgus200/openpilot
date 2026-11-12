@@ -1,3 +1,15 @@
+- 2026-11-13 owner authorizes PV5 Jetson automatic MAXN_SUPER startup selection.
+  Port upstream8ca67794 and5a2784cc ordering to all five paired PV5 packages;
+  never replace them with the generic signed N16 bundle. Resolve the installed
+  NVIDIA profile ID by name on supported Orin Nano, verify mode/clocks and retain
+  thermal controls. Once per boot, decline reboot prompts; no firmware writes.
+  New-image power precedes candidate GPU validation/Xorg/HUD/inference; installed
+  trusted bootstrap precedes probes. Runtime migration writes DATA/run only and
+  can report reboot-required on old images. Use existing health, no new observer
+  or sampler. Preserve diagnostics OFF and model/control/HUD/USB/BLE contracts.
+  PC/package checks are not physical Super-mode, timing or safety validation.
+  See docs/pv5_jetson_auto_super_20261113.md. No device access/install/reboot.
+
 - 2026-11-11 PV5 actual wide model view down: Pv5WideModelDown defaults0,
   range0..100 in tenths of a degree. Tilt only the virtual wide model input;
   keep narrow input, saved calibration and input/output formats unchanged.

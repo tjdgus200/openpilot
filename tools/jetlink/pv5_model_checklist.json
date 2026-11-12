@@ -89,8 +89,11 @@
       ]
     },
     "power_and_boot": {
-      "preserve": "Jetson USB input-power block, black boot diagnostics, regular W/temperature text and permission-gated Park update/previous-release recovery.",
+      "preserve": "Jetson USB input-power block, black boot diagnostics, regular W/temperature text and permission-gated Park update/previous-release recovery. Select the installed supported Orin Nano MAXN_SUPER profile once per boot, verify mode/clocks, decline reboot prompts and expose failures without a new observer; order power before candidate GPU validation and new-image Xorg/HUD/inference.",
       "tests": [
+        "tools/jetlink/test_power_setup.py",
+        "tools/jetlink/test_host_health.py",
+        "tools/jetlink/test_refresh_sd_image.py",
         "tools/jetlink/test_usb_power.py",
         "tools/jetlink/test_boot_display.py",
         "tools/jetlink/test_boot_update.py"

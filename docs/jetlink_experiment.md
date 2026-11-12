@@ -120,9 +120,12 @@ bash RUNTIME/carrot/tools/jetlink/install_hud.sh RUNTIME USER
 bash RUNTIME/carrot/tools/jetlink/install_headless.sh RUNTIME USER
 ```
 
-The performance installer requires the already-selected rated MAXN_SUPER
-power mode and enables `jetson_clocks` at boot; it does not overclock or bypass
-thermal controls. Select the appropriate supported power mode beforehand.
+The performance installer selects the installed NVIDIA MAXN_SUPER profile by
+name at boot, then verifies the mode and clocks. It orders setup before candidate
+GPU validation, inference and Xorg on new images. Older images may need separate
+early-boot or QSPI repair if NVIDIA rejects a late mode change. Reboot prompts
+are declined and thermal controls remain active. See
+[PV5 startup selection](pv5_jetson_auto_super_20261113.md).
 Headless setup backs up Xorg configuration, saves the previous default target,
 and uses a dedicated NVIDIA X server with an ephemeral authorization cookie.
 SSH and Wi-Fi autoconnection remain available without the desktop. The server

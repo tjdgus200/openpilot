@@ -121,6 +121,13 @@ from active inference losing its connection, a real error or excessive heat.
 Do not suppress real faults to clear a warning. The eGPU model compilation button
 is unavailable for a Jetson-only installation.
 
+PV5 runtimes with automatic power setup select the installed NVIDIA
+`MAXN_SUPER` profile on supported Orin Nano boards at startup and verify clocks.
+No separate power-mode selection is needed. Missing-profile, firmware-clock-limit
+or reboot-required status means setup has not succeeded. Older images can open
+the GPU before setup and require separate image or boot-firmware repair.
+Setup never reboots the device or flashes firmware automatically.
+
 Use the [short Korean installation guide](https://github.com/ajouatom/carrot-jetson/blob/main/docs/INSTALL-WINDOWS-KO.md):
 extract the installer ZIP and run 01, then 02. Image preparation and the USB-C fix are automatic. Wi-Fi settings come from the connected
 comma, so changing its SSID/password does not require removing the SD card.

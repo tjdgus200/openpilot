@@ -11,8 +11,16 @@ def migrate_running_release(runtime=Path('/opt/carrot-jetlink')):
   """A signed runtime can migrate its own updater without per-car SSH setup.
 
   Published images already grant the jetlink service account passwordless sudo.
-  Enable only next boot so installing never interrupts the current session.
+  Updater migration takes effect next boot. Power setup runs once before GPU
+  backend imports; it never accepts a reboot prompt or starts an observer.
   """
+  source = runtime / 'current/tools/jetlink'
+  if (source / 'power_setup.py').is_file():
+    try:
+      subprocess.run(['sudo', '-n', sys.executable, str(source / 'install_updates.py'),
+                      '--power-runtime'], check=True, timeout=45)
+    except (OSError, subprocess.SubprocessError) as exc:
+      print('Automatic Super setup unavailable: ' + type(exc).__name__, flush=True)
   if Path('/etc/systemd/system/carrot-jetlink-boot-display.service').is_file():
     try:
       migrate_boot_display(runtime)
@@ -83,6 +91,8 @@ def bootstrap_files(source):
   # Copying its code never enables the locally selected USB policy.
   if (source / 'usb_release.py').is_file():
     names.insert(-2, 'usb_release.py')
+  if (source / 'power_setup.py').is_file():
+    names.insert(-2, 'power_setup.py')
   return names
 
 
@@ -112,6 +122,9 @@ def bootstrap(root, source, defer_this_boot=False, preserve_policy=False):
 def configure(root, source):
   root = Path(root)
   bootstrap(root, source)
+  if (Path(source) / 'power_setup.py').is_file():
+    from power_setup import configure as configure_power
+    configure_power(root, source)
   systemd = root / 'etc/systemd/system'
   command = '/opt/carrot-jetlink/venv/bin/python /opt/carrot-jetlink/updater/update_host.py'
   units = {
@@ -163,8 +176,12 @@ if __name__ == '__main__':
   parser.add_argument('--boot-display-runtime', action='store_true', help='Use the signed display runtime for this boot only')
   parser.add_argument('--bootstrap-only', action='store_true', help='Migrate an installed runtime; enable from its next boot without OS writes')
   parser.add_argument('--refresh-bootstrap', action='store_true', help='Refresh enrolled bootstrap without changing this boot policy')
+  parser.add_argument('--power-runtime', action='store_true', help='Select supported Super mode once at startup without OS writes')
   args = parser.parse_args()
-  if args.boot_display_runtime:
+  if args.power_runtime:
+    from power_setup import run_once
+    run_once()
+  elif args.boot_display_runtime:
     configure_runtime_boot_display()
   elif args.bootstrap_only or args.refresh_bootstrap:
     source = Path('/opt/carrot-jetlink/current/tools/jetlink')
