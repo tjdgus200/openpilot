@@ -37,3 +37,31 @@ paths, once-per-boot locking, existing updater migration and offline image unit
 ordering. Five isolated package checks and the permanent PV5 preservation gate
 are required before release. These are not physical power, thermal, latency or
 vehicle safety measurements. Published SD image binaries are not rebuilt here.
+
+## Release evidence
+
+The clean source tree at `7cf04a5bf89138f7855326841faa0cd56ca11511` passed
+the permanent Linux PC gate: **3,128 passed, 0 failed, 0 skipped**.
+All five isolated native archive/server/HUD checks passed. In each
+archive, six startup/power integration files matched its exact source
+commit byte for byte. All twenty public release assets were downloaded
+anonymously and their full SHA-256 hashes and sizes matched.
+
+Each model retains its previous ONNX URL, hash and size. The five
+source commits have one identical tree and distinct package identities.
+The catalog and legacy N16 USB bootstrap now pin these releases;
+previous packages remain available for rollback.
+
+| Model | Package source | Verified public release |
+| --- | --- | --- |
+| n16 | `37b31958cb30e9c18bd01eb8eef035ea5dcce4a0` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-auto-super-n16-20261113-37b31958) |
+| flip-flop | `84aa4f5b8cf55561b93060f337c5d6dd7c01e2da` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-auto-super-flip-flop-20261113-84aa4f5b) |
+| ctv3m | `f9233b22ac0913def0c815b3cd87d774ee928b31` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-auto-super-ctv3m-20261113-f9233b22) |
+| light-speed | `1507f8863ad66fce1c4a8ba918251ac3c3a8ba7a` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-auto-super-light-speed-20261113-1507f886) |
+| light-speed-2 | `7cf04a5bf89138f7855326841faa0cd56ca11511` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-auto-super-light-speed-2-20261113-7cf04a5b) |
+
+No physical Jetson activation, GPU timing, image/QSPI repair, vehicle
+installation or reboot was performed. Existing devices receive the
+package through the normal permission-gated update path. Old images
+can still report `reboot_required` or a firmware/profile failure.
+Public SD image binaries were not rebuilt.

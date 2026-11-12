@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-large-icons-light-speed-2-20261111-7c2c5400",
-  "source_commit": "7c2c5400e1886d83d619fbae054b30eff25597f1",
+  "profile": "jetson-pv5-auto-super-light-speed-2-20261113-7cf04a5b",
+  "source_commit": "7cf04a5bf89138f7855326841faa0cd56ca11511",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-large-icons-light-speed-2-20261111-7c2c5400/host.tar.gz",
-    "sha256": "7046ddbe89b3481bf68cf3632e9e9a55215911fe9a62aa1e7ce0df8f9a2afa1e",
-    "size": 65337269
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-auto-super-light-speed-2-20261113-7cf04a5b/host.tar.gz",
+    "sha256": "2fd5025e298927f628172241d8617301cab5235d9c6a31643c39287071c2b65e",
+    "size": 65347618
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/ea306f534159ac9a3caab0ac3bd4a5f82f9cd805/ea2f516f-f758-42be-a245-913bb818a64f/32768/big_driving_supercombo.onnx",
