@@ -1,5 +1,42 @@
 # Jetson HUD20: bounded pipeline and derived-data caches
 
+## 2026-11-13 snapshot publisher recovery
+
+A reported failure leaves the Jetson HUD waiting for comma data while external
+inference remains active, until the comma is restarted. The installed failure
+cause has not been confirmed. A matching source defect is reproducible: if the
+owned `hud_publisher.py` child exits, the existing `Publisher` keeps returning no
+packet for the remaining model session and never starts another snapshot child.
+
+`hud_protocol.py` now uses `hud_recovery.py` to request replacement of an exited
+owned snapshot child from a temporary low-priority worker. Healthy operation
+creates no recovery monitor thread or timer. The packet caller does not spawn,
+wait for or terminate a process. Failed attempts back off from2 to30 seconds;
+at most one recovery is pending. A live but stale child is left alone, so slow
+inference or source-data loss does not trigger speculative process termination.
+
+Model/session/transport ownership, model-first send admission, FPS preferences,
+wire formats and the original300ms sender/500ms receiver freshness rules are
+unchanged. Recovery does not reset USB or reopen the display. Session-specific
+packet names isolate late cleanup. Closing during a restart retires the late
+owned child. Initial snapshot spawn failure stays optional; media behavior is
+otherwise unchanged. Existing logging records recovery attempts without keys,
+payloads or vehicle data; no additional telemetry sampler is enabled.
+
+The PC fixture returns no new frame from the old source after the producer exits,
+then receives a new frame after one replacement with the patched Publisher.208
+focused PC checks cover this lifecycle, an actual local child exit, backoff,
+blocked spawns, close races, duplicate/stale data, FPS and model-priority timing.
+This sender-side change is delivered through the `carrot-nav-pv5` comma source
+branch. The existing five model-paired Jetson package pins and model identities
+are retained: their receiver wire format is unchanged, and the recovery helper
+is instantiated by the comma's existing display publisher. Updating the comma
+source is required; replacing a Jetson model bundle alone does not update that
+publisher. No device access, installation or reboot was performed for this change.
+The PC results do not prove the reported device failed for this reason or establish real hardware
+CPU/USB/control timing. A live-but-stalled producer or another link fault still
+requires a separately authorized manual diagnostic session.
+
 ## Delivered behavior
 
 Production Jetson Q92 uses one CPU JPEG/USB worker alongside the existing

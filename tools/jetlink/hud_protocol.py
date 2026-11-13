@@ -3,6 +3,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import secrets
 import struct
 import socket
 import subprocess
@@ -35,6 +36,13 @@ class Publisher:
   """Keep cereal decoding, JSON and preview work outside the USB owner's GIL."""
   def __init__(self, navi=False, nav_map=False, rate_control=False):
     import os
+    from hud_recovery import ExitedChild
+    self.path = Path(f'/dev/shm/carrot-jetlink-display-{os.getpid()}-{secrets.token_hex(8)}.packet')
+    self.last_sent = 0.
+    self.target_fps = 10
+    self.rate_control = rate_control
+    self.nav_map = nav_map
+    self.snapshot_child = None
     self.media_socket = self.media_process = None
     if navi:
       self.media_socket, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
@@ -45,14 +53,28 @@ class Publisher:
           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
       finally:
         child.close()
-    self.path = Path(f'/dev/shm/carrot-jetlink-display-{os.getpid()}.packet')
-    self.last_sent = 0.
-    self.target_fps = 10
-    self.rate_control = rate_control
-    self.process = subprocess.Popen(['chrt', '--other', '0', sys.executable,
-                                    str(Path(__file__).with_name('hud_publisher.py')), str(self.path),
-                                    *(['--nav-map'] if nav_map else []), *(['--rate-control'] if rate_control else [])],
-                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    self.snapshot_child = ExitedChild(self._start_snapshot, self._clear_snapshot)
+
+  @property
+  def process(self):
+    child = getattr(self, 'snapshot_child', None)
+    return child.process if child is not None else None
+
+  def _clear_snapshot(self):
+    self.path.unlink(missing_ok=True)
+    self.path.with_suffix('.tmp').unlink(missing_ok=True)
+
+  def _start_snapshot(self):
+    return subprocess.Popen(['chrt', '--other', '0', sys.executable,
+                             str(Path(__file__).with_name('hud_publisher.py')), str(self.path),
+                             *(['--nav-map'] if self.nav_map else []),
+                             *(['--rate-control'] if self.rate_control else [])],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+
+  def _snapshot_unavailable(self):
+    child = getattr(self, 'snapshot_child', None)
+    if child is not None:
+      child.request_if_exited()
 
   def media_packet(self):
     if self.media_socket is not None:
@@ -68,6 +90,8 @@ class Publisher:
       with self.path.open('rb') as f:
         stamp, = HEADER.unpack(f.read(HEADER.size))
         if stamp == self.last_sent or not 0 <= time.monotonic() - stamp < .3:
+          if not 0 <= time.monotonic() - stamp < .3:
+            self._snapshot_unavailable()
           return None
         body = f.read(96 * 1024 + PUBLISHER_RATE.size + 1)
       if not 0 < len(body) <= 96 * 1024 + PUBLISHER_RATE.size:
@@ -81,27 +105,26 @@ class Publisher:
       if len(body) > 96 * 1024:
         return None
       self.last_sent = stamp
+      child = getattr(self, 'snapshot_child', None)
+      if child is not None:
+        child.healthy()
       return body
     except (OSError, struct.error):
+      self._snapshot_unavailable()
       return None
 
   def close(self):
-    if self.media_process is not None:
-      self.media_process.terminate()
-      try:
-        self.media_process.wait(timeout=1)
-      except subprocess.TimeoutExpired:
-        self.media_process.kill()
-        self.media_process.wait(timeout=1)
-      self.media_socket.close()
-    self.process.terminate()
+    from hud_recovery import stop_child
+    if self.snapshot_child is not None:
+      self.snapshot_child.closed.set()
     try:
-      self.process.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-      self.process.kill()
-      self.process.wait(timeout=1)
-    self.path.unlink(missing_ok=True)
-    self.path.with_suffix('.tmp').unlink(missing_ok=True)
+      stop_child(self.media_process)
+      if self.media_socket is not None:
+        self.media_socket.close()
+    finally:
+      if self.snapshot_child is not None:
+        self.snapshot_child.close()
+      self._clear_snapshot()
 
 
 class SnapshotBuilder:
