@@ -51,21 +51,27 @@ class Watcher:
     self.internal = peer.get(INTERNAL_CAPABILITY) is True
     self.next_poll = self.next_manifest = self.next_attempt = 0.
 
-  def tick(self, client):
+  def changed_manifest(self, spec):
+    from openpilot.common.jetson_model import selected_release
+    try:
+      manifest = selected_release(RELEASE, required=True)
+      if (manifest.get('delivery') != 'usb' or manifest['source_commit'] == self.peer.get('carrot_source_commit')
+          or manifest['model']['sha256'] != spec.sha256 or manifest['model']['size'] != spec.nbytes):
+        return None
+      return manifest
+    except (OSError, ValueError, KeyError, TypeError):
+      return None  # A malformed/new pin must not interrupt the active model.
+
+  def tick(self, client, *, spec=None):
     if not self.enabled or self.clock() < self.next_poll:
       return
     self.next_poll = self.clock() + .2
     if self.clock() < max(self.next_manifest, self.next_attempt):
       return
     self.next_manifest = self.clock() + 1.
-    from openpilot.common.jetson_model import selected_release
-    try:
-      manifest = selected_release(RELEASE, required=True)
-      if (manifest.get('delivery') != 'usb' or manifest['source_commit'] == self.peer.get('carrot_source_commit')
-          or manifest['model']['sha256'] != client.spec.sha256 or manifest['model']['size'] != client.spec.nbytes):
-        return
-    except (OSError, ValueError, KeyError, TypeError):
-      return  # A malformed/new pin must not interrupt the active model.
+    manifest = self.changed_manifest(client.spec if spec is None else spec)
+    if manifest is None:
+      return
     proof = None
     if self.internal:
       from openpilot.common.jetlink_maintenance import lease
@@ -81,3 +87,29 @@ class Watcher:
       raise ValueError('Oversized Park update acknowledgement')
     if json.loads(bytes(message.payload)) == {'accepted': True}:
       raise RuntimeHandoff('Park update requested; reconnecting to empty boot gate')
+
+
+def wait_for_running_update(client, peer, params, connected, publish, *, wifi=None, sleep=time.sleep):
+  """Reconcile a resident PV5 runtime before ENGINE_REQ or synthetic warmup.
+
+  After only the comma reboots, HELLO can reach the old running server instead
+  of the empty boot gate. Engine preparation must not hide the update path, nor
+  submit probe inference that keeps the host's recent-inference guard closed.
+  The expected spec only selects a pin; the host still checks its own model,
+  package trust, ownership proof and service retirement before any install.
+  """
+  watcher = Watcher(peer, params)
+  if not watcher.enabled:
+    return
+  from openpilot.selfdrive.modeld.jetlink.contracts import JETSON_SPEC
+  manifest = watcher.changed_manifest(JETSON_SPEC)
+  if manifest is None or not str(manifest.get('profile', '')).startswith('jetson-pv5-'):
+    return  # Other peers and non-PV5 delivery keep their existing startup path.
+  while connected():
+    watcher.tick(client, spec=JETSON_SPEC)
+    publish('updating', peer=peer, host_update={'state': 'waiting_park', 'fraction': None})
+    if wifi is not None:
+      wifi.send(client)
+    client.state()
+    sleep(.2)
+  raise ConnectionError('Jetson disconnected before running-runtime update handoff')

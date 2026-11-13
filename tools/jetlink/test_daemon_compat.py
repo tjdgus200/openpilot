@@ -66,6 +66,7 @@ def test_phone_checks_data_role_not_power_role(tmp_path, monkeypatch, mode):
   ('auto', 'usb-unsafe'), ('auto', 'brief-detach'),
   ('auto', 'usb-late'), ('auto', 'ncm-cleanup-unsafe'),
   ('auto', 'power-fail'), ('usb', 'power-fail'),
+  ('usb', 'resident-update'),
 ])
 def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch, mode, scenario):
   calls = []
@@ -155,7 +156,8 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
                           (scenario in ('usb-v2', 'usb-exhausted') and calls.count('hello') < 2)) else (
         phone if mode in ('auto', 'ios') else owner)
       assert transport is expected
-      assert transport.protocol_version == (2 if transport is owner and calls.count('hello') == 1 else 3)
+      assert transport.protocol_version == (2 if transport is owner and calls.count('hello') == 1
+                                            and scenario != 'resident-update' else 3)
       self.t = transport
     def hello(self, timeout=None):
       calls.append('hello')
@@ -180,9 +182,20 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
   monkeypatch.setattr(daemon, 'JetlinkClient', Client)
   monkeypatch.setitem(sys.modules, 'openpilot.common.params', SimpleNamespace(
     Params=lambda: SimpleNamespace(get_bool=lambda key: key == 'IsOffroad')))
+  if scenario == 'resident-update':
+    from openpilot.selfdrive.modeld.jetlink import park_update, startup
+    def reconcile(*a, **kw):
+      assert 'prepare' not in calls
+      if 'handoff' not in calls:
+        calls.append('handoff')
+        raise startup.RuntimeHandoff('Resident old Jetson accepted the update gate')
+    monkeypatch.setattr(park_update, 'wait_for_running_update', reconcile)
   def prepare(client, peer, offroad, connected, progress, **kw):
     expected = 'usb' if scenario in ('usb-success', 'usb-v2', 'usb-late', 'ncm-unavailable') else ('ios' if mode == 'auto' else mode)
     assert kw['mode'] == expected and offroad() and connected()
+    if scenario == 'resident-update':
+      if calls.count('hello') != 2 or 'handoff' not in calls:
+        pytest.fail('Engine preparation reached before resident-runtime update handoff')
     calls.append('prepare')
   monkeypatch.setattr(daemon, 'prepare', prepare)
   def serve(*a):
@@ -241,7 +254,7 @@ def test_daemon_wires_mode_protocol_and_separate_ios_owner(tmp_path, monkeypatch
     assert calls.count(('setup', 'auto')) == starts
     assert 'teardown' not in calls
     return
-  assert calls.count('owner.close') == (2 if scenario in ('detach', 'brief-detach') else 1)
+  assert calls.count('owner.close') == (2 if scenario in ('detach', 'brief-detach', 'resident-update') else 1)
   assert calls.index('hello') < calls.index('prepare')
   if mode in ('auto', 'ios'):
     assert calls.count('cable.accept') == {'stop': 2, 'retry': 3, 'detach': 4, 'brief-detach': 4, 'unsafe': 2}[scenario]

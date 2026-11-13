@@ -711,9 +711,11 @@ def main():
           # fetch its first model. This is outside every model frame deadline.
           wifi.send(client, initial=True)
         wait_for_boot_update(client, peer, wifi, host_attached, publish)
-        publish('loading', peer=peer)
         from openpilot.common.params import Params
         params = Params()
+        from openpilot.selfdrive.modeld.jetlink.park_update import wait_for_running_update
+        wait_for_running_update(client, peer, params, host_attached, publish, wifi=wifi)
+        publish('loading', peer=peer)
         from openpilot.common.jetson_model import is_jetson
         from openpilot.selfdrive.modeld.jetlink.contracts import JETSON_SPEC
         from openpilot.selfdrive.modeld.jetlink.update_permission import Permission, wait_for_permission
