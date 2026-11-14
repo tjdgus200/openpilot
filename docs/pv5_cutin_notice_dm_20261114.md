@@ -51,3 +51,24 @@ renders do not establish on-device placement under every configuration, alert
 false-positive/miss rates, speaker behavior, CPU timing or road safety. The
 separate approximately five-minute warning still needs its exact text/photo/time;
 this change does not suppress it.
+
+## Release evidence
+
+309 PC tests passed (152 notification/UI plus 157 existing SCC control); no failures or skips.
+36 native C3X scenes per version were checked. All 12 other-car frames and
+8 critical DM frames were pixel-identical before/after. Eleven detection,
+control, audio/trigger and compact-renderer source files retained identical Git blobs.
+Five isolated native archive checks passed; all 20 public assets were
+downloaded anonymously and matched their complete SHA-256 hashes and sizes.
+Model spec identities and six startup/power integration blobs matched for every package.
+
+| Model | Source | Verified public release |
+| --- | --- | --- |
+| n16 | `9da8b38308fd73e4b9256bd615a7f55a6e4f5cd1` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-silent-cutin-n16-20261114-9da8b383) |
+| flip-flop | `6f90cd994d33f0da5917ae1f09e1e18e07550068` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-silent-cutin-flip-flop-20261114-6f90cd99) |
+| ctv3m | `e397f47e49c3e4b80a75e6697d7e41db468059ba` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-silent-cutin-ctv3m-20261114-e397f47e) |
+| light-speed | `6e7992215aa8d53142a884f58d442219275d27c6` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-silent-cutin-light-speed-20261114-6e799221) |
+| light-speed-2 | `1e2e96ffc3eaf4c5259f35a2bf161e6531693f50` | [4 assets](https://github.com/tjdgus200/openpilot/releases/tag/jetson-pv5-silent-cutin-light-speed-2-20261114-1e2e96ff) |
+
+Previous packages remain available for rollback. No neural model, SD image,
+vehicle installation, reboot, physical audio, ECU or road validation was performed.

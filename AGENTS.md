@@ -1,3 +1,15 @@
+- 2026-11-14 PV5 notification follow-up: retire live continuous cutin/cutinTrack/
+  cutinBrake popups in comma and paired HUD adapters. Keep the original promoted
+  radarCutin trigger/re-ID policy and show a1.5s small silent lower-priority
+  "Vehicle cut-in detected" alert only in real PV5. Preserve other-car chime,
+  DM/FCW/SCC urgency, detection/planning/CAN and the removed staged assist.
+  Center C3X noncritical PV5 DM above the largest speed/device box with20px
+  clearance and contrast over bright camera frames; keep compact/other-car/
+  critical layouts and DM triggers/audio. Five model-paired packages retain
+  neural identities and existing runtime/guard contracts. PC309 tests, native
+  before/after and5 isolated archive checks are not physical safety proof.
+  No vehicle access/install/restart. See docs/pv5_cutin_notice_dm_20261114.md.
+
 - 2026-11-14 owner approves SCC warning-only nuisance reduction. Preserve every
   SCC actuation/driver/jerk/receiver limit and the removed cut-in experiment.
   Qualified original SCC metadata drives small silent ordinary status or urgent

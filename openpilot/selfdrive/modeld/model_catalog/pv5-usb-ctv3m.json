@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-auto-super-ctv3m-20261113-f9233b22",
-  "source_commit": "f9233b22ac0913def0c815b3cd87d774ee928b31",
+  "profile": "jetson-pv5-silent-cutin-ctv3m-20261114-e397f47e",
+  "source_commit": "e397f47e49c3e4b80a75e6697d7e41db468059ba",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-auto-super-ctv3m-20261113-f9233b22/host.tar.gz",
-    "sha256": "6d0019f9efee7573682eaeb5d2599b283f3388211e56394a4d7716404c2d496c",
-    "size": 65347548
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-silent-cutin-ctv3m-20261114-e397f47e/host.tar.gz",
+    "sha256": "eba0784ebf97ebf798c2794d7f4d8cb37864d5af0c055d0f194053a7c0ce2ba5",
+    "size": 65354610
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
