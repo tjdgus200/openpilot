@@ -468,6 +468,11 @@ def test_static_notice_draws_one_atlas_tile_and_keeps_copy(key, monkeypatch):
     overlay._driving_notices.update((notice,), 99.)
   with patch.object(feedback.rl, 'draw_texture_pro') as draw, patch.object(feedback, 'draw_text_ui_style') as text:
     overlay.draw_popup(rl.Rectangle(30, 30, 2100, 1020), None, state, 80.)
+    if key.startswith('cutin'):
+      # PV5 retired continuous risk/tracking/braking banners. Confirmed cut-ins
+      # now arrive through the regular selfdriveState alert renderer instead.
+      assert draw.call_count == text.call_count == 0
+      return
     assert draw.call_count == 1 and text.call_count >= 1
     source = draw.call_args.args[1]
     assert (source.x, source.y, source.width, source.height) == (0, 96 * STATIC_NOTICE_ROWS[key], 128, 96)

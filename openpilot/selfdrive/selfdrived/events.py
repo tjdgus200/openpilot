@@ -296,6 +296,14 @@ def calibration_incomplete_alert(CP: car.CarParams, CS: car.CarState, sm: messag
     Priority.LOWEST, VisualAlert.none, AudibleAlert.none, .2)
 
 
+def radar_cutin_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
+  if CP.carFingerprint == 'KIA_PV5' and not CP.notCar:
+    return Alert(tr_noop("Vehicle cut-in detected"), "",
+                 AlertStatus.normal, AlertSize.small,
+                 Priority.LOWER, VisualAlert.none, AudibleAlert.none, 1.5)
+  return EngagementAlert(AudibleAlert.radarCutin)
+
+
 def audio_feedback_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, personality) -> Alert:
   duration = FEEDBACK_MAX_DURATION - ((sm['audioFeedback'].blockNum + 1) * SAMPLE_BUFFER / SAMPLE_RATE)
   seconds = round(duration)
@@ -1160,7 +1168,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
      ET.WARNING: EngagementAlert(AudibleAlert.prompt),
   },
   EventName.radarCutin: {
-     ET.WARNING: EngagementAlert(AudibleAlert.radarCutin),
+     ET.WARNING: radar_cutin_alert,
   },
   EventName.radarStationaryLead: {
     ET.WARNING: Alert(

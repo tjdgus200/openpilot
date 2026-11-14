@@ -2,7 +2,7 @@ import time
 import pyray as rl
 from dataclasses import dataclass
 from openpilot.cereal import messaging, log
-from openpilot.common.hud_attention_icon import DriverAttentionIcon, attention_panel_rect, draw_driver_attention_icon
+from openpilot.common.hud_attention_icon import DriverAttentionIcon, draw_driver_attention_icon
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.hardware import TICI
 from openpilot.system.ui.lib.application import gui_app, FontWeight, TextAlignment, TextAlignmentVertical
@@ -27,6 +27,18 @@ ALERT_HEIGHTS = {
   AlertSize.small: 271,
   AlertSize.mid: 420,
 }
+
+
+def pv5_attention_rect(viewport: rl.Rectangle, panel: rl.Rectangle) -> rl.Rectangle:
+  """Center DM above the carrot HUD's largest lower-left device/speed box.
+
+  Its existing anchor is viewport.bottom-230, with a 270px top extension.
+  Leave another 20px gap. This applies only to the C3X PV5 noncritical DM panel.
+  """
+  width = min(panel.width, 1660.)
+  bottom = min(panel.y + panel.height, viewport.y + viewport.height - 520.)
+  top = max(viewport.y + ALERT_MARGIN, bottom - panel.height)
+  return rl.Rectangle(viewport.x + (viewport.width - width) / 2, top, width, panel.height)
 
 SELFDRIVE_STATE_TIMEOUT = 5  # Seconds
 SELFDRIVE_UNRESPONSIVE_TIMEOUT = 10  # Seconds
@@ -128,8 +140,13 @@ class AlertRenderer(Widget):
     alert_rect = self._get_alert_rect(rect, alert.size)
     avoid_speed_panel = (bool(icon_scale) and alert.size != AlertSize.full
                          and getattr(ui_state.CP, 'carFingerprint', '') == 'KIA_PV5')
-    alert_rect = attention_panel_rect(alert_rect, avoid_speed_panel)
-    self._draw_background(alert_rect, alert)
+    if avoid_speed_panel:
+      alert_rect = pv5_attention_rect(rect, alert_rect)
+      # Keep DM copy readable over bright camera frames as well as at night.
+      color = rl.Color(75, 35, 7, 245) if alert.status == AlertStatus.userPrompt else rl.Color(21, 25, 32, 245)
+      rl.draw_rectangle_rounded(alert_rect, ALERT_BORDER_RADIUS / (min(alert_rect.width, alert_rect.height) / 2), 10, color)
+    else:
+      self._draw_background(alert_rect, alert)
 
     text_rect = rl.Rectangle(
       alert_rect.x + ALERT_PADDING,

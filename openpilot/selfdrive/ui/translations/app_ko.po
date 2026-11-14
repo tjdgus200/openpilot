@@ -774,6 +774,9 @@ msgid "Parking Brake Engaged"
 msgstr "주차 브레이크를 해제하세요"
 
 #: openpilot/selfdrive/selfdrived/events.py
+msgid "Vehicle cut-in detected"
+msgstr "차량 끼어듦 감지됨"
+
 msgid "Pay Attention"
 msgstr "도로를 주시하세요"
 

@@ -243,7 +243,9 @@ class Pv5DrivingFeedbackOverlay:
       self._popup_started_frame = started_frame
       self._driving_notices.reset()
       self.popup_slide.reset()
-    events = driving_notice_events(sm, now, started_frame=started_frame)
+    # Confirmed cut-ins use selfdrived's silent radarCutin alert. Do not also
+    # display continuously active risk/tracking/braking status as popups.
+    events = tuple(e for e in driving_notice_events(sm, now, started_frame=started_frame) if not e.startswith('cutin'))
     if self.warning:
       self._driving_notices.update(events, now, blocked=True)
       self.popup_slide.reset()

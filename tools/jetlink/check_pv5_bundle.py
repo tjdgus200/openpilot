@@ -82,7 +82,7 @@ with log.Event.from_bytes(base64.b64decode(record['events']['controlsState'])) a
 assert 0<expected_fraction<=1 and abs(state.pv5_lane_center_fraction-expected_fraction)<1e-6
 assert abs(state.left_lane_probability-.99)<1e-6 and abs(state.right_lane_probability-.99)<1e-6
 assert state.steering_output_normalized is not None
-assert state.driving_notices==('cutin','laneChange')
+assert state.driving_notices==('laneChange',)  # PV5 risk-only cut-in banners are retired.
 assert state.driving_lane_change_direction=='left'
 notices=state.driving_notices
 state=replace(state,driving_notices=())
@@ -259,7 +259,11 @@ try:
  ui.render_to_file(replace(state,driving_notices=notices),popup_path)
  assert any('차선 보정' in text or 'Edge ' in text for text in texts)
  assert not any('중앙 보정' in text for text in texts)
- assert DRIVING_NOTICE_TEXT['cutin'] in texts and DRIVING_NOTICE_TEXT['laneChange'] not in texts
+ assert DRIVING_NOTICE_TEXT['laneChange'] in texts and DRIVING_NOTICE_TEXT['cutin'] not in texts
+ ui._popup_slide.reset()
+ ui.render_to_file(replace(state,alert=ClusterAlert('차량 끼어듦 감지됨',size=1,status=0,
+                        alert_type='radarCutin/warning')),popup_path)
+ assert '차량 끼어듦 감지됨' in texts
  for stage in ('cutinTrack','cutinBrake'):
   ui._driving_notices.reset()
   ui._popup_slide.reset()
@@ -531,7 +535,8 @@ def main(argv=None):
     shutil.copyfile(root / 'hud-battery-temperatures-light.png', args.output / 'hud-battery-temperatures-light.png')
   report = dict(model=args.model, model_sha256=spec['sha256'], package_source=release['source_commit'],
                 bundle_sha256=digest, isolated_imports=True, native_hud_render=True,
-                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, static_camera_icon=True, static_notice_icons=True, large_popup_icons=True, critical_fullscreen=True, driving_popup=True, driving_notices=True, staged_cutin_feedback=True,
+                center_and_lane_snapshot=True, lane_edge_wording=True, inference_readout=True, comma_drop_readout=True, battery_temperature_pair=True, coolant_temperature_colors=True, repeating_dot_motion=True, static_camera_icon=True, static_notice_icons=True, large_popup_icons=True, critical_fullscreen=True, driving_popup=True, driving_notices=True,
+                continuous_cutin_notices=False, confirmed_cutin_alert=True, legacy_notice_render_compatible=True,
                 deceleration_details=True, driver_attention_icon=True, popup_hold=True, popup_exit=True,
                 condition_driven_popups=True, steering_angle_limit=True,
                 telemetry_gap_in_place=True,

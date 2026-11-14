@@ -479,7 +479,9 @@ class OpenpilotLiveSource:
             cp = self._service_data("carParams")
             if (self._service_valid("carParams") and safe_get(cp, "carFingerprint") == "KIA_PV5"
                     and not safe_get(cp, "notCar", True)):
-                notices = driving_notice_events(self.sm, now)
+                # The confirmed radarCutin alert arrives through selfdriveState.
+                # Retire continuously active risk/tracking/braking popups only.
+                notices = tuple(e for e in driving_notice_events(self.sm, now) if not e.startswith('cutin'))
                 if 'laneChange' in notices:
                     lane_change_direction = str(self.sm['modelV2'].meta.laneChangeDirection)
                 if 'curve' in notices:
