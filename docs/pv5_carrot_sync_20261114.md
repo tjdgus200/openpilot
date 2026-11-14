@@ -70,3 +70,21 @@ Unknown periodic load warning and physical HUD disconnect cause remain separate.
 Five model-paired bundles must retain neural/runtime identity and pass isolated
 native checks plus public size/hash verification before pinning. Detailed receipts
 and sanitized PC plots are in the companion workspace task directory.
+
+## Verified paired publication
+
+Five isolated native bundle checks passed; all 20 public assets were downloaded
+and matched by complete SHA-256 and byte size before pinning. Model/runtime
+policy fields match the baseline exactly; only profile/source/bundle locators change.
+
+| Model | Package source | Public assets verified |
+| --- | --- | --- |
+| n16 | `d56e5bfd9bb2a48215089b4b0c15b8559402eb39` | 4 |
+| flip-flop | `0b830a04a42f899b984589c15fd1ead5409007b0` | 4 |
+| ctv3m | `3a103f742e267dd870a5aef4cbfbe2cfc046fa82` | 4 |
+| light-speed | `c8dfaa183683ed521e4ca96db027956ca5adf4a8` | 4 |
+| light-speed-2 | `51ac6bc9b6838ebe36e0b12941b36d083a7e6010` | 4 |
+
+In an additional public-matcher stationary fixture (existing PV5 stationary
+shield enabled), closer-object selection moved from 0.25s to 0.20s. This
+function-level PC input is not a controller/CAN or physical braking measurement.

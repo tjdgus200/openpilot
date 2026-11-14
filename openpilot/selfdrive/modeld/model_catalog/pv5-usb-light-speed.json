@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-silent-cutin-light-speed-20261114-6e799221",
-  "source_commit": "6e7992215aa8d53142a884f58d442219275d27c6",
+  "profile": "jetson-pv5-carrot-sync-light-speed-20261114-c8dfaa18",
+  "source_commit": "c8dfaa183683ed521e4ca96db027956ca5adf4a8",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-silent-cutin-light-speed-20261114-6e799221/host.tar.gz",
-    "sha256": "86e0636c645cac6f1d51838f03c60a64e82e1e84a2a1dababfd5e83c99d431b3",
-    "size": 65354587
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-carrot-sync-light-speed-20261114-c8dfaa18/host.tar.gz",
+    "sha256": "d5ad5ed66382670db576d12c3ddc384379604388f4dda6ae90eb1c7a05088978",
+    "size": 65768787
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
