@@ -569,6 +569,20 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.HIGH, VisualAlert.fcw, AudibleAlert.stopStop, 0.01),
   },
 
+  EventName.pv5CutInCaution: {
+    ET.WARNING: Alert(
+      tr_noop("Cut-in: Acceleration Limit Requested"), tr_noop("Watching vehicle entering your path"),
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOWEST, VisualAlert.none, AudibleAlert.none, 0.05),
+  },
+
+  EventName.pv5CutInPredecel: {
+    ET.WARNING: Alert(
+      tr_noop("CUT-IN: DECELERATION REQUEST!"), tr_noop("Prepare to brake"),
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.LOWER, VisualAlert.none, AudibleAlert.prompt, 0.05),
+  },
+
   EventName.ldw: {
     ET.PERMANENT: Alert(
       "Lane Departure Detected",

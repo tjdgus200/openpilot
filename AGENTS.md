@@ -1,3 +1,17 @@
+- 2026-11-14 owner approves linked PV5 cut-in stages and escalating popups.
+  Pv5CutInAssist is default OFF, startup-only, camera-SCC/openpilot-long PV5 only.
+  Reuse existing per-model-frame trajectory estimates for bounded caution, and
+  existing stronger evidence for pre-deceleration; preserve lead roles and legacy
+  risk. Fresh admitted emitted CAN state drives low-priority small silent stage1
+  and amber medium/single-prompt stage2, below every driver/emergency warning.
+  Keep pedal/TCS/freshness/clock/identity/maneuver/alias vetoes, existing
+  value jerk and stronger SCC braking. No added inference, worker, subscription,
+  Panda firmware, model/HUD package or geometry changes. Keep disabled/other-car
+  parity. PC replay is not vehicle braking validation; the documented nearby
+  aborted-entry probe can request unnecessary pre-deceleration. Keep OFF pending
+  broader negative-case and hardware validation. No vehicle install/restart.
+  See docs/pv5_cutin_assist_20261114.md.
+
 - 2026-11-14 owner authorizes PV5 SCC raw-deceleration candidate integration/push.
   Pv5SccDecelAssist is experimental, default OFF and startup-only. Preserve PV5
   camera-SCC/openpilot-long scope, original RX CRC/counter/batch/freshness checks,

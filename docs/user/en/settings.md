@@ -457,6 +457,24 @@ Mode `2` gradually requests acceleration toward approximately −0.5m/s² after 
 
 Preparation releases when red evidence disappears or conflicts with green. The existing driving model still controls stopping toward the stop line; this trial does not guarantee deceleration or stopping at every red signal.
 
+## PV5 staged cut-in assist (experimental)
+
+`Pv5CutInAssist` is under **Settings → PV5 → Driving Assist → Staged Cut-in Assist (Experimental)**.
+It defaults off and requires an offroad comma restart. It applies only to PV5
+camera SCC with openpilot longitudinal control.
+
+- Stage 1 constrains positive acceleration for a continuously observed closing
+  entry candidate and shows a normal popup.
+- Stage 2 requests bounded pre-deceleration after existing stronger entry evidence.
+  A larger amber popup and short sound emphasize it, below emergency/driver alerts.
+- Strong evidence may enter stage 2 directly. Expired data, driver pedals,
+  disengagement and withdrawn entry clear assistance.
+
+Existing lead selection and the separate stock-deceleration setting remain intact.
+The popup reports a constraint/request, not measured braking or collision avoidance.
+Keep this experiment off until hardware and braking validation. PC replay is not
+vehicle safety validation.
+
 ## PV5 stock deceleration assist (experimental)
 
 **Settings → PV5 → Driving Assist → Stock Deceleration Assist (Experimental)**

@@ -497,6 +497,9 @@ struct CarControl {
     pv5SccDecelEnabled @12 :Bool; # default-OFF PV5 experiment; CarOutput telemetry only
     pv5SccDecelActive @13 :Bool;
     pv5SccDecelSourceMonoTime @14 :UInt64; # original camera SCC RX timestamp, never a TX echo
+    pv5CutInAssistEnabled @15 :Bool;
+    pv5CutInAssistStage @16 :UInt8; # emitted constraint: 1 zero raw ceiling requested, 2 pre-deceleration requested
+    pv5CutInAssistSourceMonoTime @17 :UInt64;
 
     enum LongControlState @0xe40f3a917d908282{
       off @0;

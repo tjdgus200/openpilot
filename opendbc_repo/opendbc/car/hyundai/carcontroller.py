@@ -1,4 +1,5 @@
 from collections import deque
+import math
 
 import numpy as np
 from opendbc.car.hyundai.scalar import clip_float
@@ -15,6 +16,7 @@ from opendbc.car.hyundai.scc_decel import (
   packet_allowed as scc_packet_allowed, DECEL_JERK, RELEASE_JERK,
 )
 from opendbc.car.carlog import carlog
+from openpilot.common.pv5_cutin_assist import CutInRequest, request_from_radar, constrain_accel
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
@@ -205,6 +207,10 @@ class CarController(CarControllerBase):
     self.scc_decel = StockDecelAssist() if self.scc_decel_enabled else None
     self.scc_decel_decision = Decision(0.0)
     self.scc_decel_applied = Decision(0.0)
+    self.cutin_assist_enabled = scc_decel_eligible(CP) and Params().get_bool("Pv5CutInAssist")
+    self.cutin_assist_decision = CutInRequest()
+    self.cutin_assist_applied = CutInRequest()
+    self.cutin_assist_accel = 0.0
     self.speedCameraHapticEndFrame = 0
     self.hapticFeedbackWhenSpeedCamera = 0
     self.max_angle_frames = MAX_ANGLE_FRAMES
@@ -270,6 +276,19 @@ class CarController(CarControllerBase):
                      and CS.softHoldActive == 0 and CS.out.carrotCruise == 0 and CS.scc_control is not None)
     self.scc_decel_decision = self.scc_decel.update(accel, observation, now_nanos, extra_allowed)
     return self.scc_decel_decision.accel if allowed else 0.0, allowed
+
+  def _apply_cutin_assist(self, CC, CS, now_nanos, accel):
+    if not self.cutin_assist_enabled:
+      return accel, True
+    if not math.isfinite(accel):
+      self.cutin_assist_decision = CutInRequest()
+      return 0.0, False
+    allowed = scc_packet_allowed(CC, CS, now_nanos, self.CAN.ECAN)
+    extra_allowed = (allowed and CC.longActive and CC.actuators.longControlState == LongCtrlState.pid
+                     and CS.softHoldActive == 0 and CS.out.carrotCruise == 0)
+    self.cutin_assist_decision = (request_from_radar(self.CP, getattr(CS, "radarState", None), now_nanos)
+                                  if extra_allowed else CutInRequest())
+    return constrain_accel(accel, self.cutin_assist_decision) if allowed else 0.0, allowed
 
   def update(self, CC, CS, now_nanos):
 
@@ -554,6 +573,8 @@ class CarController(CarControllerBase):
     set_speed_in_units = hud_control.setSpeed * (CV.MS_TO_KPH if CS.is_metric else CV.MS_TO_MPH)
 
     accel, scc_allowed = self._apply_scc_decel(CC, CS, now_nanos, accel)
+    accel, cutin_allowed = self._apply_cutin_assist(CC, CS, now_nanos, accel)
+    scc_allowed = scc_allowed and cutin_allowed
 
     # HUD messages
     sys_warning, sys_state, left_lane_warning, right_lane_warning = process_hud_alert(CC.enabled, self.car_fingerprint,
@@ -660,11 +681,16 @@ class CarController(CarControllerBase):
               self.packer, self.CAN, CC.enabled, self.accel_value_last, accel, stopping, CC.cruiseControl.override,
               set_speed_in_units, hud_control, self.hyundai_jerk, CS, self.canfd_stopping, hud_lateral=hud_lateral,
               longitudinal_allowed=scc_allowed,
+              cutin_accel_ceiling=self.cutin_assist_decision.limit if self.cutin_assist_decision.stage else None,
             )
             if msg is not None:
               can_sends.append(msg)
             if self.scc_decel_enabled:
-              self.scc_decel_applied = self.scc_decel_decision if msg is not None and scc_allowed else Decision(0.0)
+              self.scc_decel_applied = (Decision(accel, self.scc_decel_decision.active, self.scc_decel_decision.source_stamp)
+                                        if msg is not None and scc_allowed else Decision(0.0))
+            if self.cutin_assist_enabled:
+              self.cutin_assist_applied = self.cutin_assist_decision if msg is not None and scc_allowed else CutInRequest()
+              self.cutin_assist_accel = accel
             can_sends.extend(hyundaicanfd.create_tcs_messages(self.packer, self.CAN, CS)) # for sorento SCC radar...
           else:
             msg, self.accel_value_last = hyundaicanfd.create_acc_control(
@@ -751,6 +777,11 @@ class CarController(CarControllerBase):
     new_actuators.accel = accel
     new_actuators.stopObjectActive = bool(self.canfd_stopping is not None and self.canfd_stopping.stop_object_active)
     new_actuators.pv5SccDecelEnabled = self.scc_decel_enabled
+    new_actuators.pv5CutInAssistEnabled = self.cutin_assist_enabled
+    new_actuators.pv5CutInAssistStage = min(self.cutin_assist_decision.stage, self.cutin_assist_applied.stage)
+    new_actuators.pv5CutInAssistSourceMonoTime = self.cutin_assist_applied.stamp if new_actuators.pv5CutInAssistStage else 0
+    if new_actuators.pv5CutInAssistStage:
+      new_actuators.accel = self.cutin_assist_accel
     new_actuators.pv5SccDecelActive = bool(self.scc_decel_enabled and self.scc_decel_decision.active and self.scc_decel_applied.active)
     new_actuators.pv5SccDecelSourceMonoTime = self.scc_decel_applied.source_stamp if new_actuators.pv5SccDecelActive else 0
     if new_actuators.pv5SccDecelActive:

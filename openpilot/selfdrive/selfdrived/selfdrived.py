@@ -25,6 +25,7 @@ from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.impact_detector import ImpactDetector
 from openpilot.selfdrive.controls.lib.radar_only_warning import RadarOnlyWarning
 from opendbc.car.hyundai.scc_decel import warning_active as scc_decel_warning_active, eligible as scc_decel_eligible
+from openpilot.common.pv5_cutin_assist import warning_stage as cutin_warning_stage
 from openpilot.selfdrive.carrot.radar_motion.timing import front_radar_distance_delay_s
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.controls.lib.cutin_alert import (
@@ -248,6 +249,11 @@ class SelfdriveD:
         now_ns = int(self.car_state_time_s * 1e9) if REPLAY else time.monotonic_ns()
         if scc_decel_warning_active(self.CP, CS, scc_output, self.sm.logMonoTime['carOutput'], now_ns):
           self.events.add(EventName.pv5SccDecel)
+      if scc_output.pv5CutInAssistEnabled and scc_output.pv5CutInAssistStage:
+        now_ns = int(self.car_state_time_s * 1e9) if REPLAY else time.monotonic_ns()
+        stage = cutin_warning_stage(self.CP, CS, scc_output, self.sm.logMonoTime['carOutput'], now_ns)
+        if stage:
+          self.events.add(EventName.pv5CutInPredecel if stage == 2 else EventName.pv5CutInCaution)
 
     cutin_enabled = self.enabled and self.sm.valid['radarState']
     cutin_candidates = tuple(

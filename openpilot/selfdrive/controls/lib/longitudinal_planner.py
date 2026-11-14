@@ -26,6 +26,7 @@ from openpilot.selfdrive.controls.lib.turn_accel import get_future_curvature, li
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.params import Params
+from openpilot.common.pv5_cutin_assist import eligible as cutin_assist_eligible, request_from_radar
 from openpilot.common.stopping_params import get_stopping_speed
 from openpilot.selfdrive.carrot.carrot_man_input import get_carrot_man
 from openpilot.selfdrive.carrot.signal_stop_prepare import PrepareAccel
@@ -50,6 +51,8 @@ def get_coast_accel(pitch):
 
 
 class LongitudinalPlanner:
+  pv5_cutin_assist_enabled = False
+
   def __init__(self, CP, init_v=0.0, init_a=0.0, dt=DT_MDL):
     self.CP = CP
     self.mpc = LongitudinalMpc(dt=dt)
@@ -88,6 +91,7 @@ class LongitudinalPlanner:
     self.v_cruise_kph = 0.0
 
     self.params = Params()
+    self.pv5_cutin_assist_enabled = cutin_assist_eligible(CP) and self.params.get_bool("Pv5CutInAssist")
     self.coasting = CruiseCoastingPlan()
     self.coasting_percent = 0
     self.coasting_param_time = 1.0
@@ -221,6 +225,10 @@ class LongitudinalPlanner:
       if not reset_state and not sm['carState'].gasPressed
       else None
     )
+    if self.pv5_cutin_assist_enabled and not reset_state and not sm['carState'].gasPressed and sm.valid['radarState']:
+      cutin_assist = request_from_radar(self.CP, sm['radarState'], sm.logMonoTime['carState'])
+      if cutin_assist.stage:
+        cutin_predecel_limit = cutin_assist.limit if cutin_predecel_limit is None else min(cutin_predecel_limit, cutin_assist.limit)
     # clip limits, cannot init MPC outside of bounds
     accel_limits_turns[0] = min(accel_limits_turns[0], self.a_desired + 0.05)
     accel_limits_turns[1] = apply_cutin_predecel_accel_limit(

@@ -165,6 +165,8 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     impactDetected @128;
     impactDashcamReboot @129;
     pv5SccDecel @130;
+    pv5CutInCaution @131;
+    pv5CutInPredecel @132;
 
     soundsUnavailableDEPRECATED @47;
   }
@@ -742,6 +744,8 @@ struct RadarState @0x9a185389d6fdd05f {
   leadsRight2 @20 : List(LeadData);
   leadsCutIn @21 : List(LeadData);
   leadCutInRisk @22 : LeadData;
+  leadCutInAssist @23 :LeadData; # default-OFF PV5 staged constraint, separate from lead roles
+  pv5CutInAssistStage @24 :UInt8;
 
   struct LeadData {
     dRel @0 :Float32;

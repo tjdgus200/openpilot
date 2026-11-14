@@ -100,9 +100,13 @@ def _model_measurement_time_s(sm: messaging.SubMaster) -> float:
 
 class DPathRadarD:
   """Own and publish radarState without importing controls.radard."""
+  pv5_cutin_assist_enabled = False
 
   def __init__(self, CP: car.CarParams) -> None:
     params = Params()
+    from openpilot.common.pv5_cutin_assist import eligible
+    cutin_assist = eligible(CP) and params.get_bool("Pv5CutInAssist")
+    self.pv5_cutin_assist_enabled = cutin_assist
     enable_radar_tracks = effective_radar_track_mode(
       CP.brand,
       CP.radarUnavailable,
@@ -118,6 +122,7 @@ class DPathRadarD:
       front_radar_measurement_delay_s=front_radar_distance_delay_s(CP),
       production_live_tracks=True,
       pv5_refinements=CP.brand == "hyundai" and CP.carFingerprint == "KIA_PV5",
+      pv5_cutin_assist=cutin_assist,
     )
     self.radar_state = log.RadarState.new_message()
     self.radar_state_valid = False
@@ -156,6 +161,9 @@ class DPathRadarD:
     self.radar_state.leadsRight = output.leads_right
     self.radar_state.leadsCutIn = output.leads_cutin
     self.radar_state.leadCutInRisk = output.lead_cutin_risk or empty_lead()
+    if self.pv5_cutin_assist_enabled:
+      self.radar_state.leadCutInAssist = output.lead_cutin_assist if self.radar_state_valid and output.lead_cutin_assist else empty_lead()
+      self.radar_state.pv5CutInAssistStage = output.cutin_assist_stage if self.radar_state_valid else 0
     self.radar_state.leadsLeft2 = output.leads_left2
     self.radar_state.leadsRight2 = output.leads_right2
 
