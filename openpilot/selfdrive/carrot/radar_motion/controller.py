@@ -535,7 +535,8 @@ class DPathRadarController:
   ) -> None:
     # Only the verified PV5 live/replay boundaries opt into these development-branch refinements.
     self.pv5_refinements = bool(pv5_refinements)
-    self.primary_matcher = VisionRadarMatcher(enable_fresh_stationary_shield=self.pv5_refinements)
+    self.primary_matcher = VisionRadarMatcher(enable_fresh_stationary_shield=self.pv5_refinements,
+                                            enable_close_xyv_handoff=self.pv5_refinements)
     self.scc_primary_fallback_matcher = VisionRadarMatcher()
     self.forced_scc_rejected_s: float | None = None  # last frame mode 3 refused a beside-path SCC body
     self._forced_scc_previous: tuple[float, RadarPointSnapshot] | None = None

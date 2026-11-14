@@ -71,11 +71,19 @@ def read_status():
 
 
 def fresh_value(value, now, *, handshake=False, preparing=False):
+  if not isinstance(value, dict):
+    return {}
   try:
     # HELLO blocks for 3s in auto probing, or 5s in the normal path. A 3s
     # display lease falsely declares a dead daemon during that bounded wait.
     # Cover HELLO + the 2s reconnect pause; all other reports still expire at 3s.
     limit = 8 if handshake and value.get('state') == 'connecting' else 3
+    preparation = value.get('preparation') or {}
+    if (handshake and value.get('state') == 'connecting' and isinstance(preparation, dict)
+        and preparation.get('stage') in ('usb-setup', 'network-setup')):
+      # Display-only lease covers the bounded 15s setup, 5s NCM and reconnect.
+      # Model/HUD/control data retain their independent original freshness.
+      limit = 22
     update = value.get('host_update') or {}
     if (preparing and value.get('state') == 'updating' and isinstance(update, dict)
         and update.get('state') in ('downloading', 'checking_files')):
@@ -87,20 +95,37 @@ def fresh_value(value, now, *, handshake=False, preparing=False):
   return {}
 
 
-def _fresh(path, now, *, handshake=False, preparing=False):
-  return fresh_value(_read(path), now, handshake=handshake, preparing=preparing)
+def _fresh(path, now=None, *, handshake=False, preparing=False):
+  value = _read(path)
+  return fresh_value(value, time.monotonic() if now is None else now, handshake=handshake, preparing=preparing)
+
+
+def preparation_text(link, model):
+  if model.get('active'):
+    return ''
+  preparation = link.get('preparation') or {}
+  phase = preparation.get('stage') if isinstance(preparation, dict) else None
+  if link.get('state') == 'connecting':
+    return {'usb-setup': 'USB 연결 준비 중', 'network-setup': 'USB 통신 준비 중',
+            'runtime-handoff': '실행 프로그램 시작 중', 'waiting-host': '응답 대기 중',
+            'usb-probe': '응답 확인 중', 'transport-selection': '연결 장치 확인 중'}.get(phase, '연결 대기')
+  if link.get('state') == 'loading':
+    return '모델 준비 중'
+  if link.get('state') == 'ready' and model:
+    return '콤마 영상 준비 중' if model.get('warp_preparing') else '모델 전환 대기'
+  return ''
 
 
 def diagnostics(snapshot=None):
   """Only current telemetry can report health or an address; HELLO is identity."""
-  now = time.monotonic()
   saved, saved_model = read_status() if snapshot is None else snapshot
+  now = time.monotonic()
   link = fresh_value(saved, now, handshake=True, preparing=True)
   model = fresh_value(saved_model, now)
   if not saved.get('peer') and saved.get('state') not in ('connecting', 'loading', 'retrying', 'blocked') and not model.get('active'):
     return None
   result = {'label': host_label(saved.get('peer'), saved.get('transport', 'usb')), 'state': link.get('state', 'disconnected'),
-            'severity': 'unknown', 'reason': '', 'addresses': [], 'temp_c': None,
+            'severity': 'unknown', 'reason': preparation_text(link, model), 'addresses': [], 'temp_c': None,
             'active': bool(model.get('active')), 'fresh': False}
   if link.get('state') == 'updating' and result['label'] == 'jetSON':
     text, style = update_badge(link.get('host_update') or {})
@@ -151,12 +176,14 @@ def diagnostics(snapshot=None):
       continue
   if model_error:
     result.update(severity='error', reason=model_error)
+  elif result['severity'] == 'ok' and not result['active']:
+    result['reason'] = preparation_text(link, model) or result['reason']
   return result
 
 
 def badge(snapshot=None):
-  now = time.monotonic()
   snapshot = read_status() if snapshot is None else snapshot
+  now = time.monotonic()
   link = fresh_value(snapshot[0], now, handshake=True, preparing=True)
   model = fresh_value(snapshot[1], now)
   label = host_label(link.get('peer'), link.get('transport', 'usb'))
@@ -174,7 +201,10 @@ def badge(snapshot=None):
     if label == 'jetSON' and link.get('state') == 'ready' and (not health['fresh'] or health['severity'] == 'unknown'):
       return f'{label} DATA?', 'loading'
   if model.get('active'):
-    return label, 'active'
+    return (f'{label} 사용 중' if label == 'jetSON' else label), 'active'
+  progress = preparation_text(link, model)
+  if progress:
+    return f'{label} {progress}', 'loading'
   state = link.get('state')
   if state == 'ready':
     return f'{label} READY', 'ready'

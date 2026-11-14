@@ -190,7 +190,7 @@ class JoiningModel:
       self.ready = state().get('state') == 'ready'
       record = {'active': self.active, 'ready': self.ready, 'model': model_name(self.spec), 'sha256': self.spec.sha256,
                 'nav_model': 'nav_map' in self.spec.input_shapes,
-                'error': self.error, 'updated': now,
+                'error': self.error, 'updated': now, 'warp_preparing': self.preparation is not None,
                 'execution': {'cpu_overlap': os.getenv('JETLINK_CPU_OVERLAP', '1') != '0',
                               'coherent_warp': bool(getattr(self.warp, 'coherent_output', False)),
                               'shared_input': getattr(self.client, 'shared', None) is not None,

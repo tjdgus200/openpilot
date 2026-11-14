@@ -5,6 +5,9 @@ window.CarrotTranslations.register("zh", {
   nativeName: "中文",
   shortName: "ZH",
   strings: {
+    model_library_change: "更换模型",
+    model_library_close: "关闭",
+    model_library_pending_apply: "重启后应用",
     model_library_title: "外部驾驶模型",
     model_library_internal: "内部模型：固定 CD210",
     model_library_noo: "支持 NOO",

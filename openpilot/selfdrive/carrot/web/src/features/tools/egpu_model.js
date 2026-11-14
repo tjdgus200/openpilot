@@ -142,10 +142,14 @@ function modelDisplayTitle(status, fallbackTitle = t("title")) {
 }
 
 function render(status = lastStatus) {
+  renderStatus(status);
+  renderLibrary(status?.library);
+}
+
+function renderStatus(status) {
   const card = document.getElementById("egpuModelCard");
   if (!card) return;
   lastStatus = status;
-  renderLibrary(status?.library);
   if (!status?.available && !status?.jetlink) {
     card.hidden = true;
     return;
@@ -243,6 +247,7 @@ async function refresh() {
 }
 
 async function requestCompileRestart() {
+  document.getElementById("modelLibraryDialog")?.close();
   if (!await appConfirm(t("restart_confirm"), { title: t("restart") })) return;
   const button = document.getElementById("btnEgpuCompileRestart");
   restartPending = true;

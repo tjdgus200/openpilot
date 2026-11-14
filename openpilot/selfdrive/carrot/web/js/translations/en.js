@@ -5,6 +5,9 @@ window.CarrotTranslations.register("en", {
   nativeName: "English",
   shortName: "EN",
   strings: {
+    model_library_change: "Change model",
+    model_library_close: "Close",
+    model_library_pending_apply: "Apply after restart",
     model_library_title: "External driving model",
     egpu_model_recovering: "eGPU reconnecting",
     egpu_model_recovering_detail: "The internal model remains in use while eGPU recovery is attempted, up to three times.",

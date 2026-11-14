@@ -1260,7 +1260,8 @@ class RadarMotionShadowSelector:
         output.lead_one for output in production_outputs
       )
     elif lead_one_outputs is None:
-      matcher = VisionRadarMatcher(enable_fresh_stationary_shield=_pv5_refinements_enabled(frames))
+      matcher = VisionRadarMatcher(enable_fresh_stationary_shield=_pv5_refinements_enabled(frames),
+                                  enable_close_xyv_handoff=_pv5_refinements_enabled(frames))
       lead_one_results = []
       for frame in frames:
         aligned_points = radar_points_at_model_time(frame)
