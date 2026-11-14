@@ -478,8 +478,6 @@ class DPathRadarOutput:
   leads_left2: tuple[dict[str, Any], ...]
   leads_right2: tuple[dict[str, Any], ...]
   lead_cutin_risk: dict[str, Any] | None
-  lead_cutin_assist: dict[str, Any] | None = None
-  cutin_assist_stage: int = 0
 
 
 class RadarLeadDynamics:
@@ -534,12 +532,9 @@ class DPathRadarController:
     corner_radar_measurement_delay_s: float = CORNER_RADAR_MEASUREMENT_DELAY_S,
     production_live_tracks: bool = False,
     pv5_refinements: bool = False,
-    pv5_cutin_assist: bool = False,
   ) -> None:
     # Only the verified PV5 live/replay boundaries opt into these development-branch refinements.
     self.pv5_refinements = bool(pv5_refinements)
-    from openpilot.selfdrive.carrot.radar_motion.cutin_assist import CutInAssistTracker
-    self.cutin_assist = CutInAssistTracker() if self.pv5_refinements and pv5_cutin_assist else None
     self.primary_matcher = VisionRadarMatcher(enable_fresh_stationary_shield=self.pv5_refinements)
     self.scc_primary_fallback_matcher = VisionRadarMatcher()
     self.forced_scc_rejected_s: float | None = None  # last frame mode 3 refused a beside-path SCC body
@@ -1046,8 +1041,6 @@ class DPathRadarController:
   ) -> DPathRadarOutput:
     path = _model_path(model)
     if len(path) < 2:
-      if self.cutin_assist is not None:
-        self.cutin_assist.reset()
       self.stopping_lane_corner_tracker.reset()
       self.in_lane_corner_tracker.reset()
       self.forced_scc_rejected_s = None
@@ -1562,9 +1555,6 @@ class DPathRadarController:
       )
     ):
       lead_two = scc_lead_two
-    assist = None
-    if self.cutin_assist is not None:
-      assist = self.cutin_assist.update(estimates, time_s, v_ego, lead_one, _lane_change_active(model))
     return DPathRadarOutput(
       lead_one=lead_one,
       lead_two=lead_two,
@@ -1580,7 +1570,4 @@ class DPathRadarController:
       leads_left2=self._pick_two(leads_left),
       leads_right2=self._pick_two(leads_right),
       lead_cutin_risk=lead_cutin_risk,
-      lead_cutin_assist=(self._lead_from_radar_point(assist.estimate.point, assist.estimate.d_path,
-        0.03, assist.estimate.confidence) if assist is not None else None),
-      cutin_assist_stage=assist.stage if assist is not None else 0,
     )

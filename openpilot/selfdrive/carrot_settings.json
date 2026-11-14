@@ -661,7 +661,7 @@
           "ko": "주행 보조",
           "en": "Driving Assist",
           "zh": "驾驶辅助",
-          "params": ["Pv5LaneBoundaryAssist", "Pv5SccDecelAssist", "Pv5CutInAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
+          "params": ["Pv5LaneBoundaryAssist", "Pv5SccDecelAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
         },
         {
           "id": "PV5_MAINTENANCE",
@@ -726,24 +726,6 @@
       "cgroup": "PV5",
       "ctitle": "原厂减速辅助（实验）",
       "cdescr": "默认关闭，仅用于PV5 CAN-FD摄像头SCC及openpilot纵向PID。停车并重启comma后生效。有效原厂raw不高于-2m/s²时选择更强减速，不等待视觉确认或value变负。进入后raw/value均连续200ms不低于零才解除，试验减速jerk为5、释放上限为1m/s³。保留既有加速度限制及静止保持逻辑，踏板或纵向解除优先。使用现有全屏警告及声音。非碰撞避免或AEB替代功能；ECU raw/value选择、已装Panda及实车制动未经验证，硬件验证前勿启用。",
-      "control": "toggle",
-      "risk": "high",
-      "min": 0,
-      "max": 1,
-      "default": 0,
-      "unit": 1
-    },
-    {
-      "group": "PV5",
-      "name": "Pv5CutInAssist",
-      "title": "끼어들기 단계 보조 (실험)",
-      "descr": "기본 끔이며 PV5의 카메라 SCC·오픈파일럿 종방향 제어에서만 사용합니다. 변경은 정차 후 콤마 재시작 때 반영됩니다. 1단계는 연속 관측된 진입 후보에 가속을 제한하고 일반 팝업을 표시합니다. 진입 근거가 충분해진 2단계는 제한된 사전감속을 요청하며 주황색의 더 큰 알림과 짧은 소리로 강조합니다. 강한 근거가 처음부터 있으면 2단계로 바로 진입할 수 있습니다. 페달·제어 해제·자료 만료 시 해제하고 긴급·운전자 경고를 우선합니다. 실제 감속도나 충돌 회피는 보장하지 않으며 기기·제동 검증 전에는 끔을 유지하세요.",
-      "egroup": "PV5",
-      "etitle": "Staged Cut-in Assist (Experimental)",
-      "edescr": "Default off. PV5 camera SCC with openpilot longitudinal control only; changes require an offroad comma restart. Stage 1 limits positive acceleration for a continuously observed entry candidate and shows a normal popup. Stronger entry evidence permits bounded pre-deceleration in stage 2, with a larger amber alert and a short sound. Strong evidence may enter stage 2 directly. Pedals, disengagement and expired data clear assistance; emergency and driver alerts retain priority. Vehicle deceleration and collision avoidance are unvalidated; keep off until hardware and braking validation.",
-      "cgroup": "PV5",
-      "ctitle": "分级切入辅助（实验）",
-      "cdescr": "默认关闭，仅限PV5摄像头SCC和openpilot纵向控制，停车重启comma后生效。第一级对连续观测的切入候选限制正加速并显示普通提示；证据充分后第二级请求有限预减速，显示更大的橙色提示并发出短音。强证据可直接进入第二级。踏板、控制解除或数据过期立即取消，紧急和驾驶员警告优先。未经实车制动验证，验证前请保持关闭。",
       "control": "toggle",
       "risk": "high",
       "min": 0,

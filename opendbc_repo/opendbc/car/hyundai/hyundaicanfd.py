@@ -493,7 +493,7 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
 
 
 def create_acc_control_scc2(packer, CAN, enabled, accel_value_last, accel, stopping, gas_override, set_speed, hud_control, hyundai_jerk, CS,
-                            stop_controller=None, hud_lateral=None, longitudinal_allowed=True, cutin_accel_ceiling=None):
+                            stop_controller=None, hud_lateral=None, longitudinal_allowed=True):
 
   if stop_controller is not None:
     stop_controller.stop_object_active = False
@@ -580,12 +580,6 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_value_last, accel, stopp
 
   # Opt-in PV5 admission is independent of lateral/global enabled. An outgoing
   # active ACCMode must not re-arm longitudinal safety after a driver override.
-  if (cutin_accel_ceiling is not None and enabled and values["ACCMode"] == 1
-      and getattr(getattr(CS, "CP", None), "carFingerprint", None) == CAR.KIA_PV5
-      and math.isfinite(cutin_accel_ceiling) and cutin_accel_ceiling <= 0.0):
-    values["aReqRaw"] = min(values["aReqRaw"], cutin_accel_ceiling)
-    # aReqValue retains the complete existing jerk slew, including the
-    # positive-to-zero transition. This is a request, not proof of ego response.
   if not longitudinal_allowed:
     values.update(ACCMode=0, StopReq=0, aReqRaw=0.0, aReqValue=0.0,
                   AccelLimitBandUpper=0.0, AccelLimitBandLower=0.0)

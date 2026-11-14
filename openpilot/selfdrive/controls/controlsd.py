@@ -17,7 +17,6 @@ from opendbc.car.car_helpers import interfaces
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.hyundai.stop_object import signal_stop_object_requested
 from opendbc.car.hyundai.scc_decel import feedback_active as scc_decel_feedback_active, eligible as scc_decel_eligible
-from openpilot.common.pv5_cutin_assist import feedback_stage as cutin_feedback_stage
 from opendbc.car.volkswagen.values import MEB_CURVATURE_PID_KP, MEB_CURVATURE_PID_KI, MEB_CURVATURE_PID_KF, MEB_CURVATURE_MAX
 
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature, get_lag_adjusted_curvature, is_volkswagen_meb
@@ -198,9 +197,6 @@ class Controls:
       output = self.sm['carOutput'].actuatorsOutput
       if (output.pv5SccDecelEnabled and output.pv5SccDecelActive
           and scc_decel_feedback_active(self.CP, output, self.sm.logMonoTime['carOutput'], time.monotonic_ns())):
-        self.LoC.track_external_output(output.accel)
-      elif (output.pv5CutInAssistEnabled and output.pv5CutInAssistStage
-            and cutin_feedback_stage(self.CP, output, self.sm.logMonoTime['carOutput'], time.monotonic_ns())):
         self.LoC.track_external_output(output.accel)
     accel, aTarget, jerk = self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, t_since_plan, self.sm['radarState'])
     actuators.longControlState = self.LoC.long_control_state

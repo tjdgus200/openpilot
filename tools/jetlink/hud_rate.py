@@ -50,6 +50,7 @@ class IdleBudget:
     self.media_pause_until = 0.
     self.window_until = 0.
     self.media_window_until = 0.
+    self.display_estimate_at = None
 
   def model_started(self, now):
     if self.last_model is not None:
@@ -63,6 +64,17 @@ class IdleBudget:
       self.pause_until = max(self.pause_until, now + self.period)
 
   def open_window(self, now):
+    # A single slow read/write can make allowed() reject every later call.
+    # observe() then never runs, so its per-observation decay cannot recover.
+    # Age only the HUD cost estimate after two quiet seconds, using this
+    # existing idle poll. Model-ready checks, 4ms reserve and deadlines remain
+    # unchanged. This is a bounded retry estimate, not a hard USB time limit.
+    if self.display_estimate_at is not None and now - self.display_estimate_at >= 2.:
+      decay = .5 ** min(4, int((now - self.display_estimate_at) / 2.))
+      self.read_budget *= decay
+      self.write_budget = max(.002, self.write_budget * decay)
+      self.send_budget = self.read_budget + self.write_budget
+      self.display_estimate_at = now
     # Snapshot access may exceed 2ms despite ample model headroom. Reserve
     # the measured USB write separately instead of discarding every snapshot.
     remaining = .012 if self.last_model is None or now - self.last_model > .5 else (
@@ -90,6 +102,7 @@ class IdleBudget:
       value = metrics.get(key, 0.) / 1000.
       return value if math.isfinite(value) and value >= 0 else 0.
     if 'display_snapshot_read_ms' in metrics or 'display_hud_send_ms' in metrics:
+      self.display_estimate_at = now
       read, write = seconds('display_snapshot_read_ms'), seconds('display_hud_send_ms')
       self.read_budget = max(min(.02, read), self.read_budget * .95)
       if metrics.get('display_hud_bytes', write > 0):

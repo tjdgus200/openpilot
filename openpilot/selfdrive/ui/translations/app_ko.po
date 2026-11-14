@@ -8,18 +8,6 @@ msgstr ""
 msgid "SCC BRAKING!"
 msgstr "급감속 경고!"
 
-msgid "Cut-in: Acceleration Limit Requested"
-msgstr "끼어들기: 가속 억제 요청"
-
-msgid "Watching vehicle entering your path"
-msgstr "진입 차량을 확인하고 있습니다"
-
-msgid "CUT-IN: DECELERATION REQUEST!"
-msgstr "끼어들기: 사전감속 요청!"
-
-msgid "Prepare to brake"
-msgstr "브레이크 조작을 준비하세요"
-
 #: openpilot/selfdrive/selfdrived/events.py
 msgid "Stock deceleration request"
 msgstr "순정 SCC 감속 요청"

@@ -1,16 +1,18 @@
-- 2026-11-14 owner approves linked PV5 cut-in stages and escalating popups.
-  Pv5CutInAssist is default OFF, startup-only, camera-SCC/openpilot-long PV5 only.
-  Reuse existing per-model-frame trajectory estimates for bounded caution, and
-  existing stronger evidence for pre-deceleration; preserve lead roles and legacy
-  risk. Fresh admitted emitted CAN state drives low-priority small silent stage1
-  and amber medium/single-prompt stage2, below every driver/emergency warning.
-  Keep pedal/TCS/freshness/clock/identity/maneuver/alias vetoes, existing
-  value jerk and stronger SCC braking. No added inference, worker, subscription,
-  Panda firmware, model/HUD package or geometry changes. Keep disabled/other-car
-  parity. PC replay is not vehicle braking validation; the documented nearby
-  aborted-entry probe can request unnecessary pre-deceleration. Keep OFF pending
-  broader negative-case and hardware validation. No vehicle install/restart.
-  See docs/pv5_cutin_assist_20261114.md.
+- 2026-11-14 HUD follow-up: one slow snapshot read/write could leave IdleBudget
+  permanently denying display work because its estimates decayed only in observe.
+  Existing idle polling ages quiet HUD estimates every2s, retaining write floor,
+  request-ready checks,4ms model reserve,overload skip,expiry and media policy.
+  No forced model/USB/publisher restart or added worker/timer/logging. PC fixtures
+  resume after2.08..4.08s versus0 sends over12s before; actual device cause/timing
+  is unconfirmed. Five-minute loadd-like warning still needs exact text/current
+  evidence; do not suppress process/lag warnings. See technical release note.
+
+- 2026-11-14 owner withdraws staged cut-in assist after frequent/unwanted alerts.
+  Remove Pv5CutInAssist execution, setting, planner/CAN constraints, tracking
+  and both new warning events. Old saved ON values must have no consumer.
+  Keep appended schema ordinals dormant for old-log compatibility; do not reuse.
+  Preserve Pv5SccDecelAssist, its CAN/driver admission and urgent warning, and
+  all pre-existing lead selection/cutin risk. No vehicle install or enable.
 
 - 2026-11-14 owner authorizes PV5 SCC raw-deceleration candidate integration/push.
   Pv5SccDecelAssist is experimental, default OFF and startup-only. Preserve PV5
