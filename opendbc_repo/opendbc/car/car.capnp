@@ -494,6 +494,9 @@ struct CarControl {
     jerk @9: Float32;  # m/s^3
     aTarget @10: Float32;  # m/s^2
     stopObjectActive @11 :Bool; # synthetic signal-stop object included in the generated SCC packet
+    pv5SccDecelEnabled @12 :Bool; # default-OFF PV5 experiment; CarOutput telemetry only
+    pv5SccDecelActive @13 :Bool;
+    pv5SccDecelSourceMonoTime @14 :UInt64; # original camera SCC RX timestamp, never a TX echo
 
     enum LongControlState @0xe40f3a917d908282{
       off @0;

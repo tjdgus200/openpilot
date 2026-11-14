@@ -46,6 +46,7 @@ class MessageState:
   counter_fail: int = 0
   first_seen_nanos: int = 0
   last_warning_log_nanos: int = 0
+  last_invalid_nanos: int = 0  # Observation only: cached data must not hide a newer rejected packet.
 
   def rate_limited_log(self, last_update_nanos: int, msg: str) -> None:
     if (last_update_nanos - self.last_warning_log_nanos) >= 1_000_000_000:
@@ -83,6 +84,7 @@ class MessageState:
 
     # must have good counter and checksum to update data
     if checksum_failed or counter_failed:
+      self.last_invalid_nanos = nanos
       return False
 
     if not self.vals:

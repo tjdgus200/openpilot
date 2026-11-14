@@ -130,6 +130,17 @@ class LongControl:
     self.pid.reset()
     self.coasting.reset()
 
+  def track_external_output(self, accel):
+    # PV5's fixed Ki=0 avoids integrator windup while the downstream SCC
+    # experiment selects a stronger raw request. Retain P/F diagnostics and
+    # track the emitted output for later stopping/handover state transitions.
+    from opendbc.car.hyundai.scc_decel import eligible
+    if not eligible(self.CP) or not math.isfinite(accel) or not -4.0 <= accel <= 2.5:
+      return False
+    self.last_output_accel = float(accel)
+    self.pid.control = float(accel)
+    return True
+
   def update(self, active, CS, long_plan, accel_limits, t_since_plan, radarState):
 
     soft_hold_active = CS.softHoldActive > 0

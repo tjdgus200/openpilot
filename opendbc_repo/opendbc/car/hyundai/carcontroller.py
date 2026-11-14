@@ -10,6 +10,10 @@ from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.stopping import CanfdStopping
 from opendbc.car.hyundai.steering_handover import SteeringHandover
 from opendbc.car.hyundai.steering_recovery import SimpleSteeringRecovery, DEFAULT_RELEASE_MS, DEFAULT_RECOVERY_MS, read_recovery_settings
+from opendbc.car.hyundai.scc_decel import (
+  CameraSccSource, StockDecelAssist, Decision, eligible as scc_decel_eligible,
+  packet_allowed as scc_packet_allowed, DECEL_JERK, RELEASE_JERK,
+)
 from opendbc.car.carlog import carlog
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
@@ -195,6 +199,12 @@ class CarController(CarControllerBase):
     self.last_button_frame = 0
 
     self.hyundai_jerk = HyundaiJerk()
+    # Startup-only opt-in: changing this experiment requires an offroad restart.
+    self.scc_decel_enabled = scc_decel_eligible(CP) and Params().get_bool("Pv5SccDecelAssist")
+    self.scc_decel_source = CameraSccSource(hyundaicanfd.hkg_can_fd_checksum) if self.scc_decel_enabled else None
+    self.scc_decel = StockDecelAssist() if self.scc_decel_enabled else None
+    self.scc_decel_decision = Decision(0.0)
+    self.scc_decel_applied = Decision(0.0)
     self.speedCameraHapticEndFrame = 0
     self.hapticFeedbackWhenSpeedCamera = 0
     self.max_angle_frames = MAX_ANGLE_FRAMES
@@ -250,6 +260,16 @@ class CarController(CarControllerBase):
 
     self.steerDeltaUpOrg = self.steerDeltaUp = self.steerDeltaUpLC = self.params.STEER_DELTA_UP
     self.steerDeltaDownOrg = self.steerDeltaDown = self.steerDeltaDownLC = self.params.STEER_DELTA_DOWN
+
+  def _apply_scc_decel(self, CC, CS, now_nanos, accel):
+    if not self.scc_decel_enabled:
+      return accel, True
+    allowed = scc_packet_allowed(CC, CS, now_nanos, self.CAN.ECAN)
+    observation = self.scc_decel_source.update(getattr(CS, "cp_cam", None), self.CAN.CAM, now_nanos)
+    extra_allowed = (allowed and CC.longActive and CC.actuators.longControlState == LongCtrlState.pid
+                     and CS.softHoldActive == 0 and CS.out.carrotCruise == 0 and CS.scc_control is not None)
+    self.scc_decel_decision = self.scc_decel.update(accel, observation, now_nanos, extra_allowed)
+    return self.scc_decel_decision.accel if allowed else 0.0, allowed
 
   def update(self, CC, CS, now_nanos):
 
@@ -533,6 +553,8 @@ class CarController(CarControllerBase):
     stopping = actuators.longControlState == LongCtrlState.stopping
     set_speed_in_units = hud_control.setSpeed * (CV.MS_TO_KPH if CS.is_metric else CV.MS_TO_MPH)
 
+    accel, scc_allowed = self._apply_scc_decel(CC, CS, now_nanos, accel)
+
     # HUD messages
     sys_warning, sys_state, left_lane_warning, right_lane_warning = process_hud_alert(CC.enabled, self.car_fingerprint,
                                                                                       hud_control)
@@ -618,6 +640,10 @@ class CarController(CarControllerBase):
         self.hyundai_jerk.make_jerk(self.CP, CS, accel, actuators, hud_control)
         self.hyundai_jerk.check_carrot_cruise(CC, CS, hud_control, stopping, accel, actuators.aTarget)
 
+        if self.scc_decel_enabled and self.scc_decel_decision.active:
+          self.hyundai_jerk.jerk_l = DECEL_JERK
+          self.hyundai_jerk.jerk_u = min(self.hyundai_jerk.jerk_u, RELEASE_JERK)
+
         if True: #not camera_scc:
           can_sends.extend(hyundaicanfd.create_ccnc_messages(
             self.CP, self.packer, self.CAN, self.frame, CC, CS, hud_control, apply_angle,
@@ -633,9 +659,12 @@ class CarController(CarControllerBase):
             msg, self.accel_value_last = hyundaicanfd.create_acc_control_scc2(
               self.packer, self.CAN, CC.enabled, self.accel_value_last, accel, stopping, CC.cruiseControl.override,
               set_speed_in_units, hud_control, self.hyundai_jerk, CS, self.canfd_stopping, hud_lateral=hud_lateral,
+              longitudinal_allowed=scc_allowed,
             )
             if msg is not None:
               can_sends.append(msg)
+            if self.scc_decel_enabled:
+              self.scc_decel_applied = self.scc_decel_decision if msg is not None and scc_allowed else Decision(0.0)
             can_sends.extend(hyundaicanfd.create_tcs_messages(self.packer, self.CAN, CS)) # for sorento SCC radar...
           else:
             msg, self.accel_value_last = hyundaicanfd.create_acc_control(
@@ -721,6 +750,11 @@ class CarController(CarControllerBase):
     new_actuators.steeringAngleDeg = float(apply_angle)
     new_actuators.accel = accel
     new_actuators.stopObjectActive = bool(self.canfd_stopping is not None and self.canfd_stopping.stop_object_active)
+    new_actuators.pv5SccDecelEnabled = self.scc_decel_enabled
+    new_actuators.pv5SccDecelActive = bool(self.scc_decel_enabled and self.scc_decel_decision.active and self.scc_decel_applied.active)
+    new_actuators.pv5SccDecelSourceMonoTime = self.scc_decel_applied.source_stamp if new_actuators.pv5SccDecelActive else 0
+    if new_actuators.pv5SccDecelActive:
+      new_actuators.accel = self.scc_decel_applied.accel
 
     self.frame += 1
     return new_actuators, can_sends

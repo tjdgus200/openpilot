@@ -661,7 +661,7 @@
           "ko": "주행 보조",
           "en": "Driving Assist",
           "zh": "驾驶辅助",
-          "params": ["Pv5LaneBoundaryAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
+          "params": ["Pv5LaneBoundaryAssist", "Pv5SccDecelAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
         },
         {
           "id": "PV5_MAINTENANCE",
@@ -710,6 +710,24 @@
       "ctitle": "自动故障报告（仅分析）",
       "cdescr": "完成设备注册及PC接收配置后开启并重启comma。PV5警告及进程退出代码去重，最新CAN速度为0时不限挡位或巡航状态尝试上传；移动或速度数据失效则停止。最多32类/64KiB/24小时，限制重试。PC仅向Discord报告原因及建议，不自动改代码、推送或安装。不发送视频、位置、原始日志或凭据。关闭约1秒内生效。",
       "control": "toggle",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5SccDecelAssist",
+      "title": "순정 급감속 보조 (실험)",
+      "descr": "PV5 CAN-FD 카메라 SCC·오픈파일럿 종방향 PID 주행 전용이며 기본 끔입니다. 변경은 정차 상태에서 콤마를 재시작한 뒤 반영합니다. 유효한 원래 순정 SCC raw가 -2m/s² 이하이면 더 강한 감속 요청을 선택하며 비전 확인이나 value 음수 진입을 기다리지 않습니다. 진입 후 raw/value 감속을 확인하며, 둘 다 0 이상인 신선한 상태가 200ms 이어지면 완화합니다. 시험용 감속 jerk 5·완화 상한 1m/s³와 기존 가감속 한도를 사용합니다. 페달·종방향 해제는 주행 중 CAN 모드를 끄고 기존 정차·소프트홀드는 유지합니다. 기존 전체 화면 경고와 소리를 사용합니다. 충돌 회피나 AEB 대체 기능이 아닙니다. ECU raw/value 선택·설치 Panda·실차 제동 효과는 미검증이므로 하드웨어 검증 전 활성화하지 마세요.",
+      "egroup": "PV5",
+      "etitle": "Stock Deceleration Assist (Experimental)",
+      "edescr": "Default off, PV5 CAN-FD camera SCC with openpilot longitudinal PID only. Changes require an offroad comma restart. Qualified original OEM raw requests at or below -2m/s² select the stronger deceleration without waiting for vision confirmation or negative value. After entry, fresh raw/value requests govern release; both must remain nonnegative for 200ms. Trial deceleration jerk 5 and release ceiling 1m/s³ retain existing acceleration limits. Pedals or longitudinal disengagement disable the moving ACC mode; existing stationary/soft-hold behavior is retained. Uses the existing full-screen warning and sound. Not collision avoidance or an AEB replacement. ECU raw/value selection, installed Panda and vehicle braking effects are unvalidated; do not enable before hardware validation.",
+      "cgroup": "PV5",
+      "ctitle": "原厂减速辅助（实验）",
+      "cdescr": "默认关闭，仅用于PV5 CAN-FD摄像头SCC及openpilot纵向PID。停车并重启comma后生效。有效原厂raw不高于-2m/s²时选择更强减速，不等待视觉确认或value变负。进入后raw/value均连续200ms不低于零才解除，试验减速jerk为5、释放上限为1m/s³。保留既有加速度限制及静止保持逻辑，踏板或纵向解除优先。使用现有全屏警告及声音。非碰撞避免或AEB替代功能；ECU raw/value选择、已装Panda及实车制动未经验证，硬件验证前勿启用。",
+      "control": "toggle",
+      "risk": "high",
       "min": 0,
       "max": 1,
       "default": 0,

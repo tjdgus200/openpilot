@@ -1,3 +1,15 @@
+- 2026-11-14 owner authorizes PV5 SCC raw-deceleration candidate integration/push.
+  Pv5SccDecelAssist is experimental, default OFF and startup-only. Preserve PV5
+  camera-SCC/openpilot-long scope, original RX CRC/counter/batch/freshness checks,
+  raw<=-2 entry, stronger-comma selection, bounded release and every driver gate.
+  Keep disabled/other-vehicle CAN parity and existing stationary hold behavior.
+  CarOutput metadata drives bounded LoC tracking and existing critical warning;
+  no new inference/subscriber/worker or Panda firmware change. PC checks/replay
+  do not establish ECU raw/value selection, installed Panda, device audio/HUD or
+  physical braking safety. Keep OFF until hardware validation. No vehicle access,
+  installation, restart or automatic activation is authorized by this push.
+  See docs/pv5_scc_decel_20261114.md; preserve the documented baseline test failure.
+
 - 2026-11-13 owner authorizes PV5 Jetson automatic MAXN_SUPER startup selection.
   Port upstream8ca67794 and5a2784cc ordering to all five paired PV5 packages;
   never replace them with the generic signed N16 bundle. Resolve the installed

@@ -457,6 +457,32 @@ Mode `2` gradually requests acceleration toward approximately −0.5m/s² after 
 
 Preparation releases when red evidence disappears or conflicts with green. The existing driving model still controls stopping toward the stop line; this trial does not guarantee deceleration or stopping at every red signal.
 
+## PV5 stock deceleration assist (experimental)
+
+**Settings → PV5 → Driving Assist → Stock Deceleration Assist (Experimental)**
+exposes `Pv5SccDecelAssist`, default off. Changes require an offroad comma restart.
+It applies only to PV5 CAN-FD camera SCC with openpilot longitudinal PID control;
+other vehicles and existing stationary/soft-hold behavior retain their paths.
+
+Qualified original camera SCC raw requests at or below −2m/s² select the stronger
+deceleration, preserving a stronger comma request. Entry does not wait for vision
+confirmation or negative value. CRC, counter, mode, fault and 100ms freshness
+checks qualify the input. After entry, a positive raw with a negative value does
+not immediately restore acceleration. Both fresh requests must remain nonnegative
+for 200ms before handover. Trial deceleration jerk 5 and release ceiling 1m/s³ retain
+existing acceleration limits. Raw and value may differ; these numbers do not
+guarantee actual vehicle jerk or braking response.
+
+The assist uses the existing red full-screen exclamation warning and sound.
+Pedals or longitudinal disengagement disable the moving ACC mode; normal stops
+and soft hold use their existing path. Invalid input clears stock priority and
+returns to ordinary comma control. Models, FOV, steering limits and driver authority
+remain unchanged.
+
+This is not collision avoidance or an AEB replacement. PC replay does not validate
+ECU raw/value selection, installed Panda, pedal blending or vehicle safety.
+**Do not enable before hardware and braking-response validation.**
+
 ## PV5 simple steering authority recovery
 
 Open **Settings → PV5 → Driving Assist → Simple Steering Authority Recovery (Experimental)**.

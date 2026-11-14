@@ -1,0 +1,967 @@
+{
+  "synthetic": true,
+  "source": "a07972357",
+  "source_sha256": "6ae57ee7c624967266b85e052bf6a4015808b72ad8b0c06dc32007b2618e68c2",
+  "cases": [
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "d24d00fef77f64000400000228000000fff33f0a0a0000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "d24d00fef77f64000400000228000000fff33f0a0a0000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "76f200fef77f64000400000228000000fff33f140a0000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "76f200fef77f64000400000228000000fff33f140a0000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "d24d00fef77f64000400000228000000fff33f0a0a0000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "d24d00fef77f64000400000228000000fff33f0a0a0000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "76f200fef77f64000400000228000000fff33f140a0000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "76f200fef77f64000400000228000000fff33f140a0000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "193b00fef77f6400140000022800000027f4310a32000a002800000000000000",
+      "last_value": 0.4
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "db9a00fef77f64001400000228000000fff33f0a320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "7f2500fef77f64001400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "6b5200fef77f64001400000228200000fff33f0a32000a012800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "353300fef77f64002400000228000000fff33f0a320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "353300fef77f64002400000228000000fff33f0a320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.0,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "918c00fef77f64002400000228000000fff33f14320000002800000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "285100fef77f64000400000228000000fff33f0a0a0000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "914e00fef77f64001400000228200000fff33f0a32000a012f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "285100fef77f64000400000228000000fff33f0a0a0000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "853900fef77f64001400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "8cee00fef77f64000400000228000000fff33f140a0000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "914e00fef77f64001400000228200000fff33f0a32000a012f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "8cee00fef77f64000400000228000000fff33f140a0000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "853900fef77f64001400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "285100fef77f64000400000228000000fff33f0a0a0000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "285100fef77f64000400000228000000fff33f0a0a0000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "8cee00fef77f64000400000228000000fff33f140a0000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "8cee00fef77f64000400000228000000fff33f140a0000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "e32700fef77f6400140000022800000027f4310a32000a002f00000000000000",
+      "last_value": 0.4
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "914e00fef77f64001400000228200000fff33f0a32000a012f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "218600fef77f64001400000228000000fff33f0a320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "853900fef77f64001400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "914e00fef77f64001400000228200000fff33f0a32000a012f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "914e00fef77f64001400000228200000fff33f0a32000a012f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "853900fef77f64001400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "853900fef77f64001400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "cf2f00fef77f64002400000228000000fff33f0a320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "cf2f00fef77f64002400000228000000fff33f0a320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 0.65,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "6b9000fef77f64002400000228000000fff33f14320000002f00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "774c00fef77f64000400000228000000fff33f0a0a0000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "a6e800fef77f64001400000228000000fff3311432000a006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "774c00fef77f64000400000228000000fff33f0a0a0000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "da2400fef77f64001400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "d3f300fef77f64000400000228000000fff33f140a0000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "a6e800fef77f64001400000228000000fff3311432000a006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "d3f300fef77f64000400000228000000fff33f140a0000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "da2400fef77f64001400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "774c00fef77f64000400000228000000fff33f0a0a0000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "774c00fef77f64000400000228000000fff33f0a0a0000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "d3f300fef77f64000400000228000000fff33f140a0000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "d3f300fef77f64000400000228000000fff33f140a0000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": false,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "bc3a00fef77f6400140000022800000027f4310a32000a006e00000000000000",
+      "last_value": 0.4
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "a6e800fef77f64001400000228000000fff3311432000a006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "7e9b00fef77f64001400000228000000fff33f0a320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": false,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "da2400fef77f64001400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "a6e800fef77f64001400000228000000fff3311432000a006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "a6e800fef77f64001400000228000000fff3311432000a006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "da2400fef77f64001400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": false,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "da2400fef77f64001400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 0,
+      "hex": "903200fef77f64002400000228000000fff33f0a320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": false,
+      "hold": 2,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 0,
+      "hex": "903200fef77f64002400000228000000fff33f0a320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": true,
+      "stopping": false,
+      "brake": true,
+      "hold": 2,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 0,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": false,
+      "hold": 2,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 0,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    },
+    {
+      "speed": 7.0,
+      "enabled": true,
+      "override": true,
+      "stopping": true,
+      "brake": true,
+      "hold": 2,
+      "hex": "348d00fef77f64002400000228000000fff33f14320000006e00000000000000",
+      "last_value": 0.0
+    }
+  ]
+}

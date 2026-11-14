@@ -16,6 +16,7 @@ from collections import deque
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.hyundai.stop_object import signal_stop_object_requested
+from opendbc.car.hyundai.scc_decel import feedback_active as scc_decel_feedback_active, eligible as scc_decel_eligible
 from opendbc.car.volkswagen.values import MEB_CURVATURE_PID_KP, MEB_CURVATURE_PID_KI, MEB_CURVATURE_PID_KF, MEB_CURVATURE_MAX
 
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature, get_lag_adjusted_curvature, is_volkswagen_meb
@@ -58,6 +59,7 @@ def lateral_control_allowed(selfdrive_active: bool, always_lateral: bool, lat_en
 
 class Controls:
   pv5_lane_center = None
+  pv5_scc_supported = False
 
   def __init__(self) -> None:
     self.params = Params()
@@ -66,6 +68,7 @@ class Controls:
     cloudlog.info("controlsd got CarParams")
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP)
+    self.pv5_scc_supported = scc_decel_eligible(self.CP)
     self.physical_blinker_hold = HoldReader(self.CP.carFingerprint, self.params)
     if self.CP.carFingerprint == 'KIA_PV5' and not self.CP.notCar:
       self.pv5_lane_center = Pv5LaneBoundary(self.params)
@@ -190,6 +193,11 @@ class Controls:
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     t_since_plan = (self.sm.frame - self.sm.recv_frame['longitudinalPlan']) * DT_CTRL
+    if self.pv5_scc_supported and CC.longActive and not CS.brakePressed and not CS.gasPressed and self.sm.valid['carOutput']:
+      output = self.sm['carOutput'].actuatorsOutput
+      if (output.pv5SccDecelEnabled and output.pv5SccDecelActive
+          and scc_decel_feedback_active(self.CP, output, self.sm.logMonoTime['carOutput'], time.monotonic_ns())):
+        self.LoC.track_external_output(output.accel)
     accel, aTarget, jerk = self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, t_since_plan, self.sm['radarState'])
     actuators.longControlState = self.LoC.long_control_state
     actuators.accel = float(accel)

@@ -561,6 +561,14 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.stopStop, 2.),
   },
 
+  EventName.pv5SccDecel: {
+    ET.WARNING: Alert(
+      tr_noop("SCC BRAKING!"),
+      tr_noop("Stock deceleration request"),
+      AlertStatus.critical, AlertSize.full,
+      Priority.HIGH, VisualAlert.fcw, AudibleAlert.stopStop, 0.01),
+  },
+
   EventName.ldw: {
     ET.PERMANENT: Alert(
       "Lane Departure Detected",
