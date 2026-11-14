@@ -500,6 +500,13 @@ struct CarControl {
     pv5CutInAssistEnabled @15 :Bool; # retired; stays false
     pv5CutInAssistStage @16 :UInt8; # retired; old-log compatibility, stays zero
     pv5CutInAssistSourceMonoTime @17 :UInt64; # retired; stays zero
+    pv5SccWarningVersion @18 :UInt8; # display-only qualified original SCC metadata
+    pv5SccWarningMonoTime @19 :UInt64;
+    pv5SccWarningRaw @20 :Float32;
+    pv5SccWarningBaseAccel @21 :Float32;
+    pv5SccWarningDistance @22 :Float32;
+    pv5SccWarningRelSpeed @23 :Float32;
+    pv5SccWarningTargetValid @24 :Bool;
 
     enum LongControlState @0xe40f3a917d908282{
       off @0;

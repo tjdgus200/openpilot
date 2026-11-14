@@ -1,3 +1,13 @@
+- 2026-11-14 owner approves SCC warning-only nuisance reduction. Preserve every
+  SCC actuation/driver/jerk/receiver limit and the removed cut-in experiment.
+  Qualified original SCC metadata drives small silent ordinary status or urgent
+  red with one prompt per risk episode; re-alert on escalation/new risk, not a
+  global cooldown. Do not rely on10m or claimed stationary-car classification.
+  Keep severe/additional-request and unknown-metadata fallback, all FCW/AEB/
+  driver/timeout warnings and exact silent-SCC-only audio exception. No worker,
+  inference,subscription,model/HUD package pin change or vehicle activation.
+  Alert thresholds are PC trials; see docs/pv5_scc_warning_policy_20261114.md.
+
 - 2026-11-14 HUD follow-up: one slow snapshot read/write could leave IdleBudget
   permanently denying display work because its estimates decayed only in observe.
   Existing idle polling ages quiet HUD estimates every2s, retaining write floor,

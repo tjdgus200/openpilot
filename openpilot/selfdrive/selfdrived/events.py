@@ -566,7 +566,21 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       tr_noop("SCC BRAKING!"),
       tr_noop("Stock deceleration request"),
       AlertStatus.critical, AlertSize.full,
-      Priority.HIGH, VisualAlert.fcw, AudibleAlert.stopStop, 0.01),
+      Priority.HIGH, VisualAlert.fcw, AudibleAlert.prompt, 0.01),
+  },
+
+  EventName.pv5SccDecelSilent: {
+    ET.WARNING: Alert(
+      tr_noop("SCC BRAKING!"), tr_noop("Stock deceleration request"),
+      AlertStatus.critical, AlertSize.full,
+      Priority.HIGH, VisualAlert.fcw, AudibleAlert.none, 0.01),
+  },
+
+  EventName.pv5SccDecelInfo: {
+    ET.WARNING: Alert(
+      tr_noop("Stock deceleration assistance"), "",
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOWEST, VisualAlert.none, AudibleAlert.none, 0.01),
   },
 
   EventName.ldw: {

@@ -1,5 +1,9 @@
 # PV5 stock-deceleration experiment
 
+The warning presentation in this original release is superseded by
+[the warning-only follow-up](pv5_scc_warning_policy_20261114.md). Actuation rules
+below remain unchanged.
+
 `Pv5SccDecelAssist` is default off and read once when CarController starts.
 It is scoped to Hyundai `KIA_PV5`, CAN-FD camera SCC, real-car operation and
 openpilot longitudinal control. Changing it requires an offroad restart.

@@ -477,7 +477,14 @@ for 200ms before handover. Trial deceleration jerk 5 and release ceiling 1m/s³ 
 existing acceleration limits. Raw and value may differ; these numbers do not
 guarantee actual vehicle jerk or braking response.
 
-The assist uses the existing red full-screen exclamation warning and sound.
+Normal assistance uses a small silent status. Urgent evidence uses a full red
+warning and one short sound: near closing targets, short time to collision,
+coherent stationary-target braking estimates, severe SCC requests or substantial
+additional deceleration. Ten meters is not the only criterion. Missing warning
+metadata preserves an urgent warning. Continued risk does not repeat its sound;
+increased urgency or a new risk after a clear interval may alert again. Target
+estimates do not identify the actual cause of SCC braking. Existing FCW/AEB,
+control-fault and driver warnings remain separate.
 Pedals or longitudinal disengagement disable the moving ACC mode; normal stops
 and soft hold use their existing path. Invalid input clears stock priority and
 returns to ordinary comma control. Models, FOV, steering limits and driver authority

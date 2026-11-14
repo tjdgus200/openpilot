@@ -24,7 +24,8 @@ from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.impact_detector import ImpactDetector
 from openpilot.selfdrive.controls.lib.radar_only_warning import RadarOnlyWarning
-from opendbc.car.hyundai.scc_decel import warning_active as scc_decel_warning_active, eligible as scc_decel_eligible
+from opendbc.car.hyundai.scc_decel import eligible as scc_decel_eligible
+from openpilot.common.pv5_scc_warning import SccWarning
 from openpilot.selfdrive.carrot.radar_motion.timing import front_radar_distance_delay_s
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.controls.lib.cutin_alert import (
@@ -58,6 +59,7 @@ IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 
 class SelfdriveD:
   pv5_scc_supported = False
+  scc_warning = None
 
   def __init__(self, CP=None):
     self.params = Params()
@@ -76,6 +78,7 @@ class SelfdriveD:
 
     self.car_events = CarSpecificEvents(self.CP)
     self.pv5_scc_supported = scc_decel_eligible(self.CP)
+    self.scc_warning = SccWarning() if self.pv5_scc_supported else None
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
     self.excessive_actuation_check = ExcessiveActuationCheck()
@@ -242,12 +245,16 @@ class SelfdriveD:
     if self.CP.passive:
       return
 
-    if self.pv5_scc_supported and self.enabled and self.sm.valid['carOutput']:
+    if self.pv5_scc_supported:
       scc_output = self.sm['carOutput'].actuatorsOutput
-      if scc_output.pv5SccDecelEnabled and scc_output.pv5SccDecelActive:
-        now_ns = int(self.car_state_time_s * 1e9) if REPLAY else time.monotonic_ns()
-        if scc_decel_warning_active(self.CP, CS, scc_output, self.sm.logMonoTime['carOutput'], now_ns):
-          self.events.add(EventName.pv5SccDecel)
+      now_ns = int(self.car_state_time_s * 1e9) if REPLAY else time.monotonic_ns()
+      if self.scc_warning is None:
+        self.scc_warning = SccWarning()
+      cue = self.scc_warning.update(self.CP, CS, scc_output, self.sm.logMonoTime['carOutput'], now_ns,
+                                    enabled=self.enabled, output_valid=self.sm.valid['carOutput'])
+      if cue.level:
+        event = EventName.pv5SccDecelInfo if cue.level == 1 else EventName.pv5SccDecel if cue.audible else EventName.pv5SccDecelSilent
+        self.events.add(event)
 
     cutin_enabled = self.enabled and self.sm.valid['radarState']
     cutin_candidates = tuple(

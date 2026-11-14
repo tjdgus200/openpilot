@@ -167,6 +167,8 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     pv5SccDecel @130;
     pv5CutInCaution @131; # retired; keep ordinal for old logs
     pv5CutInPredecel @132; # retired; never emitted
+    pv5SccDecelInfo @133;
+    pv5SccDecelSilent @134;
 
     soundsUnavailableDEPRECATED @47;
   }

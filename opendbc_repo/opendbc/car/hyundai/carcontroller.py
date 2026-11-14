@@ -15,6 +15,7 @@ from opendbc.car.hyundai.scc_decel import (
   packet_allowed as scc_packet_allowed, DECEL_JERK, RELEASE_JERK,
 )
 from opendbc.car.carlog import carlog
+from openpilot.common.pv5_scc_warning import WarningInputs, capture_inputs, write_inputs
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
@@ -205,6 +206,7 @@ class CarController(CarControllerBase):
     self.scc_decel = StockDecelAssist() if self.scc_decel_enabled else None
     self.scc_decel_decision = Decision(0.0)
     self.scc_decel_applied = Decision(0.0)
+    self.scc_warning_applied = WarningInputs()
     self.speedCameraHapticEndFrame = 0
     self.hapticFeedbackWhenSpeedCamera = 0
     self.max_angle_frames = MAX_ANGLE_FRAMES
@@ -550,6 +552,7 @@ class CarController(CarControllerBase):
 
     # accel + longitudinal
     accel = clip_float(actuators.accel, CarControllerParams.ACCEL_MIN, CarControllerParams.ACCEL_MAX)
+    scc_warning_baseline = accel
     stopping = actuators.longControlState == LongCtrlState.stopping
     set_speed_in_units = hud_control.setSpeed * (CV.MS_TO_KPH if CS.is_metric else CV.MS_TO_MPH)
 
@@ -665,6 +668,8 @@ class CarController(CarControllerBase):
               can_sends.append(msg)
             if self.scc_decel_enabled:
               self.scc_decel_applied = self.scc_decel_decision if msg is not None and scc_allowed else Decision(0.0)
+              self.scc_warning_applied = (capture_inputs(CS.cp_cam, self.scc_decel_source.observation, scc_warning_baseline)
+                                          if self.scc_decel_applied.active else WarningInputs())
             can_sends.extend(hyundaicanfd.create_tcs_messages(self.packer, self.CAN, CS)) # for sorento SCC radar...
           else:
             msg, self.accel_value_last = hyundaicanfd.create_acc_control(
@@ -755,6 +760,7 @@ class CarController(CarControllerBase):
     new_actuators.pv5SccDecelSourceMonoTime = self.scc_decel_applied.source_stamp if new_actuators.pv5SccDecelActive else 0
     if new_actuators.pv5SccDecelActive:
       new_actuators.accel = self.scc_decel_applied.accel
+      write_inputs(new_actuators, self.scc_warning_applied)
 
     self.frame += 1
     return new_actuators, can_sends
