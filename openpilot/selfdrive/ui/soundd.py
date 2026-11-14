@@ -14,6 +14,7 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.common.utils import retry
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.openpilot_toggle import CruiseMainOpenpilotToggle
+from openpilot.selfdrive.ui.pv5_sound_assets import load_official_sound_pack
 
 from openpilot.system import micd
 from openpilot.system.hardware import HARDWARE
@@ -234,6 +235,35 @@ class Soundd:
 
     self.loaded_sounds = loaded_sounds
     self.critical_gains = critical_gains
+    self.legacy_sounds, self.legacy_gains = loaded_sounds, critical_gains
+    try:
+      self.pv5_sounds, self.pv5_gains = load_official_sound_pack(
+        os.path.join(BASEDIR, 'openpilot', 'selfdrive', 'assets', 'sounds_pv5_official'),
+        sound_list, AudibleAlert, loaded_sounds, critical_gains)
+      self.pv5_pack_ready = True
+    except (OSError, EOFError, ValueError, MemoryError, wave.Error):
+      # A missing/corrupt new asset must not remove the existing warning pack.
+      cloudlog.exception('PV5 official sound pack unavailable; retaining legacy warnings')
+      self.pv5_sounds, self.pv5_gains = loaded_sounds, critical_gains
+      self.pv5_pack_ready = False
+    self.pv5_profile = bool(getattr(self, 'pv5_profile', False) and self.pv5_pack_ready)
+    if self.pv5_profile:
+      self.loaded_sounds, self.critical_gains = self.pv5_sounds, self.pv5_gains
+    self.active_sound_pack = self.loaded_sounds, self.critical_gains
+
+  def update_sound_profile(self, sm) -> None:
+    # carParams is already subscribed for steering notices. No file reads or
+    # reloading on this path; switch preloaded dictionaries only between sounds.
+    if self.current_alert != AudibleAlert.none:
+      return
+    cp = sm['carParams']
+    wanted = (sm.valid.get('carParams', False) and cp.carFingerprint == 'KIA_PV5'
+              and not cp.notCar and self.pv5_pack_ready)
+    if wanted != self.pv5_profile:
+      self.pv5_profile = wanted
+      self.loaded_sounds, self.critical_gains = ((self.pv5_sounds, self.pv5_gains) if wanted
+                                               else (self.legacy_sounds, self.legacy_gains))
+      self.active_sound_pack = self.loaded_sounds, self.critical_gains
 
   def update_language(self) -> None:
     now = time.monotonic()
@@ -254,10 +284,14 @@ class Soundd:
     ret = np.zeros(frames, dtype=np.float32)
     alert, alert_type, volume = self.current_alert, self.current_alert_type, self.current_volume
     critical = self.current_alert_critical
+    # Snapshot samples and gains together so a completed tone's callback tail
+    # cannot observe the next profile's gain during a main-thread switch.
+    pack = getattr(self, 'active_sound_pack', None)
+    loaded_sounds, critical_gains = pack if pack is not None else (self.loaded_sounds, getattr(self, 'critical_gains', {}))
 
     if alert != AudibleAlert.none:
       num_loops = sound_list[alert][1]
-      sound_data = self.loaded_sounds[alert]
+      sound_data = loaded_sounds[alert]
       written_frames = 0
 
       current_sound_frame = self.current_sound_frame % len(sound_data)
@@ -275,7 +309,7 @@ class Soundd:
           loops += 1
 
     if critical:
-      return ret * self.critical_gains.get(alert, MAX_VOLUME)
+      return ret * critical_gains.get(alert, MAX_VOLUME)
     return ret * dm_warning_volume(alert, alert_type, volume)
 
   def callback(self, data_out: np.ndarray, frames: int, time, status) -> None:
@@ -384,6 +418,7 @@ class Soundd:
       while True:
         sm.update(0)
         self.update_language()
+        self.update_sound_profile(sm)
 
         if sm.updated['soundPressure'] and self.current_alert == AudibleAlert.none: # only update volume filter when not playing alert
           self.spl_filter_weighted.update(sm["soundPressure"].soundPressureWeightedDb)

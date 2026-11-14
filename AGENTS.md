@@ -1,3 +1,15 @@
+- 2026-11-14 owner approves official new sound assets in real PV5 only. Use7
+  pinned0.11.2 WAVs from6939d172e85e3b91f16d90cc8de72e8f938cc196, retain license
+  and manifest. Preload in the existing loader, select with existing CarParams
+  subscription only between sounds; snapshot PCM/gain pair together. Preserve
+  legacy/unknown/notCar/other-car audio, existing event/play-count/gain policy,
+  DM/timeout priority, SCC one-shot/silent distinction and Carrot voice/FCW cue.
+  No upstream DM/ramp/maximum-stage policy port, new worker/timer/subscription,
+  vehicle control/model/HUD/pin changes or device install. New durations imply
+  new acoustic loop periods. Missing/malformed/new-pack memory failure falls
+  back to the complete legacy warning pack. PC131+630 exact legacy PCM cases
+  do not prove C3X speaker loudness or road safety. See technical sound note.
+
 - 2026-11-14 PV5 notification follow-up: retire live continuous cutin/cutinTrack/
   cutinBrake popups in comma and paired HUD adapters. Keep the original promoted
   radarCutin trigger/re-ID policy and show a1.5s small silent lower-priority
