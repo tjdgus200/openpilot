@@ -57,6 +57,8 @@ graph of this fixture is not a vehicle trajectory or brake-response simulation.
 The actual DOM renderer checks narrow/landscape layouts, native default/high
 contrast, dialog viewport bounds and preserved focus during inventory refresh.
 Carrot Web's native tokens are dark; a light preference is not a separate theme.
+Visual inspection caught an undefined upstream surface-color token making the
+dialog transparent; the component uses the existing `--md-surface-cont` token.
 
 The NAS automatic workflow for upstream e5f4ac8a1 completed successfully; public
 health identifies that exact source. The existing actual upload-result viewer and

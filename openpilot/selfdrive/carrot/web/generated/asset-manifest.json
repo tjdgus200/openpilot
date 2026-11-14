@@ -118,7 +118,7 @@
       "kind": "bundle",
       "source": "src/entries/tools.css",
       "path": "css/generated/tools.css",
-      "hash": "19804cc8f092e733e62641a26da2c92d047525e4c227002779655906fa489e1b"
+      "hash": "aa91b49d170b8276830dfad7a8ad12053981d6b395e9904798d7e9bb4356a098"
     },
     {
       "id": "logs.styles",
