@@ -52,6 +52,7 @@ class RuntimeChecks(unittest.TestCase):
   def write_config(self, **changes):
     value = {
       'qualified_modes': ['detached_home'],
+      'resource_policy': remote.HOME_POLICY,
       'trial': False,
       'boot_restore': True,
       'guard_sha256': hashlib.sha256(self.script.read_bytes()).hexdigest(),
@@ -97,7 +98,7 @@ class RuntimeChecks(unittest.TestCase):
       self.write_config(**changes)
       self.assertFalse(remote.restore_runtime()['boot_restore_requested'])
       self.assertFalse(self.units.exists())
-    for changes in ({'qualified_modes': ['parked_dashcam']}, {'guard_sha256': '0' * 64}, {'binaries': {}}):
+    for changes in ({'qualified_modes': ['parked_dashcam']}, {'resource_policy': None}, {'guard_sha256': '0' * 64}, {'binaries': {}}):
       self.write_config(**changes)
       with self.assertRaises(ValueError):
         remote.restore_runtime()

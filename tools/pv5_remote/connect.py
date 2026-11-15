@@ -12,6 +12,7 @@ import subprocess
 import threading
 import time
 
+HOME_POLICY = 'detached_home_uncapped_v1'
 
 CHECK = r'''
 import errno,hashlib,json,os,pathlib,socket,time
@@ -30,18 +31,18 @@ def inaccessible(path):
  finally: s.close()
 blocked=all(inaccessible(v) for v in ('/run/dbus/system_bus_socket','/run/systemd/private'))
 assert readonly and blocked,('host_service_isolation',readonly,blocked)
-usage=lambda:int(dict(v.split() for v in (root/'cpu.stat').read_text().splitlines())['usage_usec'])
 memory=lambda:int((root/'memory.current').read_text())
-quota,period=map(int,(root/'cpu.max').read_text().split()); maximum=int((root/'memory.max').read_text())
-assert quota/period<=.101 and maximum<=256*1024**2,'resource_limits'
-started,cpu=time.monotonic(),usage(); observed=[]
-for i in range(6): observed.append(memory());time.sleep(.5)
-fraction=(usage()-cpu)/1e6/(time.monotonic()-started)
-assert fraction<=.15 and max(observed)<=maximum,'resource_trial'
 config=json.loads(P('/data/pv5-remote-access/conditional_modes.json').read_bytes())
+assert config.get('qualified_modes')==['detached_home'] and config.get('resource_policy')=='detached_home_uncapped_v1','home_resource_policy'
+assert (root/'memory.max').read_text().strip()=='max','unexpected_memory_cap'
+has_cpu=(root/'cpu.max').exists()
+assert not has_cpu or (root/'cpu.max').read_text().split()[0]=='max','unexpected_CPU_cap'
+observed=[]
+for i in range(6): observed.append(memory());time.sleep(.5)
 digest=hashlib.sha256(P('/data/pv5-remote-access/conditional_remote.py').read_bytes().replace(b'\r\n',b'\n')).hexdigest()
 print(json.dumps({'root_key_session':True,'guard_cgroup':True,'host_service_isolation':True,
- 'cpu_fraction_one_core':round(fraction,4),'observed_memory_bytes':max(observed),'memory_limit':maximum,
+ 'resource_policy':config['resource_policy'],'observed_memory_bytes':max(observed),'memory_limit':None,
+ 'CPU_quota_limit':None,'CPU_controller_available':has_cpu,
  'qualified_modes':config['qualified_modes'],'trial':config.get('trial') is True,'guard_sha256':digest}))
 '''
 
@@ -141,7 +142,7 @@ def main():
   if not args.verify_home:
     print(json.dumps(proof))
     return
-  if proof.get('trial') is not True or proof.get('qualified_modes') != ['detached_home']:
+  if proof.get('trial') is not True or proof.get('qualified_modes') != ['detached_home'] or proof.get('resource_policy') != HOME_POLICY:
     raise ValueError('home_trial_required')
   client = subprocess.Popen(ssh + [remote(JOB)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, creationflags=flags)
   try:

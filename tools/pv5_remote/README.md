@@ -58,12 +58,30 @@ Root ownership is not a security boundary against an intentionally malicious
 owner root command. Do not change the guard, escape isolation or run vehicle
 service/parameter/model operations as a side effect of incident analysis.
 
-The main-only PID1 watchdog is one second; the service is nice19/idle-I/O,
-first-four-available-core affinity, CPU quota10% of one core, memory256MiB.
-The observer waits500ms while closed and100ms while serving. CPU quota includes
-SSH jobs and may cause refusal/restart under load. State delay or watchdog loss
-fails closed. These are trial budgets, not a real-time or zero-impact guarantee.
-Already submitted kernel I/O cannot be recalled instantly.
+The owner explicitly removed home resource limits on2026-11-15 after actual
+device verification found that the service's cgroup2 exposes only memory and
+cannot enforce the previously requested CPU10% quota. This does not establish
+that the kernel lacks a CPU controller: enabled v1 CPU entries were also found.
+Do not change global cgroup hierarchies or kernel configuration to force a quota.
+
+The new `detached_home_uncapped_v1` policy removes this diagnostic service's
+CPU quota, memory cap and first-four-core affinity. Home admission no longer
+depends on numerical CPU/RAM/free-space headroom. Nice19 and idle-I/O priority,
+thermal-green admission, fresh real disconnected/no-ignition/stopped-process
+proof and all authentication/isolation/watchdog conditions remain. No SCHED_IDLE
+policy or hard10% cap is claimed. Existing OS thermal/memory protections remain;
+uncapped diagnostics can consume the device's available resources.
+
+Guard, boot restoration and promotion reject missing/legacy/mixed/vehicle modes
+under this policy. This is a home-only exception; it does not qualify or enable
+parked-vehicle remote access, incident evidence work or recording uploads. The
+existing vehicle eligibility helper retains its original numerical headroom
+checks. Extending an uncapped service to that mode is expressly rejected.
+
+The main-only PID1 watchdog is one second; the observer waits500ms while closed
+and100ms while serving. Source delay, reconnection or watchdog loss fails closed.
+These checks do not guarantee real-time or zero-impact execution. Already
+submitted kernel I/O cannot be recalled instantly.
 
 ## One-time local setup and qualification
 
@@ -78,11 +96,14 @@ result, not proof of actual PC SSH/resource/cancellation success.
 
 After the owner starts that local trial, `connect.py --policy ... --verify-home`
 uses the private PC key and pinned host to check the actual cgroup, read-only
-cgroup mount, blocked host control sockets, configured CPU/memory bounds and a
-short actual resource sample. It starts only its own sleep job/child and asks
+cgroup mount, blocked host control sockets, explicit home-only uncapped policy,
+absence of leftover service CPU/memory caps and a short memory sample. Missing
+CPU quota files are expected in this owner-approved policy; they are not reported
+as a successful hard-cap test. It starts only its own sleep job/child and asks
 the trial guard to close; the normal transport must become unavailable. No
 CAN, fake incident, control action, video inference or raw-log export is used.
-The PC attestation is fresh for30minutes and tied to the host/code identity.
+The PC attestation is fresh for30minutes and tied to the host/code/resource-policy
+identity. Old capped-policy receipts cannot authorize the new policy.
 
 AGNOS keeps `/etc/systemd/system` read-only. The installer stores the reviewed
 unit under root-owned `/data/pv5-remote-access` and links it only into writable
@@ -115,7 +136,7 @@ at most once per second for15seconds with the original permission checks. A
 non-running backend is not automatically called an authentication failure.
 Only the bounded first trial emits one sanitized exit reason/code/gap when the
 guard closes. No added exit diagnostic is emitted in permanent operation.
-The21 PC checks include a220ms assumed scan that fails the earlier ordering,
+The PC checks include a220ms assumed scan that fails the earlier ordering,
 passes the new ordering and preserves all original freshness/permission limits.
 This is not a measurement of the actual device's exit cause or startup load.
 

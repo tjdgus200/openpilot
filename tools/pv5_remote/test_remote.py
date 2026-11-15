@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from openpilot.system.pv5_incidents.archive_protocol import encode, headers
-from tools.pv5_remote.conditional_remote import Gate, eligible, public_key, ssh_config, unit_text
+from tools.pv5_remote.conditional_remote import HOME_POLICY, Gate, eligible, home_policy, public_key, ssh_config, unit_text
 from tools.pv5_remote.pc import Bootstrap, PATH, QUALIFICATION
 
 
@@ -100,9 +100,26 @@ class GateChecks(unittest.TestCase):
         state[service][field] = value
         self.assertFalse(eligible(state, 10, ['parked_dashcam'])[0], (service, field))
     for field, value in [('cpu', []), ('cpu', [71]), ('cpu', [float('nan')]), ('thermal', 1), ('memory', 81), ('free', 19)]:
-      state = home()
+      state = parked()
       state['deviceState'][field] = value
-      self.assertFalse(eligible(state, 10, ['detached_home'])[0])
+      self.assertFalse(eligible(state, 10, ['parked_dashcam'])[0])
+
+  def test_uncapped_home_load_and_vehicle_reconnection_keep_distinct_admission(self):
+    state = home()
+    state['deviceState'].update(cpu=[100] * 8, memory=99, free=1)
+    self.assertEqual(eligible(state, 10, ['detached_home']), ('detached_home', ''))
+    state['pandaStates']['disconnected'] = False
+    self.assertEqual(eligible(state, 10, ['detached_home']), ('', 'not_detached'))
+    state = home()
+    state['deviceState']['thermal'] = 1
+    self.assertEqual(eligible(state, 10, ['detached_home']), ('', 'resource'))
+
+  def test_uncapped_resource_policy_cannot_be_used_for_vehicle_or_legacy_config(self):
+    home_policy({'qualified_modes': ['detached_home'], 'resource_policy': HOME_POLICY})
+    for modes, policy in [(['parked_dashcam'], HOME_POLICY), (['detached_home', 'parked_dashcam'], HOME_POLICY),
+                          (['detached_home'], None), ([], HOME_POLICY)]:
+      with self.assertRaisesRegex(ValueError, 'home_resource_policy_required'):
+        home_policy({'qualified_modes': modes, 'resource_policy': policy})
 
   def test_home_requires_real_disconnection_and_stopped_producers(self):
     state = home()
@@ -140,6 +157,8 @@ class GateChecks(unittest.TestCase):
     ):
       self.assertIn(setting, text)
     self.assertNotIn('RuntimeMaxSec', text)
+    for setting in ('CPUQuota=', 'MemoryMax=', 'CPUAffinity=', 'CPUSchedulingPolicy=idle'):
+      self.assertNotIn(setting, text)
     config = ssh_config()
     for setting in (
       'UsePAM yes',
@@ -207,7 +226,13 @@ class BootstrapChecks(unittest.TestCase):
         request(PATH, data=encode(value))
     proof = {'passed': True, 'host_key': key(2), 'stamp': 999, 'guard_sha256': 'a' * 64}
     (self.root / 'home-qualification.json').write_bytes(encode(proof))
-    self.assertTrue(request()['home_qualified'])
+    with self.assertRaises(ValueError):
+      request()
+    proof['resource_policy'] = HOME_POLICY
+    (self.root / 'home-qualification.json').write_bytes(encode(proof))
+    qualified = request()
+    self.assertTrue(qualified['home_qualified'])
+    self.assertEqual(qualified['resource_policy'], HOME_POLICY)
     with self.assertRaises(ValueError):
       request(stamp=3000)
 

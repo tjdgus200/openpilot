@@ -25,6 +25,7 @@ UNIT = 'pv5-conditional-remote.service'
 RUNTIME = Path('/run/pv5-conditional-remote')
 RUNTIME_UNITS = Path('/run/systemd/system')
 STAGE = 'entry'
+HOME_POLICY = 'detached_home_uncapped_v1'
 BOOT_HOOK = '''  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V1
   if [ -f /TICI ] && [ -f /data/pv5-remote-access/conditional_modes.json ] && [ -f /data/pv5-remote-access/conditional_remote.py ]; then
     (
@@ -65,6 +66,11 @@ def finite(value):
   return type(value) in (int, float) and math.isfinite(value)
 
 
+def home_policy(config):
+  if config.get('qualified_modes') != ['detached_home'] or config.get('resource_policy') != HOME_POLICY:
+    raise ValueError('home_resource_policy_required')
+
+
 def eligible(samples, now, modes):
   def fresh(name, ttl):
     value = samples.get(name, {})
@@ -73,17 +79,7 @@ def eligible(samples, now, modes):
   if not finite(now) or not all(fresh(name, ttl) for name, ttl in (('deviceState', 1.5), ('pandaStates', 0.25), ('managerState', 1.5))):
     return '', 'source_stale'
   ds, ps, ms = (samples[name] for name in ('deviceState', 'pandaStates', 'managerState'))
-  usage = ds.get('cpu', [])
-  if (
-    not usage
-    or len(usage) > 32
-    or not all(finite(value) and 0 <= value <= 70 for value in usage)
-    or ds.get('thermal') != 0
-    or not finite(ds.get('memory'))
-    or not 0 <= ds['memory'] <= 80
-    or not finite(ds.get('free'))
-    or not 20 <= ds['free'] <= 100
-  ):
+  if ds.get('thermal') != 0:
     return '', 'resource'
   processes = ms['processes']
   if any(processes.get(name) != [True, True] for name in ('pandad', 'hardwared')):
@@ -93,6 +89,17 @@ def eligible(samples, now, modes):
       return '', 'not_detached'
     mode = 'detached_home'
   else:
+    usage = ds.get('cpu', [])
+    if (
+      not usage
+      or len(usage) > 32
+      or not all(finite(value) and 0 <= value <= 70 for value in usage)
+      or not finite(ds.get('memory'))
+      or not 0 <= ds['memory'] <= 80
+      or not finite(ds.get('free'))
+      or not 20 <= ds['free'] <= 100
+    ):
+      return '', 'resource'
     if not all(fresh(name, 0.25) for name in ('carState', 'carControl', 'selfdriveState')) or not fresh('onroadEvents', 2.5):
       return '', 'vehicle_source_stale'
     cp = samples.get('carParams', {})
@@ -363,8 +370,6 @@ def unit_text(interpreter):
       'TimeoutStartSec=30s',
       'Nice=19',
       'IOSchedulingClass=idle',
-      'CPUQuota=10%',
-      'MemoryMax=256M',
       'LimitCORE=0',
       'LimitNOFILE=256',
       'RuntimeDirectory=pv5-conditional-remote',
@@ -521,18 +526,13 @@ def guard():
   protected(SCRIPT)
   protected(ROOT / 'conditional_modes.json', private=True)
   config = json.loads((ROOT / 'conditional_modes.json').read_bytes())
+  home_policy(config)
   modes = config['qualified_modes']
   if config.get('binaries') != identities:
     raise ValueError('enrolled_binary_metadata_changed')
   if config.get('trial') is not True and config.get('guard_sha256') != hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest():
     raise ValueError('matching_code_qualification_required')
-  if not modes or any(mode not in ('detached_home', 'parked_dashcam') for mode in modes):
-    raise ValueError('qualified_modes_required')
   os.setpriority(os.PRIO_PROCESS, 0, 19)
-  affinity = os.sched_getaffinity(0) & set(range(4))
-  if not affinity:
-    raise ValueError('background_cpu_unavailable')
-  os.sched_setaffinity(0, affinity)
   source, gate, child = Source(), Gate(), None
   foreign_checked = False
 
@@ -548,8 +548,6 @@ def guard():
         return
       mode, _reason = eligible(source.read(), time.monotonic(), modes)
       if mode and not foreign_checked:
-        # Potentially slow /proc work belongs BEFORE continuous admission,
-        # never after the active 250ms timing contract has begun.
         for entry in Path('/proc').glob('[0-9]*'):
           try:
             if (entry / 'comm').read_text().strip() == 'tailscaled':
@@ -613,8 +611,7 @@ def restore_runtime():
   config = json.loads(modes_path.read_bytes())
   if config.get('trial') is not False or config.get('boot_restore') is not True:
     return {'boot_restore_requested': False, 'reason': 'not_enabled'}
-  if config.get('qualified_modes') != ['detached_home']:
-    raise ValueError('home_boot_qualification_required')
+  home_policy(config)
   if config.get('binaries') != identities or config.get('guard_sha256') != hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest():
     raise ValueError('matching_code_qualification_required')
   protected(ROOT / UNIT)
@@ -684,17 +681,13 @@ def install():
   mark('data_install')
   atomic(ROOT / 'conditional_authorized_keys', ('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + client + '\n').encode())
   atomic(ROOT / 'conditional_sshd_config', ssh_config().encode())
-  # Native sshd -t runs in ExecStartPre with the SAME private /run/sshd mount;
-  # no shared system SSH runtime directory or account/PAM file is changed.
   atomic(SCRIPT, Path(__file__).read_bytes(), 0o644)
-  atomic(ROOT / 'conditional_modes.json', encode({'qualified_modes': ['detached_home'], 'trial': True, 'binaries': identities}))
+  atomic(ROOT / 'conditional_modes.json', encode({'qualified_modes': ['detached_home'], 'resource_policy': HOME_POLICY, 'trial': True, 'binaries': identities}))
   unit = ROOT / UNIT
   atomic(unit, unit_text(sys.executable).encode(), 0o644)
   mark('runtime_unit_link')
   runtime_unit()
   run(['systemctl', 'daemon-reload'])
-  # First start is a bounded trial. Permanent enable is a separate qualification
-  # step after PC observes real SSH auth, resources and denial/cancellation.
   trial = RUNTIME_UNITS / (UNIT + '.d')
   trial.mkdir(exist_ok=True)
   atomic(trial / 'trial.conf', b'[Service]\nRuntimeMaxSec=900s\nRestart=no\n', 0o644)
@@ -708,6 +701,7 @@ def install():
         'trial_started': True,
         'maximum_trial_seconds': 900,
         'qualified_mode': 'detached_home',
+        'resource_policy': HOME_POLICY,
         'boot_enabled': False,
         'vehicle_dashcam_qualified': False,
         'key_auth_configured': True,
@@ -724,6 +718,8 @@ def enable_home():
   if any(os.environ.get(name) for name in ('SSH_CONNECTION', 'SSH_CLIENT', 'SSH_TTY')):
     raise ValueError('local_terminal_enable_required')
   protected(SCRIPT)
+  protected(ROOT / 'conditional_modes.json', private=True)
+  home_policy(json.loads((ROOT / 'conditional_modes.json').read_bytes()))
   target = RUNTIME_UNITS / UNIT
   if not target.is_symlink() or target.resolve() != ROOT / UNIT:
     raise ValueError('unit_identity')
@@ -742,7 +738,7 @@ def enable_home():
   host = public_key(' '.join((ROOT / 'conditional_host_ed25519.pub').read_text().split()[:2]))
   proof = exchange(host, '/v1/remote/qualification')
   digest = hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
-  if proof.get('home_qualified') is not True or proof.get('guard_sha256') != digest:
+  if proof.get('home_qualified') is not True or proof.get('guard_sha256') != digest or proof.get('resource_policy') != HOME_POLICY:
     raise ValueError('matching_actual_device_qualification_required')
   audit = ROOT / 'conditional_trial_processes.json'
   protected(audit, private=True)
@@ -768,12 +764,16 @@ def enable_home():
     raise ValueError('trial_identity')
   protected(ROOT / 'conditional_modes.json', private=True)
   prior_modes = json.loads((ROOT / 'conditional_modes.json').read_bytes())
+  home_policy(prior_modes)
   if prior_modes.get('binaries') != identities:
     raise ValueError('enrolled_binary_metadata_changed')
   trial.unlink()
   atomic(
     ROOT / 'conditional_modes.json',
-    encode({'qualified_modes': ['detached_home'], 'trial': False, 'boot_restore': True, 'guard_sha256': digest, 'binaries': identities}),
+    encode({
+      'qualified_modes': ['detached_home'], 'resource_policy': HOME_POLICY, 'trial': False,
+      'boot_restore': True, 'guard_sha256': digest, 'binaries': identities,
+    }),
   )
   run(['systemctl', 'daemon-reload'])
   run(['systemctl', 'start', UNIT], timeout=35)

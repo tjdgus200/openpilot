@@ -50,7 +50,9 @@ class StartupChecks(unittest.TestCase):
   def test_slow_foreign_check_precedes_admission_and_trial_exit_is_bounded(self):
     with tempfile.TemporaryDirectory() as directory:
       root = Path(directory)
-      (root / 'conditional_modes.json').write_text(json.dumps({'trial': True, 'qualified_modes': ['detached_home'], 'binaries': {}}))
+      (root / 'conditional_modes.json').write_text(json.dumps({
+        'trial': True, 'qualified_modes': ['detached_home'], 'resource_policy': remote.HOME_POLICY, 'binaries': {},
+      }))
       clock = [0.0]
       opened = []
       scan = []

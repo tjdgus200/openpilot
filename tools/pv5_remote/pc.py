@@ -10,6 +10,7 @@ import re
 import threading
 
 from openpilot.system.pv5_incidents.archive_protocol import authenticate, encode
+from tools.pv5_remote.conditional_remote import HOME_POLICY
 
 PATH = '/v1/remote/bootstrap'
 QUALIFICATION = '/v1/remote/qualification'
@@ -76,9 +77,15 @@ class Bootstrap:
         if proof.is_symlink() or not proof.exists() or proof.stat().st_size > 8192:
           raise ValueError('qualification_required')
         result = json.loads(proof.read_bytes())
-        if result.get('passed') is not True or result.get('host_key') != host or not 0 <= now - result['stamp'] < 1800:
+        if (
+          result.get('passed') is not True or result.get('host_key') != host
+          or result.get('resource_policy') != HOME_POLICY or not 0 <= now - result['stamp'] < 1800
+        ):
           raise ValueError('qualification_required')
-        return {'version': 1, 'home_qualified': True, 'guard_sha256': result['guard_sha256'], 'actual_device_key_auth': True, 'local_pid_audit_required': True}
+        return {
+          'version': 1, 'home_qualified': True, 'guard_sha256': result['guard_sha256'],
+          'resource_policy': HOME_POLICY, 'actual_device_key_auth': True, 'local_pid_audit_required': True,
+        }
       return {'version': 1, 'client_public_key': client, 'host_key_pinned': True, 'host_fingerprint': hashlib.sha256(host.encode()).hexdigest()}
 
 

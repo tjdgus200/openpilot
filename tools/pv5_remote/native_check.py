@@ -82,7 +82,7 @@ def main():
     if strict_parent:
       (root / 'missing_key_config').write_text(config.replace('AuthorizedKeysFile ' + str(auth_path), 'AuthorizedKeysFile ' + str(root / 'not_created_yet')))
     (root / 'known_hosts').write_text('pv5-native-test ' + (root / 'host.pub').read_text())
-    (root / 'modes.json').write_text(json.dumps({'qualified_modes': ['detached_home'], 'trial': True}))
+    (root / 'modes.json').write_text(json.dumps({'qualified_modes': ['detached_home'], 'resource_policy': owner.HOME_POLICY, 'trial': True}))
     (root / 'guard.py').write_bytes(Path(__file__).with_name('conditional_remote.py').read_bytes())
     helper = root / 'helper.py'
     helper.write_text('''import os,socket,subprocess,time
@@ -109,8 +109,6 @@ while not (r/'deny').exists():
       'Restart=no',
       'Nice=19',
       'IOSchedulingClass=idle',
-      'CPUQuota=10%',
-      'MemoryMax=256M',
       'ProtectControlGroups=yes',
       'ProtectKernelTunables=yes',
       'ProtectKernelModules=yes',
@@ -233,6 +231,9 @@ while not (r/'deny').exists():
             'locked_root_PAM_fixture': strict_parent,
             'StrictModes_preserved': True,
             'missing_runtime_key_ExecStartPre_syntax_passed': strict_parent,
+            'resource_policy': validated['resource_policy'],
+            'service_memory_cap': validated['memory_limit'],
+            'service_CPU_quota': validated['CPU_quota_limit'],
           }
         )
       )
