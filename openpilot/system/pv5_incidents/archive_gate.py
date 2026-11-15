@@ -36,15 +36,7 @@ def evaluate(sm, now, qualified_modes, owner_pv5):
     if not all(fresh(sm, name, now, ttl) for name, ttl in (('deviceState', 1.5), ('pandaStates', 0.25), ('managerState', 1.5))):
       return Decision(False, reason='state_stale')
     ds, ps, ms = sm['deviceState'], sm['pandaStates'], sm['managerState']
-    usage = list(ds.cpuUsagePercent)
-    if (
-      not usage
-      or len(usage) > 32
-      or not all(finite(value) and 0 <= value <= 70 for value in usage)
-      or int(ds.thermalStatus.raw) != 0
-      or not 0 <= ds.memoryUsagePercent <= 80
-      or not 20 <= ds.freeSpacePercent <= 100
-    ):
+    if int(ds.thermalStatus.raw) != 0:
       return Decision(False, reason='resource')
     if str(ds.networkType) != 'wifi' or ds.networkMetered is not False:
       return Decision(False, reason='wifi_required')
@@ -63,6 +55,10 @@ def evaluate(sm, now, qualified_modes, owner_pv5):
         return Decision(False, reason='not_detached')
       mode = 'detached_offroad'
     else:
+      usage = list(ds.cpuUsagePercent)
+      if (not usage or len(usage) > 32 or not all(finite(value) and 0 <= value <= 70 for value in usage)
+          or not 0 <= ds.memoryUsagePercent <= 80 or not 20 <= ds.freeSpacePercent <= 100):
+        return Decision(False, reason='resource')
       # This separate mode remains disabled until THAT mode is measured on device.
       if not all(fresh(sm, name, now, 0.25) for name in ('carState', 'carControl', 'selfdriveState')):
         return Decision(False, reason='control_stale')

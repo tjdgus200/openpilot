@@ -171,9 +171,11 @@ class Transport:
 
 
 class Copier:
-  def __init__(self, catalog, transport, allowed, profiles, profile=wifi_profile, rate=256 * 1024, clock=time.monotonic, sleep=time.sleep, cpu=None):
+  def __init__(self, catalog, transport, allowed, profiles, profile=wifi_profile, rate=256 * 1024, clock=time.monotonic, sleep=time.sleep, cpu=None,
+               home_unlimited=False):
     self.catalog, self.transport, self.allowed, self.profiles, self.profile = catalog, transport, allowed, profiles, profile
     self.rate, self.clock, self.sleep = rate, clock, sleep
+    self.home_unlimited = home_unlimited is True
     self.cpu = cpu or (
       lambda: sum((resource.getrusage(kind).ru_utime + resource.getrusage(kind).ru_stime) for kind in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN))
     )
@@ -184,8 +186,10 @@ class Copier:
   def check(self):
     if self.allowed() is not True:
       raise Paused('state')
-    if self.clock() - self.start >= 300 or self.cpu() - self.cpu_start >= 10.0:
+    if self.clock() - self.start >= 300 or (not self.home_unlimited and self.cpu() - self.cpu_start >= 10.0):
       raise Paused('budget')
+    if self.home_unlimited:
+      return True
     # At most one CPU-second per 20 wall-seconds, measured across this worker
     # and reaped helpers. Device qualification must still measure actual peaks.
     while self.cpu() - self.cpu_start > 0.05 + (self.clock() - self.start) / 20:
@@ -256,14 +260,16 @@ def main():
   reason, copier = 'unqualified', None
   try:
     os.setpriority(os.PRIO_PROCESS, 0, 19)
-    available = os.sched_getaffinity(0) & set(range(4))
-    if not available:
-      raise Paused('resource')
-    os.sched_setaffinity(0, available)
-    resource.setrlimit(resource.RLIMIT_AS, (192 * 1024**2, 192 * 1024**2))
-    resource.setrlimit(resource.RLIMIT_CPU, (12, 12))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     cfg = configuration(args.config)
+    home_unlimited = cfg['qualified_modes'] == ['detached_offroad']
+    if not home_unlimited:
+      available = os.sched_getaffinity(0) & set(range(4))
+      if not available:
+        raise Paused('resource')
+      os.sched_setaffinity(0, available)
+      resource.setrlimit(resource.RLIMIT_AS, (192 * 1024**2, 192 * 1024**2))
+      resource.setrlimit(resource.RLIMIT_CPU, (12, 12))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     permission = Permission(sys.stdin.fileno())
     began = time.monotonic()
     while not permission.allowed() and time.monotonic() - began < 0.9:
@@ -281,7 +287,7 @@ def main():
     fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     raw = Catalog(args.log_root, args.catalog, key, permission.allowed)
     transport = Transport(target, key, permission.allowed)
-    copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'])
+    copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'], home_unlimited=home_unlimited)
     copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check))
     result = copier.run(args.commit)
     reason = result['reason']

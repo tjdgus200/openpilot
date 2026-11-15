@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from openpilot.system.pv5_incidents.archive_catalog import Catalog
@@ -17,6 +18,23 @@ from tools.pv5_archive.store import Store
 
 
 class WorkerChecks(unittest.TestCase):
+  def test_home_only_budget_exception_keeps_wall_and_permission_limits(self):
+    clock, cpu, allowed = [0.0], [0.0], [True]
+    regular = Copier(None, SimpleNamespace(), lambda: allowed[0], [], clock=lambda: clock[0], cpu=lambda: cpu[0])
+    home = Copier(None, SimpleNamespace(), lambda: allowed[0], [], clock=lambda: clock[0], cpu=lambda: cpu[0], home_unlimited=True)
+    cpu[0] = 100
+    clock[0] = 1
+    with self.assertRaisesRegex(Paused, 'budget'):
+      regular.check()
+    self.assertTrue(home.check())
+    allowed[0] = False
+    with self.assertRaisesRegex(Paused, 'state'):
+      home.check()
+    allowed[0] = True
+    clock[0] = 300
+    with self.assertRaisesRegex(Paused, 'budget'):
+      home.check()
+
   def test_actual_copy_resume_chain_and_original_deletion_wins(self):
     with tempfile.TemporaryDirectory() as temporary:
       root = Path(temporary)

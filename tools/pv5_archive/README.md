@@ -65,6 +65,14 @@ changes, so previous archive qualification configs must not silently carry over.
   counted when reaped, so this is not a strict subtree instantaneous CPU cap.
   Helpers inherit OS limits; actual peak RSS/CPU/I/O/cancel latency needs device
   measurement. ffmpeg reads at 0.25x, does not decode or reencode video.
+
+Owner's2026-11-15 home exception: a config qualified **only** for
+`detached_offroad` has no copier CPU/address-space/first-four-core limit or
+CPU pacing, and home admission ignores CPU/RAM/free-percent numeric thresholds.
+Thermal-green, real disconnection/stopped-process/freshness, trusted unmetered
+Wi-Fi, permission EOF/expiry and the300-second resumable work burst remain.
+File/chunk/cache/PC storage bounds remain. A vehicle or mixed-mode config keeps
+all original resource limits. This does not qualify the vehicle mode.
 - PC default 50-GiB reserved archive budget (including production per-segment
   analysis allowance and metadata), 10-GiB free floor, four ingress connections,
   one analysis process, 384-MiB analysis memory / 95 CPU seconds / 210 wall seconds.

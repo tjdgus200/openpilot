@@ -91,13 +91,27 @@ class GateChecks(unittest.TestCase):
       ('cpuUsagePercent', [float('nan')]),
     ):
       sm = SM()
+      if field not in ('networkType', 'networkMetered'):
+        sm['deviceState'].started = True
       setattr(sm['deviceState'], field, value)
-      self.assertFalse(evaluate(sm, 10, ['detached_offroad'], True).allowed)
+      self.assertFalse(evaluate(sm, 10, ['detached_offroad', 'dashcam_stationary'], True).allowed)
     sm = SM()
     sm['deviceState'].thermalStatus.raw = 1
     self.assertFalse(evaluate(sm, 10, ['detached_offroad'], True).allowed)
     sm = SM()
     sm['carParams'].carFingerprint = 'OTHER_CAR'
+    self.assertFalse(evaluate(sm, 10, ['detached_offroad'], True).allowed)
+
+  def test_home_load_exception_never_allows_vehicle_or_thermal_conditions(self):
+    sm = SM()
+    sm['deviceState'].cpuUsagePercent = [100] * 8
+    sm['deviceState'].memoryUsagePercent = 99
+    sm['deviceState'].freeSpacePercent = 1
+    self.assertTrue(evaluate(sm, 10, ['detached_offroad'], True).allowed)
+    sm['deviceState'].started = True
+    self.assertFalse(evaluate(sm, 10, ['dashcam_stationary'], True).allowed)
+    sm['deviceState'].started = False
+    sm['deviceState'].thermalStatus.raw = 1
     self.assertFalse(evaluate(sm, 10, ['detached_offroad'], True).allowed)
 
   def test_stationary_dashcam_separate_qualification_and_control_gates(self):
