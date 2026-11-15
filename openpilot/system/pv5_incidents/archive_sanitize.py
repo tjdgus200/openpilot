@@ -1,11 +1,13 @@
 """Offroad transmission copies only. Never edits or pins logger originals."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import stat
 
 from openpilot.system.pv5_incidents.archive_catalog import SourceChanged
 from openpilot.system.pv5_incidents.archive_protocol import NAMES, PRIVACY, SEGMENT, encode, file_id, identifier
@@ -15,6 +17,47 @@ CACHE_LIMIT = 64 * 1024**2
 COPY_LIMIT = 48 * 1024**2
 # Retain driver-monitoring results, but never cabin images/encoded media/audio.
 CABIN = frozenset(('driverCameraState', 'driverEncodeData', 'livestreamDriverEncodeData'))
+MEDIA_SOURCE = '8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e'
+MEDIA_ROOT = Path('/data/pv5-archive-tools')
+
+
+def data_media_tool(name, check, root=MEDIA_ROOT):
+  """Optional root-owned native tools; never changes PATH or downloads at runtime."""
+  if name not in ('ffmpeg', 'ffprobe'):
+    raise ValueError('invalid_media_tool')
+  folder = root / ('ffmpeg-9.0.2-' + MEDIA_SOURCE[:16])
+  manifest = folder / 'manifest.json'
+  if not manifest.exists():
+    return None
+  for directory in (root, folder, folder / 'bin'):
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+      raise ValueError('unsafe_media_tool_directory')
+  info = manifest.lstat()
+  if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or not 0 < info.st_size <= 8192:
+    raise ValueError('unsafe_media_tool_manifest')
+  value = json.loads(manifest.read_bytes())
+  if value.get('source_sha256') != MEDIA_SOURCE or value.get('version') != '9.0.2' or value.get('network_protocols_enabled') is not False:
+    raise ValueError('media_tool_source_identity')
+  entry = value['files'][name]
+  path = folder / 'bin' / name
+  info = path.lstat()
+  if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or not info.st_mode & 0o111
+      or type(entry['bytes']) is not int or not 0 < entry['bytes'] <= 64 * 1024**2 or info.st_size != entry['bytes']):
+    raise ValueError('unsafe_media_tool_binary')
+  digest = hashlib.sha256()
+  with path.open('rb') as stream:
+    header = stream.read(20)
+    if header[:4] != b'\x7fELF' or int.from_bytes(header[18:20], 'little') != 183:
+      raise ValueError('media_tool_machine')
+    digest.update(header)
+    while block := stream.read(65536):
+      check()
+      digest.update(block)
+  check()
+  if digest.hexdigest() != entry['sha256']:
+    raise ValueError('media_tool_binary_identity')
+  return str(path)
 
 
 class BoundedWriter:
@@ -45,7 +88,8 @@ def identity(path):
 class Sanitizer:
   def __init__(self, cache, check, log_schema=None, ffmpeg=None, ffprobe=None):
     self.cache, self.check, self.log_schema = Path(cache), check, log_schema
-    self.ffmpeg, self.ffprobe = ffmpeg or shutil.which('ffmpeg'), ffprobe or shutil.which('ffprobe')
+    self.ffmpeg = ffmpeg or shutil.which('ffmpeg') or data_media_tool('ffmpeg', check)
+    self.ffprobe = ffprobe or shutil.which('ffprobe') or data_media_tool('ffprobe', check)
     if self.cache.is_symlink():
       raise ValueError('unsafe_privacy_cache')
     self.cache.mkdir(parents=True, exist_ok=True, mode=0o700)

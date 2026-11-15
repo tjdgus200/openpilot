@@ -41,6 +41,19 @@ PC manifests require `privacy=no-audio-cabin-v1`; older raw copiers are refused.
 
 ## Explicit trial budgets and limitations
 
+On the observed AGNOS device, ffmpeg/ffprobe are absent and the OS runtime is
+read-only. An optional native FFmpeg9.0.2 build lives only under
+`/data/pv5-archive-tools/ffmpeg-9.0.2-8c3850283eb25fa0`. Its official source archive
+signature and hash were checked before compilation; retain the source/build
+manifest and LGPL notice. The build enables local file processing, the required
+demuxers/parsers and MPEG-TS stream copy; network protocols are disabled.
+`archive_sanitize.py` uses it only when no explicitly supplied or existing PATH
+tool is available. Before execution it checks root ownership, directory/file
+permissions, regular files, source identity, AArch64 ELF and each binary hash.
+Missing optional tools retain the existing refusal behavior. No runtime download,
+OS/global-PATH modification or recording change is introduced. The module digest
+changes, so previous archive qualification configs must not silently carry over.
+
 - One copier; 64-KiB authenticated/resumable chunks; 256 KiB/s average transfer.
 - At most 4096 source segments, 32 entries/segment, 512 MiB/source file;
   2-MiB catalog. Completed immutable directories are cached.
