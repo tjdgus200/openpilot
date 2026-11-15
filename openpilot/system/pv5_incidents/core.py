@@ -20,7 +20,8 @@ ALERTS, PROCESSES = frozenset(KNOWN['alerts']), frozenset(KNOWN['processes'])
 HEX32, HEX40, HEX64 = (re.compile(r'[0-9a-f]{%d}' % n) for n in (32, 40, 64))
 CONDITIONS = frozenset(('preDriverDistracted', 'promptDriverDistracted', 'driverDistracted',
   'steerSaturated', 'overheat', 'calibrationIncomplete', 'belowEngageSpeed', 'wrongGear',
-  'doorOpen', 'seatbeltNotLatched', 'espDisabled', 'wrongCarMode'))
+  'doorOpen', 'seatbeltNotLatched', 'espDisabled', 'wrongCarMode',
+  'pv5SccDecel', 'pv5SccDecelSilent', 'pv5SccDecelInfo', 'pv5CutInCaution', 'pv5CutInPredecel'))
 
 
 def encode(value):

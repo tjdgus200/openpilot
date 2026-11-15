@@ -64,6 +64,7 @@ class Reporter:
       self.source = 'unknown'
     self.factory = connection or (lambda: http.client.HTTPSConnection(
       target.hostname, target.port or 443, timeout=2., context=ssl.create_default_context()))
+    self.archive = None
 
   def add(self, fact, now=None):
     if self.proof is None or not self.proof.pv5:
@@ -205,12 +206,26 @@ class Reporter:
         self.sm.update(0)
         self.observe(self.sm)
         self.checkpoint(now)
-        self.stop.wait(.1 if stopped(self.proof, now) else .5)
+        if self.archive is not None:
+          try:
+            self.archive.tick(self.sm, now)
+          except Exception:
+            archive, self.archive = self.archive, None
+            try:
+              archive.cancel()
+            except Exception:
+              pass  # The closed permission pipe is also enforced by the worker.
+        self.stop.wait(.1 if stopped(self.proof, now) or (self.archive is not None and self.archive.child is not None) else .5)
     except Exception:
       # No recursive logging/error collection if diagnostics itself fails.
       pass
     finally:
       self.stop.set()
+      if self.archive is not None:
+        try:
+          self.archive.cancel()
+        except Exception:
+          pass
       self.cancel()
       self.wake.set()
 
@@ -239,8 +254,22 @@ def start_incident_reporting():
       return None
     target, key = read_config()
     import openpilot.cereal.messaging as messaging
-    sm = messaging.SubMaster(['carParams', 'carState', 'onroadEvents'])
+    archive_request = None
+    services = ['carParams', 'carState', 'onroadEvents']
+    if Path('/data/pv5-pc-archive.json').is_file():
+      from openpilot.system.pv5_incidents.archive_runtime import requested
+      archive_request = requested()
+      if archive_request is not None:
+        from openpilot.system.pv5_incidents.archive_gate import SERVICES
+        services = list(SERVICES)
+    sm = messaging.SubMaster(services)
     _reporter = Reporter(sm, lambda: params.get_bool('Pv5IncidentReporting'), target, key)
+    if archive_request is not None:
+      try:
+        from openpilot.system.pv5_incidents.archive_runtime import create
+        _reporter.archive = create(archive_request, _reporter.source)
+      except Exception:
+        pass
     threading.Thread(target=_reporter.run, name='pv5-report-observer', daemon=True).start()
     return _reporter
   except Exception:
