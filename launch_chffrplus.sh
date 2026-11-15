@@ -695,6 +695,15 @@ function launch {
   )
 
 
+  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V1
+  if [ -f /TICI ] && [ -f /data/pv5-remote-access/conditional_modes.json ] && [ -f /data/pv5-remote-access/conditional_remote.py ]; then
+    (
+      exec 9>&-
+      timeout -k 1s 3s sudo -n env PYTHONPATH="$PYTHONPATH" PYTHONDONTWRITEBYTECODE=1 \
+        nice -n 19 python3 /data/pv5-remote-access/conditional_remote.py --restore-runtime >/dev/null 2>&1
+    ) &
+  fi
+
   FORCE_REBUILD=0
   # A reset before the Params build must still force the full build below.
   [ "$BUILD_STATE_RESET" = "1" ] && FORCE_REBUILD=1

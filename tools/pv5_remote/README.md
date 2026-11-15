@@ -73,10 +73,26 @@ the trial guard to close; the normal transport must become unavailable. No
 CAN, fake incident, control action, video inference or raw-log export is used.
 The PC attestation is fresh for30minutes and tied to the host/code identity.
 
+AGNOS keeps `/etc/systemd/system` read-only. The installer stores the reviewed
+unit under root-owned `/data/pv5-remote-access` and links it only into writable
+`/run/systemd/system`. It never remounts the root filesystem or edits global
+system units. A failed earlier `/etc` link can leave data files and an authenticated
+PC host pin; these do not mean the trial service started.
+
 The subsequent local `--enable-home-auto` independently audits the recorded
 trial PID/start-time pairs are gone (or reaped zombies), rechecks detached home
-state and the exact trial unit, then removes the trial expiry and enables
-automatic startup/reopening. It cannot be run through the SSH service being
+state and the exact trial unit, then removes the trial expiry and records
+qualified automatic startup/reopening. The updated `launch_chffrplus.sh` must
+contain the exact optional restore hook before promotion. Its one bounded,
+background, low-priority invocation closes the boot-lock descriptor, reads
+the root-owned qualification, recreates the volatile runtime link and asks PID1
+to start the guard without waiting. Trial/unqualified/changed-code/runtime or
+foreign-service states refuse; already running owned services are retained.
+Default installations without these files launch no helper. Networking still
+requires the guard's real fresh state and two-second admission period. No
+`systemctl enable` write to `/etc` is used. This path has been checked against
+PC read-only mount namespaces and simulated runtime-link loss, not a device reboot.
+Promotion cannot be run through the SSH service being
 reconfigured. A parked-vehicle dashcam mode must be measured separately before
 adding that mode; home testing cannot qualify its CAN/control gates.
 

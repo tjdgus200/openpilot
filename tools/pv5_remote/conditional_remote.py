@@ -25,6 +25,17 @@ ROOT = Path('/data/pv5-remote-access')
 SCRIPT = ROOT / 'conditional_remote.py'
 UNIT = 'pv5-conditional-remote.service'
 RUNTIME = Path('/run/pv5-conditional-remote')
+RUNTIME_UNITS = Path('/run/systemd/system')
+STAGE = 'entry'
+BOOT_HOOK = '''  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V1
+  if [ -f /TICI ] && [ -f /data/pv5-remote-access/conditional_modes.json ] && [ -f /data/pv5-remote-access/conditional_remote.py ]; then
+    (
+      exec 9>&-
+      timeout -k 1s 3s sudo -n env PYTHONPATH="$PYTHONPATH" PYTHONDONTWRITEBYTECODE=1 \\
+        nice -n 19 python3 /data/pv5-remote-access/conditional_remote.py --restore-runtime >/dev/null 2>&1
+    ) &
+  fi
+'''
 SOCKET = str(RUNTIME / 'tailscaled.sock')
 BIN = ROOT / '1.104.5'
 SERVICES = ('deviceState', 'pandaStates', 'managerState', 'carParams', 'carState', 'carControl', 'selfdriveState', 'onroadEvents')
@@ -36,6 +47,11 @@ BINARY_SHA = {
 
 def encode(value):
   return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+
+
+def mark(stage):
+  global STAGE
+  STAGE = stage
 
 
 def public_key(value):
@@ -514,7 +530,71 @@ def guard():
       child.stdin.close()
 
 
+def runtime_unit():
+  """Register only in writable /run; never remount or write the AGNOS root."""
+  legacy = Path('/etc/systemd/system') / UNIT
+  if legacy.exists() or legacy.is_symlink():
+    raise ValueError('persistent_unit_requires_manual_migration')
+  protected(ROOT / UNIT)
+  RUNTIME_UNITS.mkdir(parents=True, exist_ok=True)
+  protected(RUNTIME_UNITS, directory=True)
+  target = RUNTIME_UNITS / UNIT
+  if target.exists() or target.is_symlink():
+    if not target.is_symlink() or target.resolve() != ROOT / UNIT:
+      raise ValueError('foreign_unit_not_replaced')
+  else:
+    target.symlink_to(ROOT / UNIT)
+  return target
+
+
+def require_boot_hook():
+  path = Path('/data/openpilot/launch_chffrplus.sh')
+  if path.is_symlink() or not path.is_file() or path.stat().st_size > 131072:
+    raise ValueError('launcher_update_required')
+  if BOOT_HOOK.encode() not in path.read_bytes().replace(b'\r\n', b'\n'):
+    raise ValueError('launcher_update_required')
+
+
+def restore_runtime():
+  """One bounded boot invocation; the PID1 guard itself admits all networking."""
+  mark('boot_qualification')
+  identities = prerequisites()
+  protected(SCRIPT)
+  modes_path = ROOT / 'conditional_modes.json'
+  protected(modes_path, private=True)
+  if modes_path.stat().st_size > 4096:
+    raise ValueError('qualification_size')
+  config = json.loads(modes_path.read_bytes())
+  if config.get('trial') is not False or config.get('boot_restore') is not True:
+    return {'boot_restore_requested': False, 'reason': 'not_enabled'}
+  if config.get('qualified_modes') != ['detached_home']:
+    raise ValueError('home_boot_qualification_required')
+  if config.get('binaries') != identities or config.get('guard_sha256') != hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest():
+    raise ValueError('matching_code_qualification_required')
+  protected(ROOT / UNIT)
+  if (ROOT / UNIT).read_bytes() != unit_text(sys.executable).encode():
+    raise ValueError('qualified_runtime_interpreter_changed')
+  trial = RUNTIME_UNITS / (UNIT + '.d/trial.conf')
+  if trial.exists() or trial.is_symlink():
+    raise ValueError('unexpected_trial_dropin')
+  for old in ('pv5-home-remote-access.service', 'pv5-remote-access.service'):
+    if run(['systemctl', 'show', old, '-p', 'ActiveState', '--value']).strip() in (b'active', b'activating', b'reloading', b'deactivating'):
+      raise ValueError('existing_session_active_nothing_stopped')
+  mark('runtime_unit_restore')
+  target = runtime_unit()
+  state = run(['systemctl', 'show', UNIT, '-p', 'ActiveState', '--value']).strip()
+  if state in (b'active', b'activating', b'reloading', b'deactivating'):
+    fragment = run(['systemctl', 'show', UNIT, '-p', 'FragmentPath', '--value']).strip()
+    if fragment not in (str(target).encode(), str(ROOT / UNIT).encode()):
+      raise ValueError('active_unit_identity')
+    return {'boot_restore_requested': False, 'already_running': True}
+  run(['systemctl', 'daemon-reload'])
+  run(['systemctl', 'start', '--no-block', UNIT])
+  return {'boot_restore_requested': True, 'network_admitted': False}
+
+
 def install():
+  mark('prerequisites')
   prerequisites()
   # Only LOCAL installation. Do not replace the transport that is carrying us.
   for name in ('SSH_CONNECTION', 'SSH_CLIENT', 'SSH_TTY'):
@@ -526,6 +606,7 @@ def install():
       raise ValueError('existing_session_active_nothing_stopped')
   if run(['systemctl', 'show', UNIT, '-p', 'UnitFileState', '--value']).strip() in (b'enabled', b'enabled-runtime'):
     raise ValueError('auto_service_already_enabled')
+  mark('home_source')
   source, gate = Source(), Gate()
   began = time.monotonic()
   while time.monotonic() - began < 5:
@@ -540,18 +621,21 @@ def install():
     if eligible(source.read(), time.monotonic(), ['detached_home'])[0] != 'detached_home':
       raise ValueError('home_condition_lost')
 
+  mark('binary_identity')
   identities = prerequisites(check_binaries=True, check=still_home)
   host = ROOT / 'conditional_host_ed25519'
   if not host.exists():
     run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', str(host)])
   protected(host, private=True)
   host_public = public_key(' '.join(Path(str(host) + '.pub').read_text().split()[:2]))
+  mark('pc_bootstrap')
   response = exchange(host_public)  # Existing private enrollment, no key through Discord.
   if response.get('host_key_pinned') is not True:
     raise ValueError('pc_host_pin_required')
   client = public_key(response['client_public_key'])
   if eligible(source.read(), time.monotonic(), ['detached_home'])[0] != 'detached_home':
     raise ValueError('home_condition_lost')
+  mark('data_install')
   atomic(ROOT / 'conditional_authorized_keys', ('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + client + '\n').encode())
   atomic(ROOT / 'conditional_sshd_config', ssh_config().encode())
   # Native sshd -t runs in ExecStartPre with the SAME private /run/sshd mount;
@@ -560,19 +644,16 @@ def install():
   atomic(ROOT / 'conditional_modes.json', encode({'qualified_modes': ['detached_home'], 'trial': True, 'binaries': identities}))
   unit = ROOT / UNIT
   atomic(unit, unit_text(sys.executable).encode(), 0o644)
-  target = Path('/etc/systemd/system') / UNIT
-  if target.exists() or target.is_symlink():
-    if not target.is_symlink() or target.resolve() != unit:
-      raise ValueError('foreign_unit_not_replaced')
-  else:
-    target.symlink_to(unit)
+  mark('runtime_unit_link')
+  runtime_unit()
   run(['systemctl', 'daemon-reload'])
   # First start is a bounded trial. Permanent enable is a separate qualification
   # step after PC observes real SSH auth, resources and denial/cancellation.
-  trial = Path('/run/systemd/system') / (UNIT + '.d')
+  trial = RUNTIME_UNITS / (UNIT + '.d')
   trial.mkdir(exist_ok=True)
   atomic(trial / 'trial.conf', b'[Service]\nRuntimeMaxSec=900s\nRestart=no\n', 0o644)
   run(['systemctl', 'daemon-reload'])
+  mark('trial_start')
   run(['systemctl', 'start', UNIT], timeout=35)
   print(
     json.dumps(
@@ -592,13 +673,15 @@ def install():
 
 
 def enable_home():
+  mark('home_enable')
   identities = prerequisites()
   if any(os.environ.get(name) for name in ('SSH_CONNECTION', 'SSH_CLIENT', 'SSH_TTY')):
     raise ValueError('local_terminal_enable_required')
   protected(SCRIPT)
-  target = Path('/etc/systemd/system') / UNIT
+  target = RUNTIME_UNITS / UNIT
   if not target.is_symlink() or target.resolve() != ROOT / UNIT:
     raise ValueError('unit_identity')
+  require_boot_hook()
   if run(['systemctl', 'show', UNIT, '-p', 'ActiveState', '--value']).strip() in (b'active', b'activating', b'deactivating'):
     raise ValueError('finish_trial_cancellation_check_first')
   source, gate = Source(), Gate()
@@ -634,7 +717,7 @@ def enable_home():
       pass
   if eligible(source.read(), time.monotonic(), ['detached_home'])[0] != 'detached_home':
     raise ValueError('home_condition_lost')
-  trial = Path('/run/systemd/system') / (UNIT + '.d/trial.conf')
+  trial = RUNTIME_UNITS / (UNIT + '.d/trial.conf')
   if trial.is_symlink() or trial.read_bytes() != b'[Service]\nRuntimeMaxSec=900s\nRestart=no\n':
     raise ValueError('trial_identity')
   protected(ROOT / 'conditional_modes.json', private=True)
@@ -642,9 +725,11 @@ def enable_home():
   if prior_modes.get('binaries') != identities:
     raise ValueError('enrolled_binary_metadata_changed')
   trial.unlink()
-  atomic(ROOT / 'conditional_modes.json', encode({'qualified_modes': ['detached_home'], 'trial': False, 'guard_sha256': digest, 'binaries': identities}))
+  atomic(
+    ROOT / 'conditional_modes.json',
+    encode({'qualified_modes': ['detached_home'], 'trial': False, 'boot_restore': True, 'guard_sha256': digest, 'binaries': identities}),
+  )
   run(['systemctl', 'daemon-reload'])
-  run(['systemctl', 'enable', str(ROOT / UNIT)])
   run(['systemctl', 'start', UNIT], timeout=35)
   print(
     json.dumps(
@@ -659,11 +744,12 @@ def main():
   group = parser.add_mutually_exclusive_group(required=True)
   group.add_argument('--install-trial', action='store_true')
   group.add_argument('--enable-home-auto', action='store_true')
+  group.add_argument('--restore-runtime', action='store_true')
   group.add_argument('--guard', action='store_true')
   group.add_argument('--bridge', action='store_true')
   args = parser.parse_args()
   try:
-    if args.install_trial or args.enable_home_auto:
+    if args.install_trial or args.enable_home_auto or args.restore_runtime:
       import fcntl
 
       lock_path = ROOT / 'conditional_install.lock'
@@ -671,14 +757,20 @@ def main():
         raise ValueError('unsafe_install_lock')
       with lock_path.open('a+b') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        install() if args.install_trial else enable_home()
+        if args.restore_runtime:
+          print(json.dumps(restore_runtime()), flush=True)
+        else:
+          install() if args.install_trial else enable_home()
     elif args.guard:
       guard()
     else:
       bridge()
   except Exception as error:
     reason = str(error) if re.fullmatch(r'[a-z_]{1,70}', str(error)) else type(error).__name__
-    print(json.dumps({'success': False, 'reason': reason}), flush=True)
+    result = {'success': False, 'reason': reason, 'stage': STAGE}
+    if isinstance(error, OSError) and type(error.errno) is int:
+      result['errno'] = error.errno
+    print(json.dumps(result), flush=True)
     return 1
   return 0
 
