@@ -36,6 +36,17 @@ that path in the owned node, so the new service does not expose the old
 browser-check server. Tools that assumed port22 must use the new connector.
 No legacy manual service is stopped or commandeered during installation.
 
+The device's `/data` is owned by UID1000 even when mode0755. Root SSH strict
+key-path validation rejects an authorized-key file beneath that ancestor;
+mode0600 on the leaf does not repair the parent ownership. Keep the persistent
+public key in the protected data store, validate its exact restricted format
+and <=512byte size, then copy it once per admitted session into the root-owned
+`/run/pv5-conditional-remote/authorized_keys`. The SSH server reads only that
+runtime copy. Keep `StrictModes yes`, PAM, the root account lock, passwords,
+host private key and `/data` ownership unchanged. This was reproduced with a
+UID1000-owned0755 parent and locked-root PAM fixture in the native PC SSH test;
+it does not replace actual device authentication/resource/cancellation checks.
+
 Only the registered PC key authenticates to this separate root diagnostic
 server. Password/keyboard-interactive auth, agent/TCP/X11 forwarding, user rc
 and tunnels are disabled. PAM account policy is retained. A prior real-device

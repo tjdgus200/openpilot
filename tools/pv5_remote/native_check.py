@@ -12,6 +12,7 @@ import tempfile
 import time
 import uuid
 from tools.pv5_remote.connect import CHECK
+from tools.pv5_remote import conditional_remote as owner
 
 
 def run(args, **kwargs):
@@ -35,6 +36,23 @@ def main():
       run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', str(root / name)])
     (root / 'authorized').write_bytes((root / 'client.pub').read_bytes())
     (root / 'passwd').write_text('root:x:0:0:root:/root:/bin/bash\nsshd:x:65534:65534:SSH isolation:/run/sshd:/usr/sbin/nologin\n')
+    strict_parent = '--strict-parent' in sys.argv
+    auth_path, host_path = root / 'authorized', root / 'host'
+    if strict_parent:
+      data, safe = root / 'data', root / 'runtime'
+      data.mkdir(mode=0o755)
+      os.chown(data, 1000, 1000)  # This newly created PC fixture directory only.
+      store = data / 'store'
+      store.mkdir(mode=0o755)
+      safe.mkdir(mode=0o755)
+      auth_path, host_path = store / 'conditional_authorized_keys', store / 'host'
+      client_public = ' '.join((root / 'client.pub').read_text().split()[:2])
+      auth_path.write_text('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + client_public + '\n')
+      auth_path.chmod(0o600)
+      host_path.write_bytes((root / 'host').read_bytes())
+      host_path.chmod(0o600)
+      (root / 'shadow').write_text('root:!:1:0:99999:7:::\nsshd:!:1:0:99999:7:::\n')
+      (root / 'shadow').chmod(0o600)
     with socket.socket() as reservation:
       reservation.bind(('127.0.0.1', 0))
       port = reservation.getsockname()[1]
@@ -42,8 +60,9 @@ def main():
       [
         'Port ' + str(port),
         'ListenAddress 127.0.0.1',
-        'HostKey ' + str(root / 'host'),
-        'AuthorizedKeysFile ' + str(root / 'authorized'),
+        'HostKey ' + str(host_path),
+        'AuthorizedKeysFile ' + str(auth_path),
+        'StrictModes yes',
         'PidFile ' + str(root / 'sshd.pid'),
         'AllowUsers root',
         'PermitRootLogin prohibit-password',
@@ -60,6 +79,8 @@ def main():
       ]
     )
     (root / 'sshd_config').write_text(config)
+    if strict_parent:
+      (root / 'missing_key_config').write_text(config.replace('AuthorizedKeysFile ' + str(auth_path), 'AuthorizedKeysFile ' + str(root / 'not_created_yet')))
     (root / 'known_hosts').write_text('pv5-native-test ' + (root / 'host.pub').read_text())
     (root / 'modes.json').write_text(json.dumps({'qualified_modes': ['detached_home'], 'trial': True}))
     (root / 'guard.py').write_bytes(Path(__file__).with_name('conditional_remote.py').read_bytes())
@@ -67,6 +88,8 @@ def main():
     helper.write_text('''import os,socket,subprocess,time
 from pathlib import Path
 r=Path(__file__).parent
+if (r/'missing_key_config').exists():
+ subprocess.run([os.environ['PV5_TEST_SSHD'],'-t','-f',str(r/'missing_key_config')],check=True)
 subprocess.run([os.environ['PV5_TEST_SSHD'],'-t','-f',str(r/'sshd_config')],check=True)
 c=subprocess.Popen([os.environ['PV5_TEST_SSHD'],'-D','-e','-f',str(r/'sshd_config')],stdout=subprocess.DEVNULL,stderr=open(r/'sshd-error','wb'))
 def notify(text):
@@ -95,7 +118,7 @@ while not (r/'deny').exists():
       'RestrictSUIDSGID=yes',
       'PrivateTmp=yes',
       'InaccessiblePaths=-/run/dbus/system_bus_socket -/run/systemd/private',
-      'BindReadOnlyPaths=' + str(root / 'passwd') + ':/etc/passwd',
+      'BindReadOnlyPaths=' + str(root / 'passwd') + ':/etc/passwd' + (' ' + str(root / 'shadow') + ':/etc/shadow' if strict_parent else ''),
       'TemporaryFileSystem=/run/sshd:ro',
     ):
       command.append('--property=' + setting)
@@ -134,6 +157,23 @@ while not (r/'deny').exists():
             break
         except OSError:
           time.sleep(0.1)
+      if strict_parent:
+        rejected = subprocess.run(ssh + ['-i', str(root / 'client'), 'root@127.0.0.1', 'true'], capture_output=True, timeout=5)
+        assert rejected.returncode == 255 and b'permission denied' in rejected.stderr.lower(), 'uid1000_parent_not_rejected'
+        from unittest.mock import patch
+
+        with patch.object(owner, 'ROOT', store), patch.object(owner, 'RUNTIME', safe):
+          owner.runtime_key()
+        (root / 'sshd_config').write_text(config.replace('AuthorizedKeysFile ' + str(auth_path), 'AuthorizedKeysFile ' + str(safe / 'authorized_keys')))
+        identity = run(['systemctl', 'show', token, '-p', 'ExecStart', '--value']).decode()
+        assert str(helper) in identity
+        run(['systemctl', 'restart', token])  # This exact PC-owned fixture only.
+        for _ in range(40):
+          try:
+            with socket.create_connection(('127.0.0.1', port), timeout=0.1):
+              break
+          except OSError:
+            time.sleep(0.1)
       wrong = subprocess.run(ssh + ['-i', str(root / 'wrong'), 'root@127.0.0.1', 'true'], capture_output=True, timeout=5)
       assert wrong.returncode != 0, 'unregistered_key_accepted'
       check = CHECK.replace('/pv5-conditional-remote.service', '/' + token + '.service')
@@ -189,6 +229,10 @@ while not (r/'deny').exists():
             'remote_job_and_child_terminated': True,
             'cancel_seconds_PC': round(time.monotonic() - began, 3),
             'device_validation': False,
+            'uid1000_parent_rejection_then_runtime_key_success': strict_parent,
+            'locked_root_PAM_fixture': strict_parent,
+            'StrictModes_preserved': True,
+            'missing_runtime_key_ExecStartPre_syntax_passed': strict_parent,
           }
         )
       )

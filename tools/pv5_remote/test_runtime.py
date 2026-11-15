@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from tools.pv5_remote import conditional_remote as remote
+from tools.pv5_remote.test_remote import key
 
 
 class RuntimeChecks(unittest.TestCase):
@@ -137,6 +138,30 @@ class RuntimeChecks(unittest.TestCase):
     value = json.loads(output.getvalue())
     self.assertEqual(value, {'success': False, 'reason': 'OSError', 'stage': 'runtime_unit_link', 'errno': errno.EROFS})
     self.assertNotIn('NEVER_PRINT', output.getvalue())
+
+  def test_authorized_key_uses_checked_runtime_copy_and_rejects_changed_options(self):
+    runtime = self.base / 'runtime'
+    runtime.mkdir()
+    source = self.root / 'conditional_authorized_keys'
+    data = ('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + key(1) + '\n').encode()
+    source.write_bytes(data)
+
+    def checked(path, **kwargs):
+      if path != Path('/'):
+        self.owned_path(path, **kwargs)
+
+    with patch.object(remote, 'RUNTIME', runtime), patch.object(remote, 'protected', side_effect=checked):
+      remote.runtime_key()
+      self.assertEqual((runtime / 'authorized_keys').read_bytes(), data)
+      self.assertIn('AuthorizedKeysFile ' + str(runtime / 'authorized_keys'), remote.ssh_config())
+      self.assertIn('StrictModes yes', remote.ssh_config())
+      source.write_bytes(('command=bad ' + key(1) + '\n').encode())
+      with self.assertRaisesRegex(ValueError, 'authorized_key_format'):
+        remote.runtime_key()
+      source.write_bytes(b'x' * 513)
+      with self.assertRaisesRegex(ValueError, 'authorized_key_format'):
+        remote.runtime_key()
+      self.assertEqual((runtime / 'authorized_keys').read_bytes(), data)
 
 
 if __name__ == '__main__':

@@ -319,7 +319,8 @@ def ssh_config():
       'Port 2223',
       'PidFile ' + str(RUNTIME / 'sshd.pid'),
       'HostKey ' + str(ROOT / 'conditional_host_ed25519'),
-      'AuthorizedKeysFile ' + str(ROOT / 'conditional_authorized_keys'),
+      'AuthorizedKeysFile ' + str(RUNTIME / 'authorized_keys'),
+      'StrictModes yes',
       'AllowUsers root',
       'PermitRootLogin prohibit-password',
       'PubkeyAuthentication yes',
@@ -446,6 +447,23 @@ def wait_backend(cli, permission, deadline):
   raise ValueError('node_not_running')  # No inferred login requirement or auth URL.
 
 
+def runtime_key():
+  mark('runtime_key')
+  source = ROOT / 'conditional_authorized_keys'
+  protected(source, private=True)
+  if not 0 < source.stat().st_size <= 512:
+    raise ValueError('authorized_key_format')
+  for path in (RUNTIME, RUNTIME.parent, Path('/')):
+    protected(path, directory=True)
+  data = source.read_bytes()
+  if not 0 < len(data) <= 512:
+    raise ValueError('authorized_key_format')
+  key = public_key(' '.join(data.decode().split()[-2:]))
+  if data != ('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + key + '\n').encode():
+    raise ValueError('authorized_key_format')
+  atomic(RUNTIME / 'authorized_keys', data)
+
+
 def bridge():
   permission = Permission()
   began = time.monotonic()
@@ -454,6 +472,8 @@ def bridge():
   permission.check()
   children = []
   try:
+    runtime_key()
+    permission.check()
     # This dedicated daemon is absent in normal/active driving mode.
     children.append(
       subprocess.Popen(
