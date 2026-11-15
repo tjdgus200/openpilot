@@ -26,12 +26,18 @@ class Triage:
     self.samples, self.errors = [], set()
     self.source_commit, self.vehicle = None, None
     self.regressions, self.invalid, self.privacy_removed = 0, 0, 0
+    self.event_markers, self.marker_last, self.previous_radar = [], {}, None
 
   def candidate(self, name, stamp):
     if name not in self.candidates and len(self.candidates) < 16:
       self.candidates[name] = {'kind': name, 'first_seconds': round(stamp - self.first, 3), 'count': 0}
     if name in self.candidates:
       self.candidates[name]['count'] = min(100000, self.candidates[name]['count'] + 1)
+    relative = stamp - self.first
+    important = name in ('recorded_stock_aeb', 'recorded_system_disable', 'radar_value_jump', 'new_close_target')
+    if important and len(self.event_markers) < 128 and relative - self.marker_last.get(name, -100) >= 0.5:
+      self.event_markers.append({'kind': name, 't': round(relative, 3)})
+      self.marker_last[name] = relative
 
   def accept(self, event):
     topic = event.which()
@@ -61,9 +67,26 @@ class Triage:
     if topic == 'radarState':
       lead = event.radarState.leadOne
       self.lead = (stamp, bool(lead.status), number(lead.dRel), number(lead.vRel))
+      distance, relative = number(lead.dRel), number(lead.vRel)
+      radar = (stamp, bool(lead.status), distance, relative, bool(lead.radar), int(lead.radarTrackId))
+      previous = self.previous_radar
+      if previous and radar[1] and previous[1] and distance is not None and relative is not None and 0 < distance < 250:
+        dt = stamp - previous[0]
+        if 0.01 <= dt <= 0.25 and previous[2] is not None and previous[3] is not None:
+          same = radar[4] and previous[4] and radar[5] >= 0 and radar[5] == previous[5]
+          moving = self.previous and 0 <= stamp - self.previous[0] <= 0.3 and self.previous[1] >= 2
+          if same and (moving or relative < -1) and (
+            abs(distance - (previous[2] + previous[3] * dt)) >= max(3, previous[2] * 0.25) or abs(relative - previous[3]) >= 8
+          ):
+            self.candidate('radar_value_jump', stamp)
+          elif not same and previous[2] - distance >= 8 and distance <= 25 and relative < -1:
+            self.candidate('new_close_target', stamp)
+      self.previous_radar = radar
     elif topic == 'carOutput':
       actuator = event.carOutput.actuatorsOutput
-      self.scc = (stamp, bool(actuator.pv5SccDecelActive), number(actuator.pv5SccWarningRaw), number(actuator.pv5SccWarningBaseAccel), number(actuator.accel))
+      fresh = actuator.pv5SccWarningVersion == 1 and 0 <= stamp - actuator.pv5SccWarningMonoTime / 1e9 < 0.3
+      self.scc = (stamp, bool(actuator.pv5SccDecelActive), number(actuator.pv5SccWarningRaw),
+                  number(actuator.pv5SccWarningBaseAccel), number(actuator.accel), fresh)
     elif topic == 'onroadEvents':
       for value in event.onroadEvents:
         if value.immediateDisable or value.softDisable:
@@ -103,7 +126,7 @@ class Triage:
             if relative < -0.5 and distance / -relative < 2.0:
               self.candidate('short_recorded_ttc', stamp)
         if self.scc and 0 <= stamp - self.scc[0] <= 0.3:
-          row['scc_active'], row['scc_raw'], row['base_accel'], row['command_accel'] = self.scc[1:]
+          row['scc_active'], row['scc_raw'], row['base_accel'], row['command_accel'], row['scc_metadata_fresh'] = self.scc[1:]
           if self.scc[1]:
             self.candidate('scc_deceleration_assist', stamp)
         self.samples.append(row)
@@ -127,6 +150,7 @@ class Triage:
       'min_accel': min((row['a'] for row in self.samples), default=None),
       'max_speed': max((row['v'] for row in self.samples), default=None),
       'samples': self.samples,
+      'event_markers': self.event_markers,
       'visual_semantics_evaluated': False,
       'conclusion': 'Threshold candidates require context; driver cancellation and legitimate hazard responses are not software defects.',
       'next_check': 'Review synchronized road recording, recorded CAN/control/lead timelines and the recorded source version. No tuning or deployment.',

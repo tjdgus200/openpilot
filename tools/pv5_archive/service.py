@@ -52,6 +52,7 @@ class AnalysisQueue:
         raise ValueError('bounded_analysis_failed')
       summary = json.loads(output.read_bytes())
       summary.pop('samples', None)
+      summary.pop('event_markers', None)
       self.store.analyzed(token, summary)
     except (ValueError, OSError, subprocess.SubprocessError):
       summary = {
@@ -66,6 +67,8 @@ class AnalysisQueue:
       self.store.analyzed(token, summary)
     finally:
       request.unlink(missing_ok=True)
+    summary_file = self.folder / (token + '.summary.json')
+    atomic(summary_file, summary)
     self.notify()
     return True
 
@@ -105,6 +108,9 @@ def main():
   else:
     with full_schema() as schema:
       result = analyze(rlogs[0], schema)
+    from tools.pv5_archive.screen import select_review
+
+    result = select_review(result)
     if not result['vehicle_pv5'] or result['missing_services'] or result['source_commit'] is None:
       result['status'] = 'insufficient_data'
   result['road_video_present'] = any(name.startswith(('fcamera.', 'ecamera.', 'qcamera.')) for name in job['files'])

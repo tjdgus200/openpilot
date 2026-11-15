@@ -94,6 +94,22 @@ implied. Cache corruption/schema mismatch fails closed, with local status.
 
 ## PC completion events and analysis
 
+Owner risk-first policy (`risk-first-v1`): a token-free PC pass scans logs and
+keeps same-radar-track distance/relative-speed discontinuities, a substantially
+closer new target, rapid approach, meaningful abrupt/hard measured deceleration,
+fresh qualified original SCC requests <= -3 m/s², recorded AEB, and system
+disable events. SCC request acceleration is not measured deceleration; track
+switches are not labelled radar defects. These are provisional review thresholds,
+not vehicle-control settings or validated hazard boundaries.
+
+Small acceleration noise, ordinary cruise releases and mild SCC assist alone
+do not wake AI. Selected evidence windows cover +/-5 seconds, merge up to 20 s,
+and are limited to eight windows per segment. Missing fields and capped windows
+remain explicit in private results; parser failures remain visible operational
+failures. No visual inference is run over ordinary recordings. AI review uses
+the selected road-video/data windows and proposes explanations/improvements
+only; video time alignment must be checked before causal claims.
+
 `store.py` reserves space before accepting a manifest, verifies chunk-chain
 integrity and fsync checkpoints, then seals each file. Only a fully sealed
 segment can enter the durable analysis queue. Duplicate/lost ACKs resume without

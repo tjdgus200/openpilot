@@ -33,7 +33,8 @@ class ArchiveDispatch:
       for row in rows:
         summary = json.loads(row['summary'])
         kinds = sorted({value['kind'] for value in summary.get('candidates', [])})
-        if not kinds and summary.get('status') == 'no_threshold_candidate':
+        screened_quiet = summary.get('screening_policy') == 'risk-first-v1' and summary.get('status') != 'analysis_failed'
+        if not kinds and (summary.get('status') == 'no_threshold_candidate' or screened_quiet):
           db.execute('UPDATE results SET notified=-1 WHERE segment_id=?', (row['segment_id'],))
           continue  # Ordinary uploads never produce a chat.
         cause = hashlib.sha256(encode([kinds, summary.get('status'), summary.get('missing_services', [])])).hexdigest()

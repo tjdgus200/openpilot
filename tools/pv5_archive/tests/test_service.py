@@ -60,6 +60,16 @@ class ServiceChecks(unittest.TestCase):
     self.assertEqual(sent[0]['kind'], 'archive_analysis')
     self.assertIsNone(dispatch.next_due)
 
+  def test_screened_normal_or_incomplete_without_risk_does_not_wake_AI(self):
+    calls = []
+    dispatch = ArchiveDispatch(self.store, self.root / 'events', lambda: {'enabled': True, 'push_policy': 'analysis_only'},
+                              lambda *_: calls.append(True) or {'status': 'accepted'}, clock=lambda: 10000)
+    self.store.analyzed('c' * 64, {'status': 'insufficient_data', 'candidates': [], 'missing_services': ['radarState'],
+                                  'screening_policy': 'risk-first-v1'})
+    dispatch.step()
+    self.assertEqual(calls, [])
+    self.assertIsNone(dispatch.next_due)
+
   def test_actual_bounded_child_full_schema_and_recorded_source_identity(self):
     import zstandard
 
