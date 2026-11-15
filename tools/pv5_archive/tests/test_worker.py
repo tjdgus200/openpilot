@@ -9,6 +9,7 @@ import time
 import unittest
 from types import SimpleNamespace
 from urllib.parse import urlsplit
+from unittest.mock import patch
 
 from openpilot.system.pv5_incidents.archive_catalog import Catalog
 from openpilot.system.pv5_incidents.archive_protocol import encode
@@ -18,6 +19,34 @@ from tools.pv5_archive.store import Store
 
 
 class WorkerChecks(unittest.TestCase):
+  def test_extended_home_transport_wait_cannot_send_after_admission_loss(self):
+    for timeout in (6, 30):
+      allowed, observed = [True], {}
+
+      class Connection:
+        def __init__(self, host, port, **options):
+          self.observed, self.allowed = options.pop('observation'), options.pop('admission')
+          self.observed.update(options)
+
+        def connect(self):
+          self.allowed[0] = False  # Condition changed while TLS was in progress.
+
+        def close(self):
+          self.observed['closed'] = True
+
+        def request(self, *args, **kwargs):
+          raise AssertionError('must not transmit')
+
+      transport = Transport(urlsplit('https://owner.ts.net:10000/v1/incident'), bytes(32), lambda current=allowed: current[0], timeout=timeout)
+      def connection(host, port, current=allowed, observation=observed, **options):
+        return Connection(host, port, admission=current, observation=observation, **options)
+      with patch('openpilot.system.pv5_incidents.archive_worker.http.client.HTTPSConnection', connection):
+        with self.assertRaisesRegex(Paused, 'state'):
+          transport.request('/v1/archive/manifest', b'{}')
+      self.assertEqual(observed['timeout'], timeout)
+      self.assertTrue(observed['closed'])
+      self.assertIsNone(transport.connection)
+
   def test_home_only_budget_exception_keeps_wall_and_permission_limits(self):
     clock, cpu, allowed = [0.0], [0.0], [True]
     regular = Copier(None, SimpleNamespace(), lambda: allowed[0], [], clock=lambda: clock[0], cpu=lambda: cpu[0])

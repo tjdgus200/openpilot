@@ -41,6 +41,13 @@ PC manifests require `privacy=no-audio-cabin-v1`; older raw copiers are refused.
 
 ## Explicit trial budgets and limitations
 
+Detached-home-only configuration uses a 30-second HTTP timeout and up to
+8 MiB/s transfer pacing. Permission EOF/freshness still terminates its dedicated
+process group within the existing watchdog path; a longer network timeout does
+not extend admission. Vehicle and mixed-mode configurations retain the original
+6-second timeout and 256 KiB/s pacing. Real throughput depends on the link and
+PC durable checkpoint latency, and is not promised to match the pacing ceiling.
+
 On the observed AGNOS device, ffmpeg/ffprobe are absent and the OS runtime is
 read-only. An optional native FFmpeg9.0.2 build lives only under
 `/data/pv5-archive-tools/ffmpeg-9.0.2-8c3850283eb25fa0`. Its official source archive

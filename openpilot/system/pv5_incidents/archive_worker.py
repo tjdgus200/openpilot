@@ -132,10 +132,10 @@ class Permission:
 
 
 class Transport:
-  def __init__(self, target, key, allowed):
+  def __init__(self, target, key, allowed, timeout=6):
     if target.scheme != 'https' or not target.hostname.endswith('.ts.net') or target.port != 10000 or target.path != '/v1/incident':
       raise ValueError('unapproved_archive_origin')
-    self.target, self.key, self.allowed = target, key, allowed
+    self.target, self.key, self.allowed, self.timeout = target, key, allowed, timeout
     self.connection = None
     self.before_send = lambda: True
 
@@ -143,7 +143,7 @@ class Transport:
     if self.allowed() is not True:
       raise Paused('state')
     if self.connection is None:
-      self.connection = http.client.HTTPSConnection(self.target.hostname, self.target.port, timeout=6, context=ssl.create_default_context())
+      self.connection = http.client.HTTPSConnection(self.target.hostname, self.target.port, timeout=self.timeout, context=ssl.create_default_context())
       self.connection.connect()
     if self.allowed() is not True:
       self.close()
@@ -286,8 +286,9 @@ def main():
     worker_lock = args.catalog.with_suffix('.lock').open('a+b')
     fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     raw = Catalog(args.log_root, args.catalog, key, permission.allowed)
-    transport = Transport(target, key, permission.allowed)
-    copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'], home_unlimited=home_unlimited)
+    transport = Transport(target, key, permission.allowed, timeout=30 if home_unlimited else 6)
+    copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'],
+                    rate=8 * 1024**2 if home_unlimited else 256 * 1024, home_unlimited=home_unlimited)
     copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check))
     result = copier.run(args.commit)
     reason = result['reason']
