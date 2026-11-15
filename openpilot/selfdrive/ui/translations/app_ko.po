@@ -4,6 +4,10 @@ msgstr ""
 "Language: ko\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
+#: openpilot/selfdrive/ui/onroad/hud_renderer.py
+msgid "Mounting angle"
+msgstr "설치각"
+
 #: openpilot/selfdrive/selfdrived/events.py
 msgid "SCC BRAKING!"
 msgstr "급감속 경고!"

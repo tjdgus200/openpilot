@@ -6,6 +6,7 @@ from openpilot.common.hud_driving_feedback import STATIC_CAMERA_ASSET, STATIC_NO
 from openpilot.selfdrive.carrot.deceleration_source import deceleration_source_presentation
 from openpilot.selfdrive.ui.onroad.exp_button import ExpButton
 from openpilot.selfdrive.ui.onroad.obd_debug import ObdDebugOverlay
+from openpilot.selfdrive.ui.onroad.mounting_angle import MountingAngleDisplay
 from openpilot.selfdrive.ui.onroad.pv5_driving_feedback import Pv5DrivingFeedbackOverlay
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.system.hardware.usbgpu import usbgpu_badge_state
@@ -150,6 +151,7 @@ class HudRenderer(Widget):
     super().__init__()
     self._overlay = OverlayLayer(1)
     self._obd_debug = ObdDebugOverlay()
+    self._mounting_angle = MountingAngleDisplay()
     self._driving_feedback = Pv5DrivingFeedbackOverlay()
     self._overlay_state = None
     self._display_clock = DisplayClock()
@@ -253,6 +255,7 @@ class HudRenderer(Widget):
     self._blink_timer = int(self._blink_phase) % 16
     self._disp_timer = int(self._blink_phase)
     sm = ui_state.sm
+    self._mounting_angle.update(ui_state)
     device_info_recv_frames = (sm.recv_frame["deviceState"], sm.recv_frame["peripheralState"])
     if not self._device_info_loaded or device_info_recv_frames != self._device_info_recv_frames:
       self._update_device_info()
@@ -300,7 +303,9 @@ class HudRenderer(Widget):
     self._refresh_hud_params(time.monotonic())
     self._plot_renderer.update(self._show_plot_mode)
     state = self._overlay_state
-    key = (state.key if state else None, self._blink_timer <= 8, self._disp_timer < 32, self._show_plot_mode)
+    key = (state.key if state else None, self._blink_timer <= 8, self._disp_timer < 32, self._show_plot_mode,
+           self._mounting_angle.visible, self._mounting_angle.valid, self._mounting_angle.value,
+           self._mounting_angle.suppressed)
     self._overlay.draw(rect, self._paint, key, enabled=state is not None and state.enabled,
                        urgent=state is not None and state.urgent)
 
@@ -337,9 +342,26 @@ class HudRenderer(Widget):
     self._plot_renderer.paint(rect, self._font_display)
 
     self._draw_date_time(rect)
+    self._draw_mounting_angle(rect)
     self._draw_tpms(rect)
     self._draw_egpu_badge(rect)
     self._draw_bleobd_badge(rect)
+
+  def _draw_mounting_angle(self, rect: rl.Rectangle) -> None:
+    display = self._mounting_angle
+    if not display.visible or display.suppressed or rect.width < 1000 or rect.height < 600:
+      return
+    text = f"{tr('Mounting angle')}: {display.value}"
+    font_size = 28
+    size = measure_text_cached(self._font_display, text, font_size)
+    width, height = size.x + 28, size.y + 16
+    # Below the clock/date and clear of the speed/device panel. Shorter views
+    # use the space to its right; existing HUD/driver-warning geometry stays put.
+    left = 30 if rect.height >= 850 else min(520, rect.width - width - 30)
+    badge = rl.Rectangle(rect.x + left, rect.y + 218, width, height)
+    rl.draw_rectangle_rounded(badge, 0.25, 8, rl.Color(0, 0, 0, 180))
+    color = COLORS.WHITE_220 if display.valid else COLORS.GREY
+    rl.draw_text_ex(self._font_display, text, rl.Vector2(badge.x + 14, badge.y + 8), font_size, 0, color)
 
   def _draw_bleobd_badge(self, rect: rl.Rectangle) -> None:
     if not getattr(ui_state, 'bleobd_receiving', False):

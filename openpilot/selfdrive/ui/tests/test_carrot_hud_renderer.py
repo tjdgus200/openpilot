@@ -346,6 +346,7 @@ def test_speed_panel_reuses_one_snapshot(hud_module, monkeypatch):
 def test_device_info_updates_only_on_first_frame_or_new_service_frame(hud_module, monkeypatch):
   module, fake_ui_state = hud_module
   renderer = object.__new__(module.HudRenderer)
+  renderer._mounting_angle = module.MountingAngleDisplay()
   renderer._display_clock = SimpleNamespace(tick=lambda: 1.0)
   renderer._blink_phase = 0.0
   renderer._device_info_loaded = False
@@ -383,6 +384,7 @@ def test_device_info_updates_only_on_first_frame_or_new_service_frame(hud_module
 def test_device_display_cache_follows_service_receive_frames(hud_module):
   module, fake_ui_state = hud_module
   renderer = object.__new__(module.HudRenderer)
+  renderer._mounting_angle = module.MountingAngleDisplay()
   renderer._display_clock = SimpleNamespace(tick=lambda: 1.0)
   renderer._blink_phase = 0.0
   renderer._device_info_loaded = False
@@ -595,6 +597,11 @@ def test_date_text_formats_only_when_minute_key_changes(hud_module, monkeypatch)
 def test_render_keeps_sampling_and_interactions_live(hud_module, monkeypatch, reuse):
   module, _ = hud_module
   renderer = object.__new__(module.HudRenderer)
+  renderer._mounting_angle = module.MountingAngleDisplay()
+  renderer._driving_feedback = SimpleNamespace(draw=lambda *a, **k: None, draw_popup=lambda *a, **k: None)
+  renderer._show_tpms = 0
+  renderer._engaged = False
+  monkeypatch.setitem(sys.modules, "openpilot.common.indicator_display", SimpleNamespace(draw=lambda *a, **k: None))
   renderer.is_cruise_available = False
   renderer._show_plot_mode = 6
   renderer._font_display = object()
