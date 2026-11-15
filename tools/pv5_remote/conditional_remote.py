@@ -1,0 +1,687 @@
+#!/usr/bin/env python3
+"""Conditional owner remote access. Local one-time installation; no control writes."""
+
+import argparse
+import base64
+import hashlib
+import hmac
+import http.client
+import json
+import math
+import os
+from pathlib import Path
+import platform
+import re
+import select
+import socket
+import stat
+import subprocess
+import sys
+import threading
+import time
+from urllib.parse import urlsplit
+
+ROOT = Path('/data/pv5-remote-access')
+SCRIPT = ROOT / 'conditional_remote.py'
+UNIT = 'pv5-conditional-remote.service'
+RUNTIME = Path('/run/pv5-conditional-remote')
+SOCKET = str(RUNTIME / 'tailscaled.sock')
+BIN = ROOT / '1.104.5'
+SERVICES = ('deviceState', 'pandaStates', 'managerState', 'carParams', 'carState', 'carControl', 'selfdriveState', 'onroadEvents')
+BINARY_SHA = {
+  'tailscale': 'a000d3ee4734531da8e0b2874453e01c6f841e6fea9edae8621f4b2e4e45ab48',
+  'tailscaled': 'd1532cdbbe9c9a86275939b9130e837da8bb7223d2647996b7b1fabf48bc8359',
+}
+
+
+def encode(value):
+  return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+
+
+def public_key(value):
+  if not isinstance(value, str) or not re.fullmatch(r'ssh-ed25519 [A-Za-z0-9+/]{68}', value):
+    raise ValueError('invalid_public_key')
+  raw = base64.b64decode(value.split()[1], validate=True)
+  if len(raw) != 51 or raw[:19] != b'\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20':
+    raise ValueError('invalid_public_key')
+  return value
+
+
+def finite(value):
+  return type(value) in (int, float) and math.isfinite(value)
+
+
+def eligible(samples, now, modes):
+  def fresh(name, ttl):
+    value = samples.get(name, {})
+    return value.get('valid') is True and finite(value.get('stamp')) and 0 <= now - value['stamp'] < ttl
+
+  if not finite(now) or not all(fresh(name, ttl) for name, ttl in (('deviceState', 1.5), ('pandaStates', 0.25), ('managerState', 1.5))):
+    return '', 'source_stale'
+  ds, ps, ms = (samples[name] for name in ('deviceState', 'pandaStates', 'managerState'))
+  usage = ds.get('cpu', [])
+  if (
+    not usage
+    or len(usage) > 32
+    or not all(finite(value) and 0 <= value <= 70 for value in usage)
+    or ds.get('thermal') != 0
+    or not finite(ds.get('memory'))
+    or not 0 <= ds['memory'] <= 80
+    or not finite(ds.get('free'))
+    or not 20 <= ds['free'] <= 100
+  ):
+    return '', 'resource'
+  processes = ms['processes']
+  if any(processes.get(name) != [True, True] for name in ('pandad', 'hardwared')):
+    return '', 'producer'
+  if ds['started'] is False:
+    if not ps['disconnected'] or any(processes.get(name) != [False, False] for name in ('card', 'controlsd', 'selfdrived', 'modeld', 'loggerd', 'encoderd')):
+      return '', 'not_detached'
+    mode = 'detached_home'
+  else:
+    if not all(fresh(name, 0.25) for name in ('carState', 'carControl', 'selfdriveState')) or not fresh('onroadEvents', 2.5):
+      return '', 'vehicle_source_stale'
+    cp = samples.get('carParams', {})
+    if cp.get('valid') is not True or cp.get('vehicle') != 'KIA_PV5' or cp.get('notCar') is not False:
+      return '', 'identity'
+    if cp.get('dashcam') is not True:
+      return '', 'normal_mode_code_reports_only'
+    cs, cc, sd = (samples[name] for name in ('carState', 'carControl', 'selfdriveState'))
+    if (
+      cs['can_valid'] is not True
+      or cs['can_timeout'] is not False
+      or cs['standstill'] is not True
+      or cs['gear'] != 'park'
+      or not finite(cs['raw_speed'])
+      or cs['raw_speed'] != 0
+      or not finite(cs['speed'])
+      or abs(cs['speed']) > 0.01
+    ):
+      return '', 'not_parked'
+    if (
+      cs['cruise']
+      or cs['aeb']
+      or cc['enabled']
+      or cc['lat']
+      or cc['long']
+      or sd['enabled']
+      or sd['active']
+      or sd['state'] != 'disabled'
+      or sd['critical']
+      or samples['onroadEvents']['disable']
+    ):
+      return '', 'control_or_emergency'
+    mode = 'parked_dashcam'
+  return (mode, '') if mode in modes else ('', 'mode_not_qualified')
+
+
+class Gate:
+  def __init__(self):
+    self.last, self.since, self.mode, self.opened = None, None, '', False
+
+  def tick(self, mode, now):
+    if not finite(now) or (self.last is not None and (now < self.last or now - self.last >= (0.25 if self.opened else 0.75))):
+      mode = ''
+    self.last = now
+    if not mode or mode != self.mode:
+      self.since, self.mode = None, mode
+      if self.opened:
+        return 'close'
+    if not mode:
+      return 'wait'
+    if self.since is None:
+      self.since = now
+    if not self.opened and now - self.since >= 2.0:
+      self.opened = True
+      return 'open'
+    return 'keep' if self.opened else 'wait'
+
+
+class Source:
+  def __init__(self):
+    if any(os.environ.get(key) for key in ('SIMULATION', 'REPLAY', 'OPENPILOT_PREFIX', 'ZMQ')):
+      raise ValueError('real_local_sources_required')
+    from openpilot.cereal import log, messaging
+
+    self.log = log
+    self.readers = {name: messaging.sub_sock(name, conflate=True, timeout=0) for name in SERVICES}
+    self.samples = {}
+
+  def read(self):
+    for name, reader in self.readers.items():
+      raw = reader.receive(non_blocking=True)
+      if raw is None:
+        continue
+      if len(raw) > (1048576 if name == 'carParams' else 65536):
+        raise ValueError('source_size')
+      with self.log.Event.from_bytes(raw, traversal_limit_in_words=131072) as event:
+        if event.which() != name:
+          raise ValueError('source_type')
+        state = getattr(event, name)
+        value = {'stamp': event.logMonoTime / 1e9, 'valid': event.valid}
+        previous = self.samples.get(name)
+        if previous and value['stamp'] < previous['stamp']:
+          raise ValueError('source_time_regressed')
+        if name == 'deviceState':
+          value.update(
+            started=state.started,
+            cpu=list(state.cpuUsagePercent),
+            thermal=int(state.thermalStatus.raw),
+            memory=state.memoryUsagePercent,
+            free=state.freeSpacePercent,
+          )
+        elif name == 'pandaStates':
+          if len(state) > 8:
+            raise ValueError('source_size')
+          value['disconnected'] = all(
+            str(board.pandaType) != 'unknown' and str(board.harnessStatus) == 'notConnected' and not board.ignitionLine and not board.ignitionCan
+            for board in state
+          )
+        elif name == 'managerState':
+          if not 0 < len(state.processes) <= 128:
+            raise ValueError('source_size')
+          value['processes'] = {str(proc.name): [proc.running, proc.shouldBeRunning] for proc in state.processes}
+          if len(value['processes']) != len(state.processes):
+            raise ValueError('duplicate_producer')
+        elif name == 'carParams':
+          value.update(vehicle=str(state.carFingerprint), notCar=state.notCar, dashcam=state.passive or state.dashcamOnly)
+        elif name == 'carState':
+          value.update(
+            can_valid=state.canValid,
+            can_timeout=state.canTimeout,
+            standstill=state.standstill,
+            gear=str(state.gearShifter),
+            raw_speed=state.vEgoRaw,
+            speed=state.vEgo,
+            cruise=state.cruiseState.enabled,
+            aeb=state.stockAeb,
+          )
+        elif name == 'carControl':
+          value.update(enabled=state.enabled, lat=state.latActive, long=state.longActive)
+        elif name == 'selfdriveState':
+          value.update(enabled=state.enabled, active=state.active, state=str(state.state), critical=str(state.alertStatus) == 'critical')
+        else:
+          if len(state) > 64:
+            raise ValueError('source_size')
+          value['disable'] = any(row.immediateDisable or row.softDisable for row in state)
+        self.samples[name] = value
+    return self.samples
+
+
+def protected(path, directory=False, private=False):
+  info = path.lstat()
+  if path.is_symlink() or info.st_uid != 0 or info.st_mode & (0o077 if private else 0o022):
+    raise ValueError('protected_owner_path_required')
+  if not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)):
+    raise ValueError('protected_owner_path_required')
+
+
+def atomic(path, data, mode=0o600):
+  temporary = path.with_name(path.name + '.new')
+  if path.is_symlink() or temporary.is_symlink():
+    raise ValueError('unsafe_destination')
+  with temporary.open('wb') as stream:
+    os.chmod(temporary, mode)
+    stream.write(data)
+    stream.flush()
+    os.fsync(stream.fileno())
+  temporary.replace(path)
+
+
+def prerequisites(check_binaries=False, check=lambda: None):
+  if sys.platform != 'linux' or platform.machine() != 'aarch64' or os.geteuid() != 0 or not Path('/TICI').exists():
+    raise ValueError('owner_comma_local_install_required')
+  if Path('/proc/1/comm').read_text().strip() != 'systemd':
+    raise ValueError('systemd_required')
+  protected(ROOT, directory=True)
+  protected(ROOT / 'state', directory=True)
+  identities = {}
+  for name, digest in BINARY_SHA.items():
+    path = BIN / name
+    protected(path)
+    info = path.stat()
+    identities[name] = [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns]
+    if check_binaries:
+      value = hashlib.sha256()
+      with path.open('rb') as stream:
+        while block := stream.read(1048576):
+          check()
+          value.update(block)
+      if value.hexdigest() != digest:
+        raise ValueError('enrolled_binary_identity')
+  if not Path('/usr/sbin/sshd').is_file() or not Path('/usr/bin/ssh-keygen').is_file():
+    raise ValueError('existing_openssh_required')
+  return identities
+
+
+def run(args, timeout=5):
+  result = subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, check=True)
+  if len(result.stdout) > 16384:
+    raise ValueError('command_result_budget')
+  return result.stdout
+
+
+def exchange(host, path='/v1/remote/bootstrap'):
+  source = Path('/data/pv5-incident-report.json')
+  info = source.lstat()
+  if source.is_symlink() or info.st_uid not in (0, 1000) or info.st_mode & 0o077 or not 0 < info.st_size <= 4096:
+    raise ValueError('existing_enrollment_required')
+  cfg = json.loads(source.read_bytes())
+  target, key = urlsplit(cfg['endpoint']), bytes.fromhex(cfg['key'])
+  if target.scheme != 'https' or not target.hostname.endswith('.ts.net') or target.port != 10000 or target.path != '/v1/incident' or len(key) != 32:
+    raise ValueError('existing_enrollment_required')
+  stamp, nonce = int(time.time()), os.urandom(16).hex()
+  body = encode({'version': 1, 'host_key': host})
+  message = f'pv5-archive-v1\n{stamp}\n{nonce}\n{path}\n'.encode() + hashlib.sha256(body).digest()
+  values = {
+    'X-PV5-Time': str(stamp),
+    'X-PV5-Nonce': nonce,
+    'X-PV5-Signature': hmac.new(key, message, hashlib.sha256).hexdigest(),
+    'Content-Type': 'application/json',
+  }
+  connection = http.client.HTTPSConnection(target.hostname, target.port, timeout=8)
+  try:
+    connection.request('POST', path, body, values)
+    response = connection.getresponse()
+    data = response.read(4097)
+    if response.status != 200 or len(data) > 4096:
+      raise ValueError('pc_bootstrap_refused')
+    result = json.loads(data)
+    if result.get('version') != 1:
+      raise ValueError('pc_bootstrap_refused')
+    return result
+  finally:
+    connection.close()
+
+
+def ssh_config():
+  return '\n'.join(
+    [
+      'ListenAddress 127.0.0.1',
+      'AddressFamily inet',
+      'Port 2223',
+      'PidFile ' + str(RUNTIME / 'sshd.pid'),
+      'HostKey ' + str(ROOT / 'conditional_host_ed25519'),
+      'AuthorizedKeysFile ' + str(ROOT / 'conditional_authorized_keys'),
+      'AllowUsers root',
+      'PermitRootLogin prohibit-password',
+      'PubkeyAuthentication yes',
+      'PasswordAuthentication no',
+      'KbdInteractiveAuthentication no',
+      'AuthenticationMethods publickey',
+      'UsePAM yes',  # Keep account policy; host logind/D-Bus is blocked by the service namespace.
+      'AllowAgentForwarding no',
+      'AllowTcpForwarding no',
+      'X11Forwarding no',
+      'PermitTunnel no',
+      'PermitUserEnvironment no',
+      'PermitUserRC no',
+      'MaxSessions 2',
+      'MaxAuthTries 2',
+      'LoginGraceTime 15',
+      'ClientAliveInterval 5',
+      'ClientAliveCountMax 2',
+      'LogLevel ERROR',
+      '',
+    ]
+  )
+
+
+def unit_text(interpreter):
+  return '\n'.join(
+    [
+      '[Unit]',
+      'Description=Owner PV5 conditional dashcam diagnostics',
+      'After=network.target',
+      '[Service]',
+      'Type=notify',
+      'NotifyAccess=main',
+      'WatchdogSec=1s',
+      'WatchdogSignal=SIGKILL',
+      'Restart=always',
+      'RestartSec=5s',
+      'KillMode=control-group',
+      'TimeoutStopSec=200ms',
+      'TimeoutStartSec=30s',
+      'Nice=19',
+      'IOSchedulingClass=idle',
+      'CPUQuota=10%',
+      'MemoryMax=256M',
+      'LimitCORE=0',
+      'LimitNOFILE=256',
+      'RuntimeDirectory=pv5-conditional-remote',
+      'RuntimeDirectoryMode=0755',
+      'ProtectControlGroups=yes',
+      'ProtectKernelTunables=yes',
+      'ProtectKernelModules=yes',
+      'NoNewPrivileges=yes',
+      'RestrictSUIDSGID=yes',
+      'PrivateTmp=yes',
+      'TemporaryFileSystem=/run/sshd:ro',
+      'InaccessiblePaths=-/run/dbus/system_bus_socket -/run/systemd/private',
+      'WorkingDirectory=/data/openpilot',
+      'Environment=GOMAXPROCS=1',
+      'Environment=PYTHONDONTWRITEBYTECODE=1',
+      'Environment=PYTHONPATH=/data/openpilot/pydeps:/data/openpilot',
+      'ExecStartPre=/usr/sbin/sshd -t -f ' + str(ROOT / 'conditional_sshd_config'),
+      'ExecStart=' + interpreter + ' ' + str(SCRIPT) + ' --guard',
+      '[Install]',
+      'WantedBy=multi-user.target',
+      '',
+    ]
+  )
+
+
+def notify(text):
+  address = os.environ.get('NOTIFY_SOCKET', '')
+  if not address or os.environ.get('WATCHDOG_USEC') != '1000000':
+    raise ValueError('pid1_watchdog_required')
+  with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as connection:
+    connection.settimeout(0.05)
+    connection.sendto(text.encode(), ('\0' + address[1:]) if address.startswith('@') else address)
+
+
+class Permission:
+  def __init__(self):
+    self.stamp, self.closed = None, False
+    threading.Thread(target=self.watch, daemon=True, name='remote-permission').start()
+
+  def check(self):
+    if self.closed or self.stamp is None or not 0 <= time.monotonic() - self.stamp < 0.4:
+      raise ValueError('permission_expired')
+
+  def watch(self):
+    buffer = b''
+    began = time.monotonic()
+    while True:
+      ready, _, _ = select.select([0], [], [], 0.05)
+      if ready:
+        raw = os.read(0, 4096)
+        if not raw or len(buffer) + len(raw) > 4096:
+          break
+        buffer += raw
+        while b'\n' in buffer:
+          line, buffer = buffer.split(b'\n', 1)
+          try:
+            stamp = float(line)
+            if not 0 <= time.monotonic() - stamp < 0.4:
+              raise ValueError()
+            self.stamp = stamp
+          except ValueError:
+            self.closed = True
+            break
+      if self.closed or (time.monotonic() - began > 1 and (self.stamp is None or time.monotonic() - self.stamp >= 0.4)):
+        break
+    os._exit(75)  # PID1/parent observes exit and kills THIS unit's descendants.
+
+
+def bridge():
+  permission = Permission()
+  began = time.monotonic()
+  while permission.stamp is None and time.monotonic() - began < 0.8:
+    time.sleep(0.02)
+  permission.check()
+  children = []
+  try:
+    # This dedicated daemon is absent in normal/active driving mode.
+    children.append(
+      subprocess.Popen(
+        [str(BIN / 'tailscaled'), '--tun=userspace-networking', '--statedir=' + str(ROOT / 'state'), '--socket=' + SOCKET, '--port=0'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+      )
+    )
+    while not Path(SOCKET).exists():
+      permission.check()
+      if children[0].poll() is not None or time.monotonic() - began > 15:
+        raise ValueError('daemon_not_ready')
+      time.sleep(0.05)
+    cli = [str(BIN / 'tailscale'), '--socket=' + SOCKET]
+    state = json.loads(run(cli + ['status', '--json', '--peers=false']))
+    permission.check()
+    if state.get('BackendState') != 'Running':
+      raise ValueError('node_reauthentication_required')  # Never print/login-loop URLs.
+    serve = json.loads(run(cli + ['serve', 'status', '--json']))
+    if serve and (
+      set(serve) - {'TCP', 'AllowFunnel'} or serve.get('AllowFunnel') or serve.get('TCP') not in (None, {}, {'2222': {'TCPForward': '127.0.0.1:2223'}})
+    ):
+      raise ValueError('foreign_serve_configuration')
+    permission.check()
+    prior = ROOT / 'conditional_prior_prefs.json'
+    if not prior.exists():
+      prefs = json.loads(run(cli + ['debug', 'prefs']))
+      atomic(prior, encode({'run_ssh': prefs.get('RunSSH') is True}))
+    run(cli + ['set', '--ssh=false'])  # Replace repeated browser-check SSH with owner key SSH.
+    permission.check()
+    children.append(
+      subprocess.Popen(['/usr/sbin/sshd', '-D', '-e', '-f', str(ROOT / 'conditional_sshd_config')], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    )
+    run(cli + ['serve', '--bg', '--tcp=2222', 'tcp://127.0.0.1:2223'])
+    while True:
+      permission.check()
+      if any(child.poll() is not None for child in children):
+        raise ValueError('owned_daemon_exited')
+      time.sleep(0.05)
+  finally:
+    for child in children:
+      if child.poll() is None:
+        child.terminate()
+
+
+def guard():
+  identities = prerequisites()
+  protected(SCRIPT)
+  protected(ROOT / 'conditional_modes.json', private=True)
+  config = json.loads((ROOT / 'conditional_modes.json').read_bytes())
+  modes = config['qualified_modes']
+  if config.get('binaries') != identities:
+    raise ValueError('enrolled_binary_metadata_changed')
+  if config.get('trial') is not True and config.get('guard_sha256') != hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest():
+    raise ValueError('matching_code_qualification_required')
+  if not modes or any(mode not in ('detached_home', 'parked_dashcam') for mode in modes):
+    raise ValueError('qualified_modes_required')
+  os.setpriority(os.PRIO_PROCESS, 0, 19)
+  affinity = os.sched_getaffinity(0) & set(range(4))
+  if not affinity:
+    raise ValueError('background_cpu_unavailable')
+  os.sched_setaffinity(0, affinity)
+  source, gate, child = Source(), Gate(), None
+  notify('READY=1\nWATCHDOG=1')
+  try:
+    while True:
+      if config.get('trial') is True and (RUNTIME / 'stop-trial').exists():
+        return
+      mode, _reason = eligible(source.read(), time.monotonic(), modes)
+      now = time.monotonic()
+      action = gate.tick(mode, now)
+      if action == 'close' or (child is not None and child.poll() is not None):
+        return  # PID1 closes the entire owned cgroup, then restarts the idle gate.
+      if action == 'open':
+        for entry in Path('/proc').glob('[0-9]*'):
+          try:
+            if (entry / 'comm').read_text().strip() == 'tailscaled':
+              raise ValueError('foreign_daemon_present')
+          except FileNotFoundError:
+            continue
+        child = subprocess.Popen([sys.executable, str(SCRIPT), '--bridge'], stdin=subprocess.PIPE)
+        os.set_blocking(child.stdin.fileno(), False)
+      if child is not None:
+        os.write(child.stdin.fileno(), f'{now:.9f}\n'.encode())
+      notify('WATCHDOG=1')
+      time.sleep(0.1 if child is not None else 0.5)
+  finally:
+    if child is not None:
+      child.stdin.close()
+
+
+def install():
+  prerequisites()
+  # Only LOCAL installation. Do not replace the transport that is carrying us.
+  for name in ('SSH_CONNECTION', 'SSH_CLIENT', 'SSH_TTY'):
+    if os.environ.get(name):
+      raise ValueError('local_terminal_install_required')
+  for old in ('pv5-home-remote-access.service', 'pv5-remote-access.service', UNIT):
+    result = run(['systemctl', 'show', old, '-p', 'ActiveState', '--value']).strip()
+    if result in (b'active', b'activating', b'reloading', b'deactivating'):
+      raise ValueError('existing_session_active_nothing_stopped')
+  if run(['systemctl', 'show', UNIT, '-p', 'UnitFileState', '--value']).strip() in (b'enabled', b'enabled-runtime'):
+    raise ValueError('auto_service_already_enabled')
+  source, gate = Source(), Gate()
+  began = time.monotonic()
+  while time.monotonic() - began < 5:
+    mode, _ = eligible(source.read(), time.monotonic(), ['detached_home'])
+    if gate.tick(mode, time.monotonic()) == 'open':
+      break
+    time.sleep(0.1)
+  else:
+    raise ValueError('detached_home_install_required')
+
+  def still_home():
+    if eligible(source.read(), time.monotonic(), ['detached_home'])[0] != 'detached_home':
+      raise ValueError('home_condition_lost')
+
+  identities = prerequisites(check_binaries=True, check=still_home)
+  host = ROOT / 'conditional_host_ed25519'
+  if not host.exists():
+    run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', str(host)])
+  protected(host, private=True)
+  host_public = public_key(' '.join(Path(str(host) + '.pub').read_text().split()[:2]))
+  response = exchange(host_public)  # Existing private enrollment, no key through Discord.
+  if response.get('host_key_pinned') is not True:
+    raise ValueError('pc_host_pin_required')
+  client = public_key(response['client_public_key'])
+  if eligible(source.read(), time.monotonic(), ['detached_home'])[0] != 'detached_home':
+    raise ValueError('home_condition_lost')
+  atomic(ROOT / 'conditional_authorized_keys', ('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + client + '\n').encode())
+  atomic(ROOT / 'conditional_sshd_config', ssh_config().encode())
+  # Native sshd -t runs in ExecStartPre with the SAME private /run/sshd mount;
+  # no shared system SSH runtime directory or account/PAM file is changed.
+  atomic(SCRIPT, Path(__file__).read_bytes(), 0o644)
+  atomic(ROOT / 'conditional_modes.json', encode({'qualified_modes': ['detached_home'], 'trial': True, 'binaries': identities}))
+  unit = ROOT / UNIT
+  atomic(unit, unit_text(sys.executable).encode(), 0o644)
+  target = Path('/etc/systemd/system') / UNIT
+  if target.exists() or target.is_symlink():
+    if not target.is_symlink() or target.resolve() != unit:
+      raise ValueError('foreign_unit_not_replaced')
+  else:
+    target.symlink_to(unit)
+  run(['systemctl', 'daemon-reload'])
+  # First start is a bounded trial. Permanent enable is a separate qualification
+  # step after PC observes real SSH auth, resources and denial/cancellation.
+  trial = Path('/run/systemd/system') / (UNIT + '.d')
+  trial.mkdir(exist_ok=True)
+  atomic(trial / 'trial.conf', b'[Service]\nRuntimeMaxSec=900s\nRestart=no\n', 0o644)
+  run(['systemctl', 'daemon-reload'])
+  run(['systemctl', 'start', UNIT], timeout=35)
+  print(
+    json.dumps(
+      {
+        'prepared': True,
+        'trial_started': True,
+        'maximum_trial_seconds': 900,
+        'qualified_mode': 'detached_home',
+        'boot_enabled': False,
+        'vehicle_dashcam_qualified': False,
+        'key_auth_configured': True,
+        'actual_PC_ssh_verified': False,
+      }
+    ),
+    flush=True,
+  )
+
+
+def enable_home():
+  identities = prerequisites()
+  if any(os.environ.get(name) for name in ('SSH_CONNECTION', 'SSH_CLIENT', 'SSH_TTY')):
+    raise ValueError('local_terminal_enable_required')
+  protected(SCRIPT)
+  target = Path('/etc/systemd/system') / UNIT
+  if not target.is_symlink() or target.resolve() != ROOT / UNIT:
+    raise ValueError('unit_identity')
+  if run(['systemctl', 'show', UNIT, '-p', 'ActiveState', '--value']).strip() in (b'active', b'activating', b'deactivating'):
+    raise ValueError('finish_trial_cancellation_check_first')
+  source, gate = Source(), Gate()
+  began = time.monotonic()
+  while time.monotonic() - began < 5:
+    mode, _ = eligible(source.read(), time.monotonic(), ['detached_home'])
+    if gate.tick(mode, time.monotonic()) == 'open':
+      break
+    time.sleep(0.1)
+  else:
+    raise ValueError('detached_home_enable_required')
+  host = public_key(' '.join((ROOT / 'conditional_host_ed25519.pub').read_text().split()[:2]))
+  proof = exchange(host, '/v1/remote/qualification')
+  digest = hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+  if proof.get('home_qualified') is not True or proof.get('guard_sha256') != digest:
+    raise ValueError('matching_actual_device_qualification_required')
+  audit = ROOT / 'conditional_trial_processes.json'
+  protected(audit, private=True)
+  if audit.stat().st_size > 2048:
+    raise ValueError('trial_pid_audit')
+  rows = json.loads(audit.read_bytes())['processes']
+  if not 2 <= len(rows) <= 8:
+    raise ValueError('trial_pid_audit')
+  for entry in rows:
+    pid, start = entry['pid'], entry['start']
+    if type(pid) is not int or not 1 < pid < 2**30:
+      raise ValueError('trial_pid_audit')
+    try:
+      values = Path('/proc', str(pid), 'stat').read_text().rsplit(')', 1)[1].split()
+      if values[19] == start and values[0] != 'Z':
+        raise ValueError('trial_process_survived')
+    except FileNotFoundError:
+      pass
+  if eligible(source.read(), time.monotonic(), ['detached_home'])[0] != 'detached_home':
+    raise ValueError('home_condition_lost')
+  trial = Path('/run/systemd/system') / (UNIT + '.d/trial.conf')
+  if trial.is_symlink() or trial.read_bytes() != b'[Service]\nRuntimeMaxSec=900s\nRestart=no\n':
+    raise ValueError('trial_identity')
+  protected(ROOT / 'conditional_modes.json', private=True)
+  prior_modes = json.loads((ROOT / 'conditional_modes.json').read_bytes())
+  if prior_modes.get('binaries') != identities:
+    raise ValueError('enrolled_binary_metadata_changed')
+  trial.unlink()
+  atomic(ROOT / 'conditional_modes.json', encode({'qualified_modes': ['detached_home'], 'trial': False, 'guard_sha256': digest, 'binaries': identities}))
+  run(['systemctl', 'daemon-reload'])
+  run(['systemctl', 'enable', str(ROOT / UNIT)])
+  run(['systemctl', 'start', UNIT], timeout=35)
+  print(
+    json.dumps(
+      {'home_auto_enabled': True, 'manual_expiry_removed': True, 'boot_enabled': True, 'local_trial_pid_audit_passed': True, 'vehicle_dashcam_qualified': False}
+    ),
+    flush=True,
+  )
+
+
+def main():
+  parser = argparse.ArgumentParser()
+  group = parser.add_mutually_exclusive_group(required=True)
+  group.add_argument('--install-trial', action='store_true')
+  group.add_argument('--enable-home-auto', action='store_true')
+  group.add_argument('--guard', action='store_true')
+  group.add_argument('--bridge', action='store_true')
+  args = parser.parse_args()
+  try:
+    if args.install_trial or args.enable_home_auto:
+      import fcntl
+
+      lock_path = ROOT / 'conditional_install.lock'
+      if lock_path.is_symlink():
+        raise ValueError('unsafe_install_lock')
+      with lock_path.open('a+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        install() if args.install_trial else enable_home()
+    elif args.guard:
+      guard()
+    else:
+      bridge()
+  except Exception as error:
+    reason = str(error) if re.fullmatch(r'[a-z_]{1,70}', str(error)) else type(error).__name__
+    print(json.dumps({'success': False, 'reason': reason}), flush=True)
+    return 1
+  return 0
+
+
+if __name__ == '__main__':
+  raise SystemExit(main())
