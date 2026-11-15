@@ -251,6 +251,12 @@ class Copier:
       self.transport.close()
 
 
+def share_home_burst(copier, start, transferred, completed):
+  # Preserve the original overall deadline and pacing when switching phases.
+  copier.start = start
+  copier.bytes, copier.segments = transferred, completed
+
+
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--config', type=Path, required=True)
@@ -293,14 +299,17 @@ def main():
       catalogs.append(Catalog(args.log_root, args.catalog.with_name('archive-home-logs.sqlite'), key, permission.allowed, groups=(RLOG_NAMES,)))
     catalogs.append(Catalog(args.log_root, args.catalog, key, permission.allowed))
     total_bytes, total_segments = 0, 0
+    burst_started = time.monotonic()
     for raw in catalogs:
       transport = Transport(target, key, permission.allowed, timeout=30 if home_unlimited else 6)
       copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'],
                       rate=8 * 1024**2 if home_unlimited else 256 * 1024, home_unlimited=home_unlimited)
+      if home_unlimited:
+        share_home_burst(copier, burst_started, total_bytes, total_segments)
       copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check,
                                                     detached_home_fast=home_unlimited))
       result = copier.run(args.commit)
-      total_bytes += result['bytes']; total_segments += result['segments']
+      total_bytes, total_segments = result['bytes'], result['segments']
     copier.bytes, copier.segments = total_bytes, total_segments
     reason = result['reason']
   except Paused as error:

@@ -14,7 +14,7 @@ from unittest.mock import patch
 from openpilot.system.pv5_incidents.archive_catalog import Catalog
 from openpilot.system.pv5_incidents.archive_protocol import encode
 from openpilot.system.pv5_incidents.archive_sanitize import PrivacyCatalog, Sanitizer
-from openpilot.system.pv5_incidents.archive_worker import Copier, Paused, Transport, configuration, module_identity
+from openpilot.system.pv5_incidents.archive_worker import Copier, Paused, Transport, configuration, module_identity, share_home_burst
 from tools.pv5_archive.store import Store
 
 
@@ -63,6 +63,20 @@ class WorkerChecks(unittest.TestCase):
     clock[0] = 300
     with self.assertRaisesRegex(Paused, 'budget'):
       home.check()
+
+  def test_home_log_and_media_phases_share_deadline_and_cumulative_pacing(self):
+    clock = [0.0]
+    first = Copier(None, SimpleNamespace(), lambda:True, [], clock=lambda:clock[0], cpu=lambda:0, home_unlimited=True)
+    first.bytes, first.segments = 123456, 8
+    clock[0] = 250
+    second = Copier(None, SimpleNamespace(), lambda:True, [], clock=lambda:clock[0], cpu=lambda:0, home_unlimited=True)
+    share_home_burst(second, first.start, first.bytes, first.segments)
+    self.assertEqual((second.start, second.bytes, second.segments), (0,123456,8))
+    clock[0] = 299
+    self.assertTrue(second.check())
+    clock[0] = 300
+    with self.assertRaisesRegex(Paused, 'budget'):
+      second.check()
 
   def test_actual_copy_resume_chain_and_original_deletion_wins(self):
     with tempfile.TemporaryDirectory() as temporary:

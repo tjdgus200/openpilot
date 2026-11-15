@@ -172,3 +172,14 @@ but omits the old 0.25x read pacing. Vehicle/mixed-mode pacing, all privacy,
 source/cache/storage bounds, admission and permission cancellation remain.
 A changed module identity requires an explicit qualified home update; PC code
 installation alone does not install or qualify that device change.
+
+Qualified detached-home-only transfers now use a separate durable log cursor
+before the full road-file cursor. Logs retain stable filtered identities so the
+PC resumes/skips already sealed bytes. Both phases share the original 300-second
+burst start and cumulative transfer pacing; the second phase cannot reset that
+budget. Detached-home audio stripping omits the old 0.25x readrate while retaining
+compressed video stream-copy, no audio/cabin media, original files, cache/storage
+bounds, source checks and permission-group cancellation. Vehicle and mixed-mode
+configurations keep all previous behavior. A new module identity must be applied
+in an explicitly approved fresh detached-home session; PC release alone does not
+activate the device. No model/control/recording/remote-guard code changes.
