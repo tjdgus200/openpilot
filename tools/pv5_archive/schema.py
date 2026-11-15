@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 import hashlib
+import os
 from pathlib import Path
 import tempfile
 
@@ -32,11 +33,24 @@ def full_schema(repo=None):
     path = root / name
     if path.is_symlink():
       raise ValueError('unsafe_schema_cache')
-    try:
-      with path.open('xb') as target:
-        target.write(data)
-    except FileExistsError:
+    if path.exists():
       if path.read_bytes() != data:
-        raise ValueError('schema_cache_identity') from None
+        raise ValueError('schema_cache_identity')
+      continue
+    # Publish complete immutable bytes, even when multiple PC workers start together.
+    fd, temporary_name = tempfile.mkstemp(prefix='schema-', dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+      with os.fdopen(fd, 'wb') as target:
+        target.write(data)
+        target.flush()
+        os.fsync(target.fileno())
+      try:
+        os.link(temporary, path)
+      except FileExistsError:
+        if path.read_bytes() != data:
+          raise ValueError('schema_cache_identity') from None
+    finally:
+      temporary.unlink(missing_ok=True)
   parser = capnp.SchemaParser()
   yield parser.load(str(root / 'log.capnp'), imports=[str(root)])

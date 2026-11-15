@@ -82,7 +82,7 @@ File/chunk/cache/PC storage bounds remain. A vehicle or mixed-mode config keeps
 all original resource limits. This does not qualify the vehicle mode.
 - PC default 50-GiB reserved archive budget (including production per-segment
   analysis allowance and metadata), 10-GiB free floor, four ingress connections,
-  one analysis process, 384-MiB analysis memory / 95 CPU seconds / 210 wall seconds.
+  configurable 1..8 analysis processes (default1), each 384-MiB analysis memory / 95 CPU seconds / 210 wall seconds.
   Completed originals are not automatically deleted. Storage pressure applies
   backpressure; the device's normal deleter may remove pending originals.
 
@@ -149,3 +149,26 @@ does not create its private qualification config. An expired home/vehicle
 session cannot be reused. Finish PC review and publication first, then use a
 new explicit owner manual session for device version/tool inspection, bounded
 resource/interlock qualification, and only then the separately qualified config.
+
+
+## Log-first PC screening and detached-home fast copies
+
+The PC can screen a sealed rlog while its road-video files are still uploading.
+Only the verified log is exposed to that job. The result waits for media and
+never opens an AI review at that stage. When all files seal, a content-identity
+cache reuses the numeric risk-first result, attaches media availability, and
+applies the existing bounded event/cooldown policy. Claims are atomic; recovery
+requeues interrupted early/full jobs without declaring partial media complete.
+`AnalysisQueue(workers=4)` runs at most four existing isolated child processes;
+1..8 is accepted, with each original child budget unchanged. Normal recordings
+remain token-free PC work. The immutable public schema cache publishes complete
+files atomically for concurrent Windows readers.
+
+The prepared copier change uses two durable cursors only when the qualified
+mode is exactly detached_offroad: sanitized rlogs first, then full road-file
+manifests. Repeated log identities resume/skip already received bytes. In that
+home-only mode, audio stripping still copies compressed video with no audio,
+but omits the old 0.25x read pacing. Vehicle/mixed-mode pacing, all privacy,
+source/cache/storage bounds, admission and permission cancellation remain.
+A changed module identity requires an explicit qualified home update; PC code
+installation alone does not install or qualify that device change.

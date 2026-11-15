@@ -84,7 +84,7 @@ class StoreChecks(unittest.TestCase):
       with self.assertRaises(ValueError):
         self.store.chunk(token, offset, body)
 
-  def test_no_analysis_until_all_originals_are_verified(self):
+  def test_only_verified_log_can_screen_early_unverified_video_is_never_exposed(self):
     value = description({'rlog.zst': b'r', 'ecamera.hevc': b'v'})
     self.store.begin(encode(value))
     for entry in value['files']:
@@ -93,7 +93,10 @@ class StoreChecks(unittest.TestCase):
       self.assertIsNone(self.store.claim())
     first = value['files'][0]
     self.store.seal(first['file_id'], encode({'size': 1, 'chain': advance(ZERO_CHAIN, b'r')}))
+    early = self.store.claim()
+    self.assertEqual(set(early['files']), {'rlog.zst'})
     self.assertIsNone(self.store.claim())
+    self.store.analyzed(early['segment_id'], {'status':'review_candidates','awaiting_media':True})
     last = value['files'][1]
     self.store.seal(last['file_id'], encode({'size': 1, 'chain': advance(ZERO_CHAIN, b'v')}))
     self.assertIsNotNone(self.store.claim())

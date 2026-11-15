@@ -197,14 +197,22 @@ class Store:
   def claim(self):
     with self.lock, self.db() as db:
       row = db.execute("SELECT * FROM segments WHERE status='ready' ORDER BY created LIMIT 1").fetchone()
+      early = row is None
+      if early:
+        row = db.execute("""SELECT segments.* FROM segments WHERE status='uploading'
+          AND NOT EXISTS(SELECT 1 FROM results WHERE results.segment_id=segments.id)
+          AND EXISTS(SELECT 1 FROM links JOIN files ON files.id=links.file_id
+            WHERE links.segment_id=segments.id AND files.name IN ('rlog.zst','rlog.bz2','rlog') AND files.status='complete')
+          ORDER BY created LIMIT 1""").fetchone()
       if row is None:
         return None
-      db.execute("UPDATE segments SET status='analyzing' WHERE id=?", (row['id'],))
+      db.execute('UPDATE segments SET status=? WHERE id=?', ('screening_log' if early else 'analyzing', row['id']))
       files = db.execute('SELECT files.* FROM files JOIN links ON files.id=links.file_id WHERE segment_id=?', (row['id'],)).fetchall()
       return {
         'segment_id': row['id'],
         'manifest': json.loads(row['manifest']),
-        'files': {value['name']: str(self._path(value['id'], value['name'])) for value in files},
+        'files': {value['name']: str(self._path(value['id'], value['name'])) for value in files
+                  if not early or (value['status']=='complete' and value['name'] in ('rlog.zst','rlog.bz2','rlog'))},
       }
 
   def analyzed(self, token, summary):
@@ -213,7 +221,12 @@ class Store:
       raise ValueError('analysis_result_budget')
     with self.lock, self.db() as db:
       db.execute('INSERT OR REPLACE INTO results VALUES(?,?,?,0)', (token, data.decode(), time.time()))
-      db.execute("UPDATE segments SET status='analyzed',error=NULL WHERE id=?", (token,))
+      row = db.execute('SELECT status FROM segments WHERE id=?', (token,)).fetchone()
+      status = 'analyzed'
+      if row is not None and row['status'] == 'screening_log':
+        missing = db.execute("SELECT 1 FROM files JOIN links ON files.id=links.file_id WHERE segment_id=? AND files.status!='complete' LIMIT 1", (token,)).fetchone()
+        status = 'uploading' if missing else 'ready'
+      db.execute('UPDATE segments SET status=?,error=NULL WHERE id=?', (status, token))
 
   def failed(self, token, reason):
     if not re.fullmatch(r'[A-Za-z_]{1,64}', reason):
@@ -224,6 +237,10 @@ class Store:
   def recover(self):
     with self.lock, self.db() as db:
       db.execute("UPDATE segments SET status='ready' WHERE status='analyzing'")
+      db.execute("UPDATE segments SET status='uploading' WHERE status='screening_log'")
+      db.execute("""UPDATE segments SET status='ready' WHERE status='uploading' AND
+        NOT EXISTS(SELECT 1 FROM links JOIN files ON files.id=links.file_id
+          WHERE links.segment_id=segments.id AND files.status!='complete')""")
 
 
 class Ingress:

@@ -32,6 +32,9 @@ class ArchiveDispatch:
       selected, deadlines, causes = [], [], []
       for row in rows:
         summary = json.loads(row['summary'])
+        if summary.get('awaiting_media') is True and summary.get('status') != 'analysis_failed':
+          db.execute('UPDATE results SET notified=-2 WHERE segment_id=?', (row['segment_id'],))
+          continue  # The later full manifest reuses data screening, then opens visual review.
         kinds = sorted({value['kind'] for value in summary.get('candidates', [])})
         screened_quiet = summary.get('screening_policy') == 'risk-first-v1' and summary.get('status') != 'analysis_failed'
         if not kinds and (summary.get('status') == 'no_threshold_candidate' or screened_quiet):
