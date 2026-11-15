@@ -14,6 +14,7 @@ import threading
 import time
 
 from openpilot.system.pv5_incidents.archive_protocol import (
+  BATCH,
   CHUNK,
   MAX_MANIFEST,
   TOKEN,
@@ -123,17 +124,25 @@ class Store:
       complete = all(row['status'] == 'complete' for row in rows)
       if complete:
         db.execute("UPDATE segments SET status='ready' WHERE id=? AND status='uploading'", (token,))
-      result = {'segment_id': token, 'files': [self._status(row) for row in rows], 'complete': complete}
+      result = {'segment_id': token, 'files': [self._status(row) for row in rows], 'complete': complete, 'max_batch_bytes': BATCH}
     if complete:
       self.wake()
     return result
 
   def chunk(self, token, offset, body):
+    return self._append(token, offset, body, CHUNK)
+
+  def batch(self, token, offset, body):
+    return self._append(token, offset, body, BATCH)
+
+  def _append(self, token, offset, body, maximum):
+    # One durable checkpoint per bounded request. Preserve the exact legacy
+    # 64-KiB hash chain so old/new senders can resume each other's partials.
     with self.lock, self.db() as db:
       row = db.execute('SELECT * FROM files WHERE id=?', (token,)).fetchone()
       if row is None or type(offset) is not int or not 0 <= offset < row['size']:
         raise ValueError('unknown_file_or_offset')
-      if len(body) != min(CHUNK, row['size'] - offset) or offset % CHUNK:
+      if len(body) != min(maximum, row['size'] - offset) or offset % CHUNK:
         raise ValueError('invalid_chunk_size')
       if offset > row['offset']:
         raise OffsetError(row['offset'])
@@ -159,7 +168,9 @@ class Store:
         stream.write(body)
         stream.flush()
         os.fsync(stream.fileno())
-      chain = advance(row['chain'], body)
+      chain = row['chain']
+      for start in range(0, len(body), CHUNK):
+        chain = advance(chain, body[start : start + CHUNK])
       db.execute('UPDATE files SET offset=?,chain=? WHERE id=?', (offset + len(body), chain, token))
       return {'file_id': token, 'offset': offset + len(body), 'chain': chain, 'complete': False}
 
@@ -262,6 +273,9 @@ class Ingress:
     match = re.fullmatch(r'/v1/archive/chunk/([0-9a-f]{64})/([0-9]{1,10})', path)
     if match:
       return self.store.chunk(match[1], int(match[2]), body)
+    match = re.fullmatch(r'/v1/archive/batch/([0-9a-f]{64})/([0-9]{1,10})', path)
+    if match:
+      return self.store.batch(match[1], int(match[2]), body)
     match = re.fullmatch(r'/v1/archive/seal/([0-9a-f]{64})', path)
     if match:
       return self.store.seal(match[1], body)
@@ -299,9 +313,13 @@ def handler(base, ingress):
     def do_POST(self):
       if not self.path.startswith('/v1/archive/'):
         return super().do_POST()
-      limit = CHUNK if re.fullmatch(r'/v1/archive/chunk/[0-9a-f]{64}/[0-9]{1,10}', self.path) else MAX_MANIFEST
+      limit = MAX_MANIFEST
+      if re.fullmatch(r'/v1/archive/chunk/[0-9a-f]{64}/[0-9]{1,10}', self.path):
+        limit = CHUNK
+      elif re.fullmatch(r'/v1/archive/batch/[0-9a-f]{64}/[0-9]{1,10}', self.path):
+        limit = BATCH
       length = self.headers.get('Content-Length', '')
-      if self.headers.get('Transfer-Encoding') or not re.fullmatch(r'[0-9]{1,5}', length) or not 0 < int(length) <= limit:
+      if self.headers.get('Transfer-Encoding') or not re.fullmatch(r'[0-9]{1,7}', length) or not 0 < int(length) <= limit:
         self.send_error(413)
         return
       try:

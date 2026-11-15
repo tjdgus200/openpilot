@@ -183,3 +183,19 @@ bounds, source checks and permission-group cancellation. Vehicle and mixed-mode
 configurations keep all previous behavior. A new module identity must be applied
 in an explicitly approved fresh detached-home session; PC release alone does not
 activate the device. No model/control/recording/remote-guard code changes.
+
+
+## Negotiated detached-home batches (2026-11-16)
+
+An authenticated manifest reply can advertise `max_batch_bytes=1048576`.
+Only the detached-home-only copier uses `/v1/archive/batch/<file>/<offset>`;
+vehicle/mixed configurations and old servers keep64-KiB requests. A batch is
+at most sixteen original64-KiB units, with exactly the same chain and resumable
+positions. Every source read retains all privacy/source/permission checks.
+Trusted Wi-Fi is checked before each request; permission loss/EOF still kills
+the sole copier group. The300-second burst, pacing, file/cache/PC quotas,
+no-audio/cabin policy and seal verification are unchanged. Each acknowledged
+batch receives one file fsync and one transactional DB checkpoint; a lost reply
+reconciles through the next manifest, and an unacknowledged tail is discarded
+before the next append. No parallel copier/encoder or new observer is introduced.
+A new module identity and fresh approved home admission are required.
