@@ -17,9 +17,12 @@ class SourceChanged(RuntimeError):
 
 
 class Catalog:
-  def __init__(self, root, database, key, allowed=lambda: False, clock=time.time):
+  def __init__(self, root, database, key, allowed=lambda: False, clock=time.time, groups=GROUPS):
     self.root, self.database, self.key = Path(root).resolve(), Path(database), key
     self.allowed, self.clock = allowed, clock
+    if groups not in (GROUPS, (RLOG_NAMES,)):
+      raise ValueError("invalid_catalog_file_groups")
+    self.groups = groups
     if self.database.is_symlink():
       raise ValueError('unsafe_archive_catalog')
     self.database.parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +82,7 @@ class Catalog:
         if self.locked(folder):
           continue
         files, identities = [], {}
-        for group in GROUPS:
+        for group in self.groups:
           for filename in group:
             path = folder / filename
             try:

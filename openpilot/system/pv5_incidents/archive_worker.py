@@ -17,6 +17,7 @@ import threading
 import time
 
 from openpilot.system.pv5_incidents.archive_catalog import Catalog, SourceChanged
+from openpilot.system.pv5_incidents.archive_protocol import RLOG_NAMES
 from openpilot.system.pv5_incidents.archive_protocol import CHUNK, TOKEN, advance, encode, headers
 from openpilot.system.pv5_incidents.archive_sanitize import PrivacyCatalog, Sanitizer
 
@@ -250,6 +251,12 @@ class Copier:
       self.transport.close()
 
 
+def share_home_burst(copier, start, transferred, completed):
+  # Preserve the original overall deadline and pacing when switching phases.
+  copier.start = start
+  copier.bytes, copier.segments = transferred, completed
+
+
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--config', type=Path, required=True)
@@ -285,12 +292,25 @@ def main():
     args.catalog.parent.mkdir(parents=True, exist_ok=True)
     worker_lock = args.catalog.with_suffix('.lock').open('a+b')
     fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    raw = Catalog(args.log_root, args.catalog, key, permission.allowed)
-    transport = Transport(target, key, permission.allowed, timeout=30 if home_unlimited else 6)
-    copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'],
-                    rate=8 * 1024**2 if home_unlimited else 256 * 1024, home_unlimited=home_unlimited)
-    copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check))
-    result = copier.run(args.commit)
+    # Separate durable log-first cursor. Full manifests still include every road
+    # file; identical filtered log identities let the PC skip retransmission.
+    catalogs = []
+    if home_unlimited:
+      catalogs.append(Catalog(args.log_root, args.catalog.with_name('archive-home-logs.sqlite'), key, permission.allowed, groups=(RLOG_NAMES,)))
+    catalogs.append(Catalog(args.log_root, args.catalog, key, permission.allowed))
+    total_bytes, total_segments = 0, 0
+    burst_started = time.monotonic()
+    for raw in catalogs:
+      transport = Transport(target, key, permission.allowed, timeout=30 if home_unlimited else 6)
+      copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'],
+                      rate=8 * 1024**2 if home_unlimited else 256 * 1024, home_unlimited=home_unlimited)
+      if home_unlimited:
+        share_home_burst(copier, burst_started, total_bytes, total_segments)
+      copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check,
+                                                    detached_home_fast=home_unlimited))
+      result = copier.run(args.commit)
+      total_bytes, total_segments = result['bytes'], result['segments']
+    copier.bytes, copier.segments = total_bytes, total_segments
     reason = result['reason']
   except Paused as error:
     reason = str(error) if str(error) in ('state', 'budget', 'network', 'network_profile', 'storage', 'resource') else 'paused'

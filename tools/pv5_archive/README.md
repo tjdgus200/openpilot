@@ -149,3 +149,15 @@ does not create its private qualification config. An expired home/vehicle
 session cannot be reused. Finish PC review and publication first, then use a
 new explicit owner manual session for device version/tool inspection, bounded
 resource/interlock qualification, and only then the separately qualified config.
+
+
+Qualified detached-home-only transfers now use a separate durable log cursor
+before the full road-file cursor. Logs retain stable filtered identities so the
+PC resumes/skips already sealed bytes. Both phases share the original 300-second
+burst start and cumulative transfer pacing; the second phase cannot reset that
+budget. Detached-home audio stripping omits the old 0.25x readrate while retaining
+compressed video stream-copy, no audio/cabin media, original files, cache/storage
+bounds, source checks and permission-group cancellation. Vehicle and mixed-mode
+configurations keep all previous behavior. A new module identity must be applied
+in an explicitly approved fresh detached-home session; PC release alone does not
+activate the device. No model/control/recording/remote-guard code changes.
