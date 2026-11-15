@@ -5,7 +5,6 @@ import argparse
 import base64
 import hashlib
 import hmac
-import http.client
 import json
 import math
 import os
@@ -19,7 +18,6 @@ import subprocess
 import sys
 import threading
 import time
-from urllib.parse import urlsplit
 
 ROOT = Path('/data/pv5-remote-access')
 SCRIPT = ROOT / 'conditional_remote.py'
@@ -278,6 +276,9 @@ def run(args, timeout=5):
 
 
 def exchange(host, path='/v1/remote/bootstrap'):
+  import http.client
+  from urllib.parse import urlsplit
+
   source = Path('/data/pv5-incident-report.json')
   info = source.lstat()
   if source.is_symlink() or info.st_uid not in (0, 1000) or info.st_mode & 0o077 or not 0 < info.st_size <= 4096:
@@ -431,6 +432,20 @@ class Permission:
     os._exit(75)  # PID1/parent observes exit and kills THIS unit's descendants.
 
 
+def wait_backend(cli, permission, deadline):
+  while time.monotonic() < deadline:
+    permission.check()
+    try:
+      state = json.loads(run(cli + ['status', '--json', '--peers=false'], timeout=min(2, max(0.1, deadline - time.monotonic()))))
+    except subprocess.CalledProcessError:
+      state = {}  # The owned socket may exist before its API is ready.
+    permission.check()
+    if state.get('BackendState') == 'Running':
+      return
+    time.sleep(1)
+  raise ValueError('node_not_running')  # No inferred login requirement or auth URL.
+
+
 def bridge():
   permission = Permission()
   began = time.monotonic()
@@ -453,10 +468,7 @@ def bridge():
         raise ValueError('daemon_not_ready')
       time.sleep(0.05)
     cli = [str(BIN / 'tailscale'), '--socket=' + SOCKET]
-    state = json.loads(run(cli + ['status', '--json', '--peers=false']))
-    permission.check()
-    if state.get('BackendState') != 'Running':
-      raise ValueError('node_reauthentication_required')  # Never print/login-loop URLs.
+    wait_backend(cli, permission, time.monotonic() + 15)
     serve = json.loads(run(cli + ['serve', 'status', '--json']))
     if serve and (
       set(serve) - {'TCP', 'AllowFunnel'} or serve.get('AllowFunnel') or serve.get('TCP') not in (None, {}, {'2222': {'TCPForward': '127.0.0.1:2223'}})
@@ -502,23 +514,37 @@ def guard():
     raise ValueError('background_cpu_unavailable')
   os.sched_setaffinity(0, affinity)
   source, gate, child = Source(), Gate(), None
+  foreign_checked = False
+
+  def trial_exit(reason, code=None, gap=None):
+    if config.get('trial') is True:
+      print(json.dumps({'trial_exit': reason, 'bridge_exit_code': code, 'loop_gap_ms': gap}), flush=True)
+
   notify('READY=1\nWATCHDOG=1')
   try:
     while True:
       if config.get('trial') is True and (RUNTIME / 'stop-trial').exists():
+        trial_exit('trial_requested_stop')
         return
       mode, _reason = eligible(source.read(), time.monotonic(), modes)
-      now = time.monotonic()
-      action = gate.tick(mode, now)
-      if action == 'close' or (child is not None and child.poll() is not None):
-        return  # PID1 closes the entire owned cgroup, then restarts the idle gate.
-      if action == 'open':
+      if mode and not foreign_checked:
+        # Potentially slow /proc work belongs BEFORE continuous admission,
+        # never after the active 250ms timing contract has begun.
         for entry in Path('/proc').glob('[0-9]*'):
           try:
             if (entry / 'comm').read_text().strip() == 'tailscaled':
               raise ValueError('foreign_daemon_present')
           except FileNotFoundError:
             continue
+        foreign_checked = True
+        mode, _reason = eligible(source.read(), time.monotonic(), modes)
+      now = time.monotonic()
+      gap = round((now - gate.last) * 1000) if gate.last is not None else None
+      action = gate.tick(mode, now)
+      if action == 'close' or (child is not None and child.poll() is not None):
+        trial_exit((_reason or 'loop_timing') if action == 'close' else 'bridge_exited', child.poll() if child is not None else None, gap)
+        return  # PID1 closes the entire owned cgroup, then restarts the idle gate.
+      if action == 'open':
         child = subprocess.Popen([sys.executable, str(SCRIPT), '--bridge'], stdin=subprocess.PIPE)
         os.set_blocking(child.stdin.fileno(), False)
       if child is not None:

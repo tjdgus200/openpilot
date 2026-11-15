@@ -96,6 +96,18 @@ Promotion cannot be run through the SSH service being
 reconfigured. A parked-vehicle dashcam mode must be measured separately before
 adding that mode; home testing cannot qualify its CAN/control gates.
 
+Startup keeps the foreign-daemon scan before continuous admission and rechecks
+real sources afterward. Slow preparation must not consume the already-active
+250ms contract. The bridge imports HTTP enrollment dependencies only when
+enrollment is used; its owned daemon's asynchronous backend readiness is polled
+at most once per second for15seconds with the original permission checks. A
+non-running backend is not automatically called an authentication failure.
+Only the bounded first trial emits one sanitized exit reason/code/gap when the
+guard closes. No added exit diagnostic is emitted in permanent operation.
+The21 PC checks include a220ms assumed scan that fails the earlier ordering,
+passes the new ordering and preserves all original freshness/permission limits.
+This is not a measurement of the actual device's exit cause or startup load.
+
 Bulk upload is separately qualified and remains trusted nonmetered Wi-Fi only,
 without audio/cabin media. Remote-key enrollment does not enable bulk recording
 upload or imply the earlier upload work is finished.
