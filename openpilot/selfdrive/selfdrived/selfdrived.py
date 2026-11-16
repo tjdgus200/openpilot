@@ -98,6 +98,12 @@ class SelfdriveD:
 
     # Optional advisory input must not become a controls-readiness dependency.
     ignore = self.sensor_packets + self.gps_packets + ['alertDebug', 'liveTracks']
+    # PV5 angle control with PID/default tuning never consumes live torque estimates.
+    # Use the static controller contract, not the estimator's runtime useParams/valid
+    # flags: missing or invalid estimates must still block torque-controlled cars.
+    if (not self.CP.notCar and self.CP.brand == 'hyundai' and self.CP.carFingerprint == 'KIA_PV5' and
+        self.CP.steerControlType == car.CarParams.SteerControlType.angle and self.CP.lateralTuning.which() == 'pid'):
+      ignore += ['liveTorqueParameters']
     if SIMULATION:
       ignore += ['driverCameraState', 'managerState']
     if self.CP.notCar or SIMULATION:
