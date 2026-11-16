@@ -292,6 +292,20 @@ struct CarState {
   tbtRearInputsAvailable @110 :Bool; # fresh CANFD OEM BSD input for the TBT physical-indicator trigger only (BSD-only since 2026-10-30)
   tbtRightRearBlocked @111 :Bool = true; # OEM right BSD warning or invalid/stale BSD; no corner-distance veto; manual admission unchanged
   laneLineInfoMonoTime @112 :UInt64; # exact OEM lane type/colour CAN observation; zero means unknown, manual indicator only
+  # Read-only original camera SCC evidence for the OFF-cruise display warning.
+  # Never consumed by the actuator controller or engagement state machine.
+  pv5CollisionWarning @113 :CollisionWarning;
+  struct CollisionWarning {
+    version @0 :UInt8;
+    sourceValid @1 :Bool;
+    sourceMonoTime @2 :UInt64;
+    raw @3 :Float32;
+    distance @4 :Float32;
+    relativeSpeed @5 :Float32;
+    targetValid @6 :Bool;
+    inactiveClear @7 :Bool; # fresh healthy original SCC explicitly inactive; not a missing/invalid input
+  }
+
   struct VehicleGps {
     available @0 :Bool;
     valid @1 :Bool; # receive/continuity checks, not a decoded satellite fix flag

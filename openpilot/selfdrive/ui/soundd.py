@@ -377,18 +377,23 @@ class Soundd:
       new_alert = state.alertSound.raw if state_fresh else AudibleAlert.none
       critical = state_fresh and state.alertStatus == log.SelfdriveState.AlertStatus.critical
       scc_silent = state.alertType == 'pv5SccDecelSilent/warning'
-      if critical and new_alert == AudibleAlert.none and not scc_silent:
+      collision_silent = state.alertType == 'pv5CollisionRiskSilent/permanent'
+      silent_risk = scc_silent or collision_silent
+      if critical and new_alert == AudibleAlert.none and not silent_risk:
         new_alert = AudibleAlert.warningImmediate
       alert_type = state.alertType if new_alert != AudibleAlert.none else ""
       scc_pulse = critical and state.alertType == 'pv5SccDecel/warning' and new_alert == AudibleAlert.prompt
-      restart = scc_pulse and not getattr(self, '_scc_pulse_active', False)
+      collision_pulse = critical and state.alertType == 'pv5CollisionRisk/permanent' and new_alert == AudibleAlert.prompt
+      restart = (scc_pulse and not getattr(self, '_scc_pulse_active', False) or
+                 collision_pulse and not getattr(self, '_collision_pulse_active', False))
       self._scc_pulse_active = scc_pulse
+      self._collision_pulse_active = collision_pulse
       if new_alert == AudibleAlert.none and self.steering_attention_pending:
         self.steering_attention_pending = False
         alert_type = 'pv5SteeringAngleLimit' if steering_limit else 'pv5SteeringAttention'
         new_alert, critical = AudibleAlert.prompt, True
         restart = True
-      elif not (critical and scc_silent):
+      elif not (critical and silent_risk):
         new_alert = self.update_carrot_alert(sm, new_alert)
       self.update_alert(new_alert, alert_type, critical=critical, restart=restart)
 

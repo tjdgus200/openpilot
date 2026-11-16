@@ -26,6 +26,7 @@ from openpilot.selfdrive.selfdrived.impact_detector import ImpactDetector
 from openpilot.selfdrive.controls.lib.radar_only_warning import RadarOnlyWarning
 from opendbc.car.hyundai.scc_decel import eligible as scc_decel_eligible
 from openpilot.common.pv5_scc_warning import SccWarning
+from opendbc.car.hyundai.collision_warning import OffCruiseWarning
 from openpilot.selfdrive.carrot.radar_motion.timing import front_radar_distance_delay_s
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.controls.lib.cutin_alert import (
@@ -159,6 +160,9 @@ class SelfdriveD:
     self.cutin_audio_tracker = CutinAlertTracker()
     self.radar_only_warning = RadarOnlyWarning(front_radar_distance_delay_s(self.CP))
     self.car_state_time_s = 0.0
+    self.car_state_mono_time = 0
+    self.car_state_valid = False
+    self.off_cruise_warning = OffCruiseWarning()
     self.dm_uncertain_alerted = False
     self.dm_disabled_prev = False
     self.update_reboot_alerted = False
@@ -261,6 +265,15 @@ class SelfdriveD:
       if cue.level:
         event = EventName.pv5SccDecelInfo if cue.level == 1 else EventName.pv5SccDecel if cue.audible else EventName.pv5SccDecelSilent
         self.events.add(event)
+
+    if self.pv5_scc_supported:
+      # PERMANENT is display-only even while disabled; no engagement/actuator
+      # flag or generic WARNING behavior changes. Existing FCW remains separate.
+      warning_now_ns = self.car_state_mono_time if REPLAY else now_ns
+      cue = self.off_cruise_warning.update(CS, self.car_state_mono_time, warning_now_ns,
+                                           enabled=self.enabled, state_valid=self.car_state_valid)
+      if cue.level:
+        self.events.add(EventName.pv5CollisionRisk if cue.audible else EventName.pv5CollisionRiskSilent)
 
     cutin_enabled = self.enabled and self.sm.valid['radarState']
     cutin_candidates = tuple(
@@ -610,6 +623,8 @@ class SelfdriveD:
     CS = car_state.carState if car_state else self.CS_prev
     if car_state is not None:
       self.car_state_time_s = car_state.logMonoTime * 1e-9
+      self.car_state_mono_time = car_state.logMonoTime
+      self.car_state_valid = car_state.valid
 
     self.sm.update(0)
 

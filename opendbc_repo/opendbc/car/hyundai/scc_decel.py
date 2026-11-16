@@ -34,6 +34,7 @@ class Observation:
   raw: float = 0.0
   value: float = 0.0
   valid: bool = False
+  transport_valid: bool = False  # read-only evidence; never admits control by itself
 
 
 class CameraSccSource:
@@ -91,7 +92,7 @@ class CameraSccSource:
     consecutive = consecutive and previous == counter
     self.stamp, self.counter, self.payload = stamp, counter, bytes(payload)
     valid = consecutive and mode_ok and math.isfinite(raw) and math.isfinite(value)
-    self.observation = Observation(stamp, raw, value, valid)
+    self.observation = Observation(stamp, raw, value, valid, consecutive and math.isfinite(raw) and math.isfinite(value))
     return self.observation
 
 

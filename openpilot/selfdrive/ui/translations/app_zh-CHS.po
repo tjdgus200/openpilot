@@ -1515,3 +1515,11 @@ msgstr "请重启设备以应用更新"
 #: openpilot/selfdrive/selfdrived/events.py
 msgid "Park safely before rebooting your device"
 msgstr "请安全停车后再重启设备"
+
+#: openpilot/selfdrive/selfdrived/events.py
+msgid "Collision risk"
+msgstr "碰撞风险"
+
+#: openpilot/selfdrive/selfdrived/events.py
+msgid "Brake if needed"
+msgstr "必要时请制动"

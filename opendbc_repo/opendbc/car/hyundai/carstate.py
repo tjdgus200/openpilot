@@ -8,7 +8,9 @@ from opendbc.can import CANDefine, CANParser
 from opendbc.car import Bus, create_button_events, structs, DT_CTRL
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.carlog import carlog
-from opendbc.car.hyundai.hyundaicanfd import CanBus
+from opendbc.car.hyundai.hyundaicanfd import CanBus, hkg_can_fd_checksum
+from opendbc.car.hyundai.scc_decel import eligible as scc_warning_eligible
+from opendbc.car.hyundai.collision_warning import SccRiskSource, write_inputs as write_collision_inputs
 from opendbc.car.hyundai.navi_speedcam import SpeedcamPolicy
 from opendbc.car.hyundai.section_average import DISTANCE_SCALE as SECTION_DISTANCE_SCALE, SectionAverage
 from opendbc.car.hyundai.steering_touch import HyundaiSteeringTouch
@@ -317,6 +319,7 @@ class CarState(CarStateBase):
     )
 
     cam_bus = CanBus(CP).CAM
+    self.collision_warning_source = SccRiskSource(hkg_can_fd_checksum, cam_bus) if scc_warning_eligible(CP) else None
     pt_bus = CanBus(CP).ECAN
     alt_bus = CanBus(CP).ACAN
     self.GEAR = True if 69 in fingerprints[pt_bus] else False
@@ -1347,6 +1350,10 @@ class CarState(CarStateBase):
 
     ret = structs.CarState()
     ret.steeringTouch = self.steering_touch.update(cp)
+    if self.collision_warning_source is not None:
+      # Existing parser receive clock advances on empty batches too. Display
+      # freshness is checked again by selfdrived using the current loop clock.
+      write_collision_inputs(ret, self.collision_warning_source.update(cp_cam, cp_cam._last_update_nanos))
 
     if self.CP.extFlags & HyundaiExtFlags.EV_MODE_STATUS_230:
       ret.evModeActive, ret.evModeValid = _get_ev_mode_state(cp)

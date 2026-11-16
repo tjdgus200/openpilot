@@ -83,6 +83,8 @@
     "preLaneChangeLeft",
     "preLaneChangeRight",
     "processNotRunning",
+    "pv5CollisionRisk",
+    "pv5CollisionRiskSilent",
     "pv5CutInCaution",
     "pv5CutInPredecel",
     "pv5SccDecel",

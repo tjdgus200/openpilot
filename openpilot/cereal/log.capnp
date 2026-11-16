@@ -169,6 +169,8 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     pv5CutInPredecel @132; # retired; never emitted
     pv5SccDecelInfo @133;
     pv5SccDecelSilent @134;
+    pv5CollisionRisk @135;
+    pv5CollisionRiskSilent @136;
 
     soundsUnavailableDEPRECATED @47;
   }

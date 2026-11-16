@@ -1554,3 +1554,11 @@ msgstr "Dashcam 모드로 재부팅 중"
 #: openpilot/selfdrive/ui/impact_dashcam.py
 msgid "openpilot disabled"
 msgstr "openpilot 사용 꺼짐"
+
+#: openpilot/selfdrive/selfdrived/events.py
+msgid "Collision risk"
+msgstr "충돌 위험"
+
+#: openpilot/selfdrive/selfdrived/events.py
+msgid "Brake if needed"
+msgstr "필요하면 제동하세요"

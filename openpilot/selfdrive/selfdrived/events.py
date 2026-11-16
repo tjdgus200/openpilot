@@ -569,6 +569,23 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.HIGHEST, VisualAlert.fcw, AudibleAlert.stopStop, 2.),
   },
 
+  # Warning-only supplement for cruise OFF; no HUD/CAN FCW request or state transition.
+  EventName.pv5CollisionRisk: {
+    ET.PERMANENT: Alert(
+      tr_noop("Collision risk"),
+      tr_noop("Brake if needed"),
+      AlertStatus.critical, AlertSize.full,
+      Priority.HIGH, VisualAlert.none, AudibleAlert.prompt, 0.01),
+  },
+
+  EventName.pv5CollisionRiskSilent: {
+    ET.PERMANENT: Alert(
+      tr_noop("Collision risk"),
+      tr_noop("Brake if needed"),
+      AlertStatus.critical, AlertSize.full,
+      Priority.HIGH, VisualAlert.none, AudibleAlert.none, 0.01),
+  },
+
   EventName.pv5SccDecel: {
     ET.WARNING: Alert(
       tr_noop("SCC BRAKING!"),
