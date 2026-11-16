@@ -8,9 +8,8 @@ from openpilot.system.hardware import TICI
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.egl import init_egl, create_egl_image, destroy_egl_image, bind_egl_image_to_texture, EGLImage
 from openpilot.system.ui.widgets import Widget
+from openpilot.selfdrive.ui.onroad.camera_client_pool import CameraClientPool
 from openpilot.selfdrive.ui.ui_state import ui_state
-
-CONNECTION_RETRY_INTERVAL = 0.2  # seconds between connection attempts
 
 VERSION = """
 #version 300 es
@@ -70,7 +69,8 @@ class CameraView(Widget):
     super().__init__()
     self._name = name
     # Primary stream
-    self.client = VisionIpcClient(name, stream_type, conflate=True)
+    self._clients = CameraClientPool(name)
+    self.client = self._clients.select(stream_type)
     self._stream_type = stream_type
     self.available_streams: list[VisionStreamType] = []
 
@@ -80,7 +80,6 @@ class CameraView(Widget):
     self._switching: bool = False
 
     self._texture_needs_update = True
-    self.last_connection_attempt: float = 0.0
     self.shader = rl.load_shader_from_memory(VERTEX_SHADER, FRAME_FRAGMENT_SHADER)
     self._texture1_loc: int = rl.get_shader_location(self.shader, "texture1") if not TICI else -1
 
@@ -107,16 +106,15 @@ class CameraView(Widget):
     ui_state.add_offroad_transition_callback(self._offroad_transition)
 
   def _offroad_transition(self):
-    # Reconnect if not first time going onroad
-    if ui_state.is_onroad() and self.frame is not None:
-      # Prevent old frames from showing when going onroad. Qt has a separate thread
-      # which drains the VisionIpcClient SubSocket for us. Re-connecting is not enough
-      # and only clears internal buffers, not the message queue.
-      self.frame = None
+    # Drop displayed references before any cached client re-imports its buffers.
+    self.frame = None
+    self._clear_textures()
+    self._target_client = None
+    self._target_stream_type = None
+    self._switching = False
+    if ui_state.is_onroad():
       self.available_streams.clear()
-      if self.client:
-        del self.client
-      self.client = VisionIpcClient(self._name, self._stream_type, conflate=True)
+      self._clients.reset()
 
   def _set_placeholder_color(self, color: rl.Color):
     """Set a placeholder color to be drawn when no frame is available."""
@@ -135,11 +133,8 @@ class CameraView(Widget):
 
     cloudlog.debug(f'Preparing switch from {self._stream_type} to {stream_type}')
 
-    if self._target_client:
-      del self._target_client
-
     self._target_stream_type = stream_type
-    self._target_client = VisionIpcClient(self._name, stream_type, conflate=True)
+    self._target_client = self._clients.select(stream_type)
     self._switching = True
 
   @property
@@ -157,10 +152,15 @@ class CameraView(Widget):
     # Clean up shader
     if self.shader and self.shader.id:
       rl.unload_shader(self.shader)
+      self.shader.id = 0
 
     self.frame = None
     self.available_streams.clear()
     self.client = None
+    self._target_client = None
+    self._target_stream_type = None
+    self._switching = False
+    self._clients.close()
 
   def __del__(self):
     self.close()
@@ -192,7 +192,7 @@ class CameraView(Widget):
       return
 
     # Try to get a new buffer without blocking
-    buffer = self.client.recv(timeout_ms=0)
+    buffer = self._clients.recv(self._stream_type)
     if buffer:
       self._texture_needs_update = True
       self.frame = buffer
@@ -286,17 +286,12 @@ class CameraView(Widget):
     rl.end_shader_mode()
 
   def _ensure_connection(self) -> bool:
-    if not self.client.is_connected():
+    if not self._clients.connected(self._stream_type):
       self.frame = None
       self.available_streams.clear()
-
-      # Throttle connection attempts
-      current_time = rl.get_time()
-      if current_time - self.last_connection_attempt < CONNECTION_RETRY_INTERVAL:
-        return False
-      self.last_connection_attempt = current_time
-
-      if not self.client.connect(False) or not self.client.num_buffers:
+      # EGL imports must be released before connect() frees/replaces VIPC buffers.
+      self._clear_textures()
+      if not self._clients.connect(self._stream_type):
         return False
 
       cloudlog.debug(f"Connected to {self._name} stream: {self._stream_type}, buffers: {self.client.num_buffers}")
@@ -311,14 +306,14 @@ class CameraView(Widget):
       return
 
     # Try to connect target if needed
-    if not self._target_client.is_connected():
-      if not self._target_client.connect(False) or not self._target_client.num_buffers:
+    if not self._clients.connected(self._target_stream_type):
+      if not self._clients.connect(self._target_stream_type):
         return
 
       cloudlog.debug(f"Target stream connected: {self._target_stream_type}")
 
     # Check if target has frames ready
-    target_frame = self._target_client.recv(timeout_ms=0)
+    target_frame = self._clients.recv(self._target_stream_type)
     if target_frame:
       self.frame = target_frame  # Update current frame to target frame
       self._complete_switch()
@@ -326,10 +321,7 @@ class CameraView(Widget):
   def _complete_switch(self) -> None:
     """Instantly switch to target stream."""
     cloudlog.debug(f"Switching to {self._target_stream_type}")
-    # Clean up current resources
-    if self.client:
-      del self.client
-
+    # Retain the previous stream subscription for the next display switch.
     # Switch to target
     self.client = self._target_client
     self._stream_type = self._target_stream_type
