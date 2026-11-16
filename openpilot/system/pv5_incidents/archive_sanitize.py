@@ -86,8 +86,9 @@ def identity(path):
 
 
 class Sanitizer:
-  def __init__(self, cache, check, log_schema=None, ffmpeg=None, ffprobe=None):
+  def __init__(self, cache, check, log_schema=None, ffmpeg=None, ffprobe=None, detached_home_fast=False):
     self.cache, self.check, self.log_schema = Path(cache), check, log_schema
+    self.detached_home_fast = detached_home_fast is True
     self.ffmpeg = ffmpeg or shutil.which('ffmpeg') or data_media_tool('ffmpeg', check)
     self.ffprobe = ffprobe or shutil.which('ffprobe') or data_media_tool('ffprobe', check)
     if self.cache.is_symlink():
@@ -221,8 +222,7 @@ class Sanitizer:
           '-nostdin',
           '-v',
           'error',
-          '-readrate',
-          '0.25',
+          *([] if self.detached_home_fast else ['-readrate', '0.25']),
           '-i',
           str(source),
           '-map',

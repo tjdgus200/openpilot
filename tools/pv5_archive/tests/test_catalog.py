@@ -34,6 +34,15 @@ class CatalogChecks(unittest.TestCase):
     self.assertIsNone(self.catalog.next('a' * 40))
     self.assertEqual(before, {path.name: (path.stat().st_size, path.stat().st_mtime_ns) for path in self.folder.iterdir()})
 
+  def test_home_log_cursor_does_not_complete_or_hide_full_road_archive(self):
+    from openpilot.system.pv5_incidents.archive_protocol import RLOG_NAMES
+    logs = Catalog(self.logs, self.root / 'logs-only.sqlite', bytes(range(32)), lambda: self.allowed, clock=lambda:100, groups=(RLOG_NAMES,))
+    candidate = logs.next('a'*40)
+    self.assertEqual([e['name'] for e in candidate['manifest']['files']], ['rlog.zst'])
+    logs.completed(candidate)
+    self.assertIsNone(logs.next('a'*40))
+    self.assertEqual(len(self.catalog.next('a'*40)['manifest']['files']),4)
+
   def test_each_logger_or_encoder_lock_blocks_the_segment(self):
     for name in ('rlog.lock', 'fcamera.hevc.lock', 'ecamera.hevc.lock', 'qcamera.ts.lock'):
       path = self.folder / name

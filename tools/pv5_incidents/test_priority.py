@@ -90,7 +90,7 @@ class PriorityTests(unittest.TestCase):
     store.analyzed("a"*64,summary)
     send=Mock();dispatch=ArchiveDispatch(store,self.root/"events",lambda:{"enabled":True,"push_policy":"analysis_only"},send,lambda:10000)
     with store.db() as db:
-      db.execute("INSERT INTO dispatches VALUES(?,?,?,?)",("a"*64,"old-cause",1,"accepted"));db.execute("UPDATE results SET notified=1 WHERE segment_id=?",("a"*64,))
+      db.execute("INSERT INTO dispatches VALUES(?,?,?,?)",("a"*64,hashlib.sha256(encode([[], "review_candidates", []])).hexdigest(),1,"accepted"));db.execute("UPDATE results SET notified=1 WHERE segment_id=?",("a"*64,))
     store.analyzed("b"*64,summary);dispatch.step();send.assert_not_called()
 
 

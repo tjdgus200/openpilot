@@ -17,7 +17,8 @@ import threading
 import time
 
 from openpilot.system.pv5_incidents.archive_catalog import Catalog, SourceChanged
-from openpilot.system.pv5_incidents.archive_protocol import CHUNK, TOKEN, advance, encode, headers
+from openpilot.system.pv5_incidents.archive_protocol import RLOG_NAMES
+from openpilot.system.pv5_incidents.archive_protocol import BATCH, CHUNK, TOKEN, advance, encode, headers
 from openpilot.system.pv5_incidents.archive_sanitize import PrivacyCatalog, Sanitizer
 
 CONFIG = Path('/data/pv5-pc-archive.json')
@@ -218,6 +219,7 @@ class Copier:
         self.check()
         begin = self.transport.request('/v1/archive/manifest', encode(value))
         states = {entry['file_id']: entry for entry in begin['files']}
+        batched = self.home_unlimited and type(begin.get('max_batch_bytes')) is int and begin['max_batch_bytes'] == BATCH
         for entry in value['files']:
           state = states[entry['file_id']]
           offset, chain = state['offset'], state['chain']
@@ -229,9 +231,20 @@ class Copier:
             continue
           while offset < entry['size']:
             self.check()
-            body = self.catalog.read(candidate, entry, offset, CHUNK)
-            result = self.transport.request(f"/v1/archive/chunk/{entry['file_id']}/{offset}", body)
-            expected = advance(chain, body)
+            # Keep the original source/privacy/admission check before and after
+            # every 64-KiB read, even when sending one negotiated home batch.
+            maximum = BATCH if batched else CHUNK
+            pieces = []
+            for start in range(offset, min(entry['size'], offset + maximum), CHUNK):
+              self.check()
+              pieces.append(self.catalog.read(candidate, entry, start, CHUNK))
+            body = b''.join(pieces)
+            self.check()
+            endpoint = 'batch' if batched else 'chunk'
+            result = self.transport.request(f"/v1/archive/{endpoint}/{entry['file_id']}/{offset}", body)
+            expected = chain
+            for piece in pieces:
+              expected = advance(expected, piece)
             if result.get('offset') != offset + len(body) or result.get('chain') != expected:
               raise Paused('network')
             chain, offset = expected, offset + len(body)
@@ -248,6 +261,12 @@ class Copier:
         self.segments += 1
     finally:
       self.transport.close()
+
+
+def share_home_burst(copier, start, transferred, completed):
+  # Preserve the original overall deadline and pacing when switching phases.
+  copier.start = start
+  copier.bytes, copier.segments = transferred, completed
 
 
 def main():
@@ -285,12 +304,25 @@ def main():
     args.catalog.parent.mkdir(parents=True, exist_ok=True)
     worker_lock = args.catalog.with_suffix('.lock').open('a+b')
     fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    raw = Catalog(args.log_root, args.catalog, key, permission.allowed)
-    transport = Transport(target, key, permission.allowed, timeout=30 if home_unlimited else 6)
-    copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'],
-                    rate=8 * 1024**2 if home_unlimited else 256 * 1024, home_unlimited=home_unlimited)
-    copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check))
-    result = copier.run(args.commit)
+    # Separate durable log-first cursor. Full manifests still include every road
+    # file; identical filtered log identities let the PC skip retransmission.
+    catalogs = []
+    if home_unlimited:
+      catalogs.append(Catalog(args.log_root, args.catalog.with_name('archive-home-logs.sqlite'), key, permission.allowed, groups=(RLOG_NAMES,)))
+    catalogs.append(Catalog(args.log_root, args.catalog, key, permission.allowed))
+    total_bytes, total_segments = 0, 0
+    burst_started = time.monotonic()
+    for raw in catalogs:
+      transport = Transport(target, key, permission.allowed, timeout=30 if home_unlimited else 6)
+      copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'],
+                      rate=8 * 1024**2 if home_unlimited else 256 * 1024, home_unlimited=home_unlimited)
+      if home_unlimited:
+        share_home_burst(copier, burst_started, total_bytes, total_segments)
+      copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check,
+                                                    detached_home_fast=home_unlimited))
+      result = copier.run(args.commit)
+      total_bytes, total_segments = result['bytes'], result['segments']
+    copier.bytes, copier.segments = total_bytes, total_segments
     reason = result['reason']
   except Paused as error:
     reason = str(error) if str(error) in ('state', 'budget', 'network', 'network_profile', 'storage', 'resource') else 'paused'

@@ -1,6 +1,7 @@
 """PC-only completion-event queue. No periodic AI or device requests."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,9 +18,18 @@ def atomic(path, value):
 
 
 class AnalysisQueue:
-  def __init__(self, store, python, code, notify=lambda: None):
+  def __init__(self, store, python, code, notify=lambda: None, workers=1):
     self.store, self.python, self.code, self.notify = store, str(python), Path(code), notify
+    if type(workers) is not int or not 1 <= workers <= 8:
+      raise ValueError('invalid_analysis_parallelism')
+    self.workers = workers
     self.event = threading.Event()
+    self.cache = store.root / 'screen-cache'
+    if self.cache.is_symlink():
+      raise ValueError('unsafe_screen_cache')
+    self.cache.mkdir(exist_ok=True)
+    self.identity = hashlib.sha256(b''.join((self.code / 'tools/pv5_archive' / name).read_bytes() for name in ('analyze.py', 'screen.py', 'service.py'))).hexdigest()
+    self.cache_locks, self.cache_guard = {}, threading.Lock()
     self.folder = store.root / 'analysis'
     if self.folder.is_symlink():
       raise ValueError('unsafe_analysis_directory')
@@ -37,10 +47,19 @@ class AnalysisQueue:
     if not TOKEN.fullmatch(token):
       raise ValueError('invalid_analysis_identity')
     request, output = self.folder / (token + '.job.json'), self.folder / (token + '.json')
+    logs = sorted((value for value in job['manifest']['files'] if value['name'] in ('rlog.zst','rlog.bz2','rlog')), key=lambda value:value['name'])
+    cache_id = logs[0]['file_id'] if logs else token
+    if not TOKEN.fullmatch(cache_id):
+      raise ValueError('invalid_cache_identity')
+    with self.cache_guard:
+      cache_lock = self.cache_locks.setdefault(cache_id, threading.Lock())
+    job['screen_cache'] = str(self.cache / (cache_id + '.' + self.identity[:16] + '.json'))
     atomic(request, job)
     try:
       flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-      result = subprocess.run(
+      cache_lock.acquire()
+      try:
+        result = subprocess.run(
         [self.python, '-X', 'utf8', '-m', 'tools.pv5_archive.service', '--job', str(request), '--output', str(output)],
         cwd=self.code,
         stdout=subprocess.DEVNULL,
@@ -48,6 +67,8 @@ class AnalysisQueue:
         timeout=210,
         creationflags=flags,
       )
+      finally:
+        cache_lock.release()
       if result.returncode or not output.is_file() or output.stat().st_size > 1024**2:
         raise ValueError('bounded_analysis_failed')
       summary = json.loads(output.read_bytes())
@@ -75,14 +96,24 @@ class AnalysisQueue:
   def run(self):
     self.store.recover()
     self.wake()  # Once: recover durable work after PC restart.
-    while not self.stopping:
-      self.event.wait()
-      self.event.clear()
-      try:
-        while not self.stopping and self.step():
-          pass
-      except Exception as error:
-        atomic(self.folder / 'queue-status.json', {'status': 'needs_attention', 'error_type': type(error).__name__})
+    def worker():
+      first_run = True
+      while not self.stopping:
+        if not first_run:
+          self.event.wait()
+        first_run = False
+        self.event.clear()
+        try:
+          while not self.stopping and self.step():
+            pass
+        except Exception as error:
+          atomic(self.folder / ('queue-status-' + threading.current_thread().name + '.json'),
+                 {'status': 'needs_attention', 'error_type': type(error).__name__})
+    threads = [threading.Thread(target=worker, name='screen-' + str(i), daemon=True) for i in range(self.workers)]
+    for thread in threads:
+      thread.start()
+    for thread in threads:
+      thread.join()
 
 
 def main():
@@ -106,16 +137,29 @@ def main():
   if not rlogs:
     result = {'version': 1, 'status': 'insufficient_data', 'candidates': [], 'missing_services': ['rlog'], 'visual_semantics_evaluated': False}
   else:
-    with full_schema() as schema:
-      result = analyze(rlogs[0], schema)
-    from tools.pv5_archive.screen import select_review
-
-    result = select_review(result)
-    if not result['vehicle_pv5'] or result['missing_services'] or result['source_commit'] is None:
-      result['status'] = 'insufficient_data'
+    cache = Path(job['screen_cache']) if job.get('screen_cache') else None
+    if cache is not None and (cache.parent != args.job.parent.parent / 'screen-cache' or cache.is_symlink()):
+      raise ValueError('invalid_screen_cache_path')
+    cache_reused = cache is not None and cache.exists()
+    if cache_reused:
+      if cache.stat().st_size > 1024**2:
+        raise ValueError('screen_cache_budget')
+      result = json.loads(cache.read_bytes())
+    else:
+      with full_schema() as schema:
+        result = analyze(rlogs[0], schema)
+      from tools.pv5_archive.screen import select_review
+      result = select_review(result)
+      if not result['vehicle_pv5'] or result['missing_services'] or result['source_commit'] is None:
+        result['status'] = 'insufficient_data'
+      if cache is not None:
+        atomic(cache, result)
+  result['data_screen_cache_reused'] = bool(rlogs) and cache_reused
   result['road_video_present'] = any(name.startswith(('fcamera.', 'ecamera.', 'qcamera.')) for name in job['files'])
   if not result['road_video_present']:
-    result['status'] = 'insufficient_data'
+    result['awaiting_media'] = bool(rlogs)
+    if result.get('status') not in ('review_candidates', 'no_threshold_candidate'):
+      result['status'] = 'insufficient_data'
   atomic(args.output, result)
 
 

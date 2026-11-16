@@ -82,7 +82,7 @@ File/chunk/cache/PC storage bounds remain. A vehicle or mixed-mode config keeps
 all original resource limits. This does not qualify the vehicle mode.
 - PC default 50-GiB reserved archive budget (including production per-segment
   analysis allowance and metadata), 10-GiB free floor, four ingress connections,
-  one analysis process, 384-MiB analysis memory / 95 CPU seconds / 210 wall seconds.
+  configurable 1..8 analysis processes (default1), each 384-MiB analysis memory / 95 CPU seconds / 210 wall seconds.
   Completed originals are not automatically deleted. Storage pressure applies
   backpressure; the device's normal deleter may remove pending originals.
 
@@ -102,8 +102,12 @@ disable events. SCC request acceleration is not measured deceleration; track
 switches are not labelled radar defects. These are provisional review thresholds,
 not vehicle-control settings or validated hazard boundaries.
 
-Small acceleration noise, ordinary cruise releases and mild SCC assist alone
-do not wake AI. Selected evidence windows cover +/-5 seconds, merge up to 20 s,
+Automatic AI dispatch additionally requires the `critical-errors-only-v1`
+allowlist: coded critical warnings, faults, recorded stock AEB, or analysis
+execution failure. Numeric radar/deceleration candidates remain available for
+manual investigation but do not independently wake AI. Repeated same-version
+faults are suppressed. Small acceleration noise, ordinary cruise releases and
+mild SCC assist alone do not wake AI. Selected evidence windows cover +/-5 seconds, merge up to 20 s,
 and are limited to eight windows per segment. Missing fields and capped windows
 remain explicit in private results; parser failures remain visible operational
 failures. No visual inference is run over ordinary recordings. AI review uses
@@ -111,8 +115,8 @@ the selected road-video/data windows and proposes explanations/improvements
 only; video time alignment must be checked before causal claims.
 
 `store.py` reserves space before accepting a manifest, verifies chunk-chain
-integrity and fsync checkpoints, then seals each file. Only a fully sealed
-segment can enter the durable analysis queue. Duplicate/lost ACKs resume without
+integrity and fsync checkpoints, then seals each file. A sealed rlog can enter early data screening; full-media review requires all
+files in its manifest to be sealed. Duplicate/lost ACKs resume without
 fabricating faults. Private media root must be provisioned owner/SYSTEM-only;
 the receiver must verify that ACL before enabling archive ingress.
 
@@ -126,10 +130,15 @@ are heuristic review thresholds, not validated hazard/defect boundaries.
 The first pass does not run visual semantic inference. Missing services, source
 identity, road video and failed analysis are explicitly incomplete.
 
-Normal uploads create no chat. Interesting/incomplete results can wake the
-existing analyst chat with only opaque result IDs, at most three per five
+Normal uploads create no chat. Only the critical/error policy above can wake the
+existing analyst chat with opaque result IDs, at most three per five
 minutes and same-cause thirty-minute cooldown. Durable uncertain dispatches are
-held, never blindly resent. Future analysis may propose improvements but cannot
+held, never blindly resent. Dispatch-time fault identities are stored separately
+from mutable analysis results, so early failures do not masquerade as a later
+fault already reviewed. Legacy history is used for fault deduplication only when
+its stored cause still matches the result. An uncertain existing intent for the
+same segment remains held for receipt reconciliation even if analysis changes.
+Future analysis may propose improvements but cannot
 edit/tune/commit/push/install/reboot. Discord receives only a short reviewed
 cause/proposal/missing-data summary through `report.py`; actual POST+GET receipt
 verification is required before completion. No media, raw logs, location, device
@@ -149,3 +158,53 @@ does not create its private qualification config. An expired home/vehicle
 session cannot be reused. Finish PC review and publication first, then use a
 new explicit owner manual session for device version/tool inspection, bounded
 resource/interlock qualification, and only then the separately qualified config.
+
+
+## Log-first PC screening and detached-home fast copies
+
+The PC can screen a sealed rlog while its road-video files are still uploading.
+Only the verified log is exposed to that job. The result waits for media and
+does not open an AI review at that stage; analysis execution failures remain reportable. When all files seal, a content-identity
+cache reuses the numeric risk-first result, attaches media availability, and
+applies the existing bounded event/cooldown policy. Claims are atomic; recovery
+requeues interrupted early/full jobs without declaring partial media complete.
+`AnalysisQueue(workers=4)` runs at most four existing isolated child processes;
+1..8 is accepted, with each original child budget unchanged. Normal recordings
+remain token-free PC work. The immutable public schema cache publishes complete
+files atomically for concurrent Windows readers.
+
+The prepared copier change uses two durable cursors only when the qualified
+mode is exactly detached_offroad: sanitized rlogs first, then full road-file
+manifests. Repeated log identities resume/skip already received bytes. In that
+home-only mode, audio stripping still copies compressed video with no audio,
+but omits the old 0.25x read pacing. Vehicle/mixed-mode pacing, all privacy,
+source/cache/storage bounds, admission and permission cancellation remain.
+A changed module identity requires an explicit qualified home update; PC code
+installation alone does not install or qualify that device change.
+
+Qualified detached-home-only transfers now use a separate durable log cursor
+before the full road-file cursor. Logs retain stable filtered identities so the
+PC resumes/skips already sealed bytes. Both phases share the original 300-second
+burst start and cumulative transfer pacing; the second phase cannot reset that
+budget. Detached-home audio stripping omits the old 0.25x readrate while retaining
+compressed video stream-copy, no audio/cabin media, original files, cache/storage
+bounds, source checks and permission-group cancellation. Vehicle and mixed-mode
+configurations keep all previous behavior. A new module identity must be applied
+in an explicitly approved fresh detached-home session; PC release alone does not
+activate the device. No model/control/recording/remote-guard code changes.
+
+
+## Negotiated detached-home batches (2026-11-16)
+
+An authenticated manifest reply can advertise `max_batch_bytes=1048576`.
+Only the detached-home-only copier uses `/v1/archive/batch/<file>/<offset>`;
+vehicle/mixed configurations and old servers keep64-KiB requests. A batch is
+at most sixteen original64-KiB units, with exactly the same chain and resumable
+positions. Every source read retains all privacy/source/permission checks.
+Trusted Wi-Fi is checked before each request; permission loss/EOF still kills
+the sole copier group. The300-second burst, pacing, file/cache/PC quotas,
+no-audio/cabin policy and seal verification are unchanged. Each acknowledged
+batch receives one file fsync and one transactional DB checkpoint; a lost reply
+reconciles through the next manifest, and an unacknowledged tail is discarded
+before the next append. No parallel copier/encoder or new observer is introduced.
+A new module identity and fresh approved home admission are required.

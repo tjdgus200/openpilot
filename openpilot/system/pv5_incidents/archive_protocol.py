@@ -10,6 +10,7 @@ import time
 VERSION = 1
 PRIVACY = 'no-audio-cabin-v1'
 CHUNK = 65536
+BATCH = 16 * CHUNK  # Home-only negotiated request; hash/resume units remain 64 KiB.
 MAX_MANIFEST = 8192
 MAX_FILE = 512 * 1024 * 1024
 MAX_FILES = 8

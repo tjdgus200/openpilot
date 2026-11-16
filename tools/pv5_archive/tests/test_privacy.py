@@ -182,6 +182,12 @@ class PrivacyChecks(unittest.TestCase):
       return result.stdout
 
     self.assertEqual(video_digest(source), video_digest(output))
+    fast = Sanitizer(self.root / 'fast-cache', lambda: True, self.schema, ffmpeg, probe, detached_home_fast=True)
+    fast_output, _, fast_audit = fast.prepare(source, 'd' * 64)
+    self.assertTrue(fast_audit['audio_removed'])
+    self.assertEqual(fast.streams(fast_output), ['video'])
+    self.assertEqual(video_digest(source), video_digest(fast_output))
+    self.assertEqual(output.read_bytes(), fast_output.read_bytes())
     self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), digest)
 
 
