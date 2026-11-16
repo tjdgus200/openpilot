@@ -42,7 +42,6 @@ public:
                               (params.get("Pv5WideExposureAssist") == "1" ? 2 : 0);
       const int next_lane = (params.get("Pv5RoadLaneExposure") == "1" ? 1 : 0) |
                            (params.get("Pv5WideLaneExposure") == "1" ? 2 : 0);
-      if (bool(next_lane) != bool(lane_mode)) sm.reset();
       for (int lens = 0; lens < 2; ++lens) {
         const int next_signature = ((next_lane & (1 << lens)) ? 4 : 0) |
           ((next_assist & (1 << lens)) ? 2 : includes_camera(next_mode, lens) ? 1 : 0);
@@ -72,7 +71,7 @@ public:
     if (!enabled || !dual_camera || env_ctrl_exp_from_params) {
       status = !(mode || assist_mode || lane_mode) ? ModelFovStatus::DISABLED : yaw_invalidated ? ModelFovStatus::YAW_CHANGED :
         env_ctrl_exp_from_params ? ModelFovStatus::MANUAL_EXPOSURE : ModelFovStatus::UNSUPPORTED;
-      sm.reset(); return;
+      return;
     }
     if (now >= next_vehicle) {
       next_vehicle = now + 1000000000ULL;
@@ -89,8 +88,10 @@ public:
       }
     }
     if (!pv5) { status = ModelFovStatus::VEHICLE_UNAVAILABLE; return; }
-    if (!sm) sm = std::make_unique<SubMaster>(lane_mode ? std::vector<const char *>{"liveCalibration", "deviceState", "modelV2"} :
-                                                       std::vector<const char *>{"liveCalibration", "deviceState"});
+    // Keep one subscription per topic for this context's lifetime. Closing a
+    // msgq subscriber does not return its reader slot; option churn must not
+    // evict other consumers. Disabled modes still return before polling.
+    if (!sm) sm = std::make_unique<SubMaster>(std::vector<const char *>{"liveCalibration", "deviceState"});
     sm->update(0);  // Only the latest available data; never wait for modeld/Jetson.
     if (!sm->allAliveAndValid({"liveCalibration", "deviceState"})) return;
     const auto &cal_event = (*sm)["liveCalibration"];
@@ -124,8 +125,14 @@ public:
     }
     valid_until = std::min(cal_event.getLogMonoTime() + 1000000000ULL, dev_event.getLogMonoTime() + 2500000000ULL);
     boxes = {};
-    if (lane_mode && sm->allAliveAndValid({"modelV2"})) {
-      const auto &event = (*sm)["modelV2"];
+    // Subscribe lazily and poll only while lane metering is selected. A stale
+    // retained sample still has to pass all original validity/age checks below.
+    if (lane_mode) {
+      if (!lane_sm) lane_sm = std::make_unique<SubMaster>(std::vector<const char *>{"modelV2"});
+      lane_sm->update(0);
+    }
+    if (lane_mode && lane_sm->allAliveAndValid({"modelV2"})) {
+      const auto &event = (*lane_sm)["modelV2"];
       const auto model = event.getModelV2();
       const uint64_t eof = model.getTimestampEof();
       // Original camera time, not reception time: repeats cannot renew old lanes.
@@ -169,6 +176,7 @@ private:
   // guessing when modeld's 100-loop settings poll has taken effect.
   const double yaw_trim = std::strtod(params.get("CameraYawTrimDeg").c_str(), nullptr) * 0.01 * std::acos(-1.0) / 180.0;
   std::unique_ptr<SubMaster> sm;
+  std::unique_ptr<SubMaster> lane_sm;
   uint64_t next_params = 0;
   uint64_t next_vehicle = 0;
   uint64_t lane_wide_changed_at = 0;
