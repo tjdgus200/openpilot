@@ -8,6 +8,7 @@
 
 #include "common/params.h"
 #include "system/loggerd/encoder/encoder.h"
+#include "system/loggerd/batch_poller.h"
 #include "system/loggerd/loggerd.h"
 #include "system/loggerd/video_writer.h"
 
@@ -277,9 +278,10 @@ void loggerd_thread() {
 
   uint64_t msg_count = 0, bytes_count = 0;
   double start_ts = millis_since_boot();
+  LoggerdBatchPoller batched_poller(*poller);
   while (!do_exit) {
     // poll for new messages on all sockets
-    for (auto sock : poller->poll(1000)) {
+    for (auto sock : batched_poller.poll(1000, [] { return bool(do_exit); })) {
       if (do_exit) break;
 
       ServiceState &service = service_state[sock];
