@@ -100,6 +100,8 @@ MOVING_FRONT_RANGE_MAX_POSITION_ERROR_M = 2.5
 MOVING_FRONT_RANGE_MAX_LATERAL_ERROR_M = 0.75
 MOVING_FRONT_RANGE_MAX_SPEED_JUMP_MPS = 3.0
 VISION_TRANSITION_CONFIRM_S = 0.20
+FARTHER_RADAR_CONFIRM_S = 0.20
+FARTHER_RADAR_RANGE_GAP_M = 2.0
 CORROBORATED_STATIONARY_VISION_RANGE_MISMATCH_HOLD_S = 0.15
 SCC_PRIMARY_DUPLICATE_MAX_VLEAD_DELTA_MPS = 3.0
 SCC_PRIMARY_CLOSER_MARGIN_M = 1.0
@@ -575,6 +577,68 @@ class DPathRadarController:
     self._vision_transition_radar: tuple[float, RadarPointSnapshot] | None = None
     self._vision_transition_previous: tuple[float, dict[str, Any]] | None = None
     self._vision_transition_since_s = 0.0
+    self._nearer_vision_previous: tuple[float, dict[str, Any]] | None = None
+    self._farther_radar_pending: tuple[tuple[str, int], float, float, RadarPointSnapshot] | None = None
+
+  def _confirm_farther_radar(
+    self, match: VisionRadarMatch | None, vision: dict[str, Any] | None, time_s: float,
+  ) -> VisionRadarMatch | None:
+    """Confirm only a nonurgent, farther radar takeover of a current visual lead.
+
+    Never hold a closer radar target, SCC selection or a braking/rapidly closing
+    radar. The independent cut-in/leadTwo pipeline receives unchanged points.
+    A rejected candidate retains fresh vision, not an old radar sample.
+    """
+    previous = self._nearer_vision_previous
+    pending = self._farther_radar_pending
+    self._nearer_vision_previous = None
+    self._farther_radar_pending = None
+    if not self.pv5_refinements or self.enable_radar_tracks <= 0 or vision is None:
+      return match
+    coherent = False
+    if previous is not None:
+      previous_s, lead = previous
+      dt = time_s - previous_s
+      coherent = (
+        0.0 <= dt <= RADAR_MOTION_MAX_TIME_SKEW_S
+        and abs(vision["dRel"] - (lead["dRel"] + lead["vRel"] * dt)) <= MOVING_FRONT_RANGE_MAX_POSITION_ERROR_M
+        and abs(vision["yRel"] - lead["yRel"]) <= MOVING_FRONT_RANGE_MAX_LATERAL_ERROR_M
+        and abs(vision["vLead"] - lead["vLead"]) <= MOVING_FRONT_RANGE_MAX_SPEED_JUMP_MPS
+      )
+    if match is None:
+      self._nearer_vision_previous = (time_s, vision)
+      return None
+    point = match.point
+    closing = max(0.0, -point.v_rel)
+    # These are bypasses, not safety detector thresholds: any urgency or
+    # uncertain geometry keeps the original immediate radar decision.
+    if not (
+      coherent and point.source == "frontRadar" and point.measured
+      and all(math.isfinite(v) for v in (point.d_rel, point.y_rel, point.v_rel, point.v_lead, point.a_lead, point.yv_rel))
+      and vision["modelProb"] >= VISION_LEAD_MIN_PROB
+      and abs(vision["dPath"]) <= RADAR_VISION_FALLBACK_MAX_ABS_DPATH_M
+      and point.d_rel - vision["dRel"] > FARTHER_RADAR_RANGE_GAP_M
+      and point.d_rel > 5.0 * closing
+      and closing * closing < point.d_rel  # required constant decel < 0.5 m/s²
+      and point.a_lead > -1.0
+      and math.isfinite(time_s)
+    ):
+      return match
+    identity = (point.source, point.track_id)
+    since = time_s
+    if pending is not None:
+      old_identity, old_since, old_time, old = pending
+      dt = time_s - old_time
+      if (identity == old_identity and 0.0 <= dt <= RADAR_MOTION_MAX_TIME_SKEW_S
+          and abs(point.d_rel - (old.d_rel + old.v_rel * dt)) <= MOVING_FRONT_RANGE_MAX_POSITION_ERROR_M
+          and abs(point.y_rel - (old.y_rel + old.yv_rel * dt)) <= MOVING_FRONT_RANGE_MAX_LATERAL_ERROR_M
+          and abs(point.v_lead - old.v_lead) <= MOVING_FRONT_RANGE_MAX_SPEED_JUMP_MPS):
+        since = old_since
+    if time_s - since >= FARTHER_RADAR_CONFIRM_S - 1e-6:
+      return match
+    self._nearer_vision_previous = (time_s, vision)
+    self._farther_radar_pending = (identity, since, time_s, point)
+    return None
 
   def _confirm_vision_transition(
     self,
@@ -1063,6 +1127,8 @@ class DPathRadarController:
       self._vision_transition_radar = None
       self._vision_transition_previous = None
       self._vision_transition_since_s = 0.0
+      self._nearer_vision_previous = None
+      self._farther_radar_pending = None
       return DPathRadarOutput(
         None, None, None, None, (), (), (), (), (), (), None,
       )
@@ -1556,6 +1622,15 @@ class DPathRadarController:
       )
     ):
       lead_two = scc_lead_two
+    # Keep the entire cut-in/cut-out and auxiliary-target pipeline on its
+    # original inputs. Only qualify the final, nonurgent leadOne takeover.
+    # Any detected risk/cut-in/cut-out bypasses this comfort-only confirmation.
+    confirmation_vision = vision_candidate
+    if lead_cutin_risk is not None or confirmed_cutin_leads or cutout.confidence > 0.0:
+      confirmation_vision = None
+    confirmed_primary = self._confirm_farther_radar(primary_match, confirmation_vision, time_s)
+    if primary_match is not None and confirmed_primary is None:
+      lead_one = dict(vision_candidate)
     return DPathRadarOutput(
       lead_one=lead_one,
       lead_two=lead_two,

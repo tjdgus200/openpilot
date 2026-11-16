@@ -151,7 +151,7 @@ def test_entry_does_not_wait_for_negative_value_and_preserves_stronger_comma():
   assert assist.update(-3.0, observation(T + STEP), T + STEP, True).accel == -3.0
 
 
-@pytest.mark.parametrize("raw, active", [(-1.99, False), (-2.0, True), (-10.0, True)])
+@pytest.mark.parametrize("raw, active", [(-1.5, False), (-1.99, True), (-2.0, True), (-10.0, True)])
 def test_threshold_and_acceleration_limit(raw, active):
   result = StockDecelAssist().update(0.5, observation(raw=raw), T, True)
   assert result.active == active

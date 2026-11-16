@@ -12,7 +12,8 @@ from opendbc.car.hyundai.values import CAR, HyundaiFlags
 SOURCE_MAX_AGE_NS = 100_000_000
 CLEAR_TIME_NS = 200_000_000
 ENTRY_ACCEL = -2.0
-DECEL_JERK = 5.0
+DECEL_JERK = 5.0  # also used by the existing CAN jerk-limit fields
+ENTRY_BLEND_START = -1.5  # qualified OEM pre-entry band; never delays raw <= ENTRY_ACCEL
 RELEASE_JERK = 1.0
 MIN_ACCEL, MAX_ACCEL = -4.0, 2.5
 MOVING_SPEED = 0.1
@@ -178,7 +179,27 @@ class StockDecelAssist:
     if self.phase == "normal" and source.raw <= ENTRY_ACCEL:
       self.phase = "stock"
     if self.phase == "normal":
-      return Decision(accel)
+      # Blend BEFORE the hard entry, not after an urgent request. A sudden
+      # raw <= ENTRY_ACCEL still enters stock above on this very call.
+      # Smoothstep joins both band endpoints without changing the stronger
+      # comma request. Weak/positive OEM requests cannot create new braking.
+      weight = max(0.0, min(1.0, (ENTRY_BLEND_START - source.raw) / (ENTRY_BLEND_START - ENTRY_ACCEL)))
+      weight = weight * weight * (3.0 - 2.0 * weight)
+      requested = accel + weight * (min(accel, source.raw) - accel)
+      if weight == 0.0 and self.last_accel is None:
+        return Decision(accel)
+      previous = accel if self.last_accel is None else self.last_accel
+      # Only pre-entry preparation is slew-limited. Never limit a stronger
+      # base request, and never run this branch for an urgent raw request.
+      requested = min(accel, max(requested, previous - DECEL_JERK * min(dt, 0.05)))
+      selected = max(MIN_ACCEL, min(MAX_ACCEL, requested))
+      if self.last_accel is not None:
+        selected = min(selected, self.last_accel + RELEASE_JERK * min(dt, 0.05))
+      if selected >= accel - 1e-9:
+        self.last_accel = None
+        return Decision(accel)
+      self.last_accel = selected
+      return Decision(selected, True, source.stamp)
     if source.raw < 0.0 or source.value < 0.0:
       self.clear_since = 0
       self.phase = "stock"
