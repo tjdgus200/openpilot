@@ -1,4 +1,4 @@
-"""Common Carrot vision-handover and live/replay/MPC regressions for all cars."""
+"""PV5-only vision handover with default/other-car and live/replay/MPC regressions."""
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -8,6 +8,29 @@ from openpilot.selfdrive.carrot.radar_motion.controller import DPathRadarControl
 from openpilot.selfdrive.carrot.tests.test_radar_motion_predictor import Point, model_with_lead, moving_range_model, seed_moving_range_front
 
 from openpilot.selfdrive.carrot.tests.test_stationary_front_evidence import approach_frame, seed_stationary
+
+
+@pytest.mark.parametrize("mode", (1, 2, 3))
+def test_default_policy_selects_vision_immediately_without_confirmation_history(mode):
+  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  point = seed_vision_transition_front(controller)
+  out = controller.update(.05, 25., (point,), model_with_lead(30., .1, 10.))
+  assert not controller.enable_vision_transition
+  assert out.lead_one["radarTrackId"] == -1
+  assert out.lead_one["dRel"] == pytest.approx(30.)
+  assert controller._vision_transition_radar is controller._vision_transition_previous is None
+
+
+def test_disabling_confirmation_clears_evidence_before_reentry():
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
+  point = seed_vision_transition_front(controller)
+  model = model_with_lead(30., .1, 10.)
+  assert controller.update(.05, 25., (point,), model).lead_one["radarTrackId"] == 281
+  controller.enable_vision_transition = False
+  assert controller.update(.10, 25., (point,), model).lead_one["radarTrackId"] == -1
+  assert controller._vision_transition_radar is controller._vision_transition_previous is None
+  controller.enable_vision_transition = True
+  assert controller.update(.15, 25., (point,), model).lead_one["radarTrackId"] == -1
 
 
 @pytest.mark.parametrize("brand,fingerprint", (
@@ -20,7 +43,7 @@ from openpilot.selfdrive.carrot.tests.test_stationary_front_evidence import appr
   ("hyundai", ""),
   ("volkswagen", "KIA_PV5"),
 ))
-def test_live_radar_constructor_uses_common_handover_for_every_vehicle(brand, fingerprint):
+def test_live_radar_constructor_only_enables_pv5_handover(brand, fingerprint):
   # Execute the real constructor without opening messaging sockets or Params.
   import ast
   from pathlib import Path
@@ -50,13 +73,15 @@ def test_live_radar_constructor_uses_common_handover_for_every_vehicle(brand, fi
   point.measured, point.trackState = True, 2
   instance.controller.update(0., 25., radar.points, model_with_lead(50., .1, 25.))
   out = instance.controller.update(.05, 25., radar.points, model_with_lead(30., .1, 10.))
-  assert out.lead_one["radarTrackId"] == 281
+  enabled = brand == "hyundai" and fingerprint == "KIA_PV5"
+  assert instance.controller.enable_vision_transition is enabled
+  assert out.lead_one["radarTrackId"] == (281 if enabled else -1)
   assert instance.controller.enable_radar_tracks == (2 if brand == "hyundai" else 1)
 
 
 @pytest.mark.parametrize("mode", (1, 2, 3))
-def test_default_selection_confirms_visual_replacement(mode):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+def test_enabled_selection_confirms_visual_replacement(mode):
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   point = Point(281, 50., 0.1, trackState=2)
   controller.update(0., 25., (point,), model_with_lead(50., 0.1, 25.))
   out = controller.update(0.05, 25., (point,), model_with_lead(10., 0.1, 10.))
@@ -67,7 +92,7 @@ def test_default_selection_confirms_visual_replacement(mode):
 @pytest.mark.parametrize("mode", (1, 2, 3))
 @pytest.mark.parametrize("distance,velocity", ((4., 0.), (8., 5.), (30., 10.)))
 def test_no_previous_healthy_radar_never_waits(mode, distance, velocity):
-  controller = DPathRadarController(enable_radar_tracks=mode)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode)
   out = controller.update(0., 25., (), model_with_lead(distance, 0., velocity))
   assert out.lead_one["radarTrackId"] == -1
   assert out.lead_one["dRel"] == pytest.approx(distance)
@@ -77,7 +102,7 @@ def test_no_previous_healthy_radar_never_waits(mode, distance, velocity):
   ("hyundai", "KIA_PV5", False), ("hyundai", "KIA_EV9", False), ("", "", False),
   ("hyundai", "KIA_PV5", True),
 ))
-def test_replay_uses_common_policy_independent_of_vehicle_metadata(brand, fingerprint, mixed):
+def test_replay_requires_complete_consistent_pv5_metadata(brand, fingerprint, mixed):
   from openpilot.selfdrive.carrot.radar.tools.radar_validation_replay import (
     ModelLead, _production_controller_outputs,
   )
@@ -92,12 +117,14 @@ def test_replay_uses_common_policy_independent_of_vehicle_metadata(brand, finger
     frames[-1] = replace(frames[-1], car_fingerprint="")
   outputs = _production_controller_outputs(frames, motion_sensor="front", enable_radar_tracks=2, cut_in_sensitivity=0)
   assert outputs[0].lead_one["radarTrackId"] == 281
-  assert outputs[1].lead_one["radarTrackId"] == 281
+  enabled = brand == "hyundai" and fingerprint == "KIA_PV5" and not mixed
+  assert outputs[1].lead_one["radarTrackId"] == (281 if enabled else -1)
   assert outputs[-1].lead_one["radarTrackId"] == -1
 
 
 @pytest.mark.parametrize("fingerprint", ("KIA_PV5", "KIA_EV9"))
-def test_log_loader_keeps_late_vehicle_metadata_for_earlier_frames(tmp_path, fingerprint):
+@pytest.mark.parametrize("conflict", (None, ("hyundai", "KIA_EV6"), ("toyota", "KIA_PV5"), ("", "")))
+def test_log_loader_keeps_late_vehicle_metadata_for_earlier_frames(tmp_path, fingerprint, conflict):
   from openpilot.cereal import log
   from openpilot.selfdrive.carrot.radar.tools.radar_validation_replay import load_frames
 
@@ -114,12 +141,17 @@ def test_log_loader_keeps_late_vehicle_metadata_for_earlier_frames(tmp_path, fin
   events[1].modelV2.velocity.x = [25.]
   events[2].carParams.brand = "hyundai"
   events[2].carParams.carFingerprint = fingerprint
+  if conflict is not None:
+    event = log.Event.new_message(logMonoTime=1_030_000_000)
+    event.init("carParams")
+    event.carParams.brand, event.carParams.carFingerprint = conflict
+    events.append(event)
   path = tmp_path / "synthetic.rlog"
   path.write_bytes(b"".join(event.to_bytes() for event in events))
   frames = load_frames(path)
   assert len(frames) == 1
-  assert frames[0].car_brand == "hyundai"
-  assert frames[0].car_fingerprint == fingerprint
+  assert frames[0].car_brand == ("hyundai" if conflict is None else "")
+  assert frames[0].car_fingerprint == (fingerprint if conflict is None else "")
 
 
 @pytest.mark.parametrize("mode", (1, 2, 3))
@@ -130,7 +162,7 @@ def test_transition_outputs_feed_actual_mpc_preparation(mode, distance, speed):
   from openpilot.cereal import log
   from openpilot.selfdrive.carrot.tests.test_cutout_mpc_integration import run_update
 
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   for index in range(7):
     elapsed = index * .05
@@ -165,7 +197,7 @@ def seed_vision_transition_front(controller):
 @pytest.mark.parametrize("mode", (1, 2, 3))
 @pytest.mark.parametrize("period", (0.025, 0.05, 0.10))
 def test_healthy_front_switches_after_200ms_of_consistent_vision(mode, period):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   for index in range(round(0.30 / period) + 1):
     elapsed = index * period
@@ -181,7 +213,7 @@ def test_healthy_front_switches_after_200ms_of_consistent_vision(mode, period):
 
 @pytest.mark.parametrize("flash_frames", (1, 2, 3))
 def test_short_visual_outlier_keeps_current_radar_kinematics(flash_frames):
-  controller = DPathRadarController(cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   for index in range(1, 12):
     time_s = index * 0.05
@@ -196,7 +228,7 @@ def test_short_visual_outlier_keeps_current_radar_kinematics(flash_frames):
 
 @pytest.mark.parametrize("change", ("distance", "velocity", "lateral", "model_ego_velocity"))
 def test_visual_discontinuities_restart_transition_confirmation(change):
-  controller = DPathRadarController(cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   for index in range(1, 20):
     time_s = index * 0.05
@@ -222,7 +254,7 @@ def test_visual_discontinuities_restart_transition_confirmation(change):
   "off_path", "gap", "reverse_time", "invalid_path", "vision_mode",
 ))
 def test_vision_transition_does_not_retain_broken_radar(change):
-  controller = DPathRadarController(cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   model = model_with_lead(30.0, 0.0, 10.0)
   assert controller.update(0.05, 25.0, (point,), model).lead_one["radarTrackId"] == 281
@@ -256,7 +288,7 @@ def test_vision_transition_does_not_retain_broken_radar(change):
 
 
 def test_repeated_model_time_does_not_confirm_vision_transition():
-  controller = DPathRadarController(cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   model = model_with_lead(30.0, 0.0, 10.0)
   for _ in range(20):
@@ -269,7 +301,7 @@ def test_repeated_model_time_does_not_confirm_vision_transition():
 @pytest.mark.parametrize("mode", (2, 3))
 @pytest.mark.parametrize("x_std", (2.0, 0.0, -10.0, float("nan"), float("inf")))
 def test_moving_front_releases_when_vision_range_is_precise_or_invalid(mode, x_std):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   point = seed_moving_range_front(controller)
   for index in range(1, 7):
     output = controller.update(
@@ -284,7 +316,7 @@ def test_moving_front_releases_when_vision_range_is_precise_or_invalid(mode, x_s
 @pytest.mark.parametrize("mode", (2, 3))
 @pytest.mark.parametrize("radar_d,vision_d", ((90.0, 73.0), (40.0, 30.0)))
 def test_uncertain_range_cannot_hide_much_nearer_or_close_visual_car(mode, radar_d, vision_d):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   point = seed_moving_range_front(controller, d_rel=radar_d)
   for index in range(1, 6):
     output = controller.update(
@@ -299,7 +331,7 @@ def test_uncertain_range_cannot_hide_much_nearer_or_close_visual_car(mode, radar
 
 @pytest.mark.parametrize("mode", (2, 3))
 def test_moving_front_range_retention_releases_for_stopped_visual_lead(mode):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   previous = seed_moving_range_front(controller)
   for index in range(1, 6):
     time_s = index * 0.05
@@ -314,7 +346,7 @@ def test_moving_front_range_retention_releases_for_stopped_visual_lead(mode):
 
 @pytest.mark.parametrize("mode", (2, 3))
 def test_moving_range_retention_does_not_block_new_nearer_radar_match(mode):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   previous = seed_moving_range_front(controller)
   output = controller.update(
     0.05, 11.7, (
@@ -332,7 +364,7 @@ def test_moving_range_retention_does_not_block_new_nearer_radar_match(mode):
   "speed_jump", "unmeasured", "gap", "missed_match", "invalid_path", "legacy_mode",
 ))
 def test_stationary_range_hold_cannot_cover_a_new_or_contradictory_object(mode, change):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   seed_stationary(controller)
   time_s = 1.0
   point, model = approach_frame(time_s, distance_error=14.0, x_std=2.0 if change == "precise_range" else 20.0)

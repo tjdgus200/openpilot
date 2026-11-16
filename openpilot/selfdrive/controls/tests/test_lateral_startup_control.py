@@ -65,7 +65,7 @@ def control_fixture(monotonic=time.monotonic):
                LoC=NS(reset=lambda: None, update=lambda *args: (0.0, 0.0, 0.0), long_control_state='off'),
                carrot_controls=NS(lat_suspend_control=lambda cs, active: active), is_vw_meb=False,
                desired_curvature=0.0, lateral_startup=LateralStartupGate(), lateral_started=False,
-               steer_limited_by_safety=False, pv5_lane_center=None)
+               steer_limited_by_safety=False, pv5_lane_center=None, pv5_scc_supported=False)
   return control, lambda: ns['state_control'](control)
 
 

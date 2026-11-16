@@ -5926,7 +5926,7 @@ def test_uncertain_vision_range_requires_continuous_accepted_front(mode, change)
 @pytest.mark.parametrize("mode", (2, 3))
 @pytest.mark.parametrize("x_std", (2.0, 0.0, -10.0, float("nan"), float("inf")))
 def test_moving_front_releases_when_vision_range_is_precise_or_invalid(mode, x_std):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   point = seed_moving_range_front(controller)
   for index in range(1, 7):
     output = controller.update(
@@ -5941,7 +5941,7 @@ def test_moving_front_releases_when_vision_range_is_precise_or_invalid(mode, x_s
 @pytest.mark.parametrize("mode", (2, 3))
 @pytest.mark.parametrize("radar_d,vision_d", ((90.0, 73.0), (40.0, 30.0)))
 def test_uncertain_range_cannot_hide_much_nearer_or_close_visual_car(mode, radar_d, vision_d):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   point = seed_moving_range_front(controller, d_rel=radar_d)
   for index in range(1, 6):
     output = controller.update(
@@ -5956,7 +5956,7 @@ def test_uncertain_range_cannot_hide_much_nearer_or_close_visual_car(mode, radar
 
 @pytest.mark.parametrize("mode", (2, 3))
 def test_moving_front_range_retention_releases_for_stopped_visual_lead(mode):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   previous = seed_moving_range_front(controller)
   for index in range(1, 6):
     time_s = index * 0.05
@@ -8831,7 +8831,7 @@ def seed_vision_transition_front(controller):
 @pytest.mark.parametrize("mode", (1, 2, 3))
 @pytest.mark.parametrize("period", (0.025, 0.05, 0.10))
 def test_healthy_front_switches_after_200ms_of_consistent_vision(mode, period):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   for index in range(round(0.30 / period) + 1):
     elapsed = index * period
@@ -8847,7 +8847,7 @@ def test_healthy_front_switches_after_200ms_of_consistent_vision(mode, period):
 
 @pytest.mark.parametrize("flash_frames", (1, 2, 3))
 def test_short_visual_outlier_keeps_current_radar_kinematics(flash_frames):
-  controller = DPathRadarController(cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   for index in range(1, 12):
     time_s = index * 0.05
@@ -8862,7 +8862,7 @@ def test_short_visual_outlier_keeps_current_radar_kinematics(flash_frames):
 
 @pytest.mark.parametrize("change", ("distance", "velocity", "lateral", "model_ego_velocity"))
 def test_visual_discontinuities_restart_transition_confirmation(change):
-  controller = DPathRadarController(cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   for index in range(1, 20):
     time_s = index * 0.05
@@ -8888,7 +8888,7 @@ def test_visual_discontinuities_restart_transition_confirmation(change):
   "off_path", "gap", "reverse_time", "invalid_path", "vision_mode",
 ))
 def test_vision_transition_does_not_retain_broken_radar(change):
-  controller = DPathRadarController(cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   model = model_with_lead(30.0, 0.0, 10.0)
   assert controller.update(0.05, 25.0, (point,), model).lead_one["radarTrackId"] == 281
@@ -8922,7 +8922,7 @@ def test_vision_transition_does_not_retain_broken_radar(change):
 
 
 def test_repeated_model_time_does_not_confirm_vision_transition():
-  controller = DPathRadarController(cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, cut_in_sensitivity=0)
   point = seed_vision_transition_front(controller)
   model = model_with_lead(30.0, 0.0, 10.0)
   for _ in range(20):

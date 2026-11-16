@@ -5,7 +5,7 @@ from openpilot.selfdrive.carrot.tests.test_radar_forced_scc_gate import Point, m
 
 
 def test_scc_fallback_keeps_the_front_identity_of_the_same_body() -> None:
-  controller = DPathRadarController(enable_radar_tracks=3, pv5_refinements=True)
+  controller = DPathRadarController(enable_radar_tracks=3, pv5_refinements=True, enable_vision_transition=True)
   matched = controller.update(time_s=1.0, v_ego=20.0, radar_points=body(60.0, 0.3, None, v_rel=-2.0),
                               model=model(59.7, 0.0, 18.0, probability=0.95))
   assert matched.lead_one["radarTrackId"] == 38
@@ -24,7 +24,7 @@ def test_scc_fallback_keeps_the_front_identity_of_the_same_body() -> None:
 
 @pytest.mark.parametrize("front",(Point(38, 57.9, 0.3, v_rel=-2.0), Point(38, 59.7, 0.3, v_rel=-3.1)))
 def test_front_track_outside_the_scc_body_gate_leaves_scc_anonymous(front) -> None:
-  output = DPathRadarController(enable_radar_tracks=3, pv5_refinements=True).update(
+  output = DPathRadarController(enable_radar_tracks=3, pv5_refinements=True, enable_vision_transition=True).update(
     time_s=1.0, v_ego=20.0, radar_points=(Point(0, 60.0, 0.0, v_rel=-2.0, source="scc"), front),
     model=model(50.0, 0.0, 18.0, probability=0.1),
   )

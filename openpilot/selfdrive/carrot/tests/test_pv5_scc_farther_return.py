@@ -35,7 +35,7 @@ def call(c, t, candidate=None, points=None, *, forced=None, urgent=False):
 
 
 def seeded():
-  c = DPathRadarController(enable_radar_tracks=3, pv5_refinements=True)
+  c = DPathRadarController(enable_radar_tracks=3, pv5_refinements=True, enable_vision_transition=True)
   near, scc, far = inputs(1.)
   m = match(near)
   assert call(c, 1., m, forced=m) is m

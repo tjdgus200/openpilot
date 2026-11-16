@@ -116,7 +116,7 @@ STATIONARY_HANDOFF_MAX_YREL_DELTA_M = 1.5
 VALIDATION_SETTINGS_ENV = "CARROT_RADAR_VALIDATION_SETTINGS"
 VALIDATION_MOTION_MODES = ("normal", "front")
 VALIDATION_DEFAULT_SENSITIVITY = 3
-VISUAL_REPLAY_CACHE_VERSION = 7
+VISUAL_REPLAY_CACHE_VERSION = 8
 LEAD_ONE_RADAR_RGB = (246, 142, 55)
 LEAD_ONE_VISION_RGB = (72, 145, 255)
 LEAD_ONE_VISION_WEAK_RGB = (104, 205, 255)
@@ -2627,6 +2627,7 @@ def _production_controller_replay(
     enable_radar_tracks=enable_radar_tracks,
     cut_in_sensitivity=cut_in_sensitivity,
     pv5_refinements=_pv5_refinements_enabled(frames),
+    enable_vision_transition=_pv5_refinements_enabled(frames),
   )
   outputs = []
   estimates = []
@@ -3066,6 +3067,14 @@ def load_frames(log_path: Path, *, radar_track_flip: bool | None = None) -> list
           except (ValueError, TypeError):
             pass
       break
+  identities = set()
+  for event in events:
+    if event.which() == "carParams":
+      try:
+        identities.add((str(event.carParams.brand), str(event.carParams.carFingerprint)))
+      except Exception:
+        identities.add(("", ""))
+  replay_identity = next(iter(identities)) if len(identities) == 1 else ("", "")
   group3_enabled = False
   # carParams can be emitted well into a segment. Resolve the static vehicle
   # metadata before consuming events so legacy corner-ID recovery is limited
@@ -3290,8 +3299,8 @@ def load_frames(log_path: Path, *, radar_track_flip: bool | None = None) -> list
       )
       absolute_frames.append((
         event_ns, predictor_time_ns, latest_model_ns, RadarFrame(
-        car_brand=car_brand,
-        car_fingerprint=car_fingerprint,
+        car_brand=replay_identity[0],
+        car_fingerprint=replay_identity[1],
         mono_time_s=event_ns / 1e9,
         time_s=predictor_time_ns / 1e9,
         input_age_s=max(0.0, (event_ns - latest_points_ns) / 1e9),

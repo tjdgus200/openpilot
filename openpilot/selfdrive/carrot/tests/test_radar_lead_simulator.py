@@ -381,6 +381,12 @@ def test_visual_replay_cache_round_trip_and_exact_configuration(tmp_path) -> Non
   assert cached_v2.baseline.selections == v1.selections
   assert cached_v3.selections == v3.selections
   assert cached_production.selections == production.selections
+  # Even a structurally valid cache from the common-policy release is stale.
+  import pickle
+  payload = pickle.loads(cache_path.read_bytes())
+  payload['version'] = 7
+  cache_path.write_bytes(pickle.dumps(payload))
+  assert load_visual_replay_cache(cache_path) is None
   assert visual_replay_cache_path(
     tmp_path / "cache",
     log_path,

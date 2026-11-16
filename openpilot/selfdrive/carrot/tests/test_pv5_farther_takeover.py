@@ -19,7 +19,7 @@ def match(**changes):
 
 
 def seeded():
-  c = DPathRadarController(pv5_refinements=True)
+  c = DPathRadarController(pv5_refinements=True, enable_vision_transition=True)
   assert c._confirm_farther_radar(None, vision(), 1.) is None
   return c
 

@@ -1,4 +1,4 @@
-"""Vehicle admission, input resets and unchanged common vision handover."""
+"""Vehicle admission, input resets and independent PV5 vision-handover admission."""
 import ast
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +30,7 @@ def test_real_live_constructor_only_opts_in_the_pv5(brand, fingerprint, enabled)
   instance = SimpleNamespace()
   namespace["__init__"](instance, SimpleNamespace(brand=brand, carFingerprint=fingerprint,
                                                  radarUnavailable=False, radarDelay=0., flags=0))
+  assert instance.controller.enable_vision_transition is enabled
   assert instance.controller.pv5_refinements is enabled
   assert instance.controller.primary_matcher.enable_fresh_stationary_shield is enabled
 
@@ -55,7 +56,7 @@ def test_real_replay_constructor_uses_complete_consistent_metadata(monkeypatch, 
 
 @pytest.mark.parametrize("interruption", ("reset", "missing_path", "reverse", "gap", "invalid"))
 def test_refinement_history_does_not_survive_a_new_input_sequence(interruption):
-  controller = DPathRadarController(enable_radar_tracks=3, pv5_refinements=True)
+  controller = DPathRadarController(enable_radar_tracks=3, pv5_refinements=True, enable_vision_transition=True)
   points = (moving(38, 40., 22.3), stopped(42, 20.))
   for i in range(10):
     controller.update(i * .05, 20.8, points, model(40., 22.3))

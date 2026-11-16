@@ -534,9 +534,11 @@ class DPathRadarController:
     corner_radar_measurement_delay_s: float = CORNER_RADAR_MEASUREMENT_DELAY_S,
     production_live_tracks: bool = False,
     pv5_refinements: bool = False,
+    enable_vision_transition: bool = False,
   ) -> None:
     # Only the verified PV5 live/replay boundaries opt into these development-branch refinements.
     self.pv5_refinements = bool(pv5_refinements)
+    self.enable_vision_transition = bool(enable_vision_transition)
     self.primary_matcher = VisionRadarMatcher(enable_fresh_stationary_shield=self.pv5_refinements,
                                             enable_close_xyv_handoff=self.pv5_refinements)
     self.scc_primary_fallback_matcher = VisionRadarMatcher()
@@ -735,6 +737,11 @@ class DPathRadarController:
     time_s: float,
   ) -> VisionRadarMatch | None:
     """Retain a measured front lead until its visual replacement is coherent."""
+    if not self.enable_vision_transition:
+      self._vision_transition_radar = None
+      self._vision_transition_previous = None
+      self._vision_transition_since_s = 0.0
+      return match
     # Count camera time even while the ordinary matcher still accepts radar.
     # This avoids adding another wait after existing confirmation/hold paths.
     # Use published visual velocity, including the model ego-speed correction.

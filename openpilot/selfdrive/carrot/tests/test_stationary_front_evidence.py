@@ -136,7 +136,7 @@ def test_confirmed_stopped_front_bridges_bounded_uncertain_range_then_releases(m
   "speed_jump", "unmeasured", "gap", "missed_match", "invalid_path", "legacy_mode",
 ))
 def test_stationary_range_hold_cannot_cover_a_new_or_contradictory_object(mode, change):
-  controller = DPathRadarController(enable_radar_tracks=mode, cut_in_sensitivity=0)
+  controller = DPathRadarController(enable_vision_transition=True, enable_radar_tracks=mode, cut_in_sensitivity=0)
   seed_stationary(controller)
   time_s = 1.0
   point, model = approach_frame(time_s, distance_error=14.0, x_std=2.0 if change == "precise_range" else 20.0)

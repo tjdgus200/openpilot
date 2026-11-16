@@ -103,6 +103,19 @@ def test_wait_and_model_preparation_are_progress_not_red(reports):
   assert status.badge() == ('jetSON 모델 준비 중', 'loading')
 
 
+@pytest.mark.parametrize('message,label', [
+  ('Jetlink model setup requires ignition off', '시동 끄고 모델 준비 필요'),
+  ('Jetson disconnected', '모델 준비 보류'),
+])
+def test_deferred_model_preparation_exposes_its_reason(reports, message, label):
+  reports('loading')
+  link = json.loads(status.LINK_STATUS.read_text())
+  link['preparation'] = {'stage': 'waiting', 'message': message}
+  status.LINK_STATUS.write_text(json.dumps(link))
+  assert status.badge() == (f'jetSON {label}', 'loading')
+  assert message in status.diagnostics()['reason']
+
+
 @pytest.mark.parametrize('age', [3., 5., 7.9])
 def test_bounded_blocking_hello_does_not_expire_as_an_error(reports, monkeypatch, age):
   reports('connecting')
@@ -181,5 +194,7 @@ def test_connection_events_only_record_transitions(tmp_path, monkeypatch):
   daemon.publish('connecting', preparation={'stage': 'network-setup'})
   daemon.publish('blocked', error='x' * 500)
   assert len(events) == 3
-  assert len(events[-1][1]['error']) == 300
+  assert len(events[-1][1]['detail']) == 300
+  assert events[-1][1]['error'] is True
+  assert all('error' not in event[1] for event in events[:-1])
   assert json.loads(daemon.STATUS.read_text())['state'] == 'blocked'

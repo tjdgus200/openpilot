@@ -65,7 +65,7 @@ def stopped(tid, d, y=0.0, v_ego=V_EGO):
 
 def run(frames, v_ego=None):
   """frames: list of (points, model) at 20 Hz -> leadOne (radarTrackId, dRel) per frame, None when empty."""
-  controller = DPathRadarController(enable_radar_tracks=RADAR_MODE, pv5_refinements=True)
+  controller = DPathRadarController(enable_radar_tracks=RADAR_MODE, pv5_refinements=True, enable_vision_transition=True)
   out = []
   for i, (points, md) in enumerate(frames):
     lead = controller.update(i * DT, V_EGO if v_ego is None else v_ego[i], points, md).lead_one
