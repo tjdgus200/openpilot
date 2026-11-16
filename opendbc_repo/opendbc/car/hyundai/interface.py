@@ -30,6 +30,14 @@ class CarInterface(CarInterfaceBase):
   CarController = CarController
   RadarInterface = RadarInterface
 
+  def update(self, can_packets) -> structs.CarState:
+    ret = super().update(can_packets)
+    if self.CP.carFingerprint == CAR.KIA_PV5 and not self.CS.pv5_gear_valid:
+      # Unknown is not itself a common wrongGear event. Preserve all existing
+      # CAN checks and use their NO_ENTRY/IMMEDIATE_DISABLE path as well.
+      ret.canValid = False
+    return ret
+
   @staticmethod
   def _get_params(ret: structs.CarParams, candidate, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
 

@@ -72,6 +72,8 @@ class ManagerProcess(ABC):
   enabled = True
   name = ""
   shutting_down = False
+  _stop_started = 0.0
+  _kill_sent = False
   restart_if_crash = False
 
   @abstractmethod
@@ -97,9 +99,18 @@ class ManagerProcess(ABC):
           sig = signal.SIGKILL if self.sigkill else signal.SIGINT
         self.signal(sig)
         self.shutting_down = True
+        self._stop_started = time.monotonic()
+        self._kill_sent = sig == signal.SIGKILL
 
-        if not block:
-          return None
+      if not block:
+        # Supervision must never wait for a child, including on later ticks or
+        # a rapid stop/start transition. Keep the original five-second grace,
+        # then request SIGKILL once and reap on a subsequent tick.
+        if retry and not self._kill_sent and time.monotonic() - self._stop_started >= 5:
+          cloudlog.info(f"killing {self.name} with SIGKILL")
+          self.signal(signal.SIGKILL)
+          self._kill_sent = True
+        return None
 
       join_process(self.proc, 5)
 
@@ -116,6 +127,8 @@ class ManagerProcess(ABC):
 
     if self.proc.exitcode is not None:
       self.shutting_down = False
+      self._stop_started = 0.0
+      self._kill_sent = False
       self.proc = None
 
     return ret
@@ -160,9 +173,9 @@ class NativeProcess(ManagerProcess):
     pass
 
   def start(self) -> None:
-    # In case we only tried a non blocking stop we need to stop it before restarting
+    # Reap the previous child before restarting, without stalling supervision.
     if self.shutting_down:
-      self.stop()
+      self.stop(block=False)
 
     if self.proc is not None:
       return
@@ -194,9 +207,9 @@ class PythonProcess(ManagerProcess):
         print(f"failed to import {self.module}: {e}")
 
   def start(self) -> None:
-    # In case we only tried a non blocking stop we need to stop it before restarting
+    # Reap the previous child before restarting, without stalling supervision.
     if self.shutting_down:
-      self.stop()
+      self.stop(block=False)
 
     if self.proc is not None:
       return

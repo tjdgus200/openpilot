@@ -45,11 +45,11 @@ def test_deferred_and_restart_sensitive_services_select_spawn():
   calls = [n for n in ast.walk(ast.parse(path.read_text(encoding='utf-8')))
            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == 'PythonProcess']
   selected = [n.args[0].value for n in calls if any(k.arg == 'spawn' and ast.literal_eval(k.value) for k in n.keywords)]
-  assert selected == ['signalcolord', 'qcomgpsd', 'carrot_man', 'xiaoge_data']
+  assert selected == ['signalcolord', 'qcomgpsd', 'carrot_man', 'carrot_obd_battery', 'xiaoge_data']
 
 
 @pytest.mark.parametrize('legacy_fork', [False, True])
-@pytest.mark.parametrize('service', ['carrot_man', 'qcomgpsd'])
+@pytest.mark.parametrize('service', ['carrot_man', 'qcomgpsd', 'carrot_obd_battery'])
 def test_real_crash_restart_and_supervisor_responsiveness(tmp_path, legacy_fork, service):
   if legacy_fork and not hasattr(os, 'fork'):
     pytest.skip('fork comparison requires POSIX')

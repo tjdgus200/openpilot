@@ -232,7 +232,7 @@ def manager_thread(update_status: UpdateStatus) -> None:
 
     xiaoge_ready = xiaoge_startup.update(started, sm, sm['carParams'], params.get_bool('ControlsReady'), now)
     not_run = ignore if xiaoge_ready else [*ignore, 'xiaoge_data']
-    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=not_run)
+    desired = ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=not_run)
 
     running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)
                        for p in managed_processes.values() if p.proc)
@@ -242,7 +242,10 @@ def manager_thread(update_status: UpdateStatus) -> None:
     cloudlog.debug(running)
 
     # send managerState
-    msg = messaging.new_message('managerState', valid=True)
+    # A rapid OFF/ON can still be reaping an old child that is wanted again.
+    # Publish the actual PID/running state, but do not call this transition
+    # healthy until the old child exits and its replacement starts.
+    msg = messaging.new_message('managerState', valid=not any(p.shutting_down for p in desired))
     msg.managerState.processes = [p.get_process_state_msg() for p in managed_processes.values()]
     # Check in the normal-priority manager, never in the 100 Hz control loop.
     msg.managerState.rebootRequired = update_status.update(now)

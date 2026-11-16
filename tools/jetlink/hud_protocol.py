@@ -144,6 +144,7 @@ class SnapshotBuilder:
     from openpilot.common.jetson_model import selected_release
     self.host_release = selected_release(release_file)
     self.camera = None
+    self.camera_retry_at = 0.
     from hud_nav_map import NavPreviewPublisher
     self.nav_map = NavPreviewPublisher() if nav_map else None
     from openpilot.selfdrive.carrot.cluster.cluster_system_monitor import NetworkAddressProvider
@@ -172,13 +173,23 @@ class SnapshotBuilder:
     # fresh output heartbeat starts this worker; no panel means no allocation.
     enabled = ((host_display or self.params.get_int('ClusterHud') == 1) and
                (self.params.get_bool('IsOnroad') or self.params.get_int('ClusterHudDebug') >= 1))
-    if enabled and self.camera is None:
-      from hud_camera import CameraPublisher
-      self.camera = CameraPublisher()
-    elif not enabled and self.camera is not None:
-      self.camera.close()
-      self.camera = None
-    return self.camera.latest if self.camera is not None else {}
+    try:
+      if self.camera is not None and (not enabled or getattr(self.camera, 'closed', False)):
+        if self.camera.close() is False:
+          return {}  # Keep ownership while termination/cleanup is unconfirmed.
+        self.camera = None
+      if not enabled or now < getattr(self, 'camera_retry_at', 0.):
+        return {}
+      if self.camera is None:
+        from hud_camera import CameraPublisher
+        self.camera = CameraPublisher()
+      return self.camera.latest
+    except Exception:
+      # This optional panel must not stop vehicle/status snapshot publication.
+      # CameraPublisher handles exited-child backoff; imports/other failures are
+      # also limited here, within the existing low-priority snapshot cadence.
+      self.camera_retry_at = now + 2.
+      return {}
 
   def battery_snapshot(self, now):
     try:

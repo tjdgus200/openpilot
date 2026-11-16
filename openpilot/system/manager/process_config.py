@@ -192,7 +192,9 @@ procs = [
 
   PythonProcess("carrot_server", "openpilot.selfdrive.carrot.carrot_server", always_run, enabled=not CARROT_WEB_EXTERNAL),
   PythonProcess("carrot_bluetooth", "openpilot.selfdrive.carrot.bluetooth.daemon", always_run, enabled=TICI, restart_if_crash=True),
-  PythonProcess("carrot_obd_battery", "openpilot.selfdrive.carrot.obd_battery", obd_battery, enabled=TICI, restart_if_crash=True),
+  # CarParams can arrive after the onroad stack and IPC threads are live.
+  # A display-only deferred launch must not fork the running manager.
+  PythonProcess("carrot_obd_battery", "openpilot.selfdrive.carrot.obd_battery", obd_battery, enabled=TICI, restart_if_crash=True, spawn=True),
   PythonProcess("cweb_push", "openpilot.selfdrive.carrot.cweb_push", always_run, enabled=not PC),
   PythonProcess("carrot_cluster", "openpilot.selfdrive.carrot.cluster_autorun", enable_cluster_hud, restart_if_crash=True),
 

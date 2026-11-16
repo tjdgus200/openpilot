@@ -5,6 +5,7 @@ import json
 import os
 from io import BytesIO
 from pathlib import Path
+import secrets
 import signal
 import subprocess
 import sys
@@ -52,18 +53,65 @@ def preview_nv12(frame):
 
 class CameraPublisher:
   def __init__(self):
-    self.path = Path(f'/dev/shm/carrot-jetlink-cameras-{os.getpid()}.json')
-    self.process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--publish', str(self.path)],
-                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    self.path = Path(f'/dev/shm/carrot-jetlink-cameras-{os.getpid()}-{secrets.token_hex(8)}.json')
+    self.process = None
+    self.closed = False
+    self.retry_at, self.retry_delay = 0., 2.
+    self.healthy_since = None
+    self.close_retry_at = 0.
+    self._running(time.monotonic())
+
+  def _clear(self):
+    self.path.unlink(missing_ok=True)
+    self.path.with_suffix('.tmp').unlink(missing_ok=True)
+
+  def _failed(self, now):
+    self.retry_at = now + self.retry_delay
+    self.retry_delay = min(30., self.retry_delay * 2)
+    self.healthy_since = None
+
+  def _running(self, now):
+    if self.closed:
+      return False
+    if self.process is not None:
+      if self.process.poll() is None:
+        return True  # Missing/stale frames never kill a live camera receiver.
+      # poll reaps this owned child. Do not retain its last preview or spawn
+      # another child until the retry interval has elapsed.
+      self.process = None
+      self._failed(now)
+      try:
+        self._clear()
+      except OSError:
+        pass
+      return False
+    if now < self.retry_at:
+      return False
+    try:
+      self._clear()
+      self.process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--publish', str(self.path)],
+                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    except Exception:
+      self._failed(now)
+      return False
+    return True
 
   @property
   def latest(self):
+    now = time.monotonic()
     try:
+      if not self._running(now):
+        return {}
       data = json.loads(self.path.read_text())
-      if 0 <= time.monotonic() - data['updated'] < .3:
+      if isinstance(data, dict) and 0 <= now - data['updated'] < .3 and isinstance(data['cameras'], dict):
+        if self.healthy_since is None:
+          self.healthy_since = now
+        elif now - self.healthy_since >= 2.:
+          self.retry_delay = 2.
         return data['cameras']
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError):
       pass
+    self.healthy_since = None
     return {}
 
   @staticmethod
@@ -102,15 +150,27 @@ class CameraPublisher:
       time.sleep(max(0, start + .1 - time.monotonic()))
 
   def close(self):
-    self.process.terminate()
+    self.closed = True
+    now = time.monotonic()
+    if now < self.close_retry_at:
+      return False
     try:
-      self.process.wait(timeout=1)
-    except subprocess.TimeoutExpired:
-      self.process.kill()
-      self.process.wait(timeout=1)
-    self.path.unlink(missing_ok=True)
-    self.path.with_suffix('.tmp').unlink(missing_ok=True)
-
+      if self.process is not None:
+        if self.process.poll() is None:
+          self.process.terminate()
+          try:
+            self.process.wait(timeout=1)
+          except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait(timeout=1)
+        self.process = None
+      self._clear()
+    except (OSError, subprocess.TimeoutExpired):
+      # Retain ownership until exit/cleanup is confirmed; a failed close must
+      # never allow a second live preview child on the next enabled snapshot.
+      self.close_retry_at = now + 2.
+      return False
+    return True
 
 class RemoteRoadCamera:
   def __init__(self):

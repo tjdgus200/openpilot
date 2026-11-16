@@ -50,6 +50,7 @@ def main(directory, legacy_fork, service='carrot_man'):
               and n.func.id == 'PythonProcess' and n.args[0].value == service)
   namespace['always_run'] = lambda *_: True
   namespace['qcomgps'] = lambda *_: True
+  namespace['obd_battery'] = lambda *_: True
   namespace['TICI'] = True
   process = eval(compile(ast.Expression(call), 'process_config.py', 'eval'), namespace)
   process.module = directory

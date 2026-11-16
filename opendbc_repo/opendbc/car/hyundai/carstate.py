@@ -1,6 +1,7 @@
 from collections import deque
 import copy
 import math
+import time
 import numpy as np
 import ast
 
@@ -63,6 +64,9 @@ BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: Bu
 GearShifter = structs.CarState.GearShifter
 
 READY_COUNT_OK = 200
+# PV5 gear is carried by a 50 Hz frame; retain the parser's ten-period limit.
+PV5_GEAR_FREQUENCY = 50
+PV5_GEAR_MAX_AGE_NS = 10 * 1_000_000_000 // PV5_GEAR_FREQUENCY
 CANFD_CAMERA_TX_MESSAGES = (
   ("LFA", "lfa", 121), ("LFA_ALT", "lfa_alt", 121),
   ("LFAHDA_CLUSTER", "lfahda_cluster", 121),
@@ -76,6 +80,14 @@ EV_MODE_STATUS_TIMEOUT_NS = 500_000_000
 LEGACY_LFA_BUTTON_ADDR = 0x391
 LEGACY_CRUISE_BUTTON_ALT_ADDR = 0x3EF
 LEGACY_LFA_BUTTON_ALT_ADDR = 0x416
+
+
+def get_canfd_gear_msg(CP) -> str:
+  return ("GEAR" if CP.extFlags & HyundaiExtFlags.CANFD_GEARS_69 else
+          "ACCELERATOR" if CP.flags & HyundaiFlags.EV else
+          "GEAR_ALT" if CP.flags & HyundaiFlags.CANFD_ALT_GEARS else
+          "GEAR_ALT_2" if CP.flags & HyundaiFlags.CANFD_ALT_GEARS_2 else
+          "GEAR_SHIFTER")
 
 
 def is_canfd_avh_active(avh_state: int) -> bool:
@@ -158,13 +170,14 @@ class CarState(CarStateBase):
     self.cruise_buttons: deque = deque([Buttons.NONE] * PREV_BUTTON_SAMPLES, maxlen=PREV_BUTTON_SAMPLES)
     self.main_buttons: deque = deque([Buttons.NONE] * PREV_BUTTON_SAMPLES, maxlen=PREV_BUTTON_SAMPLES)
 
-    self.gear_msg_canfd = "GEAR" if CP.extFlags & HyundaiExtFlags.CANFD_GEARS_69 else \
-                          "ACCELERATOR" if CP.flags & HyundaiFlags.EV else \
-                          "GEAR_ALT" if CP.flags & HyundaiFlags.CANFD_ALT_GEARS else \
-                          "GEAR_ALT_2" if CP.flags & HyundaiFlags.CANFD_ALT_GEARS_2 else \
-                          "GEAR_SHIFTER"
+    self.gear_msg_canfd = get_canfd_gear_msg(CP)
 
     self.use_accelerator = self.gear_msg_canfd == "ACCELERATOR"
+    self.pv5_gear_required = CP.carFingerprint == CAR.KIA_PV5
+    self.pv5_gear_valid = False
+    self._pv5_gear_timestamp = 0
+    self._pv5_gear_seen_at_ns = 0
+    self._pv5_gear_age_at_receive_ns = 0
     if CP.flags & HyundaiFlags.CANFD:
       self.shifter_values = can_define.dv[self.gear_msg_canfd]["GEAR"]
     elif CP.flags & (HyundaiFlags.HYBRID | HyundaiFlags.EV):
@@ -1343,12 +1356,46 @@ class CarState(CarStateBase):
       self.speedLimitDistance = self.totalDistance
       ret.speedLimitDistance = 0.0
 
+  def _update_pv5_gear(self, cp: CANParser):
+    # A registered dictionary starts at zero (P). Only a real, fresh, accepted
+    # frame establishes a gear, including after a late first receive.
+    self.pv5_gear_valid = False
+    msg = cp.dbc.name_to_msg.get(self.gear_msg_canfd)
+    state = cp.message_states.get(msg.address) if msg is not None else None
+    timestamp = cp.ts_nanos.get(self.gear_msg_canfd, {}).get("GEAR", 0)
+    age = cp._last_update_nanos - timestamp
+    now = time.monotonic_ns()
+    if timestamp > self._pv5_gear_timestamp:
+      self._pv5_gear_timestamp = timestamp
+      self._pv5_gear_seen_at_ns = now
+      self._pv5_gear_age_at_receive_ns = max(age, 0)
+    # A completely missing CAN batch does not advance the parser clock. Check
+    # local elapsed time too, without subtracting timestamps from two clocks.
+    elapsed = now - self._pv5_gear_seen_at_ns
+    local_age = self._pv5_gear_age_at_receive_ns + elapsed
+    if (state is None or timestamp <= 0 or cp.bus_timeout or
+        timestamp != self._pv5_gear_timestamp or elapsed < 0 or
+        len(cp.dat.get(msg.address, b"")) != msg.size or
+        state.last_invalid_nanos >= timestamp or
+        not 0 <= age <= min(state.timeout_threshold, PV5_GEAR_MAX_AGE_NS) or
+        local_age > min(state.timeout_threshold, PV5_GEAR_MAX_AGE_NS)):
+      return GearShifter.unknown
+
+    gear = cp.vl[self.gear_msg_canfd]["GEAR"]
+    decoded = self.parse_gear_shifter(self.shifter_values.get(gear))
+    self.pv5_gear_valid = decoded != GearShifter.unknown
+    return decoded
+
   def update_canfd(self, can_parsers) -> structs.CarState:
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
     cp_alt = can_parsers[Bus.alt] if Bus.alt in can_parsers else None
 
     ret = structs.CarState()
+    if self.pv5_gear_required and self.use_accelerator:
+      # Keep the parser-owned live mapping; count 125 discovery must not decide
+      # whether gear/pedal data are available for the rest of this drive.
+      self.accelerator = cp.vl[self.gear_msg_canfd]
     ret.steeringTouch = self.steering_touch.update(cp)
     if self.collision_warning_source is not None:
       # Existing parser receive clock advances on empty batches too. Display
@@ -1376,8 +1423,11 @@ class CarState(CarStateBase):
       ret.doorOpen = self.doors_seatbelts["DRIVER_DOOR"] == 1
       ret.seatbeltUnlatched = self.doors_seatbelts["DRIVER_SEATBELT"] == 0
 
-    gear = cp.vl[self.gear_msg_canfd]["GEAR"] if not self.use_accelerator else 0 if self.accelerator is None else self.accelerator["GEAR"]
-    ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
+    if self.pv5_gear_required:
+      ret.gearShifter = self._update_pv5_gear(cp)
+    else:
+      gear = cp.vl[self.gear_msg_canfd]["GEAR"] if not self.use_accelerator else 0 if self.accelerator is None else self.accelerator["GEAR"]
+      ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
     if self.TPMS:
       tpms_unit = cp.vl["TPMS"]["UNIT"] * 0.725 if int(cp.vl["TPMS"]["UNIT"]) > 0 else 1.
@@ -1559,7 +1609,7 @@ class CarState(CarStateBase):
       speed_limit_cam = self._update_pv5_camera_warning(cp, cp_alt)
 
     ret.gearStep = cp.vl["GEAR"]["GEAR_STEP"] if self.GEAR else 0
-    if 1 <= ret.gearStep <= 8 and ret.gearShifter == GearShifter.unknown:
+    if not self.pv5_gear_required and 1 <= ret.gearStep <= 8 and ret.gearShifter == GearShifter.unknown:
       ret.gearShifter = GearShifter.drive
     ret.gearStep = cp.vl["GEAR_ALT"]["GEAR_STEP"] if self.GEAR_ALT else ret.gearStep
 
@@ -1679,6 +1729,15 @@ class CarState(CarStateBase):
 
     CAN = CanBus(CP)
     pt_parser = register_vehicle_gps(CANParser(DBC[CP.carFingerprint][Bus.pt], msgs, CAN.ECAN))
+    if wrapped_navi:
+      # Preserve the existing ACCELERATOR counter policy: observed PV5 counters
+      # advance by two. Other selected gear messages retain checks.
+      gear_msg = get_canfd_gear_msg(CP)
+      pt_parser._add_message(gear_msg, ignore_counter=gear_msg == "ACCELERATOR")
+      # Keep the parser's existing rate learning. Bound only its initial 1 Hz
+      # assumption; a learned shorter timeout remains authoritative.
+      gear_state = pt_parser.message_states[pt_parser.dbc.name_to_msg[gear_msg].address]
+      gear_state.timeout_threshold = min(gear_state.timeout_threshold, PV5_GEAR_MAX_AGE_NS)
     if CP.extFlags & HyundaiExtFlags.EV_MODE_STATUS_230:
       # Display-only while the signal is fleet-validated: checksum and freshness
       # gate the value without making a counter/alive fault disable controls.

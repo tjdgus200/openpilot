@@ -579,6 +579,8 @@ class DPathRadarController:
     self._vision_transition_since_s = 0.0
     self._nearer_vision_previous: tuple[float, dict[str, Any]] | None = None
     self._farther_radar_pending: tuple[tuple[str, int], float, float, RadarPointSnapshot] | None = None
+    self._scc_return_previous: tuple[float, RadarPointSnapshot] | None = None
+    self._scc_return_pending: tuple[tuple[str, int], float, float, RadarPointSnapshot] | None = None
 
   def _confirm_farther_radar(
     self, match: VisionRadarMatch | None, vision: dict[str, Any] | None, time_s: float,
@@ -639,6 +641,90 @@ class DPathRadarController:
     self._nearer_vision_previous = (time_s, vision)
     self._farther_radar_pending = (identity, since, time_s, point)
     return None
+
+  def _confirm_farther_after_scc(
+    self,
+    match: VisionRadarMatch | None,
+    forced_scc_body: VisionRadarMatch | None,
+    points: tuple[RadarPointSnapshot, ...],
+    path: tuple[tuple[float, float], ...],
+    vision: VisionLead | None,
+    model: Any,
+    time_s: float,
+    urgent: bool,
+  ) -> VisionRadarMatch | None:
+    """Qualify a nonurgent farther return while the current SCC body is still measured.
+
+    Never replay an old distance or delay a new closer target. This operates only
+    on final leadOne; cut-in/cut-out and auxiliary targets keep their original inputs.
+    """
+    previous, pending = self._scc_return_previous, self._scc_return_pending
+    self._scc_return_previous = None
+    self._scc_return_pending = None
+    if not self.pv5_refinements or self.enable_radar_tracks != 3 or urgent or _lane_change_active(model) or not math.isfinite(time_s):
+      return match
+
+    def usable(point: RadarPointSnapshot) -> bool:
+      return point.measured and 0.0 < point.d_rel < 150.0 and all(math.isfinite(value) for value in (
+        point.d_rel, point.y_rel, point.v_rel, point.v_lead, point.a_lead, point.yv_rel,
+      ))
+
+    if forced_scc_body is not None and match is forced_scc_body:
+      if usable(match.point):
+        self._scc_return_previous = (time_s, match.point)
+      return match
+    if previous is None or match is None or match.point.source != "frontRadar" or not usable(match.point):
+      return match
+    previous_s, previous_point = previous
+    dt = time_s - previous_s
+    if not 0.0 <= dt <= RADAR_MOTION_MAX_TIME_SKEW_S:
+      return match
+    scc = unconditional_scc_match(points)
+    if scc is None or not usable(scc.point):
+      return match
+    current = self._forced_scc_front_body(scc, points, path, vision)
+    if current is None or not usable(current.point):
+      return match
+    point = current.point
+    if not (
+      (point.source, point.track_id) == (previous_point.source, previous_point.track_id)
+      and abs(point.d_rel - (previous_point.d_rel + previous_point.v_rel * dt)) <= MOVING_FRONT_RANGE_MAX_POSITION_ERROR_M
+      and abs(point.y_rel - (previous_point.y_rel + previous_point.yv_rel * dt)) <= MOVING_FRONT_RANGE_MAX_LATERAL_ERROR_M
+      and abs(point.v_lead - previous_point.v_lead) <= MOVING_FRONT_RANGE_MAX_SPEED_JUMP_MPS
+      and math.isfinite(current.d_path)
+    ):
+      return match
+    beside, in_lane = _forced_scc_lateral_evidence(scc.point, points, path, vision, model)
+    if beside and not in_lane:
+      return match
+    candidate = match.point
+    if (candidate.source, candidate.track_id) == (point.source, point.track_id):
+      self._scc_return_previous = (time_s, point)
+      return match
+    closing = max(0.0, -candidate.v_rel)
+    if not (
+      candidate.d_rel > point.d_rel + FARTHER_RADAR_RANGE_GAP_M
+      and candidate.d_rel > 5.0 * closing
+      and closing * closing < candidate.d_rel
+      and candidate.a_lead > -1.0
+    ):
+      return match
+    identity, since = (candidate.source, candidate.track_id), time_s
+    if pending is not None:
+      old_identity, old_since, old_s, old = pending
+      elapsed = time_s - old_s
+      if (
+        identity == old_identity and 0.0 <= elapsed <= RADAR_MOTION_MAX_TIME_SKEW_S
+        and abs(candidate.d_rel - (old.d_rel + old.v_rel * elapsed)) <= MOVING_FRONT_RANGE_MAX_POSITION_ERROR_M
+        and abs(candidate.y_rel - (old.y_rel + old.yv_rel * elapsed)) <= MOVING_FRONT_RANGE_MAX_LATERAL_ERROR_M
+        and abs(candidate.v_lead - old.v_lead) <= MOVING_FRONT_RANGE_MAX_SPEED_JUMP_MPS
+      ):
+        since = old_since
+    if time_s - since >= FARTHER_RADAR_CONFIRM_S - 1e-6:
+      return match
+    self._scc_return_previous = (time_s, point)
+    self._scc_return_pending = (identity, since, time_s, candidate)
+    return current
 
   def _confirm_vision_transition(
     self,
@@ -1129,6 +1215,8 @@ class DPathRadarController:
       self._vision_transition_since_s = 0.0
       self._nearer_vision_previous = None
       self._farther_radar_pending = None
+      self._scc_return_previous = None
+      self._scc_return_pending = None
       return DPathRadarOutput(
         None, None, None, None, (), (), (), (), (), (), None,
       )
@@ -1631,6 +1719,14 @@ class DPathRadarController:
     confirmed_primary = self._confirm_farther_radar(primary_match, confirmation_vision, time_s)
     if primary_match is not None and confirmed_primary is None:
       lead_one = dict(vision_candidate)
+    scc_return = self._confirm_farther_after_scc(
+      confirmed_primary, forced_scc_body, points, path, vision, model, time_s,
+      urgent=lead_cutin_risk is not None or bool(confirmed_cutin_leads) or cutout.confidence > 0.0,
+    )
+    if scc_return is not confirmed_primary and scc_return is not None:
+      lead_one = self._lead_from_radar_point(
+        scc_return.point, scc_return.d_path, scc_return.probability, scc_return.score,
+      )
     return DPathRadarOutput(
       lead_one=lead_one,
       lead_two=lead_two,
