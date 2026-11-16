@@ -11,6 +11,7 @@ import time
 from openpilot.system.pv5_incidents.archive_sanitize import excluded
 from openpilot.system.pv5_incidents.archive_stream import decoded, messages
 from tools.pv5_archive.schema import full_schema
+from openpilot.system.pv5_incidents.priority import REPORTABLE_ALERTS, CRITICAL_ALERTS
 
 
 def number(value):
@@ -89,6 +90,11 @@ class Triage:
                   number(actuator.pv5SccWarningBaseAccel), number(actuator.accel), fresh)
     elif topic == 'onroadEvents':
       for value in event.onroadEvents:
+        name = str(value.name)
+        if name in REPORTABLE_ALERTS:
+          if len(self.errors) < 32:
+            self.errors.add(name)
+          self.candidate('recorded_critical_alert' if name in CRITICAL_ALERTS else 'recorded_system_fault', stamp)
         if value.immediateDisable or value.softDisable:
           self.candidate('recorded_system_disable', stamp)
           name = str(value.name)

@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from openpilot.system.pv5_incidents.core import MAX_BODY, MAX_COUNT, authenticated, encode, validate_batch
 
+from openpilot.system.pv5_incidents.priority import reportable
+
 
 class Inbox:
   def __init__(self, path):
@@ -51,6 +53,8 @@ class Inbox:
       db.execute('BEGIN IMMEDIATE')
       db.execute('DELETE FROM seen WHERE stamp < ?', (now - 604800,))
       for row in batch['rows']:
+        if not reportable(row['fact']):
+          continue  # Authenticated legacy ordinary rows are ACKed without AI/DB work.
         prior = db.execute('SELECT * FROM seen WHERE id=?', (row['id'],)).fetchone()
         if prior and row['revision'] <= prior['revision']:
           continue
@@ -61,6 +65,9 @@ class Inbox:
           if db.execute('SELECT count(*) FROM incidents').fetchone()[0] >= 64:
             # Retire the oldest completed item, never an unreported fault.
             old = db.execute('SELECT digest FROM incidents WHERE report_count >= total ORDER BY last LIMIT 1').fetchone()
+            if not old:
+              old = next((v for v in db.execute('SELECT digest,fact FROM incidents ORDER BY last LIMIT 64')
+                          if not reportable(json.loads(v['fact']))), None)
             if not old:
               raise ValueError('inbox_full')
             db.execute('DELETE FROM incidents WHERE digest=?', (old[0],))
@@ -79,9 +86,13 @@ class Inbox:
     with self.open() as db:
       db.execute('BEGIN IMMEDIATE')
       rows = db.execute('''SELECT * FROM incidents WHERE total>report_count AND lease_until<=?
-        AND (report_time=0 OR report_time<=?) ORDER BY first LIMIT 3''', (now, now - 1800)).fetchall()
+        AND (report_time=0 OR report_time<=?) ORDER BY first LIMIT 64''', (now, now - 1800)).fetchall()
       result = []
       for row in rows:
+        if row['report_count'] > 0 or not reportable(json.loads(row['fact'])):
+          continue
+        if len(result) == 3:
+          break
         if claim:
           db.execute('UPDATE incidents SET lease_until=? WHERE digest=?', (now + 1200, row['digest']))
         result.append({**dict(row), 'fact': json.loads(row['fact'])})
@@ -89,8 +100,8 @@ class Inbox:
 
   def notifications(self):
     with self.open() as db:
-      rows = db.execute('SELECT digest,fact,total FROM incidents WHERE notified=0 ORDER BY first LIMIT 8').fetchall()
-      return [{**dict(row), 'fact': json.loads(row['fact'])} for row in rows]
+      rows = db.execute('SELECT digest,fact,total FROM incidents WHERE notified=0 AND report_count=0 ORDER BY first LIMIT 64').fetchall()
+      return [{**dict(row), 'fact': json.loads(row['fact'])} for row in rows if reportable(json.loads(row['fact']))][:8]
 
   def mark_notified(self, digests):
     if len(digests) > 8 or any(not re.fullmatch('[0-9a-f]{64}', d) for d in digests):

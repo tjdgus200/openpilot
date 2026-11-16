@@ -409,3 +409,10 @@ def test_discord_receipt_is_rechecked_and_uncertain_post_is_not_repeated(tmp_pat
   assert not inbox.notifications() and not notify_once(inbox, sender)
   assert len(posts) == 1 and posts[0]['allowed_mentions'] == {'parse': []}
   assert json.loads(sender.receipt.read_text())['verified'] is True
+
+
+def test_critical_permanent_aeb_is_kept_without_ordinary_warning_flags(tmp_path, monkeypatch):
+  r = reporter(tmp_path, monkeypatch)
+  r.sm['onroadEvents'] = [NS(name='stockAeb', warning=False, noEntry=False, softDisable=False, immediateDisable=False, permanent=True)]
+  r.observe(r.sm)
+  assert [row['fact']['code'] for row in r.queue.rows.values()] == ['stockAeb']

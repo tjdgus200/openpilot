@@ -52,7 +52,7 @@ def select_review(result):
     if marker['kind'] in ('recorded_stock_aeb', 'recorded_system_disable', 'radar_value_jump', 'new_close_target'):
       hit(marker['kind'], marker['t'])
   for candidate in result.get('candidates', []):
-    if candidate['kind'] in ('recorded_stock_aeb', 'recorded_system_disable'):
+    if candidate['kind'] in ('recorded_stock_aeb', 'recorded_system_disable', 'recorded_critical_alert', 'recorded_system_fault'):
       hit(candidate['kind'], candidate['first_seconds'])  # Retain first urgent event even if marker capacity was reached.
   # Retain normal cruise releases/assist operation as context only; they do
   # not open an AI review by themselves.
@@ -68,7 +68,7 @@ def select_review(result):
     else:
       windows.append({'start_seconds': round(start, 3), 'end_seconds': round(stop, 3), 'reasons': [kind]})
   priority = {kind: index for index, kind in enumerate(('recorded_stock_aeb', 'stock_scc_hard_request', 'hard_deceleration',
-               'recorded_system_disable', 'rapid_approach', 'radar_value_jump', 'new_close_target', 'abrupt_deceleration_onset'))}
+               'recorded_critical_alert', 'recorded_system_fault', 'recorded_system_disable', 'rapid_approach', 'radar_value_jump', 'new_close_target', 'abrupt_deceleration_onset'))}
   capped = len(windows) > 8
   if capped:
     windows = sorted(sorted(windows, key=lambda row: min(priority.get(kind, 99) for kind in row['reasons']))[:8],

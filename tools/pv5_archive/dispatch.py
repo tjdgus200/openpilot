@@ -8,6 +8,7 @@ import time
 
 from openpilot.system.pv5_incidents.archive_protocol import encode
 from tools.pv5_archive.service import atomic
+from openpilot.system.pv5_incidents.priority import archive_reviewable, fault_key
 
 
 class ArchiveDispatch:
@@ -29,16 +30,25 @@ class ArchiveDispatch:
     with self.store.lock, self.store.db() as db:
       rows = db.execute('SELECT * FROM results WHERE notified=0 ORDER BY stamp LIMIT 64').fetchall()
       last = db.execute("SELECT max(stamp) FROM dispatches WHERE status!='not_sent'").fetchone()[0] or 0
+      history = db.execute("SELECT results.summary FROM dispatches JOIN results ON results.segment_id=dispatches.id "
+                           "WHERE dispatches.status!='not_sent' ORDER BY dispatches.stamp DESC LIMIT 512").fetchall()
+      reviewed_faults = {key for row in history if (key := fault_key(json.loads(row['summary']))) is not None}
       selected, deadlines, causes = [], [], []
       for row in rows:
         summary = json.loads(row['summary'])
+        key = fault_key(summary)
+        if not archive_reviewable(summary) or (key is not None and key in reviewed_faults):
+          db.execute('UPDATE results SET notified=-1 WHERE segment_id=?', (row['segment_id'],))
+          continue  # No AI for ordinary candidates or a known same-version fault.
         kinds = sorted({value['kind'] for value in summary.get('candidates', [])})
         screened_quiet = summary.get('screening_policy') == 'risk-first-v1' and summary.get('status') != 'analysis_failed'
         if not kinds and (summary.get('status') == 'no_threshold_candidate' or screened_quiet):
           db.execute('UPDATE results SET notified=-1 WHERE segment_id=?', (row['segment_id'],))
           continue  # Ordinary uploads never produce a chat.
-        cause = hashlib.sha256(encode([kinds, summary.get('status'), summary.get('missing_services', [])])).hexdigest()
-        previous = db.execute("SELECT max(stamp) FROM dispatches WHERE cause=? AND status!='not_sent'", (cause,)).fetchone()[0] or 0
+        legacy_cause = hashlib.sha256(encode([kinds, summary.get('status'), summary.get('missing_services', [])])).hexdigest()
+        cause = hashlib.sha256(encode([kinds, summary.get('status'), summary.get('missing_services', []),
+                                      sorted(summary.get('error_codes', [])), summary.get('source_commit', 'unknown')])).hexdigest()
+        previous = db.execute("SELECT max(stamp) FROM dispatches WHERE cause IN (?,?) AND status!='not_sent'", (cause, legacy_cause)).fetchone()[0] or 0
         due = max(last + 300 if last else 0, previous + 1800 if previous else 0)
         if due > now:
           deadlines.append(due)
@@ -48,6 +58,8 @@ class ArchiveDispatch:
           continue
         selected.append({'segment_id': row['segment_id'], 'cause': cause})
         causes.append(cause)
+        if key is not None:
+          reviewed_faults.add(key)
       if not selected:
         self.next_due = min(deadlines) if deadlines else None
         return

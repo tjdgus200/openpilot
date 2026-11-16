@@ -1,3 +1,33 @@
+# 2026-11-16: critical/error-only automatic analysis
+
+Automatic coded reporting now keeps only the explicit `priority.py` critical/fault
+catalog and abnormal process exits. Expected SIGINT/SIGTERM exits, ordinary pedal,
+gear/parking, lane-change, initialization, traffic-stop and mild/silent SCC notices
+are excluded before sender queueing. UI alerts, driving decisions and existing
+zero-speed authentication/resource limits are unchanged. No free-text error-log
+subscription or AI call is added to the vehicle.
+
+PC ingress also filters authenticated legacy clients, ACKing ordinary rows without
+adding them to analysis/notifications. Legacy stored ordinary rows cannot block a
+new fault. Once a coded fact (code/process/severity/recorded version) has a verified
+report, count-only increments do not open another automatic analysis. New source
+or severity has a separate identity; uncertainty is still held, not blindly resent.
+
+Archive copying and token-free screening are retained. AI routing accepts only
+recorded critical warnings/AEB, explicit fault codes or analysis execution failure.
+Radar transitions, short TTC or a deceleration threshold alone no longer start AI.
+Repeated diagnostic fault signatures already dispatched for the same recorded
+version are quiet, including pre-policy historical dispatches (bounded 512-history
+lookup). Distinct critical driving episodes retain the 30-minute cause cooldown
+and 3-per-5-minute limit. Failed PC analysis produces one operational failure
+review; ordinary incomplete uploads do not create a chat.
+
+The PC gate takes effect with the verified PC receiver release. The sender filter
+requires the device to install that published release; no automatic installation,
+reboot or toggle change is performed by this policy. Vehicle alerts are not muted.
+
+---
+
 # PV5 오류 제보 — 분석만
 
 2026-11-11 사용자 선택3. 인증된 오류 제보를 PC로 보내 원인·해결안만

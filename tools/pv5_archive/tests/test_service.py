@@ -21,7 +21,7 @@ class ServiceChecks(unittest.TestCase):
   def tearDown(self):
     self.temp.cleanup()
 
-  def result(self, token, status='review_candidates', kind='hard_deceleration'):
+  def result(self, token, status='review_candidates', kind='recorded_stock_aeb'):
     self.store.analyzed(token, {'status': status, 'candidates': [{'kind': kind}] if kind else [], 'missing_services': []})
 
   def test_actual_bounded_pc_child_video_only_reports_insufficient_not_success(self):
@@ -121,7 +121,8 @@ class ServiceChecks(unittest.TestCase):
     dispatch.step()
     self.assertEqual(len(sent), 2)
     for index in range(5):
-      self.result(str(index) * 64, kind='candidate_' + str(index))
+      self.store.analyzed(str(index) * 64, {'status': 'review_candidates', 'candidates': [], 'missing_services': [],
+        'error_codes': [('canError', 'controlsMismatch', 'radarFault', 'cameraMalfunction', 'lowMemory')[index]], 'source_commit': 'a'*40})
     now[0] += 301
     dispatch.step()
     event = json.loads(sent[-1].read_bytes())
@@ -142,7 +143,7 @@ class ServiceChecks(unittest.TestCase):
     dispatch.step()
     dispatch.step()
     self.assertEqual(calls, [True])
-    self.result('b' * 64, kind='other')
+    self.store.analyzed('b'*64, {'status':'analysis_failed','candidates':[], 'missing_services':[]})
     dispatch.send = lambda *_: {'status': 'not_sent'}
     dispatch.clock = lambda: 12000
     dispatch.step()

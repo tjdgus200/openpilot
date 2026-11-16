@@ -14,6 +14,8 @@ from urllib.parse import urlsplit
 from openpilot.system.pv5_incidents.core import (MAX_BODY, MAX_SPOOL, Pending, Retry, SpeedProof,
                                                encode, signature, stopped)
 
+from openpilot.system.pv5_incidents.priority import reportable, REPORTABLE_ALERTS
+
 CONFIG = Path('/data/pv5-incident-report.json')
 SPOOL = Path('/data/pv5-incidents/pending.json')
 _reporter = None
@@ -67,7 +69,7 @@ class Reporter:
     self.archive = None
 
   def add(self, fact, now=None):
-    if self.proof is None or not self.proof.pv5:
+    if self.proof is None or not self.proof.pv5 or not reportable(fact):
       return
     # Only tiny bounded queue work, never network or disk under this lock.
     with self.lock:
@@ -90,8 +92,9 @@ class Reporter:
     if sm.valid['onroadEvents'] and sm.alive['onroadEvents']:
       for event in list(sm['onroadEvents'])[:32]:
         code = str(event.name)
-        permanent_fault = event.permanent and code in {
-          'canError', 'cameraMalfunction', 'processNotRunning', 'commIssue', 'modeldLagging', 'overheat', 'steerUnavailable'}
+        if code not in REPORTABLE_ALERTS:
+          continue
+        permanent_fault = event.permanent and code in REPORTABLE_ALERTS
         if not (event.warning or event.noEntry or event.softDisable or event.immediateDisable or permanent_fault):
           continue
         severity = 3 if event.immediateDisable else 2 if event.softDisable else 1
@@ -140,6 +143,7 @@ class Reporter:
     if not stopped(self.proof, now) or not self.retry.ready(now):
       return False
     with self.lock:
+      self.queue.rows = {key: row for key, row in self.queue.rows.items() if reportable(row['fact'])}
       batch = self.queue.batch(time.time())
     if not batch['rows']:
       return False
@@ -191,6 +195,7 @@ class Reporter:
       if self.spool.is_file() and not self.spool.is_symlink():
         with self.spool.open('rb') as source:
           self.queue.restore(source.read(MAX_SPOOL + 1), time.time())
+          self.queue.rows = {key: row for key, row in self.queue.rows.items() if reportable(row['fact'])}
     except (OSError, ValueError, TypeError, KeyError):
       pass  # Broken local diagnostics must not stop tombstoned.
     thread = threading.Thread(target=self.network_loop, name='pv5-report-upload', daemon=True)
