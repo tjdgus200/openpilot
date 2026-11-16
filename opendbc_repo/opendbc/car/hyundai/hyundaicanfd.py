@@ -493,7 +493,7 @@ def _apply_scc_lead(values, radar_state, model_v2=None, hud_lateral=None):
 
 
 def create_acc_control_scc2(packer, CAN, enabled, accel_value_last, accel, stopping, gas_override, set_speed, hud_control, hyundai_jerk, CS,
-                            stop_controller=None, hud_lateral=None, longitudinal_allowed=True):
+                            stop_controller=None, hud_lateral=None, longitudinal_allowed=True, gas_override_allowed=False):
 
   if stop_controller is not None:
     stop_controller.stop_object_active = False
@@ -503,7 +503,13 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_value_last, accel, stopp
     return None, accel_value_last
   interlock_active = longitudinal_interlock_active(CS)
   soft_hold_active = CS.softHoldActive > 0 and CS.out.cruiseState.available
-  acc_control_enabled = (enabled or soft_hold_active) and CS.out.cruiseState.available and CS.paddle_button_prev == 0 and not interlock_active and longitudinal_allowed
+  # An admitted driver override retains OEM mode 2 with zero longitudinal demand.
+  # It must never revive soft hold or Carrot mode 4 through the actuation gate.
+  override_mode_allowed = (gas_override_allowed and gas_override and enabled and CS.out.gasPressed
+                           and CS.softHoldActive == 0 and hyundai_jerk.carrot_cruise == 0)
+  acc_control_enabled = ((enabled or soft_hold_active) and CS.out.cruiseState.available
+                         and CS.paddle_button_prev == 0 and not interlock_active
+                         and (longitudinal_allowed or override_mode_allowed))
   enabled = acc_control_enabled
 
   acc_mode = 0 if not enabled else (2 if gas_override else 1)
@@ -578,10 +584,11 @@ def create_acc_control_scc2(packer, CAN, enabled, accel_value_last, accel, stopp
   if stop_controller is not None:
     stop_controller.stop_object_active = apply_signal_stop_object(values, CS, hud_control, stopping_controller=stop_controller)
 
-  # Opt-in PV5 admission is independent of lateral/global enabled. An outgoing
-  # active ACCMode must not re-arm longitudinal safety after a driver override.
+  # Actuation remains blocked during driver override. Preserve only mode 2,
+  # whose final Raw/Value/StopReq/bands are zero; every other denial stays off.
   if not longitudinal_allowed:
-    values.update(ACCMode=0, StopReq=0, aReqRaw=0.0, aReqValue=0.0,
+    keep_override_mode = override_mode_allowed and acc_control_enabled and values["ACCMode"] == 2
+    values.update(ACCMode=2 if keep_override_mode else 0, StopReq=0, aReqRaw=0.0, aReqValue=0.0,
                   AccelLimitBandUpper=0.0, AccelLimitBandLower=0.0)
 
   return packer.make_can_msg("SCC_CONTROL", CAN.ECAN, values), values["aReqValue"]

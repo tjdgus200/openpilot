@@ -12,7 +12,7 @@ from opendbc.car.hyundai.steering_handover import SteeringHandover
 from opendbc.car.hyundai.steering_recovery import SimpleSteeringRecovery, DEFAULT_RELEASE_MS, DEFAULT_RECOVERY_MS, read_recovery_settings
 from opendbc.car.hyundai.scc_decel import (
   CameraSccSource, StockDecelAssist, Decision, eligible as scc_decel_eligible,
-  packet_allowed as scc_packet_allowed, DECEL_JERK, RELEASE_JERK,
+  packet_allowed as scc_packet_allowed, gas_override_allowed as scc_gas_override_allowed, DECEL_JERK, RELEASE_JERK,
 )
 from opendbc.car.carlog import carlog
 from openpilot.common.pv5_scc_warning import WarningInputs, capture_inputs, write_inputs
@@ -663,6 +663,8 @@ class CarController(CarControllerBase):
               self.packer, self.CAN, CC.enabled, self.accel_value_last, accel, stopping, CC.cruiseControl.override,
               set_speed_in_units, hud_control, self.hyundai_jerk, CS, self.canfd_stopping, hud_lateral=hud_lateral,
               longitudinal_allowed=scc_allowed,
+              gas_override_allowed=(self.scc_decel_enabled and not scc_allowed
+                                    and scc_gas_override_allowed(CC, CS, now_nanos, self.CAN.ECAN)),
             )
             if msg is not None:
               can_sends.append(msg)

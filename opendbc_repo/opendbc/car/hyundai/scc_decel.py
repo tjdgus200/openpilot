@@ -94,18 +94,11 @@ class CameraSccSource:
     return self.observation
 
 
-def packet_allowed(cc, cs, now, pt_bus):
-  """Driver admission for this opt-in path; retain the existing stationary hold."""
+def _driver_inputs_valid(cs, now, pt_bus):
+  """Shared moving-state checks; neither pedals nor engagement are admitted here."""
   out = cs.out
   wheels = out.wheelSpeeds
   speeds = (out.vEgo, out.vEgoRaw, wheels.fl, wheels.fr, wheels.rl, wheels.rr)
-  stationary_hold = (
-    cs.softHoldActive > 0 and all(math.isfinite(v) for v in speeds) and max(abs(v) for v in speeds) <= MOVING_SPEED and out.cruiseState.available
-  )
-  if stationary_hold:
-    # This experiment must not replace the existing stopped/soft-hold policy.
-    # Its original interlocks remain in create_acc_control_scc2/apply_canfd_stopping.
-    return True
   parser = getattr(cs, "cp", None)
   if parser is None or parser.bus != pt_bus:
     return False
@@ -120,15 +113,37 @@ def packet_allowed(cc, cs, now, pt_bus):
     or not out.canValid
     or out.canTimeout
     or str(out.gearShifter) != "drive"
-    or out.gasPressed
     or out.parkingBrake
     or out.brakeHoldActive
     or cs.paddle_button_prev != 0
-    or cc.cruiseControl.override
   ):
     return False
   braking = out.brakePressed or bool(parser.vl["TCS"]["DriverBraking"])
-  return bool(cc.enabled and cc.longActive and not braking)
+  return not braking
+
+
+def packet_allowed(cc, cs, now, pt_bus):
+  """Longitudinal actuation admission; retain the existing stationary hold."""
+  out = cs.out
+  wheels = out.wheelSpeeds
+  speeds = (out.vEgo, out.vEgoRaw, wheels.fl, wheels.fr, wheels.rl, wheels.rr)
+  stationary_hold = (
+    cs.softHoldActive > 0 and all(math.isfinite(v) for v in speeds) and max(abs(v) for v in speeds) <= MOVING_SPEED and out.cruiseState.available
+  )
+  if stationary_hold:
+    # This experiment must not replace the existing stopped/soft-hold policy.
+    # Its original interlocks remain in create_acc_control_scc2/apply_canfd_stopping.
+    return True
+  return bool(_driver_inputs_valid(cs, now, pt_bus) and cc.enabled and cc.longActive
+              and not out.gasPressed and not cc.cruiseControl.override)
+
+
+def gas_override_allowed(cc, cs, now, pt_bus):
+  """Keep cruise's driver-override mode, never authorize an acceleration request."""
+  return bool(cc.enabled and not cc.longActive and cs.out.gasPressed and cc.cruiseControl.override
+              and not getattr(cc.cruiseControl, "cancel", False)
+              and math.isfinite(cs.out.aEgo) and cs.softHoldActive == 0 and cs.out.carrotCruise == 0
+              and _driver_inputs_valid(cs, now, pt_bus))
 
 
 @dataclass(frozen=True)

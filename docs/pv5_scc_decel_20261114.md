@@ -1,8 +1,8 @@
 # PV5 stock-deceleration experiment
 
 The warning presentation in this original release is superseded by
-[the warning-only follow-up](pv5_scc_warning_policy_20261114.md). Actuation rules
-below remain unchanged.
+[the warning-only follow-up](pv5_scc_warning_policy_20261114.md). Actuation rules are retained except for the driver-override mode correction
+documented below.
 
 `Pv5SccDecelAssist` is default off and read once when CarController starts.
 It is scoped to Hyundai `KIA_PV5`, CAN-FD camera SCC, real-car operation and
@@ -85,3 +85,42 @@ Keep the feature off until hardware and braking-response validation.
   warning priority and settings contracts are covered by PC tests. Whole-system
   device startup, installed Panda, ECU response, display/audio and road behavior
   are unverified. No device was accessed, installed, restarted or auto-enabled.
+
+
+## Gas-held cruise admission correction (2026-11-16)
+
+When this option was on, the actuation gate rejected gas override and the final
+packet forced ACCMode 0, although selfdrived could already be enabled. In a
+historical PV5 recording this matched approximately two seconds of enabled state
+without Panda controlsAllowed. This is evidence of a software path, not proof
+that every reported controlsMismatch has the same cause.
+
+Separate longitudinal actuation admission from driver-override cruise status.
+Only enabled, non-longitudinal, gas-pressed cruise override with fresh accepted
+TCS brake state, valid CAN, Drive, finite motion/acceleration inputs, no driver
+brake/parking/hold/paddle/cancel, and no soft-hold/Carrot-cruise mode may retain
+ACCMode 2. Final aReqRaw, aReqValue, StopReq and acceleration bands remain zero.
+The mode-2 exception cannot revive a numeric fault rejected by the stop controller.
+Other denied states retain mode 0. Gas release returns through normal admission;
+it does not retain old stock-deceleration state. Existing stationary soft hold,
+default-off/startup-only setting and non-PV5/OFF packet bytes remain unchanged.
+No mismatch check, Panda safety source, acceleration bound, model or alert changes.
+
+PC regression checks include final packet decoding and the compiled, unchanged
+production Panda receive/transmit hooks, including both accelerator-disengagement
+policies. Params are replaced with an in-memory test object; no device or native
+persistent Params service is exercised.
+
+A timestamp-sorted fixed-input replay of the historical 20.652..30.652-second
+window generated 500 packets per variant. Across the 100 packets between recorded
+engagement and the recorded first controlsMismatch, baseline mode 0 changed to
+mode 2; native Panda controlsAllowed observations changed from 0/100 to 100/100.
+Raw/value/StopReq remained zero in all 100 packets. Both variants passed CRC,
+counter continuity and native TX admission. The replay retains recorded CC/CS
+states (including the original disengagement); it does not run closed-loop
+selfdrived, Panda transport/heartbeat scheduling or an ECU. Jerk inputs were fixed
+at upper/lower 1/5; lead-display state was omitted equally in both variants.
+Consequently this is not a measured braking curve, a complete firmware test or
+proof that the alert is absent in a vehicle. Installed-firmware and hardware
+verification remain required; this correction does not enable the experimental
+feature or install/reboot a device.
