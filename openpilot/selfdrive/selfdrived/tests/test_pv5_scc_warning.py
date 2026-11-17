@@ -347,10 +347,10 @@ def test_actual_selfdrived_routing_uses_current_output_and_single_warning_varian
   exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), 'production-warning-routing', 'exec'), scope)
 
   class SM(dict):
-    valid = {'carOutput': True}
-    logMonoTime = {'carOutput': T}
+    valid = {'carOutput': True, 'radarState': False}
+    logMonoTime = {'carOutput': T, 'radarState': 0}
 
-  sm = SM()
+  sm = SM(radarState=None)
   received = []
   owner = NS(pv5_scc_supported=True, scc_warning=None, enabled=True, CP=cp(), sm=sm, events=NS(add=received.append))
 

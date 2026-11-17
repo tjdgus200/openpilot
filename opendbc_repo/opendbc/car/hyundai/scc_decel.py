@@ -140,12 +140,40 @@ def packet_allowed(cc, cs, now, pt_bus):
               and not out.gasPressed and not cc.cruiseControl.override)
 
 
+def driver_cancel_button(out):
+  # Both edges withdraw override admission; no wait for selfdrived propagation.
+  return any(str(event.type) in ("cancel", "mainCruise") for event in getattr(out, "buttonEvents", ()))
+
+
+def stock_cancel_only(cp, out, cc):
+  """Tag only controlsd's enabled non-PCM cancellation, never a driver request."""
+  return bool(eligible(cp) and not cp.pcmCruise and cc.enabled and cc.cruiseControl.cancel
+              and not driver_cancel_button(out))
+
+
 def gas_override_allowed(cc, cs, now, pt_bus):
   """Keep cruise's driver-override mode, never authorize an acceleration request."""
+  cp = getattr(cs, "CP", None)
+  stock_only = (getattr(cc.cruiseControl, "pv5StockCancelOnly", False) and cp is not None
+                and eligible(cp) and not cp.pcmCruise)
   return bool(cc.enabled and not cc.longActive and cs.out.gasPressed and cc.cruiseControl.override
-              and not getattr(cc.cruiseControl, "cancel", False)
+              and (not getattr(cc.cruiseControl, "cancel", False) or stock_only)
+              and not driver_cancel_button(cs.out)
               and math.isfinite(cs.out.aEgo) and cs.softHoldActive == 0 and cs.out.carrotCruise == 0
               and _driver_inputs_valid(cs, now, pt_bus))
+
+
+class GasOverrideAdmission:
+  """A local cancel edge cannot rearm through a delayed enabled control frame."""
+  def __init__(self):
+    self.cancel_pending = False
+
+  def update(self, cc, cs, now, pt_bus):
+    if not cc.enabled:
+      self.cancel_pending = False
+    elif driver_cancel_button(cs.out):
+      self.cancel_pending = True
+    return not self.cancel_pending and gas_override_allowed(cc, cs, now, pt_bus)
 
 
 @dataclass(frozen=True)

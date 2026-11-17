@@ -12,7 +12,7 @@ from opendbc.car.hyundai.steering_handover import SteeringHandover
 from opendbc.car.hyundai.steering_recovery import SimpleSteeringRecovery, DEFAULT_RELEASE_MS, DEFAULT_RECOVERY_MS, read_recovery_settings
 from opendbc.car.hyundai.scc_decel import (
   CameraSccSource, StockDecelAssist, Decision, eligible as scc_decel_eligible,
-  packet_allowed as scc_packet_allowed, gas_override_allowed as scc_gas_override_allowed, DECEL_JERK, RELEASE_JERK,
+  packet_allowed as scc_packet_allowed, GasOverrideAdmission, DECEL_JERK, RELEASE_JERK,
 )
 from opendbc.car.carlog import carlog
 from openpilot.common.pv5_scc_warning import WarningInputs, capture_inputs, write_inputs
@@ -202,6 +202,7 @@ class CarController(CarControllerBase):
     self.hyundai_jerk = HyundaiJerk()
     # Startup-only opt-in: changing this experiment requires an offroad restart.
     self.scc_decel_enabled = scc_decel_eligible(CP) and Params().get_bool("Pv5SccDecelAssist")
+    self.scc_override_admission = GasOverrideAdmission() if self.scc_decel_enabled else None
     self.scc_decel_source = CameraSccSource(hyundaicanfd.hkg_can_fd_checksum) if self.scc_decel_enabled else None
     self.scc_decel = StockDecelAssist() if self.scc_decel_enabled else None
     self.scc_decel_decision = Decision(0.0)
@@ -274,6 +275,8 @@ class CarController(CarControllerBase):
     return self.scc_decel_decision.accel if allowed else 0.0, allowed
 
   def update(self, CC, CS, now_nanos):
+    scc_gas_allowed = (self.scc_override_admission.update(CC, CS, now_nanos, self.CAN.ECAN)
+                       if self.scc_override_admission is not None else False)
 
     if not self.steering_template_ready and self.CP.flags & HyundaiFlags.CANFD and self.CP.flags & HyundaiFlags.CAMERA_SCC:
       template = CS.lfa_alt if self.CP.flags & HyundaiFlags.ANGLE_CONTROL else CS.lfa
@@ -664,7 +667,7 @@ class CarController(CarControllerBase):
               set_speed_in_units, hud_control, self.hyundai_jerk, CS, self.canfd_stopping, hud_lateral=hud_lateral,
               longitudinal_allowed=scc_allowed,
               gas_override_allowed=(self.scc_decel_enabled and not scc_allowed
-                                    and scc_gas_override_allowed(CC, CS, now_nanos, self.CAN.ECAN)),
+                                    and scc_gas_allowed),
             )
             if msg is not None:
               can_sends.append(msg)

@@ -261,7 +261,9 @@ class SelfdriveD:
       if self.scc_warning is None:
         self.scc_warning = SccWarning()
       cue = self.scc_warning.update(self.CP, CS, scc_output, self.sm.logMonoTime['carOutput'], now_ns,
-                                    enabled=self.enabled, output_valid=self.sm.valid['carOutput'])
+                                    enabled=self.enabled, output_valid=self.sm.valid['carOutput'],
+                                    radar=self.sm['radarState'], radar_stamp=self.sm.logMonoTime['radarState'],
+                                    radar_valid=self.sm.valid['radarState'])
       if cue.level:
         event = EventName.pv5SccDecelInfo if cue.level == 1 else EventName.pv5SccDecel if cue.audible else EventName.pv5SccDecelSilent
         self.events.add(event)

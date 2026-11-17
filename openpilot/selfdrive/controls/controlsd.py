@@ -16,7 +16,7 @@ from collections import deque
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.hyundai.stop_object import signal_stop_object_requested
-from opendbc.car.hyundai.scc_decel import feedback_active as scc_decel_feedback_active, eligible as scc_decel_eligible
+from opendbc.car.hyundai.scc_decel import feedback_active as scc_decel_feedback_active, eligible as scc_decel_eligible, stock_cancel_only
 from opendbc.car.volkswagen.values import MEB_CURVATURE_PID_KP, MEB_CURVATURE_PID_KI, MEB_CURVATURE_PID_KF, MEB_CURVATURE_MAX
 
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature, get_lag_adjusted_curvature, is_volkswagen_meb
@@ -327,6 +327,7 @@ class Controls:
 
     CC.cruiseControl.override = CC.enabled and not CC.longActive and self.CP.openpilotLongitudinalControl
     CC.cruiseControl.cancel = CS.cruiseState.enabled and (not CC.enabled or not self.CP.pcmCruise)
+    CC.cruiseControl.pv5StockCancelOnly = stock_cancel_only(self.CP, CS, CC)
 
     carrot_man = get_carrot_man(self.sm)
     desired_kph = CS.vCruiseCluster if carrot_man is None else min(CS.vCruiseCluster, carrot_man.desiredSpeed)

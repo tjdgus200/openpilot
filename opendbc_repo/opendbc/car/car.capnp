@@ -534,6 +534,7 @@ struct CarControl {
     cancel @0: Bool;
     resume @1: Bool;
     override @4: Bool;
+    pv5StockCancelOnly @5: Bool; # explicit producer provenance; absent/old senders remain false
     speedOverrideDEPRECATED @2: Float32;
     accelOverrideDEPRECATED @3: Float32;
   }

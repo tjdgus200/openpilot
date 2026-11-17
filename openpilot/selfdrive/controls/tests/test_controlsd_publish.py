@@ -11,6 +11,7 @@ from openpilot.selfdrive.carrot.carrot_man_input import get_carrot_man
 from openpilot.selfdrive.monitoring.dm_alerts import driver_monitoring_hud_alert
 from opendbc.car.hyundai.stop_object import signal_stop_object_requested
 from opendbc.car.hyundai.values import HyundaiFlags
+from opendbc.car.hyundai.scc_decel import stock_cancel_only
 
 
 class Messages(dict):
@@ -55,6 +56,7 @@ def publish_fixture(brand, flags, enabled, fingerprint='KIA_PV5'):
     'get_carrot_man': get_carrot_man,
     'driver_monitoring_hud_alert': driver_monitoring_hud_alert,
     'signal_stop_object_requested': signal_stop_object_requested,
+    'stock_cancel_only': stock_cancel_only,
     'messaging': NS(new_message=new_message),
   }
   exec(compile(ast.Module(body=[publish], type_ignores=[]), str(path), 'exec'), namespace)
