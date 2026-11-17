@@ -208,3 +208,12 @@ batch receives one file fsync and one transactional DB checkpoint; a lost reply
 reconciles through the next manifest, and an unacknowledged tail is discarded
 before the next append. No parallel copier/encoder or new observer is introduced.
 A new module identity and fresh approved home admission are required.
+
+
+### Strong driving event review (2026-11-17)
+
+The earlier critical-only dispatch restriction is extended only for screened
+`hard_deceleration` and `stock_scc_hard_request` candidates with risk-first review
+windows. Ordinary assistance remains quiet. See
+[stopped-vehicle event transfer](../../docs/pv5_stationary_event_upload.md) for the
+separately qualified, default-off device mode and unchanged home transfer scope.

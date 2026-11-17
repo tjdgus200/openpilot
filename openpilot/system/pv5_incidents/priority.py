@@ -1,5 +1,5 @@
 """Coded critical/error routing only. Never changes in-car alert/control behavior."""
-PROFILE = "critical-errors-only-v1"
+PROFILE = "critical-errors-and-strong-driving-events-v2"
 FAULT_ALERTS = frozenset((
   "accFaulted", "actuatorsApiUnavailable", "calibrationInvalid", "cameraFrameRate", "cameraMalfunction",
   "canBusMissing", "canError", "commIssue", "commIssueAvgFreq", "controlsMismatch", "cruiseMismatch",
@@ -23,8 +23,17 @@ def reportable(fact):
   return fact.get("kind") == "system_alert" and type(fact.get("code")) is str and fact["code"] in REPORTABLE_ALERTS
 
 
+def strong_driving_event(summary):
+  # Only the bounded PC risk-first result can wake analysis for non-fault events.
+  kinds = {'hard_deceleration', 'stock_scc_hard_request'}
+  return (summary.get('screening_policy') == 'risk-first-v1'
+          and summary.get('status') == 'review_candidates'
+          and any(row.get('kind') in kinds for row in summary.get('candidates', []))
+          and any(set(row.get('reasons', [])) & kinds for row in summary.get('review_windows', [])))
+
+
 def archive_reviewable(summary):
-  return (summary.get("status") == "analysis_failed"
+  return (strong_driving_event(summary) or summary.get("status") == "analysis_failed"
           or bool(set(summary.get("error_codes", [])) & REPORTABLE_ALERTS)
           or any(row.get("kind") == "recorded_stock_aeb" for row in summary.get("candidates", [])))
 
@@ -32,7 +41,7 @@ def archive_reviewable(summary):
 def fault_key(summary):
   """Repeated diagnostic faults in the same recorded version add no new cause."""
   codes = set(summary.get("error_codes", []))
-  if codes & CRITICAL_ALERTS or any(row.get("kind") == "recorded_stock_aeb" for row in summary.get("candidates", [])):
+  if strong_driving_event(summary) or codes & CRITICAL_ALERTS or any(row.get("kind") == "recorded_stock_aeb" for row in summary.get("candidates", [])):
     return None  # Distinct urgent driving episodes retain the existing cooldown.
   faults = tuple(sorted(codes & FAULT_ALERTS))
   if faults:
