@@ -45,7 +45,7 @@ if OPENPILOT_ROOT is not None:
     sys.path.insert(0, str(package_root))
 
 from openpilot.common.hud_driving_feedback import (
-    angle_steering_demand, driving_notice_events, lane_line_probabilities, pv5_steering_warning,
+    angle_steering_demand, driving_notice_events, lead_brake_sample, lane_line_probabilities, pv5_steering_warning,
 )
 from openpilot.selfdrive.carrot.deceleration_source import (
     deceleration_banner_text, deceleration_source_presentation, external_navigation_connected,
@@ -473,6 +473,7 @@ class OpenpilotLiveSource:
         deceleration_banner = None
         steering_warning = 0
         notices = ()
+        braking = None
         curve_speed = None
         lane_change_direction = None
         if onroad:
@@ -482,6 +483,7 @@ class OpenpilotLiveSource:
                 # The confirmed radarCutin alert arrives through selfdriveState.
                 # Retire continuously active risk/tracking/braking popups only.
                 notices = tuple(e for e in driving_notice_events(self.sm, now) if not e.startswith('cutin'))
+                braking = lead_brake_sample(self.sm, now)
                 if 'laneChange' in notices:
                     lane_change_direction = str(self.sm['modelV2'].meta.laneChangeDirection)
                 if 'curve' in notices:
@@ -511,6 +513,7 @@ class OpenpilotLiveSource:
             deceleration_banner=deceleration_banner,
             steering_warning=steering_warning,
             driving_notices=notices,
+            lead_brake_sample=braking,
             driving_lane_change_direction=lane_change_direction,
             curve_approach_speed_kph=curve_speed,
             alert=self._live_cluster_alert(state.alert, onroad),

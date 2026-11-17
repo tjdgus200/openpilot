@@ -188,6 +188,106 @@ class DrivingPopupSlide:
     return top - height * .75 * remaining ** 3
 
 
+# Display-only policy, not braking or collision-warning thresholds.
+LEAD_BRAKE_MIN_DECEL = 1.0
+LEAD_BRAKE_CONFIRM_SECONDS = .3
+LEAD_BRAKE_DISPLAY_SECONDS = 1.5
+LEAD_BRAKE_RECOVER_ACCEL = -.3
+LEAD_BRAKE_RECOVER_SECONDS = 2.
+
+
+@dataclass(frozen=True)
+class LeadBrakeSample:
+  track_id: int | None
+  plan_accel: float
+  lead_accel: float
+
+
+class LeadBrakeEpisode:
+  """One informational notice per observed target braking episode."""
+  def __init__(self):
+    self.reset()
+
+  def reset(self):
+    self._episodes = {}
+    self._candidate = None
+    self._since = None
+    self._last = None
+
+  def update(self, sample, now, *, allowed):
+    if not math.isfinite(now):
+      return False
+    if self._last is not None and now < self._last:
+      self.reset()
+    gap = self._last is not None and now - self._last > .5
+    self._last = now
+    if gap or sample is None:
+      self._candidate = self._since = None
+      for item in self._episodes.values():
+        item['recovery'] = None
+        item['until'] = now
+      if sample is None:
+        return False
+    if not all(math.isfinite(v) for v in (sample.plan_accel, sample.lead_accel)):
+      return self.update(None, now, allowed=False)
+    key = ('radar', sample.track_id) if sample.track_id is not None else ('unknown',)
+    # Never infer recovery from missing/stale data, target switches or a cooldown.
+    for other, item in self._episodes.items():
+      if other != key:
+        item['recovery'] = None
+        item['until'] = now
+    item = self._episodes.get(key)
+    if item is not None:
+      recovered = sample.plan_accel >= LEAD_BRAKE_RECOVER_ACCEL and sample.lead_accel >= LEAD_BRAKE_RECOVER_ACCEL
+      item['recovery'] = (now if item['recovery'] is None else item['recovery']) if recovered else None
+      if item['recovery'] is not None and now - item['recovery'] >= LEAD_BRAKE_RECOVER_SECONDS:
+        del self._episodes[key]
+        item = None
+    strong = sample.plan_accel <= -LEAD_BRAKE_MIN_DECEL and sample.lead_accel <= -LEAD_BRAKE_MIN_DECEL
+    if item is not None and (not strong or not allowed):
+      item['until'] = now
+    if not strong:
+      self._candidate = self._since = None
+      return False
+    if self._candidate != key:
+      self._candidate, self._since = key, now
+    if item is not None:
+      return allowed and now < item['until']
+    if not allowed or now - self._since < LEAD_BRAKE_CONFIRM_SECONDS:
+      return False
+    # Bound memory without evicting a still-latched episode and retriggering it.
+    if len(self._episodes) >= 16:
+      return False
+    self._episodes[key] = {'until': now + LEAD_BRAKE_DISPLAY_SECONDS, 'recovery': None}
+    return True
+
+
+def _notice_current(sm, now, service, limit, started_frame=None):
+  if (sm.valid.get(service, False) and sm.alive.get(service, False)
+      and (started_frame is None or sm.recv_frame.get(service, -1) >= started_frame)
+      and -1e-6 <= now - sm.recv_time.get(service, 0.) <= limit
+      and -1e-6 <= now - sm.logMonoTime.get(service, 0) * 1e-9 <= limit):
+    return sm[service]
+  return None
+
+
+def lead_brake_sample(sm, now, *, started_frame=None):
+  car = _notice_current(sm, now, 'carState', .3, started_frame)
+  control = _notice_current(sm, now, 'carControl', .3, started_frame)
+  radar = _notice_current(sm, now, 'radarState', .5, started_frame)
+  plan = _notice_current(sm, now, 'longitudinalPlan', .5, started_frame)
+  if (car is None or not car.canValid or car.canTimeout or str(car.gearShifter) != 'drive' or car.gasPressed
+      or control is None or not control.longActive or radar is None or plan is None):
+    return None
+  source = str(plan.longitudinalPlanSource)
+  lead = radar.leadOne if source == 'lead0' else radar.leadTwo if source == 'lead1' else None
+  if (lead is None or not lead.status or not math.isfinite(lead.dRel) or lead.dRel <= 0
+      or not math.isfinite(lead.aLeadK) or not math.isfinite(plan.aTarget)):
+    return None
+  track_id = int(lead.radarTrackId) if lead.radar and lead.radarTrackId >= 0 else None
+  return LeadBrakeSample(track_id, plan.aTarget, lead.aLeadK)
+
+
 class DrivingNoticeTracker:
   """Select the highest-priority notice while its fresh source remains active."""
   def __init__(self):
@@ -195,10 +295,11 @@ class DrivingNoticeTracker:
 
   def reset(self) -> None:
     self.active: str | None = None
+    self._lead_brake = LeadBrakeEpisode()
     self._stage = None
     self._stage_since = 0.
 
-  def update(self, events: tuple[str, ...], now: float, *, blocked=False, decelerating=False) -> str | None:
+  def update(self, events: tuple[str, ...], now: float, *, blocked=False, decelerating=False, lead_brake=None) -> str | None:
     stage = next((e for e in events if e in ('cutinBrake', 'cutinTrack')), None)
     if blocked or stage != self._stage or now < self._stage_since:
       self._stage, self._stage_since = stage, now
@@ -211,6 +312,9 @@ class DrivingNoticeTracker:
       visible = ()
     elif decelerating:
       visible = tuple(event for event in events if event in DRIVING_NOTICE_OVER_DECEL)
+    lead_allowed = ('leadBrake' in visible and not any(_POPUP_PRIORITY[e] < _POPUP_PRIORITY['leadBrake'] for e in visible))
+    if not self._lead_brake.update(lead_brake, now, allowed=lead_allowed):
+      visible = tuple(e for e in visible if e != 'leadBrake')
     self.active = min(visible, key=_POPUP_PRIORITY.__getitem__, default=None)
     return self.active
 
@@ -218,14 +322,7 @@ class DrivingNoticeTracker:
 def driving_notice_events(sm, now: float, *, started_frame: int | None = None) -> tuple[str, ...]:
   """Read existing perception and planner states for display only."""
   def current(service, limit):
-    # Jetlink translates a floating-point receive timestamp and an integer
-    # event timestamp into the same monotonic clock. Allow rounding at zero age.
-    if (sm.valid.get(service, False) and sm.alive.get(service, False)
-        and (started_frame is None or sm.recv_frame.get(service, -1) >= started_frame)
-        and -1e-6 <= now - sm.recv_time.get(service, 0.) <= limit
-        and -1e-6 <= now - sm.logMonoTime.get(service, 0) * 1e-9 <= limit):
-      return sm[service]
-    return None
+    return _notice_current(sm, now, service, limit, started_frame)
 
   car = current('carState', .3)
   if car is None or not car.canValid or car.canTimeout or str(car.gearShifter) != 'drive':
@@ -256,13 +353,9 @@ def driving_notice_events(sm, now: float, *, started_frame: int | None = None) -
     if (str(model.meta.laneChangeState) in ('laneChangeStarting', 'laneChangeFinishing')
         and str(model.meta.laneChangeDirection) in ('left', 'right')):
       events.append('laneChange')
-  if radar is not None and control is not None and control.longActive and not car.gasPressed:
-    plan = current('longitudinalPlan', .5)
-    if plan is not None and math.isfinite(plan.aTarget) and plan.aTarget < -.1:
-      source = str(plan.longitudinalPlanSource)
-      lead = radar.leadOne if source == 'lead0' else radar.leadTwo if source == 'lead1' else None
-      if lead is not None and in_front(lead) and math.isfinite(lead.aLeadK) and lead.aLeadK < -.2:
-        events.append('leadBrake')
+  braking = lead_brake_sample(sm, now, started_frame=started_frame)
+  if braking is not None and braking.plan_accel <= -LEAD_BRAKE_MIN_DECEL and braking.lead_accel <= -LEAD_BRAKE_MIN_DECEL:
+    events.append('leadBrake')
   carrot = current('carrotMan', 1.)
   if model is not None and carrot is not None and math.isfinite(car.vEgo):
     ratio = car.vCluRatio if .5 < car.vCluRatio <= 1.2 else 1.

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pyray as rl
 from openpilot.common.constants import CV
 from openpilot.common.hud_driving_feedback import (
-  DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, driving_popup_colors,
+  DrivingNoticeTracker, DrivingPopupSlide, driving_notice_events, lead_brake_sample, driving_popup_colors,
   STATIC_NOTICE_ROWS, STATIC_NOTICE_SIZE, DRIVING_POPUP_ICON_SCALE,
   LANE_CENTER_STATUS, angle_steering_demand, lane_line_probabilities,
   lane_confidence_score, lane_confidence_grade, lane_probability_text, pv5_steering_warning,
@@ -246,13 +246,14 @@ class Pv5DrivingFeedbackOverlay:
     # Confirmed cut-ins use selfdrived's silent radarCutin alert. Do not also
     # display continuously active risk/tracking/braking status as popups.
     events = tuple(e for e in driving_notice_events(sm, now, started_frame=started_frame) if not e.startswith('cutin'))
+    braking = lead_brake_sample(sm, now, started_frame=started_frame)
     if self.warning:
-      self._driving_notices.update(events, now, blocked=True)
+      self._driving_notices.update(events, now, blocked=True, lead_brake=braking)
       self.popup_slide.reset()
       return
     warning = pv5_steering_warning(sm, now, cp=ui_state.CP, started_frame=started_frame)
     deceleration = None if warning else sample_deceleration_popup(sm, started_frame, now, set_speed_kph)
-    notice = self._driving_notices.update(events, now, blocked=bool(warning), decelerating=bool(deceleration))
+    notice = self._driving_notices.update(events, now, blocked=bool(warning), decelerating=bool(deceleration), lead_brake=braking)
     curve_speed = sm['carrotMan'].vTurnSpeed if notice == 'curve' else None
     direction = str(sm['modelV2'].meta.laneChangeDirection) if notice == 'laneChange' else None
     decel_label = deceleration_source_presentation(sm['carrotMan'].desiredSource)[0] if deceleration else None

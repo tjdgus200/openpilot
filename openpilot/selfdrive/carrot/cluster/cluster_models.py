@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from openpilot.common.hud_driving_feedback import LeadBrakeSample
+
 from cluster_battery import BatteryPanelData
 from cluster_config import DEFAULT_LANE_WIDTH_M, WHITE
 
@@ -514,6 +516,7 @@ class ClusterUiState:
     deceleration_banner: str | None = None
     steering_warning: int = 0
     driving_notices: tuple[str, ...] = ()
+    lead_brake_sample: LeadBrakeSample | None = None
     driving_lane_change_direction: str | None = None
     curve_approach_speed_kph: float | None = None
     cruise_override_label: str | None = None

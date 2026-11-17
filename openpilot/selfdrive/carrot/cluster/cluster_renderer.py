@@ -3973,8 +3973,11 @@ class ClusterUiRenderer:
         try:
             screen_mode = self._effective_screen_mode(state)
             charging_dashboard = self._charging_dashboard_visible(state)
+            if not getattr(state, "onroad", False):
+                self._driving_notices.reset()
             if charging_dashboard or screen_mode in (CLUSTER_SCREEN_MODE_NAVI, CLUSTER_SCREEN_MODE_DEBUG_GRAPH):
-                self._driving_notices.update(getattr(state, "driving_notices", ()), time.monotonic(), blocked=True)
+                self._driving_notices.update(getattr(state, "driving_notices", ()), time.monotonic(), blocked=True,
+                                             lead_brake=getattr(state, "lead_brake_sample", None))
             if charging_dashboard:
                 self._popup_slide.reset()
                 self._draw_battery_panel(state)
@@ -7605,7 +7608,8 @@ class ClusterUiRenderer:
         warning = state.steering_warning
         blocked = not state.onroad or (state.alert is not None and (state.alert.size > 0 or state.alert.status == 2))
         notice = self._driving_notices.update(state.driving_notices, now, blocked=bool(warning or blocked),
-                                              decelerating=bool(state.deceleration_banner))
+                                              decelerating=bool(state.deceleration_banner),
+                                              lead_brake=state.lead_brake_sample)
         if blocked:
             self._popup_slide.reset()
             return False

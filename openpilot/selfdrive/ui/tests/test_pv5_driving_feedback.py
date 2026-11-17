@@ -245,6 +245,9 @@ def test_notices_use_fresh_confirmed_states_and_keep_detection_separate_from_bra
   radar.leadTwo.status = True
   radar.leadTwo.dRel = 22.
   radar.leadTwo.aLeadK = -.6
+  assert 'leadBrake' not in driving_notice_events(sm, 100.)
+  radar.leadTwo.aLeadK = -1.2
+  sm['longitudinalPlan'].aTarget = -1.1
   assert driving_notice_events(sm, 100.) == ('cutin', 'laneChange', 'leadBrake', 'curve')
   sm['carState'].gasPressed = True
   assert 'leadBrake' not in driving_notice_events(sm, 100.)
@@ -323,7 +326,7 @@ def test_cutin_stage_dwell_never_retains_a_confirmation_without_fresh_evidence()
   assert tracker.update(('cutin',), 10.68) == 'cutin'
 
 
-@pytest.mark.parametrize('notice', ('cutin', 'laneChange', 'leadBrake', 'curve'))
+@pytest.mark.parametrize('notice', ('cutin', 'laneChange', 'curve'))
 def test_notice_stays_for_entire_condition_and_exits_only_when_it_ends(notice):
   tracker, slide = DrivingNoticeTracker(), DrivingPopupSlide()
   assert slide.update(100., notice=tracker.update((notice,), 100.), lane_direction='left') is not None
@@ -463,6 +466,12 @@ def test_static_notice_draws_one_atlas_tile_and_keeps_copy(key, monkeypatch):
     raise AssertionError('Static notice must not draw animated dots')
   monkeypatch.setattr(feedback.rl, 'draw_circle_v', no_dots)
   # Stage confirmation affects timing, not the final shape or text.
+  if notice == 'leadBrake':
+    from openpilot.common.hud_driving_feedback import LeadBrakeSample
+    braking = LeadBrakeSample(7, -1.2, -1.3)
+    monkeypatch.setattr(feedback, 'lead_brake_sample', lambda *args, **kwargs: braking)
+    overlay._popup_started_frame = 10
+    overlay._driving_notices.update((notice,), 99.6, lead_brake=braking)
   if notice in ('cutinTrack', 'cutinBrake'):
     overlay._popup_started_frame = 10
     overlay._driving_notices.update((notice,), 99.)
