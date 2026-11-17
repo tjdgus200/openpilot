@@ -13,6 +13,11 @@ from tools.pv5_remote import restore_supervisor as s
 
 
 class RestoreSupervisorChecks(unittest.TestCase):
+  def setUp(self):
+    selected = patch.object(s, 'qualified_interpreter', return_value=sys.executable)
+    selected.start()
+    self.addCleanup(selected.stop)
+
   def run_loop(self, results, configured=None):
     records, sleeps = [], []
     with patch.object(s, 'configured', side_effect=configured or [True] * (len(results) + 1)), \
@@ -161,6 +166,44 @@ class RestoreSupervisorChecks(unittest.TestCase):
       finally:
         unrelated.terminate()
         unrelated.wait(timeout=3)
+
+
+
+class QualifiedInterpreterChecks(unittest.TestCase):
+  def fixture(self, root):
+    script = "def unit_text(interpreter):\n return " + repr('[Service]\nExecStart=') + " + interpreter + " + repr(' ' + str(root / 'conditional_remote.py') + ' --guard\n') + "\n"
+    (root/'conditional_remote.py').write_text(script)
+    unit = '[Service]\nExecStart=' + sys.executable + ' ' + str(root/'conditional_remote.py') + ' --guard\n'
+    (root/s.UNIT).write_text(unit)
+    (root/'conditional_modes.json').write_text(json.dumps({'boot_restore':True,'trial':False,'qualified_modes':['detached_home'],
+      'resource_policy':'detached_home_uncapped_v1','guard_sha256':hashlib.sha256(script.encode()).hexdigest()}))
+    return unit
+
+  @unittest.skipUnless(sys.platform == 'linux', 'Linux absolute interpreter paths')
+  def test_registered_interpreter_selected_independently_of_launcher_path(self):
+    with tempfile.TemporaryDirectory() as folder, patch.object(s,'ROOT',Path(folder)), patch.object(s,'protected'):
+      root=Path(folder);self.fixture(root)
+      registered=sys.executable
+      self.assertEqual(s.qualified_interpreter(), registered)
+      calls=[]
+      def run(args, timeout):
+        calls.append(args)
+        return (0,b'{"already_running":true}') if '--restore-runtime' in args else (0,b'active')
+      with patch.object(s.sys,'executable','/different/bootstrap/python3'), patch.object(s,'run_bounded',side_effect=run):
+        self.assertEqual(s.attempt_restore()[0],'ready')
+      self.assertEqual(calls[0][0],registered)
+      self.assertFalse(any('restart' in args or 'stop' in args for args in calls))
+
+  @unittest.skipUnless(sys.platform == 'linux', 'Linux absolute interpreter paths')
+  def test_changed_unit_arguments_and_guard_hash_rejected(self):
+    with tempfile.TemporaryDirectory() as folder, patch.object(s,'ROOT',Path(folder)), patch.object(s,'protected'):
+      root=Path(folder);unit=self.fixture(root)
+      for altered in (unit+'ExecStart=/bin/sh -c unsafe\n', unit.replace(' --guard',' --guard extra'),unit.replace('[Service]','[Service]\nUser=other')):
+        (root/s.UNIT).write_text(altered)
+        with self.assertRaises(ValueError):s.qualified_interpreter()
+      (root/s.UNIT).write_text(unit)
+      with (root/'conditional_remote.py').open('a') as f:f.write('# changed')
+      with self.assertRaisesRegex(ValueError,'matching_code'):s.qualified_interpreter()
 
 
 if __name__ == '__main__':

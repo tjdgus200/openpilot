@@ -210,3 +210,7 @@ The protected installed guard and qualified PC connector are separately pinned
 artifacts. A repository pull is not proof that those running copies changed.
 Report their installed identity and pending qualification separately; never
 rewrite an attestation hash merely to make versions appear equal.
+
+### Enrolled Python at boot
+
+The boot supervisor selects the absolute Python executable from the protected, already-qualified service unit, validates the complete unit against the enrolled guard template and verifies the executable metadata. It does not depend on sudo PATH or migrate qualification. Changed guard hashes, unit arguments and untrusted executables remain blocked. Existing active sessions are not restarted.

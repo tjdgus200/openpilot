@@ -4,6 +4,8 @@ import errno
 import hashlib
 import json
 import os
+import re
+import runpy
 from pathlib import Path
 import signal
 import subprocess
@@ -21,6 +23,7 @@ PERMANENT = frozenset({
   'active_unit_identity', 'existing_session_active_nothing_stopped',
   'owner_comma_local_install_required', 'systemd_required', 'unsafe_install_lock',
   'qualification_size', 'enrolled_binary_identity', 'existing_openssh_required',
+  'qualified_interpreter_metadata_invalid',
 })
 STAGES = frozenset({'entry', 'boot_qualification', 'runtime_unit_restore'})
 
@@ -87,12 +90,42 @@ def run_bounded(args, timeout):
   return child.returncode, output
 
 
+def qualified_interpreter():
+  # Select only the interpreter in the already-enrolled protected unit. Do not
+  # use sudo's PATH, rewrite the unit, migrate qualification, or restart a guard.
+  if not configured():
+    raise ValueError('qualified_interpreter_metadata_invalid')
+  unit = ROOT / UNIT
+  protected(unit)
+  if unit.stat().st_size > 16384:
+    raise ValueError('qualified_interpreter_metadata_invalid')
+  data = unit.read_bytes()
+  pattern = rb'^ExecStart=(/[A-Za-z0-9_./-]{1,255}) ' + re.escape(str(ROOT / 'conditional_remote.py').encode()) + rb' --guard$'
+  matches = re.findall(pattern, data, re.MULTILINE)
+  if len(matches) != 1:
+    raise ValueError('qualified_interpreter_metadata_invalid')
+  interpreter = matches[0].decode('ascii')
+  if '..' in Path(interpreter).parts:
+    raise ValueError('qualified_interpreter_metadata_invalid')
+  module = runpy.run_path(str(ROOT / 'conditional_remote.py'))
+  if data != module['unit_text'](interpreter).encode():
+    raise ValueError('qualified_interpreter_metadata_invalid')
+  executable = Path(interpreter).resolve(strict=True)
+  protected(executable)
+  if not os.access(executable, os.X_OK):
+    raise ValueError('qualified_interpreter_metadata_invalid')
+  return interpreter
+
+
 def attempt_restore():
   try:
-    code, output = run_bounded([sys.executable, '-B', str(ROOT / 'conditional_remote.py'), '--restore-runtime'], ATTEMPT_TIMEOUT)
+    interpreter = qualified_interpreter()
+    code, output = run_bounded([interpreter, '-B', str(ROOT / 'conditional_remote.py'), '--restore-runtime'], ATTEMPT_TIMEOUT)
   except subprocess.TimeoutExpired:
     return 'retry', 'attempt_timeout', 'entry'
-  except (OSError, ValueError):
+  except ValueError as error:
+    return 'blocked', str(error) if str(error) in PERMANENT else 'qualified_interpreter_metadata_invalid', 'boot_qualification'
+  except OSError:
     return 'retry', 'restore_execution_failed', 'entry'
   try:
     result = json.loads(output)
