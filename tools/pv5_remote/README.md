@@ -214,3 +214,9 @@ rewrite an attestation hash merely to make versions appear equal.
 ### Enrolled Python at boot
 
 The boot supervisor selects the absolute Python executable from the protected, already-qualified service unit, validates the complete unit against the enrolled guard template and verifies the executable metadata. It does not depend on sudo PATH or migrate qualification. Changed guard hashes, unit arguments and untrusted executables remain blocked. Existing active sessions are not restarted.
+
+## PC connection continuity
+
+`python -m tools.pv5_remote.client --policy <policy>` checks the existing enrolled service with bounded retries of that read-only check. `client.command(policy)` supplies the authenticated SSH arguments for future owner operations: three initial TCP connection attempts and encrypted keepalives every 5 seconds, allowing six missed replies. Authentication and pinned host-key failures are not retried by the checker. Arbitrary commands are never replayed after a disconnect. The server's freshness, state gate, permission pipe, cgroup and watchdog are unchanged.
+
+The PC client release is recorded separately as `conditional_remote.client_code_root` / `client_source_commit`; `conditional_remote.code_root` remains the enrolled guard's verification pin. A resilient transport is not permission for access outside the enrolled modes, and no network session can survive power loss. Boot recovery and the guard reopen availability automatically when their conditions return.
