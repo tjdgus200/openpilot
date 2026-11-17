@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from functools import lru_cache
+from openpilot.common.hud_scc_popup import draw_scc_info_popup
 import base64
 import math
 import os
@@ -4226,6 +4227,8 @@ class ClusterUiRenderer:
                     self._draw_text_with_stroke(reason, center, 350, reason_size,
                                                 WHITE, WHITE, 1, anchor="center", cache=True)
                 return
+            if draw_scc_info_popup(alert, rl.Rectangle(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT), self._draw_scc_popup_text):
+                return
             panel_x = self._driving_panel_offset_design_x()
             panel_w = CAMERA_BACKGROUND_W
             panel_center_x = panel_x + panel_w * 0.5
@@ -4281,6 +4284,11 @@ class ClusterUiRenderer:
                 )
         finally:
             rl.rl_pop_matrix()
+
+    def _draw_scc_popup_text(self, box, text):
+        text, size = self._fit_alert_text(text, box.height * .36, box.width * .92, 20.)
+        self._draw_text_with_stroke(text, box.x + box.width / 2, box.y + box.height / 2,
+                                    size, WHITE, WHITE, 1, anchor="center", cache=True)
 
     def _cluster_alert_text(self, alert: ClusterAlert) -> tuple[str, str]:
         keys = CLUSTER_SYNTHETIC_ALERT_TEXT_KEYS.get(alert.alert_type)

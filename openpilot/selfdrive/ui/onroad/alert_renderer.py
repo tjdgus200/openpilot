@@ -1,4 +1,5 @@
 import time
+from openpilot.common.hud_scc_popup import draw_scc_info_popup
 import pyray as rl
 from dataclasses import dataclass
 from openpilot.cereal import messaging, log
@@ -137,6 +138,9 @@ class AlertRenderer(Widget):
     if not alert:
       return
 
+    if draw_scc_info_popup(alert, rect, self._draw_scc_popup_text):
+      return
+
     alert_rect = self._get_alert_rect(rect, alert.size)
     avoid_speed_panel = (bool(icon_scale) and alert.size != AlertSize.full
                          and getattr(ui_state.CP, 'carFingerprint', '') == 'KIA_PV5')
@@ -162,6 +166,11 @@ class AlertRenderer(Widget):
       text_rect.width -= text_left - text_rect.x
       text_rect.x = text_left
     self._draw_text(text_rect, alert, fit_width=avoid_speed_panel)
+
+  def _draw_scc_popup_text(self, box, text):
+    padding = box.width * 0.04
+    text_rect = rl.Rectangle(box.x + padding, box.y, box.width - 2 * padding, box.height)
+    self._draw_centered(text, text_rect, self.font_bold, box.height * 0.36, fit_width=True)
 
   def _get_alert_rect(self, rect: rl.Rectangle, size: int) -> rl.Rectangle:
     if size == AlertSize.full:

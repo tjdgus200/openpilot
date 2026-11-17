@@ -1,4 +1,5 @@
 import time
+from openpilot.common.hud_scc_popup import draw_scc_info_popup, is_scc_info_popup
 from enum import StrEnum
 from typing import NamedTuple
 import pyray as rl
@@ -224,6 +225,13 @@ class AlertRenderer(Widget):
   def _render(self, rect: rl.Rectangle) -> bool:
     alert = self.get_alert(ui_state.sm)
 
+    if draw_scc_info_popup(alert, rect, self._draw_scc_popup_text):
+      # Do not retain this information popup in the legacy fade-out buffer.
+      self._prev_alert = None
+      return True
+    if is_scc_info_popup(self._prev_alert):
+      self._prev_alert = None
+
     # Animate fade and slide in/out
     self._alert_y_filter.update(self._rect.y - 50 if alert is None else self._rect.y)
     self._alpha_filter.update(0 if alert is None else 1)
@@ -243,6 +251,15 @@ class AlertRenderer(Widget):
     self._draw_icons(alert_layout)
 
     return True
+
+  def _draw_scc_popup_text(self, box, text):
+    label = self._alert_text1_label
+    label.set_text(text)
+    label.set_text_color(rl.WHITE)
+    label.set_font_size(box.height * 0.36)
+    label.set_alignment(TextAlignment.CENTER)
+    label.render(rl.Rectangle(box.x + box.width * 0.04, box.y + box.height * 0.25,
+                              box.width * 0.92, box.height * 0.60))
 
   def _draw_icons(self, alert_layout: AlertLayout) -> None:
     if alert_layout.icon is None:
