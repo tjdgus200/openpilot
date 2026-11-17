@@ -218,6 +218,7 @@ class UIState:
 
   def update_params(self) -> None:
     # For slower operations
+    self.dashcam_mode = self.params.get("OpenpilotEnabledToggle") in ("0", b"0")
     # Update longitudinal control state
     CP_bytes = self.params.get("CarParamsPersistent")
     if CP_bytes is not None:

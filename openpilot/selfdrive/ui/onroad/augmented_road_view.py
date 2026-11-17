@@ -1,3 +1,4 @@
+from openpilot.selfdrive.ui.widgets.pv5_dashboard import render_dashboard
 import time
 import numpy as np
 import pyray as rl
@@ -144,6 +145,7 @@ class AugmentedRoadView(CameraView):
       large=self._suppress_camera_for_cluster and not self._fov_preview.active, warning=alert_visible,
     )
     _t = time.monotonic() if timing.enabled else 0.0
+    render_dashboard(self._content_rect, onroad=True, alert=alert_visible)
     timing.call('hud', self._hud_renderer.render, self._content_rect)  # includes plot when enabled
     hud_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0
     _t = time.monotonic() if timing.enabled else 0.0

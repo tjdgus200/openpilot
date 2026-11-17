@@ -1,3 +1,4 @@
+from openpilot.selfdrive.ui.widgets.pv5_dashboard import render_dashboard
 import time
 import numpy as np
 import pyray as rl
@@ -294,6 +295,7 @@ class AugmentedRoadView(CameraView):
                                                alert_to_render.visual_alert == car.CarControl.HUDControl.VisualAlert.steerRequired)
     # TODO: have alert renderer draw offroad mici label below
     _t = time.monotonic() if timing.enabled else 0.0
+    render_dashboard(self._content_rect, onroad=True, alert=alert_to_render is not None)
     self._hud_renderer.render(self._content_rect)
     self._vision_renderer.render(self._content_rect)
     hud_ms = (time.monotonic() - _t) * 1000.0 if timing.enabled else 0.0

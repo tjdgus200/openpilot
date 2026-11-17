@@ -1,3 +1,5 @@
+from openpilot.common.pv5_upload_status import show_home
+from openpilot.selfdrive.ui.widgets.pv5_dashboard import render_dashboard
 import datetime
 import time
 
@@ -189,43 +191,47 @@ class MiciHomeLayout(Widget):
     return version, branch, commit[:7], date_str
 
   def _render(self, _):
-    # TODO: why is there extra space here to get it to be flush?
-    text_pos = rl.Vector2(self.rect.x - 2 + HOME_PADDING, self.rect.y - 5)
-    self._openpilot_label.set_position(text_pos.x, text_pos.y)
-    self._openpilot_label.render()
+    if show_home(ui_state):
+      render_dashboard(rl.Rectangle(self.rect.x + HOME_PADDING, self.rect.y,
+                                    self.rect.width - 2 * HOME_PADDING, self.rect.height - 56))
+    else:
+      # TODO: why is there extra space here to get it to be flush?
+      text_pos = rl.Vector2(self.rect.x - 2 + HOME_PADDING, self.rect.y - 5)
+      self._openpilot_label.set_position(text_pos.x, text_pos.y)
+      self._openpilot_label.render()
 
-    if self._version_text is not None:
-      # release branch
-      release_branch = self._version_text[1] in RELEASE_BRANCHES
+      if self._version_text is not None:
+        # release branch
+        release_branch = self._version_text[1] in RELEASE_BRANCHES
 
-      # 1踰덉㎏ 以? carrotpilot ?놁뿉 踰꾩쟾
-      version_y = text_pos.y + self._openpilot_label.font_size - self._version_label.font_size
-      self._version_label.set_text(" " + self._version_text[0])
-      self._version_label.set_position(text_pos.x + self._openpilot_label.text_width + 8, version_y)
-      self._version_label.render()
+        # 1踰덉㎏ 以? carrotpilot ?놁뿉 踰꾩쟾
+        version_y = text_pos.y + self._openpilot_label.font_size - self._version_label.font_size
+        self._version_label.set_text(" " + self._version_text[0])
+        self._version_label.set_position(text_pos.x + self._openpilot_label.text_width + 8, version_y)
+        self._version_label.render()
 
-      line_x = text_pos.x
-      line_y = text_pos.y + self._openpilot_label.font_size + 12
+        line_x = text_pos.x
+        line_y = text_pos.y + self._openpilot_label.font_size + 12
 
-      # 2踰덉㎏ 以? 釉뚮옖移섎챸
-      branch_name = "release" if release_branch else self._version_text[1]
-      self._branch_label.set_max_width(self.rect.width - HOME_PADDING * 2)
-      self._branch_label.set_text(branch_name)
-      self._branch_label.set_position(line_x, line_y)
-      self._branch_label.render()
-      line_y += self._branch_label.font_size + 6
+        # 2踰덉㎏ 以? 釉뚮옖移섎챸
+        branch_name = "release" if release_branch else self._version_text[1]
+        self._branch_label.set_max_width(self.rect.width - HOME_PADDING * 2)
+        self._branch_label.set_text(branch_name)
+        self._branch_label.set_position(line_x, line_y)
+        self._branch_label.render()
+        line_y += self._branch_label.font_size + 6
 
-      # 3踰덉㎏ 以? ?좎쭨 (而ㅻ컠)
-      date_text = self._version_text[3] if release_branch else f"{self._version_text[3]} ({self._version_text[2]})"
-      self._date_label.set_text(date_text)
-      self._date_label.set_position(line_x, line_y)
-      self._date_label.render()
-      line_y += self._date_label.font_size + 6
+        # 3踰덉㎏ 以? ?좎쭨 (而ㅻ컠)
+        date_text = self._version_text[3] if release_branch else f"{self._version_text[3]} ({self._version_text[2]})"
+        self._date_label.set_text(date_text)
+        self._date_label.set_position(line_x, line_y)
+        self._date_label.render()
+        line_y += self._date_label.font_size + 6
 
-      # 4踰덉㎏ 以? wifi(IP) 二쇱냼
-      self._ip_label.set_text(self._ip_address)
-      self._ip_label.set_position(line_x, line_y)
-      self._ip_label.render()
+        # 4踰덉㎏ 以? wifi(IP) 二쇱냼
+        self._ip_label.set_text(self._ip_address)
+        self._ip_label.set_position(line_x, line_y)
+        self._ip_label.render()
 
     # ***** Center-aligned bottom section icons *****
     self._experimental_icon.set_visible(self._experimental_mode)

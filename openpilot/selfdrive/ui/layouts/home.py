@@ -1,3 +1,6 @@
+from openpilot.common.pv5_upload_status import show_home
+from openpilot.selfdrive.ui.ui_state import ui_state
+from openpilot.selfdrive.ui.widgets.pv5_dashboard import render_dashboard
 import time
 import pyray as rl
 from collections.abc import Callable
@@ -191,7 +194,10 @@ class HomeLayout(Widget):
     self.offroad_alert.render(self.content_rect)
 
   def _render_left_column(self):
-    self._prime_widget.render(self.left_column_rect)
+    if show_home(ui_state):
+      render_dashboard(self.left_column_rect)
+    else:
+      self._prime_widget.render(self.left_column_rect)
 
   def _render_right_column(self):
     exp_height = 125
