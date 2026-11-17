@@ -9,6 +9,7 @@ import time
 
 VERSION = 1
 PRIVACY = 'no-audio-cabin-v1'
+PC_RAW = 'owner-pc-filter-v1'
 CHUNK = 65536
 BATCH = 16 * CHUNK  # Home-only negotiated request; hash/resume units remain 64 KiB.
 MAX_MANIFEST = 8192
@@ -29,8 +30,8 @@ def identifier(key, kind, value):
   return hmac.new(key, b'pv5-archive-id-v1\0' + kind.encode() + b'\0' + encode(value), hashlib.sha256).hexdigest()
 
 
-def file_id(key, segment, name, size, mtime_ns):
-  return identifier(key, 'file', [PRIVACY, segment, name, size, mtime_ns])
+def file_id(key, segment, name, size, mtime_ns, privacy=PRIVACY):
+  return identifier(key, 'file', [privacy, segment, name, size, mtime_ns])
 
 
 def advance(chain, body):
@@ -61,10 +62,10 @@ def authenticate(key, path, values, body, now):
   )
 
 
-def manifest(key, value):
+def manifest(key, value, privacy=PRIVACY):
   if not isinstance(value, dict) or set(value) != {'version', 'privacy', 'segment', 'files', 'uploader_commit'}:
     raise ValueError('invalid_manifest')
-  if value['privacy'] != PRIVACY:
+  if privacy not in (PRIVACY, PC_RAW) or value['privacy'] != privacy:
     raise ValueError('privacy_filter_required')
   if value['version'] != VERSION or type(value['version']) is not int:
     raise ValueError('invalid_version')
@@ -84,7 +85,7 @@ def manifest(key, value):
       raise ValueError('invalid_filename')
     if type(size) is not int or not 0 < size <= MAX_FILE or type(mtime) is not int or not 0 < mtime < 2**63:
       raise ValueError('invalid_file_size')
-    if entry['file_id'] != file_id(key, segment, name, size, mtime):
+    if entry['file_id'] != file_id(key, segment, name, size, mtime, privacy):
       raise ValueError('invalid_file_id')
     names.add(name)
   if len(names.intersection(RLOG_NAMES)) > 1:

@@ -56,7 +56,7 @@ class Catalog:
           return True
     return False
 
-  def next(self, uploader_commit):
+  def next(self, uploader_commit, exclude=frozenset()):
     self.check()
     # Fixed bounded metadata scan, only while admitted. Finished immutable segments
     # hit one directory stat/cache lookup; their files are not rescanned.
@@ -68,15 +68,23 @@ class Catalog:
           raise ValueError('archive_directory_budget')
         if SEGMENT.fullmatch(entry.name) and entry.is_dir(follow_symlinks=False):
           names.append(entry.name)
+    # One bounded metadata snapshot per selection, not one SQLite connection per
+    # already-completed directory. Recheck the source identity below as before.
+    with self.db() as db:
+      rows = db.execute('SELECT segment,inode,mtime FROM completed LIMIT 4097').fetchall()
+    if len(rows) > 4096:
+      raise ValueError('archive_catalog_budget')
+    completed = {name: (inode, mtime) for name, inode, mtime in rows}
     for name in sorted(names):
       self.check()
+      if name in exclude:
+        continue
       folder = self.root / name
       try:
         info = folder.stat(follow_symlinks=False)
         if not stat.S_ISDIR(info.st_mode):
           continue
-        with self.db() as db:
-          done = db.execute('SELECT inode,mtime FROM completed WHERE segment=?', (name,)).fetchone()
+        done = completed.get(name)
         if done == (info.st_ino, info.st_mtime_ns):
           continue
         if self.locked(folder):

@@ -30,6 +30,8 @@ MODULES = (
   'archive_runtime.py',
   'archive_stream.py',
   'archive_sanitize.py',
+  'archive_parallel.py',
+  'archive_offload.py',
 )
 
 
@@ -50,7 +52,7 @@ def configuration(path=CONFIG):
     raise ValueError('private_archive_config_required')
   value = json.loads(path.read_bytes())
   if (
-    set(value) != {'version', 'vehicle', 'enabled', 'qualified_modes', 'wifi_profiles', 'module_identity'}
+    set(value) - {'pc_preprocess'} != {'version', 'vehicle', 'enabled', 'qualified_modes', 'wifi_profiles', 'module_identity'}
     or value['version'] != 1
     or value['vehicle'] != 'KIA_PV5'
     or value['enabled'] is not True
@@ -69,6 +71,8 @@ def configuration(path=CONFIG):
     or any(not isinstance(token, str) or not TOKEN.fullmatch(token) for token in profiles)
   ):
     raise ValueError('invalid_archive_admission')
+  if type(value.get('pc_preprocess', False)) is not bool or (value.get('pc_preprocess') and modes != ['detached_offroad']):
+    raise ValueError('pc_preprocess_home_only')
   return value
 
 
@@ -173,10 +177,11 @@ class Transport:
 
 class Copier:
   def __init__(self, catalog, transport, allowed, profiles, profile=wifi_profile, rate=256 * 1024, clock=time.monotonic, sleep=time.sleep, cpu=None,
-               home_unlimited=False):
+               home_unlimited=False, pacer=None):
     self.catalog, self.transport, self.allowed, self.profiles, self.profile = catalog, transport, allowed, profiles, profile
     self.rate, self.clock, self.sleep = rate, clock, sleep
     self.home_unlimited = home_unlimited is True
+    self.pacer = pacer
     self.cpu = cpu or (
       lambda: sum((resource.getrusage(kind).ru_utime + resource.getrusage(kind).ru_stime) for kind in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN))
     )
@@ -249,7 +254,9 @@ class Copier:
               raise Paused('network')
             chain, offset = expected, offset + len(body)
             self.bytes += len(body)
-            while self.clock() - self.start < self.bytes / self.rate:
+            if self.pacer is not None:
+              self.pacer(len(body), self.check)
+            while self.pacer is None and self.clock() - self.start < self.bytes / self.rate:
               self.check()
               self.sleep(0.05)
           self.check()
@@ -310,6 +317,11 @@ def main():
     if home_unlimited:
       catalogs.append(Catalog(args.log_root, args.catalog.with_name('archive-home-logs.sqlite'), key, permission.allowed, groups=(RLOG_NAMES,)))
     catalogs.append(Catalog(args.log_root, args.catalog, key, permission.allowed))
+    if cfg.get('pc_preprocess') is True:
+      from openpilot.system.pv5_incidents.archive_offload import upload
+      result = upload(catalogs, target, key, permission.allowed, cfg['wifi_profiles'], args.commit)
+      print(json.dumps(result), flush=True)
+      return
     total_bytes, total_segments = 0, 0
     burst_started = time.monotonic()
     for raw in catalogs:
@@ -328,7 +340,7 @@ def main():
     reason = str(error) if str(error) in ('state', 'budget', 'network', 'network_profile', 'storage', 'resource') else 'paused'
   except SourceChanged:
     reason = 'source'
-  except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+  except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError):
     reason = 'worker_error'
   print(json.dumps({'reason': reason, 'bytes': copier.bytes if copier else 0, 'segments': copier.segments if copier else 0}), flush=True)
 

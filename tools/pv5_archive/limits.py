@@ -5,7 +5,7 @@ import os
 _job = None
 
 
-def apply():
+def apply(active_processes=1, cpu_seconds=95):
   global _job
   maximum = 384 * 1024**2
   if os.name != 'nt':
@@ -13,7 +13,7 @@ def apply():
 
     os.nice(19)
     resource.setrlimit(resource.RLIMIT_AS, (maximum, maximum))
-    resource.setrlimit(resource.RLIMIT_CPU, (95, 95))
+    resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     return
   import ctypes as c
@@ -53,8 +53,8 @@ def apply():
   kernel.SetPriorityClass.argtypes = [w.HANDLE, w.DWORD]
   _job = kernel.CreateJobObjectW(None, None)
   info = Extended()
-  info.basic.flags = 0x100 | 0x8 | 0x2  # PROCESS_MEMORY, ACTIVE_PROCESS, PROCESS_TIME
-  info.basic.active, info.basic.process_time, info.process_memory = 1, 95 * 10000000, maximum
+  info.basic.flags = 0x100 | 0x8 | 0x2 | 0x2000  # PROCESS_MEMORY, ACTIVE_PROCESS, PROCESS_TIME
+  info.basic.active, info.basic.process_time, info.process_memory = active_processes, cpu_seconds * 10000000, maximum
   if (
     not _job
     or not kernel.SetInformationJobObject(_job, 9, c.byref(info), c.sizeof(info))

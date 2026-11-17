@@ -9,7 +9,7 @@ settings, alter vehicle controls/models, or enable inbound remote access.
 `Pv5IncidentReporting` remains the master opt-in. There must additionally be a
 root/runtime-owned mode-0600 `/data/pv5-pc-archive.json` with exact version,
 vehicle `KIA_PV5`, `enabled: true`, qualified modes, hashed trusted NetworkManager
-Wi-Fi profile UUIDs, and the seven-module `module_identity()` digest. No key is
+Wi-Fi profile UUIDs, and the qualified uploader-module `module_identity()` digest. No key is
 duplicated into this file. Unconfigured/mismatched code does not start a copier.
 
 Qualify `detached_offroad` and `dashcam_stationary` separately on the actual
@@ -217,3 +217,37 @@ The earlier critical-only dispatch restriction is extended only for screened
 windows. Ordinary assistance remains quiet. See
 [stopped-vehicle event transfer](../../docs/pv5_stationary_event_upload.md) for the
 separately qualified, default-off device mode and unchanged home transfer scope.
+
+
+## Owner-PC preprocessing (explicit home opt-in)
+
+`pc_preprocess: true` in the **qualified home-only** device config enables four
+independent segment streams through `/v1/archive/raw/`. The source remains closed,
+unchanged and deletable by the existing logger/deleter. No log decompression,
+schema parsing, media probing or conversion runs on the comma in this mode.
+The original 400 ms permission watchdog, thermal/admission/network gates, sole
+uploader lock, 300 s resumable burst and aggregate 8 MiB/s pacing remain. Vehicle
+and mixed-mode configurations reject this opt-in. Module identity includes the
+parallel scheduler and offload adapter; changing a digest is not qualification.
+
+PC policy must explicitly set `archive.pc_preprocess_temporary_raw: true`.
+This grants temporary receipt of **unfiltered rlog and road containers** in the
+owner/SYSTEM-only quarantine. Standalone cabin/voice files remain excluded.
+Legacy endpoints require filtered privacy markers; raw identities and signed
+endpoints are distinct and disabled by default. No fallback sends raw to legacy.
+
+Four PC preprocessing children strip excluded messages and audio/data tracks;
+only durably sealed sanitized files reach existing screening/AI. Each job has a
+512 MiB output bound, 180 CPU/210 wall-second bound and 384 MiB per-process cap.
+The shared archive quota includes raw, clean and four reserved scratch budgets;
+the existing free-space floor remains. Media tools must already be installed on
+PC (optional explicit `pc_ffmpeg` / `pc_ffprobe` paths); no runtime downloads.
+
+Temporary originals are removed **only after** successful privacy preprocessing,
+clean-store integrity sealing and durable mapping receipts. Receipt tombstones
+allow manifest/seal replay after removal, including log-first/full-file reuse.
+On failure originals remain private, analysis is blocked, and a sanitized
+operational failure enters the existing rate-limited reporting path. Failed jobs
+are not repeatedly retried or silently discarded. They require explicit recovery.
+Device originals are never deleted. A network receipt means PC received the raw
+bytes; it does not certify analysis or vehicle safety. Normal uploads do not wake AI.

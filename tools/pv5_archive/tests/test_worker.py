@@ -193,3 +193,26 @@ class WorkerChecks(unittest.TestCase):
 
 if __name__ == '__main__':
   unittest.main()
+
+
+class OffloadConfiguration(unittest.TestCase):
+  def test_offload_is_explicit_home_only_and_identity_covers_new_modules(self):
+    from openpilot.system.pv5_incidents.archive_worker import MODULES
+    self.assertIn('archive_parallel.py', MODULES)
+    self.assertIn('archive_offload.py', MODULES)
+    with tempfile.TemporaryDirectory() as tmp:
+      path = Path(tmp)/'config.json'
+      value = {'version':1, 'vehicle':'KIA_PV5', 'enabled':True, 'qualified_modes':['detached_offroad'],
+               'wifi_profiles':['a'*64], 'module_identity':module_identity()}
+      def save():
+        path.write_bytes(encode(value))
+        path.chmod(0o600)
+      save()
+      self.assertNotIn('pc_preprocess', configuration(path))
+      value['pc_preprocess'] = True
+      save()
+      self.assertTrue(configuration(path)['pc_preprocess'])
+      value['qualified_modes'] = ['detached_offroad', 'dashcam_stationary']
+      save()
+      with self.assertRaisesRegex(ValueError, 'home_only'):
+        configuration(path)

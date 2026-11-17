@@ -14,6 +14,7 @@ import threading
 import time
 
 from openpilot.system.pv5_incidents.archive_protocol import (
+  PRIVACY,
   BATCH,
   CHUNK,
   MAX_MANIFEST,
@@ -38,9 +39,11 @@ class OffsetError(RuntimeError):
 
 
 class Store:
-  def __init__(self, root, key, quota=50 * GIB, reserve=10 * GIB, wake=lambda: None, overhead_per_segment=0):
+  def __init__(self, root, key, quota=50 * GIB, reserve=10 * GIB, wake=lambda: None, overhead_per_segment=0, privacy=PRIVACY):
     self.root, self.key, self.quota, self.reserve, self.wake = Path(root), key, quota, reserve, wake
     self.overhead_per_segment = overhead_per_segment
+    self.privacy = privacy
+    self.external_usage = lambda: 0
     if len(key) != 32 or not self.root.is_absolute() or self.root.is_symlink():
       raise ValueError('invalid_archive_store')
     self.root.mkdir(parents=True, exist_ok=True)
@@ -49,6 +52,8 @@ class Store:
     if self.objects.is_symlink():
       raise ValueError('invalid_archive_store')
     self.lock = threading.RLock()
+    # Independent files can fsync/hash concurrently; each file still has one writer.
+    self.file_locks = [threading.RLock() for _ in range(64)]
     self.database = self.root / 'archive.sqlite'
     if self.database.is_symlink():
       raise ValueError('invalid_archive_database')
@@ -95,9 +100,10 @@ class Store:
   def begin(self, data):
     if not 0 < len(data) <= MAX_MANIFEST:
       raise ValueError('invalid_manifest')
-    token, value = manifest(self.key, json.loads(data))
+    token, value = manifest(self.key, json.loads(data), self.privacy)
     with self.lock, self.db() as db:
-      count, reserved = db.execute('SELECT count(*),coalesce(sum(size),0) FROM files').fetchone()
+      count = db.execute('SELECT count(*) FROM files').fetchone()[0]
+      reserved = self.reserved_size(db)
       new_segment = int(not db.execute('SELECT 1 FROM segments WHERE id=?', (token,)).fetchone())
       reserved += (db.execute('SELECT count(*) FROM segments').fetchone()[0] + new_segment) * self.overhead_per_segment
       reserved += min(self.quota // 32, 64 * 1024**2) if self.overhead_per_segment else 0
@@ -105,7 +111,7 @@ class Store:
         raise CapacityError('archive_catalog_full')
       new = [entry for entry in value['files'] if not db.execute('SELECT 1 FROM files WHERE id=?', (entry['file_id'],)).fetchone()]
       extra = sum(entry['size'] for entry in new)
-      if reserved + extra > self.quota or shutil.disk_usage(self.root).free < self.reserve + extra:
+      if reserved + extra + self.external_usage() > self.quota or shutil.disk_usage(self.root).free < self.reserve + extra:
         raise CapacityError('archive_storage_budget')
       db.execute('INSERT OR IGNORE INTO segments VALUES(?,?,?,?,NULL)', (token, encode(value).decode(), 'uploading', time.time()))
       for entry in value['files']:
@@ -117,7 +123,7 @@ class Store:
           raise ValueError('file_identity_conflict')
         if row['status'] == 'complete':
           stored = self._path(row['id'], row['name'])
-          if not stored.is_file() or stored.stat().st_size != row['size']:
+          if not self.stored(row, stored):
             raise ValueError('stored_data_missing')
         db.execute('INSERT OR IGNORE INTO links VALUES(?,?)', (token, entry['file_id']))
       rows = db.execute('SELECT files.* FROM files JOIN links ON files.id=links.file_id WHERE segment_id=? ORDER BY files.id', (token,)).fetchall()
@@ -129,24 +135,43 @@ class Store:
       self.wake()
     return result
 
+  def stored(self, row, path):
+    return path.is_file() and path.stat().st_size == row['size']
+
+  def reserved_size(self, db):
+    return db.execute('SELECT coalesce(sum(size),0) FROM files').fetchone()[0]
+
+  def reserved_bytes(self):
+    with self.lock, self.db() as db:
+      return self.reserved_size(db) + self.overhead_per_segment * db.execute('SELECT count(*) FROM segments').fetchone()[0]
+
   def chunk(self, token, offset, body):
     return self._append(token, offset, body, CHUNK)
 
   def batch(self, token, offset, body):
     return self._append(token, offset, body, BATCH)
 
+  def _file_lock(self, token):
+    if not isinstance(token, str) or not TOKEN.fullmatch(token):
+      raise ValueError('invalid_token')
+    return self.file_locks[int(token[:8], 16) % len(self.file_locks)]
+
   def _append(self, token, offset, body, maximum):
-    # One durable checkpoint per bounded request. Preserve the exact legacy
-    # 64-KiB hash chain so old/new senders can resume each other's partials.
-    with self.lock, self.db() as db:
-      row = db.execute('SELECT * FROM files WHERE id=?', (token,)).fetchone()
-      if row is None or type(offset) is not int or not 0 <= offset < row['size']:
-        raise ValueError('unknown_file_or_offset')
-      if len(body) != min(maximum, row['size'] - offset) or offset % CHUNK:
-        raise ValueError('invalid_chunk_size')
-      if offset > row['offset']:
-        raise OffsetError(row['offset'])
-      path = self._path(token, row['name'], row['status'] != 'complete')
+    if not isinstance(body, bytes) or not 0 < len(body) <= maximum:
+      raise ValueError('invalid_chunk')
+    # Hold the per-file lock across I/O and its durable database checkpoint.
+    # Do not hold the global metadata lock across fsync or file hashing.
+    with self._file_lock(token):
+      with self.lock, self.db() as db:
+        row = db.execute('SELECT * FROM files WHERE id=?', (token,)).fetchone()
+        if row is None or type(offset) is not int or not 0 <= offset < row['size']:
+          raise ValueError('unknown_file_or_offset')
+        if len(body) != min(maximum, row['size'] - offset) or offset % CHUNK:
+          raise ValueError('invalid_chunk_size')
+        if offset > row['offset']:
+          raise OffsetError(row['offset'])
+        row = dict(row)
+        path = self._path(token, row['name'], row['status'] != 'complete')
       if offset < row['offset'] or row['status'] == 'complete':
         if not path.exists():
           raise ValueError('stored_data_missing')
@@ -155,14 +180,14 @@ class Store:
           if stream.read(len(body)) != body:
             raise ValueError('chunk_conflict')
         return self._status(row)
-      if shutil.disk_usage(self.root).free < self.reserve + len(body):
+      # Allow for all four ingress writers checking free space concurrently.
+      if shutil.disk_usage(self.root).free < self.reserve + 4 * len(body):
         raise CapacityError('archive_free_space_floor')
       mode = 'r+b' if path.exists() else 'x+b'
       with path.open(mode) as stream:
         stream.seek(0, os.SEEK_END)
         if stream.tell() < row['offset']:
           raise ValueError('partial_data_missing')
-        # Recover only our unacknowledged partial tail after an interrupted write.
         stream.truncate(row['offset'])
         stream.seek(row['offset'])
         stream.write(body)
@@ -171,21 +196,26 @@ class Store:
       chain = row['chain']
       for start in range(0, len(body), CHUNK):
         chain = advance(chain, body[start : start + CHUNK])
-      db.execute('UPDATE files SET offset=?,chain=? WHERE id=?', (offset + len(body), chain, token))
+      with self.lock, self.db() as db:
+        current = db.execute('SELECT offset,chain,status FROM files WHERE id=?', (token,)).fetchone()
+        if current is None or tuple(current) != (row['offset'], row['chain'], row['status']):
+          raise ValueError('concurrent_file_writer')
+        db.execute('UPDATE files SET offset=?,chain=? WHERE id=?', (offset + len(body), chain, token))
       return {'file_id': token, 'offset': offset + len(body), 'chain': chain, 'complete': False}
 
   def seal(self, token, data):
     value = json.loads(data)
     if not isinstance(value, dict) or set(value) != {'size', 'chain'}:
       raise ValueError('invalid_seal')
-    with self.lock, self.db() as db:
-      row = db.execute('SELECT * FROM files WHERE id=?', (token,)).fetchone()
-      if row is None or value != {'size': row['size'], 'chain': row['chain']} or row['offset'] != row['size']:
-        raise ValueError('incomplete_or_invalid_seal')
-      if row['status'] != 'complete':
+    with self._file_lock(token):
+      with self.lock, self.db() as db:
+        row = db.execute('SELECT * FROM files WHERE id=?', (token,)).fetchone()
+        if row is None or value != {'size': row['size'], 'chain': row['chain']} or row['offset'] != row['size']:
+          raise ValueError('incomplete_or_invalid_seal')
+        row = dict(row)
         path = self._path(token, row['name'], partial=True)
         final = self._path(token, row['name'])
-        # A rename may have succeeded just before a DB transaction was interrupted.
+      if row['status'] != 'complete':
         source = path if path.exists() else final
         chain, size, digest = ZERO_CHAIN, 0, hashlib.sha256()
         with source.open('rb') as stream:
@@ -197,11 +227,12 @@ class Store:
           raise ValueError('archive_integrity_mismatch')
         if path.exists():
           os.replace(path, final)
+      with self.lock, self.db() as db:
         db.execute("UPDATE files SET status='complete' WHERE id=?", (token,))
-      db.execute("""UPDATE segments SET status='ready' WHERE status='uploading' AND
+        db.execute("""UPDATE segments SET status='ready' WHERE status='uploading' AND
                  NOT EXISTS(SELECT 1 FROM links JOIN files ON files.id=links.file_id
                             WHERE links.segment_id=segments.id AND files.status!='complete')""")
-      result = self._status(dict(row, status='complete'))
+        result = self._status(dict(row, status='complete'))
     self.wake()
     return result
 
@@ -255,10 +286,16 @@ class Store:
 
 
 class Ingress:
-  def __init__(self, store):
+  def __init__(self, store, raw_store=None):
+    self.raw_store = raw_store
+    self.slots = threading.BoundedSemaphore(4)
     self.store, self.nonces, self.lock = store, OrderedDict(), threading.Lock()
 
   def ingest(self, path, values, body, now):
+    with self.slots:
+      return self._ingest(path, values, body, now)
+
+  def _ingest(self, path, values, body, now):
     if not authenticate(self.store.key, path, values, body, now):
       raise PermissionError('unauthorized')
     nonce = values['X-PV5-Nonce']
@@ -268,17 +305,23 @@ class Ingress:
       if nonce in self.nonces:
         raise PermissionError('replay')
       self.nonces[nonce] = now
+    store = self.store
+    if path.startswith('/v1/archive/raw/'):
+      if self.raw_store is None:
+        raise PermissionError('raw_receipt_not_enabled')
+      store = self.raw_store
+      path = path.replace('/v1/archive/raw/', '/v1/archive/', 1)
     if path == '/v1/archive/manifest':
-      return self.store.begin(body)
+      return store.begin(body)
     match = re.fullmatch(r'/v1/archive/chunk/([0-9a-f]{64})/([0-9]{1,10})', path)
     if match:
-      return self.store.chunk(match[1], int(match[2]), body)
+      return store.chunk(match[1], int(match[2]), body)
     match = re.fullmatch(r'/v1/archive/batch/([0-9a-f]{64})/([0-9]{1,10})', path)
     if match:
-      return self.store.batch(match[1], int(match[2]), body)
+      return store.batch(match[1], int(match[2]), body)
     match = re.fullmatch(r'/v1/archive/seal/([0-9a-f]{64})', path)
     if match:
-      return self.store.seal(match[1], body)
+      return store.seal(match[1], body)
     raise ValueError('invalid_archive_endpoint')
 
 
@@ -286,7 +329,9 @@ class BoundedHTTPServer(ThreadingHTTPServer):
   daemon_threads = True
 
   def __init__(self, *args, **kwargs):
-    self.slots = threading.BoundedSemaphore(4)
+    # Four persistent uploader lanes must not occupy every incident/remote slot.
+    # Ingress independently limits archive writes to four.
+    self.slots = threading.BoundedSemaphore(8)
     super().__init__(*args, **kwargs)
 
   def process_request(self, request, address):
@@ -314,9 +359,9 @@ def handler(base, ingress):
       if not self.path.startswith('/v1/archive/'):
         return super().do_POST()
       limit = MAX_MANIFEST
-      if re.fullmatch(r'/v1/archive/chunk/[0-9a-f]{64}/[0-9]{1,10}', self.path):
+      if re.fullmatch(r'/v1/archive/(?:raw/)?chunk/[0-9a-f]{64}/[0-9]{1,10}', self.path):
         limit = CHUNK
-      elif re.fullmatch(r'/v1/archive/batch/[0-9a-f]{64}/[0-9]{1,10}', self.path):
+      elif re.fullmatch(r'/v1/archive/(?:raw/)?batch/[0-9a-f]{64}/[0-9]{1,10}', self.path):
         limit = BATCH
       length = self.headers.get('Content-Length', '')
       if self.headers.get('Transfer-Encoding') or not re.fullmatch(r'[0-9]{1,7}', length) or not 0 < int(length) <= limit:
