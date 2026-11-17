@@ -251,3 +251,7 @@ operational failure enters the existing rate-limited reporting path. Failed jobs
 are not repeatedly retried or silently discarded. They require explicit recovery.
 Device originals are never deleted. A network receipt means PC received the raw
 bytes; it does not certify analysis or vehicle safety. Normal uploads do not wake AI.
+
+### Staged home activation
+
+A release may be qualified through the existing normal-UID observer using an explicit home-only `pc_preprocess` configuration with integer `qualification_expires_at` (at most 600 seconds ahead). Expiry stops only the owned uploader, is bounded by both wall and monotonic clocks, and cannot enable a vehicle mode. After expiry, new starts reject the configuration. Permanent activation requires actual owner-PC sanitized receipt checks and removing the expiry; source identity still must exactly match the tested release. Ordinary Git updates never silently replace qualification.

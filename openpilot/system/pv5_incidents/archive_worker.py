@@ -52,7 +52,7 @@ def configuration(path=CONFIG):
     raise ValueError('private_archive_config_required')
   value = json.loads(path.read_bytes())
   if (
-    set(value) - {'pc_preprocess'} != {'version', 'vehicle', 'enabled', 'qualified_modes', 'wifi_profiles', 'module_identity'}
+    set(value) - {'pc_preprocess', 'qualification_expires_at'} != {'version', 'vehicle', 'enabled', 'qualified_modes', 'wifi_profiles', 'module_identity'}
     or value['version'] != 1
     or value['vehicle'] != 'KIA_PV5'
     or value['enabled'] is not True
@@ -73,6 +73,11 @@ def configuration(path=CONFIG):
     raise ValueError('invalid_archive_admission')
   if type(value.get('pc_preprocess', False)) is not bool or (value.get('pc_preprocess') and modes != ['detached_offroad']):
     raise ValueError('pc_preprocess_home_only')
+  if 'qualification_expires_at' in value:
+    expires = value['qualification_expires_at']
+    if (value.get('pc_preprocess') is not True or modes != ['detached_offroad']
+        or type(expires) is not int or not time.time() < expires <= time.time() + 600):
+      raise ValueError('invalid_home_qualification_window')
   return value
 
 

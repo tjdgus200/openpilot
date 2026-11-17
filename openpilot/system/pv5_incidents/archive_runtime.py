@@ -19,6 +19,8 @@ class Coordinator:
     self.last_reason = ''
     self.child_start = None
     self.segment_seen = None
+    expires = config.get('qualification_expires_at')
+    self.qualification_deadline = None if expires is None else clock() + max(0, expires - time.time())
 
   @staticmethod
   def start_time(pid):
@@ -43,6 +45,13 @@ class Coordinator:
       child.stdout.close()
 
   def tick(self, sm, now):
+    # A staged rollout is not permanent qualification. Bound it with monotonic
+    # time as well as wall time, so clock adjustments cannot extend the trial.
+    expires = self.config.get('qualification_expires_at')
+    if expires is not None and (time.time() >= expires or now >= self.qualification_deadline):
+      self.cancel()
+      self.last_reason = 'qualification_expired'
+      return
     # Existing encoder segment-change messages wake a stationary dashcam scan;
     # no timer, directory watcher or repeated immutable-segment rescan at idle.
     if (
