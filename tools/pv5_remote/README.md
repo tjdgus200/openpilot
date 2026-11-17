@@ -10,7 +10,12 @@ separately qualified parked PV5 passive/dashcam state. Dashcam by itself does no
 prove a stop. The vehicle branch retains Park, valid CAN actual zero speed,
 standstill, cruise OFF, lateral/longitudinal/selfdrive OFF, no AEB/critical/disable
 event, fresh source timestamps and resource headroom. Home requires disconnected
-harness/no ignition and manager-confirmed controls/models/recorders stopped.
+harness/no ignition and live pandad/hardwared producers. Model, control-process
+or recorder liveness alone does not block physically detached home access.
+When deviceState.started is true, at least one real, known Panda must explicitly
+report a disconnected harness and no ignition; empty/unknown boards cannot
+qualify this new started-home path. Vehicle gates and separate qualification
+are unchanged (owner instruction 2026-11-17).
 There is a two-second continuous admission period. Loss of admission terminates
 the dedicated service's network daemons and remote jobs; the low-priority gate
 can automatically reopen after eligibility returns. Normal operation has no
@@ -67,7 +72,7 @@ Do not change global cgroup hierarchies or kernel configuration to force a quota
 The new `detached_home_uncapped_v1` policy removes this diagnostic service's
 CPU quota, memory cap and first-four-core affinity. Home admission no longer
 depends on numerical CPU/RAM/free-space headroom. Nice19 and idle-I/O priority,
-thermal-green admission, fresh real disconnected/no-ignition/stopped-process
+thermal-green admission, fresh real disconnected/no-ignition
 proof and all authentication/isolation/watchdog conditions remain. No SCHED_IDLE
 policy or hard10% cap is claimed. Existing OS thermal/memory protections remain;
 uncapped diagnostics can consume the device's available resources.
@@ -154,3 +159,54 @@ or a globally installed/running SSH service. PC timing is not comma timing.
 References: [SSH over Tailscale](https://tailscale.com/docs/reference/ssh-over-tailscale),
 [private Serve TCP and restart behavior](https://tailscale.com/docs/reference/tailscale-cli/serve),
 [OpenSSH configuration](https://man.openbsd.org/sshd_config).
+
+## One-shot local diagnosis
+
+Run `python3 -B tools/pv5_remote/diagnose.py` as the normal terminal user.
+It reads sources for three seconds and reports only allowed state fields.
+A bounded `sudo -n` child reads protected qualification metadata and the local
+Tailscale backend, without opening IPC readers as root. There are no service
+start/stop actions, config writes, key output or raw journal/boot log output.
+The installed guard's eligibility function supplies the gate reason. A
+transient startup stale reason is separate from the final sampled reason;
+this one-shot observation does not prove two-second continuous admission.
+A missing/unreadable source remains an explicit diagnostic failure.
+
+Updating this repository does not replace the separately installed protected
+guard. Its code identity and boot attestation must remain matched; never
+rewrite the stored digest alone or bypass qualification to activate a change.
+
+## Automatic boot recovery (2026-11-17)
+
+The V2 launcher starts a detached low-priority supervisor before AGNOS/Params
+bootstrap. It closes the boot-lock descriptor and all terminal input/output;
+model/control startup never waits for it. Each restore attempt has a 25-second
+limit, replacing the old single 3-second suppressed attempt. Transient failures
+retry with 2/4/8/16/32/60-second delays (60-second cap). Only the attempt's own
+process group is cleaned up on timeout. Existing guard sessions are not stopped.
+
+The supervisor requires the existing root-owned home-only code-bound
+qualification on every attempt. Disabled/trial/removed enrollment exits; code,
+interpreter, foreign-unit and other identity rejections remain blocked. It never
+rewrites qualification, keys or enrollment. The installed guard still controls
+all network admission and its normal PID1 watchdog/restart behavior. The boot
+supervisor exits only after the unit reports active, not just after a queued
+start request. This is service availability, not proof that the gate or SSH is
+currently admitted. One private overwritten boot_restore_status.json records
+the latest safe reason and attempt count, without raw subprocess output. A
+single lock prevents duplicate supervisors. No periodic AI invocation is added.
+
+## Release and device synchronization
+
+Owner policy (2026-11-17): validate changes, commit and push the reviewed
+release, then apply that published commit with a fast-forward-only pull on the
+device. Verify the GitHub ref, device HEAD and changed-file hashes afterward.
+Do not deploy unpublished working-tree files directly. Preserve unrelated
+local edits and private configuration; never use a blanket reset/clean to
+make an update pass. Reconcile any earlier direct deployment against its
+verified backup and the published content before pulling.
+
+The protected installed guard and qualified PC connector are separately pinned
+artifacts. A repository pull is not proof that those running copies changed.
+Report their installed identity and pending qualification separately; never
+rewrite an attestation hash merely to make versions appear equal.

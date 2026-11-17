@@ -26,13 +26,14 @@ RUNTIME = Path('/run/pv5-conditional-remote')
 RUNTIME_UNITS = Path('/run/systemd/system')
 STAGE = 'entry'
 HOME_POLICY = 'detached_home_uncapped_v1'
-BOOT_HOOK = '''  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V1
+BOOT_HOOK = '''  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V2
   if [ -f /TICI ] && [ -f /data/pv5-remote-access/conditional_modes.json ] && [ -f /data/pv5-remote-access/conditional_remote.py ]; then
     (
       exec 9>&-
-      timeout -k 1s 3s sudo -n env PYTHONPATH="$PYTHONPATH" PYTHONDONTWRITEBYTECODE=1 \\
-        nice -n 19 python3 /data/pv5-remote-access/conditional_remote.py --restore-runtime >/dev/null 2>&1
-    ) &
+      unset CARROT_BOOT_LOCK_FD
+      sudo -n env PYTHONPATH="$PYTHONPATH" PYTHONDONTWRITEBYTECODE=1 \\
+        nice -n 19 python3 "$DIR/tools/pv5_remote/restore_supervisor.py" >/dev/null 2>&1
+    ) </dev/null >/dev/null 2>&1 &
   fi
 '''
 SOCKET = str(RUNTIME / 'tailscaled.sock')
@@ -84,10 +85,17 @@ def eligible(samples, now, modes):
   processes = ms['processes']
   if any(processes.get(name) != [True, True] for name in ('pandad', 'hardwared')):
     return '', 'producer'
-  if ds['started'] is False:
-    if not ps['disconnected'] or any(processes.get(name) != [False, False] for name in ('card', 'controlsd', 'selfdrived', 'modeld', 'loggerd', 'encoderd')):
-      return '', 'not_detached'
+  # A running model/recorder is not proof of a vehicle connection. While
+  # started, require at least one real board explicitly reporting no harness
+  # and no ignition; an empty board list must not bypass the vehicle gates.
+  board_count = ps.get('board_count')
+  detached = ps.get('disconnected') is True and (
+    ds['started'] is False or (ds['started'] is True and type(board_count) is int and 1 <= board_count <= 8)
+  )
+  if detached:
     mode = 'detached_home'
+  elif ds['started'] is False:
+    return '', 'not_detached'
   else:
     usage = ds.get('cpu', [])
     if (
@@ -194,6 +202,7 @@ class Source:
         elif name == 'pandaStates':
           if len(state) > 8:
             raise ValueError('source_size')
+          value['board_count'] = len(state)
           value['disconnected'] = all(
             str(board.pandaType) != 'unknown' and str(board.harnessStatus) == 'notConnected' and not board.ignitionLine and not board.ignitionCan
             for board in state

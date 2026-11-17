@@ -18,7 +18,7 @@ def key(byte):
 def home(now=10.0):
   return {
     'deviceState': {'stamp': now, 'valid': True, 'started': False, 'cpu': [10, 10, 10, 10], 'thermal': 0, 'memory': 40, 'free': 60},
-    'pandaStates': {'stamp': now, 'valid': True, 'disconnected': True},
+    'pandaStates': {'stamp': now, 'valid': True, 'disconnected': True, 'board_count': 1},
     'managerState': {
       'stamp': now,
       'valid': True,
@@ -33,6 +33,7 @@ def home(now=10.0):
 def parked(now=10.0):
   value = home(now)
   value['deviceState']['started'] = True
+  value['pandaStates']['disconnected'] = False
   value.update(
     {
       'carParams': {'stamp': now, 'valid': True, 'vehicle': 'KIA_PV5', 'notCar': False, 'dashcam': True},
@@ -121,14 +122,52 @@ class GateChecks(unittest.TestCase):
       with self.assertRaisesRegex(ValueError, 'home_resource_policy_required'):
         home_policy({'qualified_modes': modes, 'resource_policy': policy})
 
-  def test_home_requires_real_disconnection_and_stopped_producers(self):
+  def test_home_requires_real_disconnection_and_live_state_producers(self):
     state = home()
     state['pandaStates']['disconnected'] = False
     self.assertFalse(eligible(state, 10, ['detached_home'])[0])
-    for name in ('card', 'controlsd', 'selfdrived', 'modeld', 'loggerd', 'encoderd', 'hardwared', 'pandad'):
+    for name in ('hardwared', 'pandad'):
       state = home()
       state['managerState']['processes'][name][0] = not state['managerState']['processes'][name][0]
       self.assertFalse(eligible(state, 10, ['detached_home'])[0])
+
+  def test_detached_recording_and_model_processes_do_not_block_home(self):
+    for started in (False, True):
+      state = home()
+      state['deviceState']['started'] = started
+      for name in ('card', 'controlsd', 'selfdrived', 'modeld', 'loggerd', 'encoderd'):
+        state['managerState']['processes'][name] = [True, True]
+      self.assertEqual(eligible(state, 10, ['detached_home']), ('detached_home', ''))
+      self.assertEqual(eligible(state, 10, ['parked_dashcam']), ('', 'mode_not_qualified'))
+
+  def test_started_empty_unknown_or_connected_board_never_qualifies_as_home(self):
+    for count in (None, 0, -1, 9, True, '1'):
+      state = home()
+      state['deviceState']['started'] = True
+      state['pandaStates']['board_count'] = count
+      self.assertFalse(eligible(state, 10, ['detached_home'])[0])
+    for disconnected in (False, None, 1):
+      state = home()
+      state['deviceState']['started'] = True
+      state['pandaStates']['disconnected'] = disconnected
+      self.assertFalse(eligible(state, 10, ['detached_home'])[0])
+
+  def test_home_recording_keeps_freshness_thermal_and_reconnection_shutdown(self):
+    state = home()
+    state['deviceState']['started'] = True
+    for name in ('deviceState', 'pandaStates', 'managerState'):
+      state[name]['valid'] = False
+      self.assertFalse(eligible(state, 10, ['detached_home'])[0])
+      state[name]['valid'] = True
+    gate = Gate()
+    for stamp in (8, 8.5, 9, 9.5):
+      gate.tick('detached_home', stamp)
+    self.assertEqual(gate.tick(eligible(state, 10, ['detached_home'])[0], 10), 'open')
+    state['pandaStates']['disconnected'] = False
+    self.assertEqual(gate.tick(eligible(state, 10.1, ['detached_home'])[0], 10.1), 'close')
+    state = home()
+    state['deviceState'].update(started=True, thermal=1)
+    self.assertEqual(eligible(state, 10, ['detached_home']), ('', 'resource'))
 
   def test_auto_reentry_without_expiry_and_fail_closed_active_delay(self):
     gate = Gate()

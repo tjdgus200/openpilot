@@ -642,6 +642,16 @@ function launch {
     start_carrot_recovery
   )
 
+  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V2
+  if [ -f /TICI ] && [ -f /data/pv5-remote-access/conditional_modes.json ] && [ -f /data/pv5-remote-access/conditional_remote.py ]; then
+    (
+      exec 9>&-
+      unset CARROT_BOOT_LOCK_FD
+      sudo -n env PYTHONPATH="$PYTHONPATH" PYTHONDONTWRITEBYTECODE=1 \
+        nice -n 19 python3 "$DIR/tools/pv5_remote/restore_supervisor.py" >/dev/null 2>&1
+    ) </dev/null >/dev/null 2>&1 &
+  fi
+
   # hardware specific init
   if [ -f /AGNOS ]; then
     if ! agnos_init; then
@@ -695,14 +705,6 @@ function launch {
   )
 
 
-  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V1
-  if [ -f /TICI ] && [ -f /data/pv5-remote-access/conditional_modes.json ] && [ -f /data/pv5-remote-access/conditional_remote.py ]; then
-    (
-      exec 9>&-
-      timeout -k 1s 3s sudo -n env PYTHONPATH="$PYTHONPATH" PYTHONDONTWRITEBYTECODE=1 \
-        nice -n 19 python3 /data/pv5-remote-access/conditional_remote.py --restore-runtime >/dev/null 2>&1
-    ) &
-  fi
 
   FORCE_REBUILD=0
   # A reset before the Params build must still force the full build below.

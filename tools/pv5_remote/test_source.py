@@ -53,7 +53,21 @@ class SourceChecks(unittest.TestCase):
       with patch.dict(sys.modules, {'openpilot.cereal': cereal}):
         source = Source()
         self.assertEqual(eligible(source.read(), 10, ['detached_home']), ('detached_home', ''))
+        self.assertEqual(source.samples['pandaStates']['board_count'], 1)
         events['deviceState'].deviceState.started = True
+        pending['deviceState'] = [packet(events['deviceState'])]
+        self.assertEqual(eligible(source.read(), 10, ['detached_home']), ('detached_home', ''))
+        board = events['pandaStates'].pandaStates[0]
+        for field, bad, good in (('ignitionLine', True, False), ('ignitionCan', True, False),
+                                 ('pandaType', 'unknown', 'redPanda')):
+          setattr(board, field, bad)
+          pending['pandaStates'] = [packet(events['pandaStates'])]
+          self.assertFalse(eligible(source.read(), 10, ['detached_home'])[0])
+          setattr(board, field, good)
+        pending['pandaStates'] = [packet(events['pandaStates'])]
+        self.assertEqual(eligible(source.read(), 10, ['detached_home']), ('detached_home', ''))
+        events['pandaStates'].pandaStates[0].harnessStatus = 'normal'
+        pending['pandaStates'] = [packet(events['pandaStates'])]
         pending['deviceState'] = [packet(events['deviceState'])]
         self.assertEqual(eligible(source.read(), 10, ['parked_dashcam']), ('', 'normal_mode_code_reports_only'))
         events['carParams'].carParams.dashcamOnly = True

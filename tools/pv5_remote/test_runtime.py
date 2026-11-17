@@ -123,7 +123,10 @@ class RuntimeChecks(unittest.TestCase):
     self.assertEqual(source.count(remote.BOOT_HOOK), 1)
     self.assertLess(source.index(remote.BOOT_HOOK), source.index('  FORCE_REBUILD=0'))
     self.assertIn('exec 9>&-', remote.BOOT_HOOK)
-    self.assertIn('timeout -k 1s 3s sudo -n env PYTHONPATH=', remote.BOOT_HOOK)
+    self.assertIn('sudo -n env PYTHONPATH=', remote.BOOT_HOOK)
+    self.assertIn('restore_supervisor.py', remote.BOOT_HOOK)
+    self.assertNotIn('timeout -k 1s 3s', remote.BOOT_HOOK)
+    self.assertLess(source.index(remote.BOOT_HOOK), source.index('  # hardware specific init'))
     self.assertIn('/TICI', remote.BOOT_HOOK)
 
   def test_error_reports_only_stage_errno_and_class(self):
