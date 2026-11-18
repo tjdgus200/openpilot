@@ -32,6 +32,7 @@ def test_real_live_constructor_only_opts_in_the_pv5(brand, fingerprint, enabled)
                                                  radarUnavailable=False, radarDelay=0., flags=0))
   assert instance.controller.enable_vision_transition is enabled
   assert instance.controller.pv5_refinements is enabled
+  assert instance.controller.trajectory_cutin.reuse_calculations is enabled
   assert instance.controller.primary_matcher.enable_fresh_stationary_shield is enabled
 
 
@@ -48,7 +49,9 @@ def test_real_replay_constructor_uses_complete_consistent_metadata(monkeypatch, 
   actual = []
   def controller(**kwargs):
     actual.append(kwargs["pv5_refinements"])
-    return DPathRadarController(**kwargs)
+    result = DPathRadarController(**kwargs)
+    assert result.trajectory_cutin.reuse_calculations is enabled
+    return result
   monkeypatch.setattr(replay, "DPathRadarController", controller)
   replay._production_controller_outputs(frames, motion_sensor="front", enable_radar_tracks=3, cut_in_sensitivity=0)
   assert actual == [enabled]
@@ -81,4 +84,5 @@ def test_default_is_original_policy_without_refinement_work():
   for i in range(10):
     controller.update(i * .05, 20.8, (moving(38, 40., 22.3),), model(40., 22.3))
   assert not controller.pv5_refinements
+  assert not controller.trajectory_cutin.reuse_calculations
   assert controller.primary_matcher._match_time_s is None

@@ -75,6 +75,7 @@ def test_live_radar_constructor_only_enables_pv5_handover(brand, fingerprint):
   out = instance.controller.update(.05, 25., radar.points, model_with_lead(30., .1, 10.))
   enabled = brand == "hyundai" and fingerprint == "KIA_PV5"
   assert instance.controller.enable_vision_transition is enabled
+  assert instance.controller.trajectory_cutin.reuse_calculations is enabled
   assert out.lead_one["radarTrackId"] == (281 if enabled else -1)
   assert instance.controller.enable_radar_tracks == (2 if brand == "hyundai" else 1)
 

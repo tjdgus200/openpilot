@@ -40,7 +40,13 @@ def fov_loop():
   loop = next(n for n in ast.walk(main) if isinstance(n, ast.While) and
               any(assignment(child, 'wide_fov_changed') for child in n.body))
   start = next(i for i, n in enumerate(loop.body) if assignment(n, 'wide_fov_changed'))
-  end = next(i for i, n in enumerate(loop.body) if assignment(n, 'traffic_convention'))
+  # Stop after the actual FOV transform block. Parked recording now inserts
+  # a loop-level continue before traffic_convention; it is not FOV code.
+  [end] = [i + 1 for i, n in enumerate(loop.body) if isinstance(n, ast.If)
+           and isinstance(n.test, ast.BoolOp) and isinstance(n.test.op, ast.Or)
+           and all(isinstance(v, ast.Name) for v in n.test.values)
+           and [v.id for v in n.test.values] == ['calibration_updated', 'wide_fov_changed']]
+  assert start < end
   transforms = next(n for n in loop.body if assignment(n, 'transforms'))
   return compile(ast.Module(body=[*loop.body[start:end], transforms], type_ignores=[]), str(path), 'exec')
 

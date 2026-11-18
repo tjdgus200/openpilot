@@ -858,7 +858,7 @@ class DPathRadarController:
     return limit, anchor_time_s
 
   def _reset_motion_pipeline(self) -> None:
-    self.trajectory_cutin = TrajectoryCutInDetector(self.cut_in_sensitivity)
+    self.trajectory_cutin = TrajectoryCutInDetector(self.cut_in_sensitivity, reuse_calculations=self.pv5_refinements)
     self._same_row_suppressed_until: dict[tuple[str, int, int], float] = {}
 
   def _reset_stationary_vision_range_mismatch(self) -> None:

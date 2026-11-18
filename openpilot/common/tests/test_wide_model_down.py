@@ -56,7 +56,13 @@ def live_loop(fingerprint='KIA_PV5', not_car=False, dual=True):
     return isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
   loop = next(n for n in ast.walk(main) if isinstance(n, ast.While) and any(assigned(c, 'wide_fov_changed') for c in n.body))
   start = next(i for i, n in enumerate(loop.body) if assigned(n, 'wide_fov_changed'))
-  end = next(i for i, n in enumerate(loop.body) if assigned(n, 'traffic_convention'))
+  # Include the complete production FOV/calibration transform, but not the
+  # independent parked-recording continue inserted before traffic_convention.
+  [end] = [i + 1 for i, n in enumerate(loop.body) if isinstance(n, ast.If)
+           and isinstance(n.test, ast.BoolOp) and isinstance(n.test.op, ast.Or)
+           and all(isinstance(v, ast.Name) for v in n.test.values)
+           and [v.id for v in n.test.values] == ['calibration_updated', 'wide_fov_changed']]
+  assert start < end
   code = compile(ast.Module(body=loop.body[start:end], type_ignores=[]), '<production modeld FOV>', 'exec')
   settings = {'Pv5WideModelFov': 4, 'Pv5WideModelDown': 0}
   sm = type('Messages', (dict,), {})(liveCalibration=NS(rpyCalib=[.01, -.02, .005], calStatus=1),
