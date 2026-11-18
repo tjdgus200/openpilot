@@ -303,6 +303,19 @@ def test_wide_camera_fallback_setting_is_exposed(settings, params):
   assert '{"UseWideCamera", {PERSISTENT, BOOL, "1"}}' in params_keys
 
 
+def test_parked_dashcam_trial_uses_default_off_toggle_in_pv5_menu(settings):
+  from openpilot.common.pv5_parked_dashcam import PARAM
+
+  _, by_name, _ = group_index(settings)
+  assert by_name[PARAM]["control"] == "toggle"
+  assert by_name[PARAM]["default"] == 0
+  categories = build_menu_categories(settings, by_name)
+  pv5 = next(category for category in categories if category["id"] == "PV5")
+  dashcam = next(group for group in pv5["groups"] if group["id"] == "PV5_PARKED_DASHCAM")
+  assert any(PARAM in section["items"] for section in dashcam["sections"])
+  assert f'{{"{PARAM}", {{PERSISTENT, BOOL}}}}' in PARAMS_KEYS_PATH.read_text(encoding="utf-8")
+
+
 def test_driver_monitoring_setting_is_default_on_search_only_and_session_state_is_internal(settings, params):
   by_name = {p["name"]: p for p in params}
   enabled = by_name["DriverMonitoringEnabled"]

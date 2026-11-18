@@ -79,8 +79,11 @@ class SelfdriveD:
       self.CP = CP
 
     self.parked_dashcam = None
-    if pv5_parked_dashcam.enabled_for(self.CP, REPLAY or SIMULATION):
-      self.parked_dashcam = pv5_parked_dashcam.ParkedDashcamRequest(start_after=time.monotonic_ns())
+    self.parked_dashcam_enabled = False
+    if pv5_parked_dashcam.supported_for(self.CP, REPLAY or SIMULATION):
+      self.parked_dashcam_enabled = pv5_parked_dashcam.setting_enabled(self.params)
+      start_after = time.monotonic_ns() if self.parked_dashcam_enabled else 0
+      self.parked_dashcam = pv5_parked_dashcam.ParkedDashcamRequest(start_after=start_after)
     self.car_events = CarSpecificEvents(self.CP)
     self.pv5_scc_supported = scc_decel_eligible(self.CP)
     self.scc_warning = SccWarning() if self.pv5_scc_supported else None
@@ -827,7 +830,7 @@ class SelfdriveD:
     now = time.monotonic_ns()
     current_control = pv5_parked_dashcam.fresh(self.sm.valid['carControl'], self.sm.logMonoTime['carControl'], now)
     current_car = pv5_parked_dashcam.fresh(self.car_state_valid, self.car_state_mono_time, now)
-    allowed = (self.initialized and self.model_startup_complete and self.sm['deviceState'].started
+    allowed = (self.parked_dashcam_enabled and self.initialized and self.model_startup_complete and self.sm['deviceState'].started
                and not self.enabled and not self.active and self.state_machine.state == State.disabled
                and current_car and current_control
                and pv5_parked_dashcam.parked(CS, self.sm['carControl']))
@@ -884,6 +887,8 @@ class SelfdriveD:
       self.is_metric = self.params.get_bool("IsMetric")
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.personality = self.read_personality_param()
+      if self.parked_dashcam is not None:
+        self.parked_dashcam_enabled = pv5_parked_dashcam.setting_enabled(self.params)
       time.sleep(0.1)
 
   def run(self):

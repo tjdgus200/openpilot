@@ -10,6 +10,8 @@ import threading
 import zlib
 from typing import Any, Dict, List, Optional
 
+from openpilot.common import pv5_parked_dashcam
+
 try:
   import brotli
 except Exception:
@@ -126,6 +128,8 @@ def _unregistered_param_paths(params: "Params", key: str) -> tuple[str, str]:
 
 def _read_param_value(params: "Params", name: str, default: Any) -> Any:
   try:
+    if name == pv5_parked_dashcam.PARAM:
+      return pv5_parked_dashcam.setting_enabled(params)
     t = params.get_type(name)
 
     if ParamKeyType is not None and t == ParamKeyType.BOOL:
@@ -374,7 +378,7 @@ def put_typed(params: "Params", key: str, value: Any, p: Optional[Dict[str, Any]
 
 
 INTERNAL_SESSION_PARAMS = frozenset({"DriverMonitoringSessionDisabled", "JetsonLegacyUpdatePending"})
-BACKUP_EXCLUDED_PARAMS = frozenset({"DriverMonitoringEnabled"})
+BACKUP_EXCLUDED_PARAMS = frozenset({"DriverMonitoringEnabled", pv5_parked_dashcam.PARAM})
 
 
 def filter_param_backup_values(values: dict[str, Any]) -> dict[str, Any]:
@@ -396,6 +400,17 @@ def read_param_backup_values(path: str) -> dict[str, Any]:
 def set_param_value(name: str, value: Any, p: Optional[Dict[str, Any]] = None) -> None:
   if name in INTERNAL_SESSION_PARAMS:
     raise ValueError(f"{name} is controlled internally")
+  if name == pv5_parked_dashcam.PARAM:
+    if type(value) not in (int, bool) or value not in (0, 1):
+      raise ValueError("parked dashcam setting requires a boolean")
+    if not HAS_PARAMS:
+      raise RuntimeError("parked dashcam setting requires device Params")
+    enabled = bool(value)
+    params = Params()
+    params.put_bool(name, enabled)
+    if params.get(name) is not enabled:
+      raise OSError("parked dashcam setting could not be saved")
+    return
   if not HAS_PARAMS:
     _mem_store[name] = str(value)
     return

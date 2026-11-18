@@ -85,6 +85,78 @@ def test_unregistered_fallback_does_not_hide_other_write_failures(tmp_path, monk
     params_service.set_param_value("FutureIntSetting", 1, int_setting())
 
 
+def test_parked_dashcam_toggle_uses_native_params_and_is_excluded_from_restore(monkeypatch):
+  from openpilot.common.pv5_parked_dashcam import PARAM
+
+  class NativeParams:
+    def __init__(self):
+      self.saved = None
+      self.writable = True
+
+    def get(self, key):
+      assert key == PARAM
+      return self.saved
+
+    def put_bool(self, key, enabled):
+      assert key == PARAM
+      if self.writable:
+        self.saved = enabled
+
+  params = NativeParams()
+  monkeypatch.setattr(params_service, "HAS_PARAMS", True)
+  monkeypatch.setattr(params_service, "Params", lambda: params)
+  monkeypatch.setenv("PV5_PARKED_DASHCAM_TRIAL", "1")
+  assert params_service.get_param_value(PARAM, 0) is True
+  params_service.set_param_value(PARAM, 0)
+  assert params_service.get_param_value(PARAM, 0) is False
+  params_service.set_param_value(PARAM, 1)
+  assert params_service.get_param_value(PARAM, 0) is True
+  assert params_service.filter_param_backup_values({PARAM: True}) == {}
+
+  params.writable = False
+  with pytest.raises(OSError, match="could not be saved"):
+    params_service.set_param_value(PARAM, 0)
+
+
+def test_parked_dashcam_toggle_rejects_cross_origin_and_invalid_writes(monkeypatch):
+  import asyncio
+
+  from aiohttp import web
+  from aiohttp.test_utils import TestClient, TestServer
+
+  from openpilot.common.pv5_parked_dashcam import PARAM
+  from openpilot.selfdrive.carrot.server.features import params as feature
+
+  writes = []
+  monkeypatch.setattr(feature, "set_param_value", lambda *args: writes.append(args[:2]))
+  monkeypatch.setattr(feature, "get_param_values", lambda *args: {PARAM: 0})
+  monkeypatch.setattr(feature, "get_settings_cached", lambda: ({}, {}, {PARAM: int_setting()}, []))
+  monkeypatch.setattr(feature, "append_param_change", lambda *args, **kwargs: None)
+  monkeypatch.setattr(feature, "is_drive_engaged", lambda request: False)
+
+  async def run():
+    app = web.Application()
+    feature.register(app)
+    async with TestClient(TestServer(app)) as client:
+      url = "/api/param_set"
+      on = {"name": PARAM, "value": 1}
+      off = {"name": PARAM, "value": 0}
+      assert (await client.post(url, json=on, headers={"Origin": "https://other.test"})).status == 403
+      assert (await client.post(url, json=on, headers={"Sec-Fetch-Site": "cross-site"})).status == 403
+      assert (await client.post(url, data=json.dumps(on))).status == 415
+      assert (await client.post(url, json=on | {"value": "1"})).status == 400
+      assert writes == []
+
+      origin = str(client.make_url("/").origin())
+      for payload in (on, off):
+        response = await client.post(url, json=payload, headers={"Origin": origin})
+        assert response.status == 200
+        assert (await response.json())["value"] == payload["value"]
+
+  asyncio.run(run())
+  assert writes == [(PARAM, 1), (PARAM, 0)]
+
+
 def test_web_params_cannot_write_internal_driver_monitoring_session_state():
   with pytest.raises(ValueError, match="controlled internally"):
     params_service.set_param_value("DriverMonitoringSessionDisabled", True, {"min": 0, "max": 1, "default": 0})

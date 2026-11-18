@@ -1,18 +1,24 @@
 """Opt-in PV5 parked recording admission and model restart checks."""
 import os
 
+PARAM = 'PV5ParkedDashcamTrial'
 FRESH_NS = 250_000_000
 PARK_CONFIRM_NS = 2_000_000_000
 
 
-def trial_enabled(replay=False):
-  return (not replay and os.environ.get('PV5_PARKED_DASHCAM_TRIAL') == '1'
-          and os.path.isfile('/AGNOS')
-          and not any(os.environ.get(name) for name in ('REPLAY', 'SIMULATION', 'OPENPILOT_PREFIX', 'ZMQ')))
+def supported(replay=False):
+  return (not replay and os.path.isfile('/AGNOS')
+          and not any(name in os.environ for name in ('REPLAY', 'SIMULATION', 'OPENPILOT_PREFIX', 'ZMQ')))
 
 
-def enabled_for(cp, replay=False):
-  return trial_enabled(replay) and cp.carFingerprint == 'KIA_PV5' and not cp.notCar and not cp.passive
+def supported_for(cp, replay=False):
+  return supported(replay) and cp.carFingerprint == 'KIA_PV5' and not cp.notCar and not cp.passive
+
+
+def setting_enabled(params):
+  # The saved choice takes precedence over the legacy startup flag, including an explicit OFF.
+  saved = params.get(PARAM)
+  return os.environ.get('PV5_PARKED_DASHCAM_TRIAL') == '1' if saved is None else saved is True
 
 
 def fresh(valid, stamp, now):

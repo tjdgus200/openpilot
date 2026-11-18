@@ -128,8 +128,8 @@ def main():
   model = ModelState(cam_w, cam_h)
   cloudlog.warning("models loaded, dmonitoringmodeld starting")
 
-  parked_trial = pv5_parked_dashcam.trial_enabled()
-  parked_services = ['carState', 'carControl', 'selfdriveState', 'parkedDashcamState'] if parked_trial else []
+  parked_supported = pv5_parked_dashcam.supported()
+  parked_services = ['carState', 'carControl', 'selfdriveState', 'parkedDashcamState'] if parked_supported else []
   sm = SubMaster(["liveCalibration", *parked_services])
   pm = PubMaster(["driverStateV2"])
 
@@ -163,7 +163,7 @@ def main():
       calib[:] = np.array(sm["liveCalibration"].rpyCalib)
 
     # Drain only this subscriber; camera capture and the encoder still run.
-    if parked_trial and pv5_parked_dashcam.monitoring_pause_allowed(sm, time.monotonic_ns()):
+    if parked_supported and pv5_parked_dashcam.monitoring_pause_allowed(sm, time.monotonic_ns()):
       continue
 
     t1 = time.perf_counter()
@@ -182,7 +182,7 @@ def main():
     model_output = parse_model_output(model_output)
     model_output['raw_pred'] = raw_pred
     msg = get_driverstate_packet(model_output, vipc_client.frame_id, vipc_client.timestamp_sof, t2 - t1, gpu_execution_time)
-    if parked_trial:
+    if parked_supported:
       msg.driverStateV2.cameraFrameMonoTime = vipc_client.timestamp_sof
     pm.send("driverStateV2", msg)
     if diagnostics.enabled:

@@ -68,14 +68,21 @@ def test_only_opted_in_real_pv5_and_fresh_data(monkeypatch):
     monkeypatch.delenv(k, raising=False)
   monkeypatch.setattr(park.os.path,'isfile',lambda path: path=='/AGNOS')
   cp = NS(carFingerprint='KIA_PV5', notCar=False, passive=False)
-  assert not park.enabled_for(cp)
+  assert park.supported_for(cp)
+  saved = {}
+  params = NS(get=saved.get)
+  assert not park.setting_enabled(params)
   monkeypatch.setenv('PV5_PARKED_DASHCAM_TRIAL','1')
-  assert park.enabled_for(cp)
-  assert not park.enabled_for(cp, replay=True)
-  assert not park.enabled_for(NS(carFingerprint='OTHER',notCar=False,passive=False))
-  assert not park.enabled_for(NS(carFingerprint='KIA_PV5',notCar=False,passive=True))
-  monkeypatch.setenv('SIMULATION','1')
-  assert not park.enabled_for(cp)
+  assert park.setting_enabled(params)
+  saved[park.PARAM] = False
+  assert not park.setting_enabled(params)
+  saved[park.PARAM] = True
+  assert park.setting_enabled(params)
+  assert not park.supported_for(cp, replay=True)
+  assert not park.supported_for(NS(carFingerprint='OTHER',notCar=False,passive=False))
+  assert not park.supported_for(NS(carFingerprint='KIA_PV5',notCar=False,passive=True))
+  monkeypatch.setenv('SIMULATION','')
+  assert not park.supported_for(cp)
   assert park.fresh(True,TICK,TICK+park.FRESH_NS-1)
   assert not park.fresh(True,TICK,TICK+park.FRESH_NS)
   assert not park.fresh(True,TICK+1,TICK)
@@ -119,7 +126,8 @@ def test_parked_state_round_trip_uses_dedicated_service():
   assert SERVICE_LIST['parkedDashcamState'].frequency == 10
 
 
-def test_selfdrived_blocks_enable_until_a_new_plan_consumes_fresh_model_data():
+@pytest.mark.parametrize("turn_off_in_park", [False, True])
+def test_selfdrived_blocks_enable_until_a_new_plan_consumes_fresh_model_data(turn_off_in_park):
   import ast
   from collections import UserDict
   from pathlib import Path
@@ -142,7 +150,7 @@ def test_selfdrived_blocks_enable_until_a_new_plan_consumes_fresh_model_data():
   events.add = events.names.append
   st = NS(sm=process, events=events, initialized=True, model_startup_complete=True, enabled=False, active=False,
           state_machine=NS(state='disabled'), parked_dashcam=park.ParkedDashcamRequest(),
-          car_state_valid=True, car_state_mono_time=0)
+          parked_dashcam_enabled=False, car_state_valid=True, car_state_mono_time=0)
   cs = state()
 
   def tick(now):
@@ -152,16 +160,26 @@ def test_selfdrived_blocks_enable_until_a_new_plan_consumes_fresh_model_data():
     ns['update_parked_dashcam'](st, cs)
     assert 'existing_alert' in events.names
 
+  tick(TICK)
+  assert not st.parked_dashcam.requested
+  assert events.names == ['existing_alert']
+
+  st.parked_dashcam_enabled = True
   for i in range(21):
     tick((i+1)*TICK)
+  assert st.parked_dashcam.requested
   assert events.names == ['existing_alert','initializing']
   process['parkedDashcamState'].inferencePaused = True
   process.logMonoTime['parkedDashcamState'] = 22*TICK
   tick(22*TICK)
   assert events.names == ['existing_alert','dashcam','initializing']
 
-  cs.gearShifter = 'drive'
+  if turn_off_in_park:
+    st.parked_dashcam_enabled = False
+  else:
+    cs.gearShifter = 'drive'
   tick(23*TICK)
+  assert not st.parked_dashcam.requested
   assert events.names == ['existing_alert','initializing']
   for key in ('modelV2','longitudinalPlan','livePose'):
     process.logMonoTime[key] = 24*TICK
@@ -176,6 +194,10 @@ def test_selfdrived_blocks_enable_until_a_new_plan_consumes_fresh_model_data():
   process['driverMonitoringState'].cameraFrameMonoTime = 24*TICK
   tick(26*TICK)
   assert events.names == ['existing_alert']
+  if turn_off_in_park:
+    for i in range(27, 48):
+      tick(i*TICK)
+    assert not st.parked_dashcam.requested
 
 
 def test_monitoring_never_pauses_in_drive_or_on_stale_road_confirmation():

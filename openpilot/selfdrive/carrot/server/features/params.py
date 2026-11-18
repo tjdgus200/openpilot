@@ -1,8 +1,11 @@
 import asyncio
 import json
 import os
+from urllib.parse import urlsplit
 
 from aiohttp import web
+
+from openpilot.common import pv5_parked_dashcam
 
 from ..config import PARAMS_BACKUP_PATH
 from ..services.param_changes import (
@@ -74,6 +77,8 @@ async def api_params_bulk(request: web.Request) -> web.Response:
 async def api_param_set(request: web.Request) -> web.Response:
   try:
     body = await request.json()
+    if not isinstance(body, dict):
+      raise ValueError("expected JSON object")
   except Exception:
     return web.json_response({"ok": False, "error": "invalid json"}, status=400)
 
@@ -85,6 +90,18 @@ async def api_param_set(request: web.Request) -> web.Response:
     return web.json_response({"ok": False, "error": "missing name"}, status=400)
   if name in INTERNAL_SESSION_PARAMS:
     return web.json_response({"ok": False, "error": "driver monitoring is controlled by the vehicle CANCEL gesture"}, status=403)
+
+  if name == pv5_parked_dashcam.PARAM:
+    origin = request.headers.get("Origin")
+    try:
+      if (origin and urlsplit(origin).netloc != request.host) or request.headers.get("Sec-Fetch-Site") == "cross-site":
+        return web.json_response({"ok": False, "error": "same-origin requests only"}, status=403)
+    except ValueError:
+      return web.json_response({"ok": False, "error": "invalid origin"}, status=403)
+    if request.content_type != "application/json":
+      return web.json_response({"ok": False, "error": "application/json required"}, status=415)
+    if type(value) not in (int, bool) or value not in (0, 1):
+      return web.json_response({"ok": False, "error": "parked dashcam setting requires a boolean"}, status=400)
 
   # clamp using settings if numeric
   p = None

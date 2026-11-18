@@ -204,8 +204,8 @@ def run_dm2(params, experimental, initial_car_params=None):
   replay = "REPLAY" in os.environ
   services = ['carState', 'selfdriveState', 'modelV2', 'radarState', 'liveCalibration', 'carParams', 'driverStateV2',
               'carControl', 'longitudinalPlan']
-  parked_trial = pv5_parked_dashcam.trial_enabled(replay)
-  if parked_trial:
+  parked_supported = pv5_parked_dashcam.supported(replay)
+  if parked_supported:
     services.append('parkedDashcamState')
   # Preserve driver-camera cadence on device. Replay uses modelV2 because a
   # disabled route intentionally has no driverStateV2 messages.
@@ -237,7 +237,7 @@ def run_dm2(params, experimental, initial_car_params=None):
   while True:
     sm.update(int(DT_DMON * 1000))
     now = dm_clock(sm, replay)
-    if parked_trial:
+    if parked_supported:
       stamp_ns = time.monotonic_ns()
       if pv5_parked_dashcam.monitoring_pause_allowed(sm, stamp_ns):
         parked_previous = True
@@ -377,7 +377,7 @@ def run_dm2(params, experimental, initial_car_params=None):
                   len(model.laneLineProbs) == 4 and min(model.laneLineProbs[1], model.laneLineProbs[2]) > 0.8 and
                   not cs.leftBlinker and not cs.rightBlinker)
       strict, clear = traffic.update(now, traffic_observations(sm['radarState']), road_ok, straight, covered)
-    driver_frame_ns = sm['driverStateV2'].cameraFrameMonoTime if parked_trial else 0
+    driver_frame_ns = sm['driverStateV2'].cameraFrameMonoTime if parked_supported else 0
     after_resume = not resume_after_ns or driver_frame_ns > resume_after_ns
     camera_ok = camera_health.update(now, after_resume and camera_sample_usable(sm, dm.wheel_on_right, demo_mode,
                                                               replay_now=now if replay else None) and
@@ -403,7 +403,7 @@ def run_dm2(params, experimental, initial_car_params=None):
     packet.driverMonitoringState.cameraUnavailable = not camera_ok
     packet.driverMonitoringState.dm2Experimental = dm.experimental
     packet.driverMonitoringState.dm2Disabled = False
-    if parked_trial:
+    if parked_supported:
       packet.driverMonitoringState.cameraFrameMonoTime = assessed_frame_ns
     packet.driverMonitoringState.dm2StrictTimeRemaining = max(0.0, traffic.strict_until - now)
     packet.driverMonitoringState.dm2WheelTimeoutFactor = dm.wheel_factor

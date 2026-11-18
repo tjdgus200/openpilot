@@ -411,8 +411,8 @@ def main(demo=False):
     CP = get_demo_car_params()
   else:
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
-  trial_parked = not demo and pv5_parked_dashcam.enabled_for(CP, SIMULATION) and hasattr(model, 'reset_parked_history')
-  parked_pm = PubMaster(['parkedDashcamState']) if trial_parked else None
+  parked_supported = not demo and pv5_parked_dashcam.supported_for(CP, SIMULATION) and hasattr(model, 'reset_parked_history')
+  parked_pm = PubMaster(['parkedDashcamState']) if parked_supported else None
   parked_paused = False
   parked_status_at = 0
   jetson_boot_output = False
@@ -516,11 +516,11 @@ def main(demo=False):
       if has_wide_camera and wide_fov_index:
         model_transform_extra = wider_model_warp(extra, WIDE_MODEL_FOV_CHOICES[wide_fov_index - 1])
 
-    if trial_parked:
+    if parked_supported:
       now_ns = time.monotonic_ns()
       pause = pv5_parked_dashcam.pause_allowed(sm, now_ns, jetson_started=jetson_boot_output,
                                                jetson_active=model.active, jetson_ready=model.ready)
-      if pause != parked_paused or now_ns >= parked_status_at:
+      if pause != parked_paused or (pause and now_ns >= parked_status_at):
         status = messaging.new_message('parkedDashcamState', valid=True)
         status.parkedDashcamState.inferencePaused = pause
         parked_pm.send('parkedDashcamState', status)
@@ -707,7 +707,7 @@ def main(demo=False):
       pm.send('modelV2', modelv2_send)
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
-      if trial_parked and model.active and modelv2_send.valid and posenet_send.valid:
+      if parked_supported and model.active and modelv2_send.valid and posenet_send.valid:
         jetson_boot_output = True
       if usbgpu_startup_pending:
         # Clear only after all first-frame outputs are on the bus so selfdrived
