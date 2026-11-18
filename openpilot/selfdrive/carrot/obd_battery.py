@@ -35,6 +35,9 @@ FIELDS = frozenset(('max_temp_c', 'min_temp_c', 'pack_power_kw', 'cell_delta_mv'
 # comparison. Never rewrite confirmed_fields or represent them as calibrated.
 CHARGING_PREVIEW_FIELDS = frozenset(('charge_mode', 'cell_voltages_v', 'module_temps_c',
                                      'pack_voltage_v', 'pack_current_a'))
+SUMMARY_PREVIEW_FIELDS = frozenset(('soc_percent', 'max_temp_c', 'min_temp_c', 'pack_power_kw',
+                                    'coolant_inlet_c', 'cell_delta_mv', 'thermal_mode'))
+DISPLAY_PREVIEW_FIELDS = CHARGING_PREVIEW_FIELDS | SUMMARY_PREVIEW_FIELDS
 REPLIES = {'220101': (62, b'\x62\x01\x01'), '220105': (46, b'\x62\x01\x05'), '220106': (38, b'\x62\x01\x06')}
 # Only the four blocks actually observed before the PV5 metadata/zero tail.
 CELL_BLOCKS = (('220102', 32), ('220103', 32), ('220104', 32), ('22010A', 12))
@@ -464,10 +467,10 @@ class MetricPoller:
 def write_snapshot(state, candidates=None, confirmed=frozenset(), path=SNAPSHOT, identity=None, observed_at=None, field_times=None,
                    diagnostics=None, cell_times=None):
   candidates = candidates or {}
-  displayed = confirmed | CHARGING_PREVIEW_FIELDS
+  displayed = confirmed | DISPLAY_PREVIEW_FIELDS
   record = {'version': 1, 'updated': time.monotonic() if observed_at is None else observed_at, 'state': state, 'config_id': identity,
             'candidates': candidates, 'metrics': {k: v for k, v in candidates.items() if k in displayed},
-            'unverified_fields': sorted((CHARGING_PREVIEW_FIELDS - confirmed) & candidates.keys())}
+            'unverified_fields': sorted((DISPLAY_PREVIEW_FIELDS - confirmed) & candidates.keys())}
   if field_times is not None:
     record['field_times'] = field_times
   if diagnostics is not None:
@@ -505,8 +508,9 @@ def snapshot_packet(record, now, expected_identity=None):
     metrics.pop('min_temp_c', None)
     metrics.pop('max_temp_c', None)
   pending = record.get('unverified_fields', [])
-  if (not isinstance(pending, list) or len(pending) > len(CHARGING_PREVIEW_FIELDS)
-      or any(not isinstance(k, str) or k not in CHARGING_PREVIEW_FIELDS for k in pending)):
+  if (not isinstance(pending, list) or len(pending) > len(DISPLAY_PREVIEW_FIELDS)
+      or any(not isinstance(k, str) or k not in DISPLAY_PREVIEW_FIELDS for k in pending)
+      or len(set(pending)) != len(pending)):
     return packet_from_metrics({}, now)
   packet = packet_from_metrics(metrics, now, 'receiving' if metrics else 'profile_required', unverified=pending)
   cells = packet['fields'].get('cell_voltages_v')

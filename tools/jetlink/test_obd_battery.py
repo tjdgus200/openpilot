@@ -133,7 +133,8 @@ def test_single_poll_is_one_transaction_and_keeps_individual_freshness(tmp_path,
     assert not b.snapshot_packet(record,106.,'cfg')['fields']
     b.write_snapshot('receiving',values,path=path,identity='cfg',observed_at=stamp)
     fields = b.snapshot_packet(b.read_json(path),104.,'cfg')['fields']
-    assert 'coolant_inlet_c' not in fields and 'charge_mode' in fields
+    assert 'coolant_inlet_c' in fields and 'charge_mode' in fields
+    assert 'coolant_inlet_c' in b.snapshot_packet(b.read_json(path),104.,'cfg')['unverified_fields']
     for failed, expected in [('220101',['220101']),('220106',['220101','220105','220106'])]:
       link = PollLink(failed)
       with pytest.raises(TimeoutError):
@@ -181,7 +182,8 @@ def test_snapshot_staleness_and_validation(tmp_path, monkeypatch):
   b.write_snapshot('receiving', b.candidate_metrics(payload()), frozenset(['max_temp_c']), path, identity='test')
   record = b.read_json(path)
   packet = b.snapshot_packet(record, 102, 'test')
-  assert packet['fields'] == {'max_temp_c': {'value': 28, 'age_s': 2.0}}
+  assert packet['fields']['max_temp_c'] == {'value': 28, 'age_s': 2.0}
+  assert set(packet['fields']) - set(packet['unverified_fields']) == {'max_temp_c'}
   assert not b.snapshot_packet(record, 106, 'test')['fields']
   assert not b.snapshot_packet(record, 99, 'test')['fields']
   assert not b.snapshot_packet(record, 102, 'another device/config')['fields']

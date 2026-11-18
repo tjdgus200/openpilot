@@ -144,7 +144,7 @@ def test_owner_enabled_preview_is_not_recorded_as_calibration(tmp_path):
   assert path.stat().st_size < 4096 and len(json.dumps(packet)) < 2048
 
 
-def test_existing_enrollment_automatically_displays_preview_and_keeps_scalar_gate(tmp_path, monkeypatch):
+def test_existing_enrollment_displays_summary_and_heatmap_without_calibrating(tmp_path, monkeypatch):
   from hud_battery import BatteryPublisher
   config = {'version': 1, 'address': '00:11:22:33:44:55', 'confirmed_fields': []}
   cfg, snap = tmp_path / 'cfg', tmp_path / 'snap'
@@ -154,12 +154,24 @@ def test_existing_enrollment_automatically_displays_preview_and_keeps_scalar_gat
   monkeypatch.setattr(b, 'SNAPSHOT', snap)
   now = 100.
   values = {'charge_mode': 'ac', 'module_temps_c': [20]*15, 'cell_voltages_v': [3.88]*108,
-            'max_temp_c': 20, 'thermal_mode': 'heating'}
-  b.write_snapshot('receiving', values, path=snap, identity=b.config_id(b.configuration(config)), observed_at=now)
-  packet = BatteryPublisher(tmp_path/'no_profile').update('KIA_PV5', True, now)
-  assert set(packet['fields']) == {'charge_mode', 'module_temps_c', 'cell_voltages_v'}
+            'pack_voltage_v': 430., 'pack_current_a': -3., 'soc_percent': 75.5,
+            'max_temp_c': 20, 'min_temp_c': 16, 'thermal_mode': 'heating',
+            'pack_power_kw': -1.29, 'coolant_inlet_c': 18, 'cell_delta_mv': 20.}
+  assert set(values) == b.DISPLAY_PREVIEW_FIELDS
+  identity = b.config_id(b.configuration(config))
+  b.write_snapshot('receiving', values, path=snap, identity=identity, observed_at=now,
+                   field_times=dict.fromkeys(values, now))
+  publisher = BatteryPublisher(tmp_path/'no_profile')
+  packet = publisher.update('KIA_PV5', True, now)
+  assert set(packet['fields']) == set(packet['unverified_fields']) == set(values)
   panel = panel_from_wire(packet)
+  for name in b.SUMMARY_PREVIEW_FIELDS:
+    assert panel.value(name) == values[name]
   assert panel.status == 'unverified' and charging_view(panel, 'P', 0., True)
+  assert panel.value('dc_charge_80_min') is None and panel.value('thermal_power_kw') is None
+  assert snap.stat().st_size < 4096 and len(json.dumps(packet)) < 2048
+  assert 'pack_power_kw' not in publisher.ble_packet(b.read_json(snap), identity, now + 6)['fields']
+  assert not publisher.ble_packet(b.read_json(snap), identity, now + 61)['fields']
   assert cfg.read_bytes() == original and json.loads(original)['confirmed_fields'] == []
   assert not BatteryPublisher(tmp_path/'no_profile').update('OTHER', True, now)['fields']
 

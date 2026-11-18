@@ -242,7 +242,7 @@ def panel_labels(data, language='en'):
             'cells': '셀 전압차', 'waiting': '배터리 데이터 수신 대기',
             'profile_required': 'PV5 신호 검증 · 프로필 등록 필요',
             'receiving': '이전 수신값 유지 · 최대 60초' if retained else '전력 5초 · 기타 60초 유효', 'idle': '대기', 'cooling': '냉각 중',
-            'unverified': '이전 수신값 유지 · 실차 미검증' if retained else '충전·히트맵 관측값 · 실차 미검증',
+            'unverified': '이전 수신값 유지 · 실차 미검증' if retained else 'OBD 관측값 · 실차 미검증',
             'heating': '가열 중', 'mixed': '냉각·가열 작동',
         }
     if language == 'zh':
@@ -255,7 +255,7 @@ def panel_labels(data, language='en'):
             'cells': '电芯电压差', 'waiting': '等待电池数据',
             'profile_required': '需要验证PV5信号并安装配置',
             'receiving': '保留上次数据 · 最长60秒' if retained else '功率5秒 · 其他60秒有效', 'idle': '待机', 'cooling': '冷却中',
-            'unverified': '保留上次数据 · 实车未验证' if retained else '充电/热图观测值 · 实车未验证',
+            'unverified': '保留上次数据 · 实车未验证' if retained else 'OBD观测值 · 实车未验证',
             'heating': '加热中', 'mixed': '冷却与加热运行',
         }
     return {
@@ -267,6 +267,6 @@ def panel_labels(data, language='en'):
         'cells': 'Cell voltage spread', 'waiting': 'Waiting for battery data',
         'profile_required': 'PV5 signals need validation and a profile',
         'receiving': 'Last received values held / up to 60 s' if retained else 'Power expires at 5 s / others 60 s', 'idle': 'Standby', 'cooling': 'Cooling',
-        'unverified': 'Last received values held / vehicle unverified' if retained else 'Charge / heatmap observations · vehicle unverified',
+        'unverified': 'Last received values held / vehicle unverified' if retained else 'OBD observations · vehicle unverified',
         'heating': 'Heating', 'mixed': 'Cooling and heating',
     }
