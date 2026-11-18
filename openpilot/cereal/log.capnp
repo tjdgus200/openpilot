@@ -844,6 +844,8 @@ struct SelfdriveState {
   atcTurnStartMonoTime @14 :UInt64;
   atcTurnDirection @15 :LaneChangeDirection;
 
+  parkedDashcamRequested @16 :Bool;
+
   enum OpenpilotState @0xdbe58b96d2d1ac61 {
     disabled @0;
     preEnabled @1;
@@ -864,6 +866,10 @@ struct SelfdriveState {
     mid @2;
     full @3;
   }
+}
+
+struct ParkedDashcamState {
+  inferencePaused @0 :Bool;
 }
 
 struct ControlsState @0x97ff69c53601abf1 {
@@ -2254,6 +2260,7 @@ struct DriverStateV2 {
   wheelOnRightProb @5 :Float32;
   leftDriverData @6 :DriverData;
   rightDriverData @7 :DriverData;
+  cameraFrameMonoTime @9 :UInt64;
 
   struct DriverData {
     faceOrientation @0 :List(Float32);
@@ -2328,6 +2335,7 @@ struct DriverMonitoringState {
   dm2VisionTimeoutFactor @22 :Float32 = 1;
   dm2InteractionGraceRemaining @23 :Float32;
   dm2Disabled @24 :Bool;
+  cameraFrameMonoTime @25 :UInt64;  # frame used for this assessment, zero if none
 
   alwaysOn @3 :Bool;
   alwaysOnLockout @4 :Bool;
@@ -2701,6 +2709,7 @@ struct Event {
     can @5 :List(CanData);
     controlsState @7 :ControlsState;
     selfdriveState @130 :SelfdriveState;
+    parkedDashcamState @155 :ParkedDashcamState;
     gyroscope @99 :SensorEventData;
     accelerometer @98 :SensorEventData;
     magnetometer @95 :SensorEventData;

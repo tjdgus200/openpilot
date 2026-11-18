@@ -2,6 +2,7 @@
 """One-shot local read-only diagnosis. No service actions, secrets or raw logs."""
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import runpy
@@ -97,9 +98,46 @@ def source_snapshot():
   return out
 
 
+def park_diagnostic_status(cp, state, valid, stamp, now):
+  if cp.carFingerprint != 'KIA_PV5' or cp.notCar:
+    return {'mode': 'unavailable', 'reason': 'pv5_required'}
+  if not valid or not 0 < stamp <= now or now - stamp >= 250_000_000 or not state.canValid or state.canTimeout:
+    return {'mode': 'unavailable', 'reason': 'invalid_vehicle_state'}
+  if str(state.gearShifter) != 'park':
+    return {'mode': 'unavailable', 'reason': 'park_required'}
+  return {'mode': 'park_read_only', 'standstill': bool(state.standstill),
+          'raw_speed_zero': math.isfinite(state.vEgoRaw) and state.vEgoRaw == 0,
+          'filtered_speed_zero': math.isfinite(state.vEgo) and state.vEgo == 0}
+
+
+def park_diagnostic_snapshot():
+  if os.geteuid() == 0:
+    return {'mode': 'unavailable', 'reason': 'normal_terminal_required'}
+  if any(os.environ.get(key) for key in ('SIMULATION', 'REPLAY', 'OPENPILOT_PREFIX', 'ZMQ')):
+    return {'mode': 'unavailable', 'reason': 'local_vehicle_required'}
+  try:
+    from openpilot.cereal import car, messaging
+    from openpilot.common.params import Params
+
+    data = Params().get('CarParams')
+    if data is None:
+      return {'mode': 'unavailable', 'reason': 'pv5_required'}
+    with car.CarParams.from_bytes(data) as cp:
+      sm = messaging.SubMaster(['carState'])
+      deadline = time.monotonic() + 1
+      while time.monotonic() < deadline and not sm.seen['carState']:
+        sm.update(50)
+      return park_diagnostic_status(cp, sm['carState'], sm.valid['carState'],
+                                    sm.logMonoTime['carState'], time.monotonic_ns())
+  except (OSError, ValueError, ImportError, TypeError):
+    return {'mode': 'unavailable', 'reason': 'diagnostic_failed'}
+
+
 def main():
   if sys.argv[1:] == ['--protected']:
     result = protected_snapshot()
+  elif sys.argv[1:] == ['--park-read-only']:
+    result = park_diagnostic_snapshot()
   elif sys.argv[1:]:
     result = {'error': 'unsupported_arguments'}
   else:

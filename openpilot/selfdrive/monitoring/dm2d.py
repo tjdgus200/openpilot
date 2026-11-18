@@ -6,6 +6,7 @@ import time
 from openpilot.cereal import car
 import openpilot.cereal.messaging as messaging
 from openpilot.cereal.services import SERVICE_LIST
+from openpilot.common import pv5_parked_dashcam
 from openpilot.common.params import Params
 from openpilot.common.realtime import DT_DMON, Ratekeeper, config_realtime_process
 from openpilot.selfdrive.monitoring.config import experimental_mode
@@ -203,6 +204,9 @@ def run_dm2(params, experimental, initial_car_params=None):
   replay = "REPLAY" in os.environ
   services = ['carState', 'selfdriveState', 'modelV2', 'radarState', 'liveCalibration', 'carParams', 'driverStateV2',
               'carControl', 'longitudinalPlan']
+  parked_trial = pv5_parked_dashcam.trial_enabled(replay)
+  if parked_trial:
+    services.append('parkedDashcamState')
   # Preserve driver-camera cadence on device. Replay uses modelV2 because a
   # disabled route intentionally has no driverStateV2 messages.
   sm = messaging.SubMaster(services, poll='modelV2' if replay else 'driverStateV2')
@@ -227,10 +231,32 @@ def run_dm2(params, experimental, initial_car_params=None):
   monitoring_enabled = params.get_bool("DriverMonitoringEnabled") and not params.get_bool(SESSION_DISABLED_PARAM)
   disable_write_pending = False
   last_fresh_car_state = -math.inf
+  parked_previous = False
+  resume_after_ns = 0
   next_mode_check = time.monotonic() + 0.5
   while True:
     sm.update(int(DT_DMON * 1000))
     now = dm_clock(sm, replay)
+    if parked_trial:
+      stamp_ns = time.monotonic_ns()
+      if pv5_parked_dashcam.monitoring_pause_allowed(sm, stamp_ns):
+        parked_previous = True
+        # Do not interpret stopped-camera data or retain parked input as credit.
+        messaging.drain_sock(input_sock, wait_for_one=False)
+        messaging.drain_sock(control_sock, wait_for_one=False)
+        dm.update_parked_reset(now, False)
+        pm.send('driverMonitoringState', dm.get_state_packet(valid=False))
+        rk.keep_time()
+        continue
+      if parked_previous:
+        parked_previous = False
+        resume_after_ns = stamp_ns
+        camera_health = CameraAvailability()
+        cancel_sequence.reset_input_stream()
+        automatic_cancel.reset_input_stream()
+        inputs = InteractionEdges()
+        touch_evidence = SteeringTouchEvidence()
+
     mode_now = time.monotonic()
     if mode_now >= next_mode_check:
       dm.set_experimental(experimental_mode(params))
@@ -351,7 +377,9 @@ def run_dm2(params, experimental, initial_car_params=None):
                   len(model.laneLineProbs) == 4 and min(model.laneLineProbs[1], model.laneLineProbs[2]) > 0.8 and
                   not cs.leftBlinker and not cs.rightBlinker)
       strict, clear = traffic.update(now, traffic_observations(sm['radarState']), road_ok, straight, covered)
-    camera_ok = camera_health.update(now, camera_sample_usable(sm, dm.wheel_on_right, demo_mode,
+    driver_frame_ns = sm['driverStateV2'].cameraFrameMonoTime if parked_trial else 0
+    after_resume = not resume_after_ns or driver_frame_ns > resume_after_ns
+    camera_ok = camera_health.update(now, after_resume and camera_sample_usable(sm, dm.wheel_on_right, demo_mode,
                                                               replay_now=now if replay else None) and
                                      0 <= now - sm.logMonoTime['driverStateV2'] / 1e9 < 0.5)
     touch_held, touch_edge = touch_evidence.update(now, cs.steeringTouch, valid)
@@ -361,9 +389,11 @@ def run_dm2(params, experimental, initial_car_params=None):
     dm.configure_context(now, camera_ok, strict, clear)
     if valid:
       dm.record_interaction(inputs.last_response)
+    assessed_frame_ns = 0
     if camera_ok:
       if sm.updated['driverStateV2'] and (valid or demo_mode):
         dm.run_step(sm, demo=demo_mode)
+        assessed_frame_ns = driver_frame_ns
     elif valid:
       dm.run_without_camera((response or touch_held) and valid, sm['selfdriveState'].enabled,
                             cs.vEgo < dm.settings._ALERT_MIN_SPEED,
@@ -373,6 +403,8 @@ def run_dm2(params, experimental, initial_car_params=None):
     packet.driverMonitoringState.cameraUnavailable = not camera_ok
     packet.driverMonitoringState.dm2Experimental = dm.experimental
     packet.driverMonitoringState.dm2Disabled = False
+    if parked_trial:
+      packet.driverMonitoringState.cameraFrameMonoTime = assessed_frame_ns
     packet.driverMonitoringState.dm2StrictTimeRemaining = max(0.0, traffic.strict_until - now)
     packet.driverMonitoringState.dm2WheelTimeoutFactor = dm.wheel_factor
     pm.send('driverMonitoringState', packet)

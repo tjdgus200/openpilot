@@ -215,6 +215,12 @@ class JoiningModel:
       if name.endswith('_q'):
         tensor._buffer().copyin(memoryview(bytearray(tensor.numel() * tensor.dtype.itemsize)))
 
+  def reset_parked_history(self):
+    self._reset_small()
+    self.reset = True
+    self.packed.fill(0)
+    self.prev_desire.fill(0)
+
   def run(self, bufs, transforms, inputs, prepare_only):
     from openpilot.common.swaglog import cloudlog
     maintenance = getattr(self, 'maintenance', None)

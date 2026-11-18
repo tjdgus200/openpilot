@@ -11,6 +11,7 @@ from msgq.visionipc import VisionIpcClient, VisionStreamType
 
 from openpilot.common.params import Params
 from openpilot.common.impact_dashcam import ImpactDashcam
+from openpilot.common import pv5_parked_dashcam
 from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper, DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.runtime_diagnostics import communication_snapshot
@@ -77,6 +78,9 @@ class SelfdriveD:
     else:
       self.CP = CP
 
+    self.parked_dashcam = None
+    if pv5_parked_dashcam.enabled_for(self.CP, REPLAY or SIMULATION):
+      self.parked_dashcam = pv5_parked_dashcam.ParkedDashcamRequest(start_after=time.monotonic_ns())
     self.car_events = CarSpecificEvents(self.CP)
     self.pv5_scc_supported = scc_decel_eligible(self.CP)
     self.scc_warning = SccWarning() if self.pv5_scc_supported else None
@@ -115,12 +119,14 @@ class SelfdriveD:
       ignore += ['roadCameraState']
       if self.use_wide_camera:
         ignore += ['wideRoadCameraState']
+    parked_status = ['parkedDashcamState'] if self.parked_dashcam is not None else []
+    ignore += parked_status  # Optional status cannot become a core readiness dependency.
     self.sm = messaging.SubMaster(['deviceState', 'pandaStates', 'peripheralState', 'modelV2', 'liveCalibration',
                                    'carOutput', 'driverMonitoringState', 'longitudinalPlan', 'livePose', # 'liveDelay',
                                    'managerState', 'liveParameters', 'radarState', 'liveTracks', 'liveTorqueParameters',
                                    'carrotMan',
                                    'controlsState', 'carControl', 'driverAssistance', 'alertDebug', 'userBookmark', 'audioFeedback'] + \
-                                   self.camera_packets + self.sensor_packets + self.gps_packets,
+                                   self.camera_packets + self.sensor_packets + self.gps_packets + parked_status,
                                   ignore_alive=ignore, ignore_avg_freq=ignore,
                                   ignore_valid=ignore, frequency=int(1/DT_CTRL))
 
@@ -790,6 +796,8 @@ class SelfdriveD:
     ss.active = self.active
     ss.state = self.state_machine.state
     ss.engageable = not self.events.contains(ET.NO_ENTRY)
+    if self.parked_dashcam is not None:
+      ss.parkedDashcamRequested = self.parked_dashcam.requested
     ss.experimentalMode = self.experimental_mode
     ss.personality = self.personality
 
@@ -815,10 +823,41 @@ class SelfdriveD:
       self.pm.send('onroadEvents', ce_send)
     self.events_prev = self.events.names.copy()
 
+  def update_parked_dashcam(self, CS):
+    now = time.monotonic_ns()
+    current_control = pv5_parked_dashcam.fresh(self.sm.valid['carControl'], self.sm.logMonoTime['carControl'], now)
+    current_car = pv5_parked_dashcam.fresh(self.car_state_valid, self.car_state_mono_time, now)
+    allowed = (self.initialized and self.model_startup_complete and self.sm['deviceState'].started
+               and not self.enabled and not self.active and self.state_machine.state == State.disabled
+               and current_car and current_control
+               and pv5_parked_dashcam.parked(CS, self.sm['carControl']))
+    requested = self.parked_dashcam.update(allowed, now)
+    if (requested and self.sm['parkedDashcamState'].inferencePaused
+        and pv5_parked_dashcam.fresh(self.sm.valid['parkedDashcamState'], self.sm.logMonoTime['parkedDashcamState'], now)):
+      self.events.add(EventName.dashcamMode)
+    if self.parked_dashcam.resume_after and not requested:
+      pose = self.sm['livePose']
+      after = self.parked_dashcam.resume_after
+      downstream_services = ('longitudinalPlan', 'livePose', 'radarState', 'liveCalibration', 'liveParameters', 'driverAssistance')
+      new_plan_and_pose = all(after < self.sm.logMonoTime[k] <= now and now - self.sm.logMonoTime[k] < pv5_parked_dashcam.FRESH_NS
+                             for k in ('longitudinalPlan', 'livePose'))
+      downstream = (self.sm.all_checks(downstream_services) and new_plan_and_pose
+                    and pose.inputsOK and pose.sensorsOK and pose.posenetOK
+                    and pv5_parked_dashcam.monitoring_ready(self.sm, now, after))
+    else:
+      downstream = False
+    if self.parked_dashcam.block_engagement(
+        pv5_parked_dashcam.fresh(self.sm.valid['modelV2'], self.sm.logMonoTime['modelV2'], now),
+        self.sm['modelV2'].timestampEof, self.sm['longitudinalPlan'].modelMonoTime, downstream):
+      if EventName.selfdriveInitializing not in self.events.names:
+        self.events.add(EventName.selfdriveInitializing)
+
   def step(self):
     CS = self.data_sample()
     self.update_impact_dashcam(CS)
     self.update_events(CS)
+    if self.parked_dashcam is not None:
+      self.update_parked_dashcam(CS)
     if self.impact_dashcam.pending:
       self.events.add(EventName.impactDetected)
     if self.impact_dashcam.committed:

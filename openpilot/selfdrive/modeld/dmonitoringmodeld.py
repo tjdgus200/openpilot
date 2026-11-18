@@ -10,6 +10,7 @@ from openpilot.cereal import messaging
 from openpilot.cereal.messaging import PubMaster, SubMaster
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from openpilot.common.swaglog import cloudlog
+from openpilot.common import pv5_parked_dashcam
 from openpilot.common.realtime import config_realtime_process
 from openpilot.common.runtime_diagnostics import RuntimeDiagnostics
 from openpilot.common.transformations.model import dmonitoringmodel_intrinsics
@@ -127,7 +128,9 @@ def main():
   model = ModelState(cam_w, cam_h)
   cloudlog.warning("models loaded, dmonitoringmodeld starting")
 
-  sm = SubMaster(["liveCalibration"])
+  parked_trial = pv5_parked_dashcam.trial_enabled()
+  parked_services = ['carState', 'carControl', 'selfdriveState', 'parkedDashcamState'] if parked_trial else []
+  sm = SubMaster(["liveCalibration", *parked_services])
   pm = PubMaster(["driverStateV2"])
 
   calib = np.zeros(model.numpy_inputs['calib'].size, dtype=np.float32)
@@ -159,6 +162,10 @@ def main():
     if sm.updated["liveCalibration"]:
       calib[:] = np.array(sm["liveCalibration"].rpyCalib)
 
+    # Drain only this subscriber; camera capture and the encoder still run.
+    if parked_trial and pv5_parked_dashcam.monitoring_pause_allowed(sm, time.monotonic_ns()):
+      continue
+
     t1 = time.perf_counter()
     if phase_gate is not None:
       phase_gate.wait(vipc_client.timestamp_sof)
@@ -175,6 +182,8 @@ def main():
     model_output = parse_model_output(model_output)
     model_output['raw_pred'] = raw_pred
     msg = get_driverstate_packet(model_output, vipc_client.frame_id, vipc_client.timestamp_sof, t2 - t1, gpu_execution_time)
+    if parked_trial:
+      msg.driverStateV2.cameraFrameMonoTime = vipc_client.timestamp_sof
     pm.send("driverStateV2", msg)
     if diagnostics.enabled:
       diagnostics.record(
