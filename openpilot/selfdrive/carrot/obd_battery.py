@@ -855,7 +855,7 @@ async def run():
       code = exc.code if isinstance(exc, QueryError) else 'timeout' if isinstance(exc, TimeoutError) else 'response_or_setup_failed'
       delay = RETRY_INTERVAL
       with suppress(OSError):
-        write_snapshot('unavailable', diagnostics=collection_info(link, poller) | {
+        write_snapshot('unavailable', identity=identity, diagnostics=collection_info(link, poller) | {
           'failure': code, 'failure_detail': failure_detail(exc),
           'retry_delay_s': delay, 'cleanup_verified': cleanup_complete})
       # The old local attempt and bounded cleanup have ended and its router

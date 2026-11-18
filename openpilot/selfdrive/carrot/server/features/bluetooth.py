@@ -5,6 +5,8 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
+from openpilot.selfdrive.carrot import obd_settings
+
 from openpilot.selfdrive.carrot.bluetooth.bluez import Bluez
 from openpilot.selfdrive.carrot.bluetooth.model import CONFIG_PATH, RUNTIME, ACTIONS, DEFAULT_MAPPING, address, atomic_json, config, read_json, validate_config
 
@@ -65,6 +67,19 @@ async def status(request):
   return web.json_response(result)
 
 
+async def obd_status(request):
+  result = {'runtime': {'alive': runtime()['alive'], 'stationary': runtime()['stationary']},
+            'radioEnabled': await radio_enabled(), 'obd': obd_settings.status()}
+  try:
+    snapshot = await request.app[CLIENT].snapshot()
+    result.update(available=True, adapters=snapshot['adapters'], devices=snapshot['devices'])
+  except Exception:
+    result.update(available=False, adapters=[], devices=[])
+  response = web.json_response(result)
+  response.headers['Cache-Control'] = 'no-store'
+  return response
+
+
 async def mutate(request):
   guard(request)
   if request.content_length is not None and request.content_length > 32768:
@@ -81,7 +96,14 @@ async def mutate(request):
     operation = request.match_info['operation']
     async with request.app[LOCK]:
       guard(request)
-      if operation == 'scan':
+      if operation == 'obd-connect':
+        mac = address(body.get('address'))
+        devices = (await client.snapshot())['devices']
+        guard(request)
+        obd_settings.enroll(mac, devices)
+      elif operation == 'obd-forget':
+        obd_settings.forget(address(body.get('address')))
+      elif operation == 'scan':
         await client.scan()
       elif operation == 'pair':
         await client.start_pair(address(body.get('address')))
@@ -145,6 +167,8 @@ async def mutate(request):
       else:
         raise web.HTTPNotFound()
     return web.json_response({'ok': True})
+  except OSError:
+    raise web.HTTPConflict(text='scanner_configuration_unavailable') from None
   except (ValueError, TypeError, KeyError) as exc:
     raise web.HTTPBadRequest(text=str(exc)) from exc
   except web.HTTPException:
@@ -157,6 +181,7 @@ def register(app):
   app[CLIENT] = Bluez()
   app[LOCK] = asyncio.Lock()
   app.router.add_get('/api/bluetooth', status)
+  app.router.add_get('/api/bluetooth/obd', obd_status)
   app.router.add_post('/api/bluetooth/{operation}', mutate)
 
   async def cleanup(app):

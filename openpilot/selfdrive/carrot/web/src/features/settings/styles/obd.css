@@ -1,0 +1,13 @@
+.obd-dialog { width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow: auto; box-sizing: border-box; padding: 20px; border: 1px solid #566274; border-radius: 18px; background: #121922; color: #f2f5fa; font-size: 16px; line-height: 1.5; }
+.obd-dialog::backdrop { background: #000b; }
+.obd-dialog header, .obd-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.obd-dialog h2 { margin: 0; font-size: 24px; }
+.obd-dialog .btn { min-height: 44px; white-space: normal; }
+.obd-dialog button:focus-visible { outline: 3px solid #91caff; outline-offset: 3px; }
+.obd-dialog button:disabled { opacity: .45; }
+.obd-dialog p, .obd-device { overflow-wrap: anywhere; }
+.obd-list { display: grid; gap: 12px; margin-block: 18px; }
+.obd-device { display: grid; gap: 8px; padding: 16px; background: #1c2633; border: 1px solid #465264; border-radius: 12px; }
+.obd-device small { color: #b7c7db; }
+.obd-error { color: #ffb9ae; }
+#btnSettingsObd { min-height: 48px; margin-block: 12px; }
