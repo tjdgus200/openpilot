@@ -17,9 +17,12 @@ def selected_samples(value, index):
   # a longer/differently sampled file as though it were complete evidence.
   if len(rows) > 220:
     raise ValueError('selected_timeline_budget')
-  return {'screening_policy': value['screening_policy'], 'source_commit': value.get('source_commit'),
-          'selected_window': window, 'samples': rows, 'video_time_alignment_verified': False,
-          'visual_semantics_evaluated': False, 'automatic_tuning': False}
+  result = {'screening_policy': value['screening_policy'], 'source_commit': value.get('source_commit'),
+            'selected_window': window, 'samples': rows, 'video_time_alignment_verified': False,
+            'visual_semantics_evaluated': False, 'automatic_tuning': False}
+  if value.get('event_clip') is True:
+    result['event_diagnostics'] = value['event_diagnostics']
+  return result
 
 
 def main():

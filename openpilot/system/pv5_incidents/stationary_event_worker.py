@@ -12,7 +12,7 @@ import time
 from openpilot.system.pv5_incidents.archive_worker import Permission, Transport, Copier, Paused
 from openpilot.system.pv5_incidents.archive_catalog import SourceChanged
 from openpilot.system.pv5_incidents.archive_sanitize import PrivacyCatalog, Sanitizer
-from openpilot.system.pv5_incidents.stationary_event_gate import configuration
+from openpilot.system.pv5_incidents.stationary_event_gate import CLIP_MODE, configuration
 from openpilot.system.pv5_incidents.stationary_event_catalog import EventCatalog
 
 
@@ -47,11 +47,16 @@ def main():
     args.catalog.parent.mkdir(parents=True, exist_ok=True)
     worker_lock = args.catalog.with_suffix('.lock').open('a+b')
     fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    raw = EventCatalog(args.log_root, args.catalog, key, permission.allowed)
     transport = Transport(target, key, permission.allowed, timeout=6)
-    copier = Copier(raw, transport, permission.allowed, cfg['wifi_profiles'], rate=256 * 1024)
-    raw.budget_check = copier.check
-    copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check))
+    copier = Copier(None, transport, permission.allowed, cfg['wifi_profiles'], rate=256 * 1024)
+    if cfg['qualified_modes'] == [CLIP_MODE]:
+      from openpilot.system.pv5_incidents.stationary_event_clip import ClipCatalog
+
+      copier.catalog = ClipCatalog(args.log_root, args.catalog, key, permission.allowed, copier.check)
+    else:
+      raw = EventCatalog(args.log_root, args.catalog, key, permission.allowed)
+      raw.budget_check = copier.check
+      copier.catalog = PrivacyCatalog(raw, Sanitizer(args.catalog.parent / 'privacy-cache', copier.check))
     result = copier.run(args.commit)
     reason = result['reason']
   except Paused as error:

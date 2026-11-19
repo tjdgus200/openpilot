@@ -72,3 +72,39 @@ secrets. The existing incident HTTPS registration and private key are reused.
 The PC receiver uses a pinned checkout, so pulling vehicle code alone does not
 activate the new PC dispatch policy. A verified PC release refresh and the
 separate vehicle mode validation/activation remain operational steps.
+
+
+
+## Exact diagnostic log clips
+
+The separately qualified `incident_stationary_clip_v2` mode uses the existing
+continuous recording and starts its scan only after the stopped-vehicle gate
+opens. When both upload modes are eligible, it takes the shared worker slot
+before bulk upload. A bulk transfer can resume after the clip worker yields.
+
+The sender reads closed recordings and selects typed critical alerts,
+allowlisted faults, recorded stock AEB, and abnormal process exits visible in
+`managerState`. It retains up to eight windows per recording segment, favoring
+urgent alerts and stock AEB, then process exits, then other faults. It sends
+at most five seconds of recorded diagnostic
+telemetry on either side of the selected sample. A locked neighbor waits for
+closure. A missing recording can leave partial evidence. The clip uses
+private source metadata and the existing authenticated, resumable archive
+transport. Encoded video, images, audio, cabin data and free-text logs are
+outside this telemetry profile.
+
+The PC claims these sealed logs before bulk recordings and checks the typed
+event at the supplied timestamp before opening a review. The diagnosis
+includes recorded coverage, first invalid samples and relevant state flags.
+It can proceed without road video. Existing analysis-only, duplicate and
+cooldown rules apply to dispatch and reporting.
+
+This mode uses `version: 2` and the exact configured
+`qualified_modes: ["incident_stationary_clip_v2"]` and matching module identity.
+Keep it disabled until the receiver understands the clip format and the
+vehicle passes this mode's stop, throughput, interruption and resource tests.
+The stationary gate still requires exact raw zero speed with valid CAN and
+standstill, cruise and controls disengaged, and an approved unmetered Wi-Fi
+profile. Current emergency flags, including the inherited disable gate, can
+defer work in Park. The older whole-segment event profile can still be
+selected using its own qualification.

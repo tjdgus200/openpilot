@@ -25,6 +25,8 @@ from openpilot.system.pv5_incidents.archive_protocol import (
   encode,
   manifest,
 )
+from tools.pv5_archive.event_diagnostics import CLIP_GLOB, clip_name, is_event_clip
+
 
 GIB = 1024**3
 
@@ -101,6 +103,8 @@ class Store:
     if not 0 < len(data) <= MAX_MANIFEST:
       raise ValueError('invalid_manifest')
     token, value = manifest(self.key, json.loads(data), self.privacy)
+    if clip_name(value['segment']) and (self.privacy != PRIVACY or not is_event_clip(value)):
+      raise ValueError('invalid_event_clip_manifest')
     with self.lock, self.db() as db:
       count = db.execute('SELECT count(*) FROM files').fetchone()[0]
       reserved = self.reserved_size(db)
@@ -238,7 +242,8 @@ class Store:
 
   def claim(self):
     with self.lock, self.db() as db:
-      row = db.execute("SELECT * FROM segments WHERE status='ready' ORDER BY created LIMIT 1").fetchone()
+      row = db.execute("""SELECT * FROM segments WHERE status='ready'
+        ORDER BY (json_extract(manifest,'$.segment') GLOB ?) DESC, created LIMIT 1""", (CLIP_GLOB,)).fetchone()
       early = row is None
       if early:
         row = db.execute("""SELECT segments.* FROM segments WHERE status='uploading'

@@ -190,6 +190,33 @@ class Reporter:
       if stopped(self.proof, time.monotonic()):
         self.send_once(time.monotonic())
 
+  def tick_upload(self, name, now, *, blocked=False, **kwargs):
+    coordinator = getattr(self, name)
+    if coordinator is None:
+      return
+    try:
+      if blocked:
+        coordinator.cancel()
+      else:
+        coordinator.tick(self.sm, now, **kwargs)
+    except Exception:
+      setattr(self, name, None)
+      try:
+        coordinator.cancel()
+      except Exception:
+        pass  # The worker also checks its permission pipe.
+
+  def tick_uploads(self, now):
+    priority = self.events is not None and self.events.priority_clips
+    if priority:
+      release_bulk = self.archive.cancel if self.archive is not None else None
+      self.tick_upload('events', now, before_start=release_bulk)
+      if self.events is not None and self.events.child is not None:
+        return
+    self.tick_upload('archive', now)
+    if not priority:
+      self.tick_upload('events', now, blocked=self.archive is not None and self.archive.child is not None)
+
   def run(self):
     lower_priority()
     try:
@@ -212,29 +239,9 @@ class Reporter:
         self.sm.update(0)
         self.observe(self.sm)
         self.checkpoint(now)
-        if self.archive is not None:
-          try:
-            self.archive.tick(self.sm, now)
-          except Exception:
-            archive, self.archive = self.archive, None
-            try:
-              archive.cancel()
-            except Exception:
-              pass  # The closed permission pipe is also enforced by the worker.
-        if self.events is not None:
-          try:
-            # Home/dashcam bulk worker has priority; both also share its flock.
-            if self.archive is not None and self.archive.child is not None:
-              self.events.cancel()
-            else:
-              self.events.tick(self.sm, now)
-          except Exception:
-            events, self.events = self.events, None
-            try:
-              events.cancel()
-            except Exception:
-              pass
-        self.stop.wait(.1 if stopped(self.proof, now) or (self.archive is not None and self.archive.child is not None) else .5)
+        self.tick_uploads(now)
+        uploading = any(worker is not None and worker.child is not None for worker in (self.archive, self.events))
+        self.stop.wait(.1 if stopped(self.proof, now) or uploading else .5)
     except Exception:
       # No recursive logging/error collection if diagnostics itself fails.
       pass

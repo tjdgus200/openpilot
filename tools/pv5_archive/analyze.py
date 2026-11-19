@@ -163,8 +163,12 @@ class Triage:
     }
 
 
-def analyze(path, schema, check=lambda: True):
+def analyze(path, schema, check=lambda: True, *, event_anchor=None):
   triage = Triage()
+  diagnostics = None
+  if event_anchor is not None:
+    from tools.pv5_archive.event_diagnostics import EventDiagnostics
+    diagnostics = EventDiagnostics(event_anchor, schema)
   wall, cpu, count = time.monotonic(), time.process_time(), 0
 
   def budget():
@@ -179,7 +183,10 @@ def analyze(path, schema, check=lambda: True):
         raise ValueError('analysis_message_budget')
       with schema.Event.from_bytes(frame, traversal_limit_in_words=2**21) as event:
         triage.accept(event)
-  return triage.result()
+        if diagnostics is not None:
+          diagnostics.accept(event)
+  result = triage.result()
+  return diagnostics.result(result, triage.first) if diagnostics is not None else result
 
 
 def main():

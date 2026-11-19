@@ -9,6 +9,7 @@ import subprocess
 import threading
 
 from openpilot.system.pv5_incidents.archive_protocol import TOKEN, encode
+from tools.pv5_archive.event_diagnostics import is_event_clip
 
 
 def atomic(path, value):
@@ -28,7 +29,7 @@ class AnalysisQueue:
     if self.cache.is_symlink():
       raise ValueError('unsafe_screen_cache')
     self.cache.mkdir(exist_ok=True)
-    self.identity = hashlib.sha256(b''.join((self.code / 'tools/pv5_archive' / name).read_bytes() for name in ('analyze.py', 'screen.py', 'service.py'))).hexdigest()
+    self.identity = hashlib.sha256(b''.join((self.code / 'tools/pv5_archive' / name).read_bytes() for name in ('analyze.py', 'screen.py', 'service.py', 'event_diagnostics.py'))).hexdigest()
     self.cache_locks, self.cache_guard = {}, threading.Lock()
     self.folder = store.root / 'analysis'
     if self.folder.is_symlink():
@@ -79,6 +80,7 @@ class AnalysisQueue:
       summary = {
         'version': 1,
         'status': 'analysis_failed',
+        **({'event_clip': True} if is_event_clip(job['manifest']) else {}),
         'candidates': [],
         'missing_services': [],
         'failure': 'bounded_analysis_failed',
@@ -133,6 +135,9 @@ def main():
   from tools.pv5_archive.analyze import analyze
   from tools.pv5_archive.schema import full_schema
 
+  event_manifest = job.get('manifest', {})
+  event_clip = is_event_clip(event_manifest)
+  event_anchor = event_manifest['files'][0]['mtime_ns'] if event_clip else None
   rlogs = [path for name, path in job['files'].items() if name in ('rlog.zst', 'rlog.bz2', 'rlog')]
   if not rlogs:
     result = {'version': 1, 'status': 'insufficient_data', 'candidates': [], 'missing_services': ['rlog'], 'visual_semantics_evaluated': False}
@@ -147,16 +152,17 @@ def main():
       result = json.loads(cache.read_bytes())
     else:
       with full_schema() as schema:
-        result = analyze(rlogs[0], schema)
-      from tools.pv5_archive.screen import select_review
-      result = select_review(result)
-      if not result['vehicle_pv5'] or result['missing_services'] or result['source_commit'] is None:
-        result['status'] = 'insufficient_data'
+        result = analyze(rlogs[0], schema, event_anchor=event_anchor)
+      if not event_clip:
+        from tools.pv5_archive.screen import select_review
+        result = select_review(result)
+        if not result['vehicle_pv5'] or result['missing_services'] or result['source_commit'] is None:
+          result['status'] = 'insufficient_data'
       if cache is not None:
         atomic(cache, result)
   result['data_screen_cache_reused'] = bool(rlogs) and cache_reused
   result['road_video_present'] = any(name.startswith(('fcamera.', 'ecamera.', 'qcamera.')) for name in job['files'])
-  if not result['road_video_present']:
+  if not result['road_video_present'] and not event_clip:
     result['awaiting_media'] = bool(rlogs)
     if result.get('status') not in ('review_candidates', 'no_threshold_candidate'):
       result['status'] = 'insufficient_data'

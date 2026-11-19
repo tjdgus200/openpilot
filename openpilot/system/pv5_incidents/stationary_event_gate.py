@@ -10,13 +10,15 @@ from openpilot.system.pv5_incidents.archive_protocol import TOKEN
 
 CONFIG = Path('/data/pv5-pc-events.json')
 MODE = 'incident_stationary_v1'
+CLIP_MODE = 'incident_stationary_clip_v2'
 MODULES = ('stationary_event_gate.py', 'stationary_event_catalog.py', 'stationary_event_worker.py', 'stationary_event_runtime.py', 'runtime.py', 'priority.py')
 
 
-def module_identity():
+def module_identity(mode=MODE):
   from openpilot.system.pv5_incidents.archive_worker import module_identity as archive_identity
   digest = hashlib.sha256(archive_identity().encode())
-  for name in MODULES:
+  modules = MODULES + ('stationary_event_clip.py', 'core.py', 'known_sources.json') if mode == CLIP_MODE else MODULES
+  for name in modules:
     digest.update(name.encode() + b'\0' + (Path(__file__).parent / name).read_bytes().replace(b'\r\n', b'\n'))
   return digest.hexdigest()
 
@@ -28,8 +30,11 @@ def configuration(path=CONFIG):
     raise ValueError('private_event_config_required')
   cfg = json.loads(path.read_bytes())
   if (set(cfg) != {'version', 'vehicle', 'enabled', 'qualified_modes', 'wifi_profiles', 'module_identity'}
-      or cfg['version'] != 1 or cfg['vehicle'] != 'KIA_PV5' or cfg['enabled'] is not True
-      or cfg['qualified_modes'] != [MODE] or cfg['module_identity'] != module_identity()):
+      or type(cfg['version']) is not int or cfg['version'] not in (1, 2)
+      or cfg['vehicle'] != 'KIA_PV5' or cfg['enabled'] is not True):
+    raise ValueError('unqualified_event_config')
+  mode = {1: MODE, 2: CLIP_MODE}[cfg['version']]
+  if cfg['qualified_modes'] != [mode] or cfg['module_identity'] != module_identity(mode):
     raise ValueError('unqualified_event_config')
   profiles = cfg['wifi_profiles']
   if not isinstance(profiles, list) or not 1 <= len(profiles) <= 8 or any(not isinstance(x, str) or not TOKEN.fullmatch(x) for x in profiles):
@@ -96,7 +101,7 @@ def evaluate(sm, now, qualified_modes, owner_pv5):
         return Decision(False, reason='control_or_emergency')
       if len(sm['onroadEvents']) > 64 or any(value.immediateDisable or value.softDisable for value in sm['onroadEvents']):
         return Decision(False, reason='emergency')
-      mode = 'incident_stationary_v1'
+      mode = CLIP_MODE if qualified_modes == [CLIP_MODE] else MODE
     if mode not in qualified_modes:
       return Decision(False, mode, 'mode_not_qualified')
     return Decision(True, mode, 'admitted')

@@ -11,17 +11,31 @@ from tools.pv5_archive.service import atomic
 from openpilot.system.pv5_incidents.priority import archive_reviewable, fault_key
 
 
+def recorded_exits(summary):
+  return sorted((fact['process'], fact['code']) for fact in summary.get('event_diagnostics', {}).get('facts', [])
+                if fact.get('kind') == 'recorded_process_exit')
+
+
 def causes(summary):
   kinds = sorted({value['kind'] for value in summary.get('candidates', [])})
   base = [kinds, summary.get('status'), summary.get('missing_services', [])]
   legacy = hashlib.sha256(encode(base)).hexdigest()
-  current = hashlib.sha256(encode(base + [sorted(summary.get('error_codes', [])),
-                                         summary.get('source_commit', 'unknown')])).hexdigest()
-  return current, legacy
+  identity = base + [sorted(summary.get('error_codes', [])), summary.get('source_commit', 'unknown')]
+  exits = recorded_exits(summary)
+  if exits:
+    current = hashlib.sha256(encode(identity + [exits])).hexdigest()
+    return current, current
+  return hashlib.sha256(encode(identity)).hexdigest(), legacy
 
 
 def encoded_fault(summary):
   key = fault_key(summary)
+  if summary.get('event_clip') is True:
+    exits = recorded_exits(summary)
+    urgent = any(fact.get('kind') in ('recorded_critical_alert', 'recorded_stock_aeb')
+                 for fact in summary.get('event_diagnostics', {}).get('facts', []))
+    if exits and not urgent:
+      key = ('process_exit', summary.get('source_commit'), exits, key)
   return encode(key).decode() if key is not None else None
 
 
@@ -46,7 +60,8 @@ class ArchiveDispatch:
     if policy.get('enabled') is not True or policy.get('push_policy') != 'analysis_only':
       return
     with self.store.lock, self.store.db() as db:
-      rows = db.execute('SELECT * FROM results WHERE notified=0 ORDER BY stamp LIMIT 64').fetchall()
+      rows = db.execute("""SELECT * FROM results WHERE notified=0
+        ORDER BY coalesce(json_extract(summary, '$.event_clip'), 0) DESC, stamp""")
       history_sql = ("SELECT id,cause,stamp,status FROM dispatch_facts UNION ALL "
                      "SELECT d.id,d.cause,d.stamp,d.status FROM dispatches d WHERE NOT EXISTS "
                      "(SELECT 1 FROM dispatch_facts f WHERE f.id=d.id AND f.cause=d.cause)")
@@ -76,7 +91,13 @@ class ArchiveDispatch:
           db.execute('UPDATE results SET notified=1 WHERE segment_id=?', (row['segment_id'],))
           continue  # Hold an uncertain existing intent; reconcile its receipt before any resend.
         key = encoded_fault(summary)
-        if not archive_reviewable(summary) or (key is not None and key in reviewed_faults):
+        reviewable = archive_reviewable(summary)
+        if summary.get('event_clip') is True:
+          reviewable = (summary.get('status') == 'review_candidates' and any(
+            row['kind'] in ('recorded_critical_alert', 'recorded_system_fault', 'recorded_stock_aeb', 'recorded_process_exit')
+            for row in summary.get('candidates', [])
+          ))
+        if not reviewable or (key is not None and key in reviewed_faults):
           db.execute('UPDATE results SET notified=-1 WHERE segment_id=?', (row['segment_id'],))
           continue  # No AI for ordinary candidates or a known same-version fault.
         kinds = sorted({value['kind'] for value in summary.get('candidates', [])})
@@ -91,13 +112,16 @@ class ArchiveDispatch:
         if due > now:
           deadlines.append(due)
           continue
-        if cause in selected_causes or len(selected) >= 3:
+        if cause in selected_causes:
           deadlines.append(now + 300)
           continue
         selected.append({'segment_id': row['segment_id'], 'cause': cause})
         selected_causes.append(cause)
         if key is not None:
           reviewed_faults.add(key)
+        if len(selected) == 3:
+          break
+      rows.close()
       if not selected:
         self.next_due = min(deadlines) if deadlines else None
         return

@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from openpilot.system.pv5_incidents.stationary_event_gate import Admission, evaluate
+from openpilot.system.pv5_incidents.stationary_event_gate import Admission, CLIP_MODE, evaluate
 
 
 class Coordinator:
@@ -19,6 +19,7 @@ class Coordinator:
     self.last_reason = ''
     self.child_start = None
     self.segment_seen = None
+    self.priority_clips = config["qualified_modes"] == [CLIP_MODE]
 
   @staticmethod
   def start_time(pid):
@@ -42,7 +43,7 @@ class Coordinator:
         pass
       child.stdout.close()
 
-  def tick(self, sm, now):
+  def tick(self, sm, now, *, before_start=None):
     # Existing encoder segment-change messages wake a stationary dashcam scan;
     # no timer, directory watcher or repeated immutable-segment rescan at idle.
     if (
@@ -82,6 +83,8 @@ class Coordinator:
     if self.idle or now < self.next_try:
       return  # No filesystem/network polling when a completed detached session is idle.
     if self.child is None:
+      if before_start is not None:
+        before_start()
       self.child = subprocess.Popen(
         [
           '/usr/bin/nice',
