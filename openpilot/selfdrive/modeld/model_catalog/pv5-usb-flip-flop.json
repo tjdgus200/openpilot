@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-carrot-sync-flip-flop-20261114-0b830a04",
-  "source_commit": "0b830a04a42f899b984589c15fd1ead5409007b0",
+  "profile": "jetson-pv5-ccnc-pr-hud-flip-flop-20261120-de098fe8",
+  "source_commit": "de098fe85cfdca6a7c1edf80513b9002a9bd155c",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-carrot-sync-flip-flop-20261114-0b830a04/host.tar.gz",
-    "sha256": "32e600838201d9812b2ed6290c821bc4cb5a73ba2c9daf9b8e80a309d22069bc",
-    "size": 65768608
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-ccnc-pr-hud-flip-flop-20261120-de098fe8/host.tar.gz",
+    "sha256": "0d12a9502681323f163f89be913c0e1f1bd318c89e3215f1532a2b5236d5a439",
+    "size": 65779770
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",
