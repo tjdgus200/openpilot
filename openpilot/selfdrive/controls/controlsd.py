@@ -16,6 +16,7 @@ from collections import deque
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.hyundai.stop_object import signal_stop_object_requested
+from opendbc.car.hyundai.pv5_ccnc_display import PLAN_MAX_AGE_NS, plan_signal_state, supported as pv5_ccnc_supported
 from opendbc.car.hyundai.scc_decel import feedback_active as scc_decel_feedback_active, eligible as scc_decel_eligible, stock_cancel_only
 from opendbc.car.volkswagen.values import MEB_CURVATURE_PID_KP, MEB_CURVATURE_PID_KI, MEB_CURVATURE_PID_KF, MEB_CURVATURE_MAX
 
@@ -69,6 +70,7 @@ class Controls:
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP)
     self.pv5_scc_supported = scc_decel_eligible(self.CP)
+    self.pv5_ccnc_display = pv5_ccnc_supported(self.CP)
     self.physical_blinker_hold = HoldReader(self.CP.carFingerprint, self.params)
     if self.CP.carFingerprint == 'KIA_PV5' and not self.CP.notCar:
       self.pv5_lane_center = Pv5LaneBoundary(self.params)
@@ -458,6 +460,24 @@ class Controls:
                                               STEER_ANGLE_SATURATION_THRESHOLD
       else:
         self.steer_limited_by_safety = abs(CC.actuators.torque - CO.actuatorsOutput.torque) > 1e-2
+
+    if getattr(self, "pv5_ccnc_display", False):
+      now_ns = time.monotonic_ns()
+      plan_ns = self.sm.logMonoTime['longitudinalPlan']
+      if self.sm.all_checks(['longitudinalPlan']) and plan_ns > 0 and 0 <= now_ns - plan_ns <= PLAN_MAX_AGE_NS:
+        hudControl.pv5CcncPlanMonoTime = plan_ns
+        if lp.hasLead and math.isfinite(lp.desiredDistance) and lp.desiredDistance > 0:
+          hudControl.pv5CcncTargetDistance = lp.desiredDistance
+        hudControl.pv5CcncTrafficState = plan_signal_state(lp)
+      lateral_ns = self.sm.logMonoTime['lateralPlan']
+      if CC.latActive and lateral_ns > 0 and self.sm.all_checks(['lateralPlan']) and 0 <= now_ns - lateral_ns <= PLAN_MAX_AGE_NS:
+        hudControl.pv5CcncLaneMonoTime = lateral_ns
+        if getattr(lac_log, "saturated", False):
+          hudControl.pv5CcncLaneHighlight = 5
+        elif self.sm['selfdriveState'].active and self.steer_limited_by_safety:
+          hudControl.pv5CcncLaneHighlight = 4
+        else:
+          hudControl.pv5CcncLaneHighlight = 3 if self.lanefull_mode_enabled else 1
 
     # TODO: both controlsState and carControl valids should be set by
     #       sm.all_checks(), but this creates a circular dependency

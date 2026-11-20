@@ -566,6 +566,11 @@ struct CarControl {
     driverMonitoringAlert @22: UInt8;  # 0=none, 1=initial, 2=audible, 3=terminal; fresh enabled DM only
     physicalBlinkerHold @23: UInt8;  # 0=legacy, 1=release, 2=left hold, 3=right hold; fresh USB-CAN lease
     signalStopObject @24 :Bool; # request only; final PV5 SCC interlocks own application
+    pv5CcncTrafficState @25 :UInt8; # display only: 0 unknown, 1 planned stop, 2 corroborated green, 3 corroborated red stop
+    pv5CcncPlanMonoTime @26 :UInt64; # originating longitudinal plan time, zero if invalid
+    pv5CcncTargetDistance @27 :Float32; # planner gap in meters, zero if unavailable
+    pv5CcncLaneHighlight @28 :UInt8; # OEM display state, zero keeps the existing lane highlight
+    pv5CcncLaneMonoTime @29 :UInt64; # originating lateral plan time, zero if invalid
 
     # not used with the dash, TODO: separate structs for dash UI and device UI
     audibleAlert @5: AudibleAlert;

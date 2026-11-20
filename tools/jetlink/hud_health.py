@@ -8,7 +8,8 @@ from openpilot.common.hud_driving_feedback import LANE_CENTER_STATUS
 from openpilot.common.jetlink_status import _fresh
 from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 from cluster_battery import remote_panel, StationaryBatteryView, valid_value
-from cluster_config import CLUSTER_SCREEN_MODE_BATTERY
+from cluster_config import CLUSTER_SCREEN_MODE_BATTERY, CLUSTER_SCREEN_MODE_FULLSCREEN_3D
+from cluster_display import format_trip_distance
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT, OPENPILOT_FONT_DIR,
                               TOP_STATUS_CENTER_Y,
                               NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W,
@@ -129,6 +130,7 @@ class HealthRenderer(ClusterUiRenderer):
   # A process restart (including a host reboot/runtime update) starts a session.
   _trip_soc = TripSocUsage()
   _telemetry_font = None
+  _pv5_hud_gear = None
 
   def open(self, hidden=False):
     if self._window_open:
@@ -199,6 +201,26 @@ class HealthRenderer(ClusterUiRenderer):
     # Keep the complete availability message clear of the diagnostic footer.
     self._draw_text(self._ellipsize_text(text, 16, width), left, 55, 16, color)
 
+  def _draw_charging_detail(self, state):
+    super()._draw_charging_detail(state)
+    if getattr(self, '_pv5_hud_gear', None) != 'P':
+      return
+    # The module grid ends at 177 and the voltage heading starts at 201.
+    # This row is in the heatmap's own panel, including the swapped layout.
+    x = self._driving_panel_offset_design_x() + 24
+    ko = self.language == 'ko'
+    def pressure(value):
+      return '--' if value is None else f'{value:.0f}'
+    data = state.tpms
+    tires = (f"{'앞' if ko else 'Front L/R'} {pressure(data.fl)} / {pressure(data.fr)}"
+             f"    {'뒤' if ko else 'Rear L/R'} {pressure(data.rl)} / {pressure(data.rr)} psi")
+    self._draw_text(('P   타이어 좌/우    ' if ko else 'P   TPMS    ') + tires,
+                    x, 188, 17, self._current_theme().text)
+    report = state.trip_report
+    if report is not None and math.isfinite(report.distance_m) and report.distance_m >= 0:
+      trip = ('주행거리  ' if ko else 'Trip  ') + format_trip_distance(report.distance_m, self.is_metric)
+      self._draw_text(trip, x + 640, 188, 17, self._current_theme().text)
+
   def _draw_steering_output_block(self, state):
     x = SIDE_GAUGE_LEFT_CENTER_X + (SIDE_GAUGE_COLUMN_GAP - 4) / 2
     self._draw_host_telemetry(x, 28)
@@ -257,6 +279,7 @@ class HealthRenderer(ClusterUiRenderer):
     self.host_telemetry_drawn = False
     battery = remote_panel(snapshot, time.monotonic())
     vehicle_current = self._vehicle_data_current and vehicle_motion_fresh(snapshot, now)
+    self._pv5_hud_gear = getattr(state, 'pv5_hud_gear', None) if vehicle_current else None
     self._trip_soc_used = self._trip_soc.update(battery, vehicle_current)
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
       state = replace(state, battery=battery)
@@ -267,6 +290,35 @@ class HealthRenderer(ClusterUiRenderer):
       getattr(state, 'battery', None), getattr(state, 'gear_text', ''), getattr(state, 'speed_kph', None),
       battery_screen and vehicle_current, now)
     super().render(state, signal_lights)
+
+  def _render_world(self, state, signal_lights=None):
+    if self._pv5_hud_gear == 'R':
+      self._clear_world()
+    else:
+      super()._render_world(state, signal_lights)
+
+  def _draw_hud(self, state, signal_lights=None):
+    if self._pv5_hud_gear != 'R':
+      return super()._draw_hud(state, signal_lights)
+    theme = self._current_theme()
+    ko = self.language == 'ko'
+    rl.rl_push_matrix()
+    rl.rl_scalef(self.width / DESIGN_WIDTH, self.height / DESIGN_HEIGHT, 1.)
+    try:
+      # The available video is forward-facing. The R page has no camera,
+      # projected path, obstacle distances, or steering-derived geometry.
+      self._draw_text('R', 620, 250, 175, theme.text, anchor='center')
+      rl.draw_rectangle(818, 158, 3, 182, rl_color(theme.faint))
+      self._draw_text('후진' if ko else 'Reverse', 885, 225, 62, theme.text)
+      self._draw_text('차량 후방 카메라와 주변을 확인하세요' if ko else 'Check the vehicle’s rear camera and surroundings',
+                      885, 300, 29, theme.muted)
+      left, right = signal_lights if signal_lights is not None else self._turn_signal_lights(state)
+      self._draw_turn_signal('left', left, show_inactive=False)
+      self._draw_turn_signal('right', right, show_inactive=False)
+      self._draw_driving_popup(state, CLUSTER_SCREEN_MODE_FULLSCREEN_3D)
+      self._draw_status_footer(state)
+    finally:
+      rl.rl_pop_matrix()
 
   def _draw_speed_block(self, state, *, tpms_offset_x=0.):
     if getattr(self, '_vehicle_data_current', False):

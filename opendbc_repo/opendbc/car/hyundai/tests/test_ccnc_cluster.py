@@ -8,6 +8,7 @@ from opendbc.can.parser import get_raw_value
 from opendbc.car import structs
 from opendbc.car.hyundai import hyundaicanfd
 from opendbc.car.hyundai.hyundaicanfd import _select_cluster_background
+from opendbc.car.hyundai.pv5_ccnc_display import Pv5CcncDisplay, plan_signal_state
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
 
@@ -321,3 +322,124 @@ def test_cluster_objects_restore_corner_state_without_blinking_or_distance_clamp
     else:
       assert decoded["LANELINE_CURVATURE"] == 2
     assert source == original
+
+
+@pytest.mark.parametrize("traffic,observation,stop,suspended,fcw,expected", (
+  (0, 2, False, False, False, 0),
+  (1, 0, True, False, False, 1),
+  (1, 1, True, False, False, 3),
+  (1, 2, True, False, False, 0),
+  (1, 1, False, False, False, 0),
+  (1, 1, True, True, False, 0),
+  (1, 1, True, False, True, 0),
+  (2, 0, False, False, False, 0),
+  (2, 3, False, False, False, 0),
+  (2, 2, False, False, False, 2),
+))
+def test_pv5_signal_uses_stop_and_green_observation(traffic, observation, stop, suspended, fcw, expected):
+  plan = SimpleNamespace(trafficState=traffic, signalObservationColor=observation, shouldStop=stop,
+                         signalDetectionSuspended=suspended, fcw=fcw)
+  assert plan_signal_state(plan) == expected
+
+
+@pytest.mark.parametrize("mode", (0, 1, 2))
+def test_pv5_signal_green_requires_continuous_confirmed_red(mode):
+  display = Pv5CcncDisplay()
+  display.configure(SimpleNamespace(get_int=lambda key: mode if key == "Pv5CcncTrafficBackground" else 0))
+  hud = structs.CarControl.new_message().hudControl
+  now = 1_000_000_000
+
+  def step(state, allowed=True, stopped=True, elapsed_ms=50):
+    nonlocal now
+    now += elapsed_ms * 1_000_000
+    hud.pv5CcncTrafficState = state
+    return display.traffic_background(hud, now, allowed, stopped)
+
+  assert not any(step(2) for _ in range(4))
+  assert not any(step(3) for _ in range(6))
+  assert step(3) == (5 if mode else 0)
+  assert step(2) == (8 if mode == 2 else 0)
+  assert [step(2) for _ in range(40)] == ([8] * 39 + [0] if mode == 2 else [0] * 40)
+  assert step(2) == 0
+  for interrupt in (dict(allowed=False), dict(stopped=False), dict(elapsed_ms=250), dict(elapsed_ms=-50)):
+    for _ in range(8):
+      step(3)
+    assert step(3, **interrupt) == 0
+    assert step(2) == 0
+  for _ in range(8):
+    step(3)
+  assert step(0) == 0
+  assert step(2) == 0
+  assert not any(step(3) for _ in range(6))
+  assert step(2) == 0  # At the boundary, red has not been displayed yet.
+  for _ in range(8):
+    red = step(1)
+  assert red == (5 if mode else 0)
+  assert step(2) == 0  # A plan-only red does not arm green.
+
+
+@pytest.mark.parametrize("bars,expected", ((0, 4), (1, 1), (2, 2), (3, 3), (4, 4)))
+def test_pv5_hdp_shows_selected_gap_in_existing_frame(monkeypatch, bars, expected):
+  monkeypatch.setattr(hyundaicanfd, "Params",
+                      lambda: SimpleNamespace(get_int=lambda key: 0, get=lambda key: "2"))
+  display = Pv5CcncDisplay()
+  packer = CANPacker("hyundai_canfd_generated")
+  definition = packer.dbc.name_to_msg["ADRV_0x161"]
+  stock = dict.fromkeys(definition.sigs, 0)
+  original = stock.copy()
+  state = SimpleNamespace(
+    adrv_0x161=stock, lfahda_cluster=None, cruise_buttons_msg=None, adrv_0x200=None,
+    adrv_0x1ea=None, ccnc_0x162=None, radarState=SimpleNamespace(
+      leadOne=SimpleNamespace(status=True, dRel=30.0, yRel=0.0, vRel=0.0)),
+    out=structs.CarState(canValid=True, gearShifter="drive", standstill=True),
+    modelV2=None, is_metric=True, paddle_button_prev=0, softHoldActive=0, trailer_connected=False,
+  )
+  cp = SimpleNamespace(flags=HyundaiFlags.CAMERA_SCC, carFingerprint=CAR.KIA_PV5)
+  control = structs.CarControl(enabled=True, latActive=True, longActive=True)
+  hud = control.hudControl
+  hud.leadDistanceBars = bars
+  hud.pv5CcncTargetDistance = 16.0
+  hud.pv5CcncLaneHighlight = 3
+  hud.leftLaneVisible = True
+
+  def frame(index, instance, expected_stamp_age_ms=100, paddle_mode=0):
+    now = 1_000_000_000 + index * 50_000_000
+    hud.pv5CcncPlanMonoTime = now - expected_stamp_age_ms * 1_000_000
+    hud.pv5CcncLaneMonoTime = hud.pv5CcncPlanMonoTime
+    (address, data, bus), = hyundaicanfd.create_ccnc_messages(
+      cp, packer, SimpleNamespace(ECAN=0, CAM=2), index * 5, control, state, hud,
+      0, False, False, 0, False, 0, paddle_mode, pv5_display=instance, now_ns=now,
+    )
+    assert (address, bus) == (0x161, 0)
+    result = {name: get_raw_value(data, sig) * sig.factor + sig.offset for name, sig in definition.sigs.items()}
+    assert result["CHECKSUM"] == hyundaicanfd.hkg_can_fd_checksum(address, None, bytearray(data))
+    return result
+
+  default = frame(0, display)
+  old = frame(1, None)
+  assert (old["DISTANCE"], default["DISTANCE"]) == (4, expected)
+  assert default["DISTANCE_SPACING"] == (5 if expected == 4 else 3)
+  assert default["TARGET_DISTANCE"] == 30.0
+  changed = {"DISTANCE", "DISTANCE_SPACING", "CHECKSUM", "COUNTER"}
+  assert all(default[key] == old[key] for key in default if key not in changed)
+
+  display.configure(SimpleNamespace(get_int=lambda key: 1))
+  fresh = frame(2, display)
+  stale = frame(3, display, expected_stamp_age_ms=201)
+  assert (fresh["TARGET_DISTANCE"], fresh["LANE_HIGHLIGHT"]) == (16.0, 3)
+  assert (stale["TARGET_DISTANCE"], stale["LANE_HIGHLIGHT"]) == (30.0, default["LANE_HIGHLIGHT"])
+  changed.update(("TARGET_DISTANCE", "LANE_HIGHLIGHT"))
+  assert all(fresh[key] == old[key] for key in fresh if key not in changed)
+
+  hud.pv5CcncTrafficState = 1
+  for index in range(4, 11):
+    red = frame(index, display)
+  assert red["BACKGROUND"] == 5
+  state.out.leftBlinker = state.out.leftBlindspot = True
+  state.paddle_button_prev = 1
+  assert frame(11, display, paddle_mode=1)["BACKGROUND"] == 6
+  assert frame(12, display)["BCA_LEFT"] == 2
+  state.out.leftBlinker = state.out.leftBlindspot = False
+  hud.visualAlert = "fcw"
+  assert frame(13, display)["BACKGROUND"] == 1
+  assert stock == original

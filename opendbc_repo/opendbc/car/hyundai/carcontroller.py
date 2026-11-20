@@ -7,6 +7,7 @@ from opendbc.car import Bus, DT_CTRL, apply_driver_steer_torque_limits, common_f
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
+from opendbc.car.hyundai.pv5_ccnc_display import Pv5CcncDisplay, supported as pv5_ccnc_supported
 from opendbc.car.hyundai.stopping import CanfdStopping
 from opendbc.car.hyundai.steering_handover import SteeringHandover
 from opendbc.car.hyundai.steering_recovery import SimpleSteeringRecovery, DEFAULT_RELEASE_MS, DEFAULT_RECOVERY_MS, read_recovery_settings
@@ -190,6 +191,7 @@ class CarController(CarControllerBase):
     self.accel_last = 0
     self.accel_value_last = 0.0
     self.display_lead_lateral = hyundaicanfd.DisplayLeadLateralFilter()
+    self.pv5_ccnc_display = Pv5CcncDisplay() if pv5_ccnc_supported(CP) else None
     self.canfd_stopping = (CanfdStopping()
                            if CP.flags & HyundaiFlags.CANFD and CP.openpilotLongitudinalControl else None)
     self.apply_torque_last = 0
@@ -291,6 +293,8 @@ class CarController(CarControllerBase):
 
     if self.frame % 50 == 0:
       params = Params()
+      if self.pv5_ccnc_display is not None:
+        self.pv5_ccnc_display.configure(params)
       self.simple_steer_recovery_enabled = bool(
         self.CP.carFingerprint == CAR.KIA_PV5 and self.CP.flags & HyundaiFlags.ANGLE_CONTROL
         and params.get_bool("Pv5SimpleSteerRecovery"))
@@ -655,6 +659,7 @@ class CarController(CarControllerBase):
             self.CP, self.packer, self.CAN, self.frame, CC, CS, hud_control, apply_angle,
             left_lane_warning, right_lane_warning, self.enable_corner_radar, stopping,
             self.canfd_debug, self.paddle_mode, hud_lateral=hud_lateral,
+            pv5_display=self.pv5_ccnc_display, now_ns=now_nanos,
           ))
           if hda2:
             can_sends.extend(hyundaicanfd.create_adrv_messages(self.CP, self.packer, self.CAN, self.frame))

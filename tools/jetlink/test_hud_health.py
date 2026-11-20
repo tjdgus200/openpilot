@@ -10,6 +10,68 @@ from host_health import thermal_health, storage_health
 from cluster_battery import BatteryPanelData, packet_from_metrics, panel_from_wire
 
 
+@pytest.mark.parametrize('layout', (0, 1))
+def test_park_adds_partial_tpms_and_trip_in_unused_heatmap_row(monkeypatch, layout):
+  from cluster_models import TpmsInfo, TripReportState
+  renderer = hud.HealthRenderer(screen_mode=8, panel_layout=layout, language='en')
+  renderer._pv5_hud_gear = 'P'
+  calls = []
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_charging_detail', lambda *_: calls.append('heatmap'))
+  renderer._draw_text = lambda text, x, y, *_: calls.append((text, x, y))
+  state = NS(tpms=TpmsInfo(36., None, 34., 33.), trip_report=TripReportState(distance_m=1250.))
+  renderer._draw_charging_detail(state)
+  x = renderer._driving_panel_offset_design_x()
+  assert calls == ['heatmap', ('P   TPMS    Front L/R 36 / --    Rear L/R 34 / 33 psi', x + 24, 188),
+                   ('Trip  1.25 km', x + 664, 188)]
+  for gear in ('D', 'N', None):
+    renderer._pv5_hud_gear = gear
+    calls.clear()
+    renderer._draw_charging_detail(state)
+    assert calls == ['heatmap']
+
+
+def test_reverse_replaces_forward_view_keeps_alert_order_and_releases_on_snapshot_loss(monkeypatch):
+  from dataclasses import replace
+  from cluster_live import standby_state
+  from cluster_models import ClusterAlert
+  import hud_protocol
+  import openpilot.common.indicator_display as indicator
+
+  renderer = hud.HealthRenderer(screen_mode=8)
+  now = 100.
+  record = {'sent': now, 'received': {'carState': now}, 'events': {'carState': 'present'},
+            'valid': {'carState': True}, 'alive': {'carState': True}}
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: (now, record))
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: now)
+  monkeypatch.setattr(hud, '_fresh', lambda *_: {})
+  monkeypatch.setattr(indicator, 'draw', lambda *_: None)
+  calls = []
+  renderer._clear_world = lambda: calls.append('clear')
+  renderer._draw_turn_signal = lambda side, light, **kw: calls.append((side, light))
+  renderer._draw_text = lambda text, *a, **kw: calls.append(text)
+  renderer._draw_driving_popup = lambda *_: calls.append('popup')
+  renderer._draw_status_footer = lambda *_: calls.append('footer')
+  renderer._draw_alert_overlay = lambda alert: calls.append(alert)
+  for name in ('rl_push_matrix', 'rl_pop_matrix', 'rl_scalef', 'draw_rectangle'):
+    monkeypatch.setattr(hud.rl, name, lambda *_: None)
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_hud', lambda *_: calls.append('ordinary hud'))
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_render_world', lambda *_: calls.append('ordinary world'))
+  alert = ClusterAlert('Urgent', size=3, status=2)
+  state = replace(standby_state(), onroad=True, gear_text='R', pv5_hud_gear='R', alert=alert)
+  renderer.render(state, signal_lights=(True, False))
+  assert calls[0] == 'clear' and 'R' in calls and ('left', True) in calls
+  assert calls[-3:] == ['popup', 'footer', alert] and 'ordinary hud' not in calls
+  record['received']['carState'] -= .31
+  calls.clear()
+  renderer.render(state, signal_lights=(False, False))
+  assert calls == ['ordinary world', 'ordinary hud', alert]
+  record['received']['carState'] = now
+  for gear in ('D', 'N'):
+    calls.clear()
+    renderer.render(replace(state, gear_text=gear, pv5_hud_gear=None), signal_lights=(False, False))
+    assert calls == ['ordinary world', 'ordinary hud', alert]
+
+
 def test_trip_soc_uses_first_valid_observation_and_survives_missing_data():
   trip = hud.TripSocUsage()
   def panel(value, now=100.):

@@ -21,6 +21,39 @@ import cluster_live
 from cluster_models import ClusterAlert
 
 
+@pytest.mark.parametrize('gear,shown,condition,expected', [
+  ('park', 'P', '', 'P'), ('reverse', 'R', '', 'R'), ('drive', 'D', '', None),
+  ('neutral', 'N', '', None), ('reverse', 'P', '', None), ('park', 'P', 'moving', None),
+  ('park', 'P', 'no_standstill', None), ('park', 'P', 'invalid_speed', None),
+  ('reverse', 'R', 'not_car', None), ('reverse', 'R', 'other', None), ('reverse', 'R', 'offroad', None),
+  ('reverse', 'R', 'stale', None), ('reverse', 'R', 'invalid_params', None),
+  ('reverse', 'R', 'can_fault', None), ('reverse', 'R', 'timeout', None),
+])
+def test_pv5_hud_gear_requires_current_live_vehicle(gear, shown, condition, expected, monkeypatch):
+  source = object.__new__(OpenpilotLiveSource)
+  source._max_lateral_accel, source._energy_gauge_label = 3., 'battery'
+  source._carrot_navi_media = None
+  source._current_carrot_navi = lambda _: None
+  source._live_cluster_alert = lambda *_: None
+  source.sm = SimpleNamespace(steering_warning=0)
+  messages = {
+    'deviceState': SimpleNamespace(started=condition != 'offroad'),
+    'carParams': SimpleNamespace(carFingerprint='other' if condition == 'other' else 'KIA_PV5',
+                                 notCar=condition == 'not_car'),
+    'carState': SimpleNamespace(gearShifter=gear, standstill=condition != 'no_standstill',
+                                canValid=condition != 'can_fault', canTimeout=condition == 'timeout',
+                                vEgo={'moving': .1, 'invalid_speed': float('nan')}.get(condition, 0.)),
+  }
+  source._service_data = messages.get
+  source._service_alive = lambda service: service in messages
+  source._service_valid = lambda service: service in messages and condition != 'invalid_params'
+  source._service_is_fresh = lambda service, *_: service == 'carState' and condition != 'stale'
+  monkeypatch.setattr(cluster_live, 'driving_notice_events', lambda *_: ())
+  monkeypatch.setattr(cluster_live, 'lead_brake_sample', lambda *_: None)
+  state = replace(standby_state(), gear_text=shown, pv5_hud_gear='R')
+  assert source._with_live_hud_state(state).pv5_hud_gear == expected
+
+
 @pytest.mark.parametrize('onroad,fresh', ((True, True), (True, False), (False, True)))
 def test_live_lane_probabilities_require_fresh_onroad_model(onroad, fresh, monkeypatch):
     source = object.__new__(OpenpilotLiveSource)

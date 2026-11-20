@@ -8,6 +8,7 @@ from opendbc.car.crc import CRC16_XMODEM
 from opendbc.car.hyundai.values import CAR, HyundaiFlags, HyundaiExtFlags
 from opendbc.car.hyundai.stopping import MOVING_SPEED, STOP_LOWER_BAND
 from opendbc.car.hyundai.stop_object import apply_signal_stop_object
+from opendbc.car.hyundai.pv5_ccnc_display import PLAN_MAX_AGE_NS
 from openpilot.common.params import Params
 from openpilot.common.filter_simple import FirstOrderFilter
 from opendbc.car.common.conversions import Conversions as CV
@@ -898,13 +899,15 @@ def _cluster_bsd_warning(out):
 
 
 def _select_cluster_background(cruise_enabled, lat_active, paddle_pressed, paddle_mode, turning=False, *,
-                               bsd_warning=False, turn_background=6):
+                               bsd_warning=False, turn_background=6, signal_background=0):
   if paddle_mode > 0 and paddle_pressed:
     return 6
   if bsd_warning:
     return 5  # Steady red (same wire value used by the source branch's traffic-light display).
   if lat_active and turning:
     return turn_background
+  if signal_background:
+    return signal_background
   return 1 if cruise_enabled else 3 if lat_active else 7
 
 
@@ -1007,7 +1010,8 @@ def create_alt2_adas_button_request(packer, CAN, frame, CC, CS, stopping, *, kee
 
 def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
                          disp_angle, left_lane_warning, right_lane_warning,
-                         enable_corner_radar, stopping, canfd_debug, paddle_mode, hud_lateral=None):
+                         enable_corner_radar, stopping, canfd_debug, paddle_mode, hud_lateral=None, *,
+                         pv5_display=None, now_ns=0):
   ret = []
   interlock_active = longitudinal_interlock_active(CS)
   display_lead = _display_lead(getattr(CS, "radarState", None))
@@ -1080,6 +1084,7 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
       lat_active = CC.latActive
 
       if CS.adrv_0x161 is not None:
+        pv5_cluster = getattr(CP, "carFingerprint", None) == CAR.KIA_PV5
         main_enabled = CS.out.cruiseState.available
         cruise_enabled = CC.enabled
         lat_enabled = CS.out.latEnabled
@@ -1104,18 +1109,49 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         set_speed_in_units = hud_control.setSpeed * (CV.MS_TO_KPH if CS.is_metric else CV.MS_TO_MPH)
         values["vSetDis"] = int(set_speed_in_units + 0.5)
 
-        values["DISTANCE"] = 4 if hdp_active else hud_control.leadDistanceBars
+        gap_bars = hud_control.leadDistanceBars
+        pv5_display_available = pv5_cluster and pv5_display is not None
+        actual_hdp_gap = pv5_display_available and 1 <= gap_bars <= 4
+        values["DISTANCE"] = 4 if hdp_active and not actual_hdp_gap else gap_bars
         values["DISTANCE_LEAD"] = 2 if cruise_enabled and lead_visible else 1 if main_enabled and lead_visible else 0
         values["DISTANCE_CAR"] = 3 if hdp_active else 2 if cruise_enabled else 1 if main_enabled else 0
         values["DISTANCE_SPACING"] = 5 if hdp_active else 1 if cruise_enabled else 0
+        if hdp_active and actual_hdp_gap and gap_bars != 4:
+          values["DISTANCE_SPACING"] = 3
 
         values["TARGET"] = 1 if lead_visible and cruise_enabled else 0
         values["TARGET_DISTANCE"] = lead_distance
 
-        pv5_cluster = getattr(CP, "carFingerprint", None) == CAR.KIA_PV5
+        bsd_warning = pv5_cluster and _cluster_bsd_warning(CS.out)
+        signal_background = 0
+        if pv5_display_available and (pv5_display.show_assist or pv5_display.traffic_mode):
+          display_valid = CS.out.canValid and not CS.out.canTimeout and CS.out.gearShifter == "drive"
+          visual_clear = (str(hud_control.visualAlert) == "none" and hud_control.driverMonitoringAlert == 0
+                          and not (left_lane_warning or right_lane_warning or
+                                   hud_control.leftLaneDepart or hud_control.rightLaneDepart))
+          stamp = hud_control.pv5CcncPlanMonoTime
+          plan_fresh = stamp > 0 and 0 <= now_ns - stamp <= PLAN_MAX_AGE_NS
+          if pv5_display.show_assist and display_valid and visual_clear:
+            target = hud_control.pv5CcncTargetDistance
+            if CC.longActive and cruise_enabled and lead_visible and plan_fresh and math.isfinite(target) and target > 0:
+              values["TARGET_DISTANCE"] = clip_float(target, 0.1, 204.5)
+            highlight = hud_control.pv5CcncLaneHighlight
+            lane_stamp = hud_control.pv5CcncLaneMonoTime
+            lane_fresh = lane_stamp > 0 and 0 <= now_ns - lane_stamp <= PLAN_MAX_AGE_NS
+            lane_visible = hud_control.leftLaneVisible or hud_control.rightLaneVisible
+            if lane_fresh and lat_active and lane_visible and not bsd_warning and not CS.trailer_connected and highlight in (1, 3, 4, 5):
+              values["LANE_HIGHLIGHT"] = highlight
+          if pv5_display.traffic_mode:
+            stationary = (CS.out.standstill and abs(CS.out.vEgo) <= 0.1 and abs(CS.out.vEgoRaw) <= 0.1
+                          and not CS.out.gasPressed)
+            higher_priority = (bsd_warning or (lat_active and desire in (1, 2))
+                               or (paddle_mode > 0 and CS.paddle_button_prev > 0))
+            signal_background = pv5_display.traffic_background(
+              hud_control, now_ns, display_valid and visual_clear and plan_fresh and not higher_priority, stationary,
+            )
         values["BACKGROUND"] = _select_cluster_background(
           cruise_enabled, lat_active, CS.paddle_button_prev > 0, paddle_mode, turning=desire in (1, 2),
-          bsd_warning=pv5_cluster and _cluster_bsd_warning(CS.out), turn_background=7 if pv5_cluster else 6,
+          bsd_warning=bsd_warning, turn_background=7 if pv5_cluster else 6, signal_background=signal_background,
         )
         if pv5_cluster:
           _apply_pv5_bsd_cluster_guide(values, CS.out, frame)

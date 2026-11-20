@@ -188,6 +188,29 @@ test("PV5 simple authority recovery is a default-off assist toggle", () => {
   assert.match(item.edescr, /PV5 angle steering only/);
 });
 
+test("PV5 CCNC settings use independent integer defaults and localized choices", () => {
+  const catalog = JSON.parse(readFileSync(new URL("../../carrot_settings.json", root), "utf8"));
+  const keys = readFileSync(new URL("../../../common/params_keys.h", root), "utf8");
+  const pv5 = catalog.menu.find((entry) => entry.id === "PV5");
+  const cluster = pv5.groups.find((entry) => entry.id === "PV5_CLUSTER");
+  assert.deepEqual(cluster.params, ["Pv5CcncClusterDisplay", "Pv5CcncTrafficBackground"]);
+
+  const [display, traffic] = cluster.params.map((name) => {
+    assert.ok(keys.includes(`{"${name}", {PERSISTENT, INT, "0"}}`));
+    const item = catalog.params.find((entry) => entry.name === name);
+    assert.equal(item.detail_parent, undefined);
+    assert.equal(item.min, 0);
+    assert.equal(item.default, 0);
+    return item;
+  });
+  assert.equal(display.control, "toggle");
+  assert.equal(display.max, 1);
+  assert.equal(traffic.control, "select");
+  assert.equal(traffic.max, 2);
+  for (const locale of ["ko", "en", "zh"]) assert.equal(traffic.options[locale].length, 3);
+  assert.deepEqual(traffic.options.en, ["Off", "Red only", "Red + green after confirmed red"]);
+});
+
 test("geometry numeric entry and step buttons skip the unsupported gap in both directions", () => {
   const context = vm.createContext({});
   vm.runInContext(functionSource(settings, "normalizeSettingNumericValue"), context);

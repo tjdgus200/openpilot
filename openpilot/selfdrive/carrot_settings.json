@@ -664,6 +664,13 @@
           "params": ["Pv5LaneBoundaryAssist", "Pv5SccDecelAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
         },
         {
+          "id": "PV5_CLUSTER",
+          "ko": "계기판",
+          "en": "Instrument Cluster",
+          "zh": "仪表盘",
+          "params": ["Pv5CcncClusterDisplay", "Pv5CcncTrafficBackground"]
+        },
+        {
           "id": "PV5_MAINTENANCE",
           "ko": "오류 제보",
           "en": "Incident Reports",
@@ -705,6 +712,45 @@
     }
   ],
   "params": [
+    {
+      "group": "PV5",
+      "name": "Pv5CcncClusterDisplay",
+      "title": "차간거리 링·차선 색상",
+      "descr": "기본 끔. 순정 CCNC 계기판 CAN 프레임(0x161)이 들어오고 오픈파일럿 종방향 제어를 사용하는 PV5에 적용됩니다. 크루즈가 앞차를 따라갈 때 링은 플래너의 목표 차간거리를 표시합니다. 차로 강조색은 조향 보조 상태를 표시합니다.",
+      "egroup": "PV5",
+      "etitle": "Gap Ring & Lane Colors",
+      "edescr": "Off by default. Applies to PV5 with the stock CCNC cluster CAN frame (0x161) and openpilot longitudinal control. When cruise follows a lead, the ring shows the planner's target following distance. The lane highlight color shows steering assist status.",
+      "cgroup": "PV5",
+      "ctitle": "跟车距离环与车道线颜色",
+      "cdescr": "默认关闭。适用于接收原厂 CCNC 仪表 CAN 帧（0x161）并使用 openpilot 纵向控制的 PV5。巡航跟随前车时，圆环显示规划器的目标跟车距离。车道高亮颜色显示转向辅助状态。",
+      "control": "toggle",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5CcncTrafficBackground",
+      "title": "신호등 배경색",
+      "descr": "기본 끔. 순정 CCNC 계기판 CAN 프레임(0x161)이 들어오고 오픈파일럿 종방향 제어를 사용하는 PV5에 적용됩니다. 정차 중 정지 신호 판단이 이어지면 빨간 배경을 표시합니다. 녹색 옵션은 빨간색 표시 이후 플래너와 신호 관측이 모두 녹색일 때 최대 2초간 표시합니다. 배경색은 참고용이며 출발하기 전에 실제 신호와 주변 상황을 직접 확인하세요.",
+      "egroup": "PV5",
+      "etitle": "Traffic Signal Background",
+      "edescr": "Off by default. Applies to PV5 with the stock CCNC cluster CAN frame (0x161) and openpilot longitudinal control. While stopped, a sustained stop-signal estimate shows red. The green option shows green for up to two seconds after red when the planner and signal observation agree. Treat the color as advisory and check the actual signal and surroundings before moving.",
+      "cgroup": "PV5",
+      "ctitle": "交通信号背景色",
+      "cdescr": "默认关闭。适用于接收原厂 CCNC 仪表 CAN 帧（0x161）并使用 openpilot 纵向控制的 PV5。停车时持续判断为停车信号后显示红色背景。启用绿色选项后，红色显示之后，规划器与信号观测均判断为绿色时最多显示两秒。背景色仅供参考，起步前请直接确认实际信号及周围情况。",
+      "control": "select",
+      "min": 0,
+      "max": 2,
+      "default": 0,
+      "unit": 1,
+      "options": {
+        "ko": ["끔", "적색만", "적색 + 적색 확인 후 녹색"],
+        "en": ["Off", "Red only", "Red + green after confirmed red"],
+        "zh": ["关闭", "仅红色", "红色 + 确认红灯后显示绿色"]
+      }
+    },
     {
       "group": "PV5",
       "name": "Pv5IncidentReporting",

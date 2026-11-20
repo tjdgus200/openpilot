@@ -476,10 +476,20 @@ class OpenpilotLiveSource:
         braking = None
         curve_speed = None
         lane_change_direction = None
+        pv5_hud_gear = None
         if onroad:
             cp = self._service_data("carParams")
             if (self._service_valid("carParams") and safe_get(cp, "carFingerprint") == "KIA_PV5"
                     and not safe_get(cp, "notCar", True)):
+                if (state.gear_text in ("P", "R") and self._service_is_fresh("carState", now, 0.3)
+                        and safe_get(car_state, "canValid", False) and not safe_get(car_state, "canTimeout", True)):
+                    gear = str(safe_get(car_state, "gearShifter", ""))
+                    if gear == "reverse" and state.gear_text == "R":
+                        pv5_hud_gear = "R"
+                    elif gear == "park" and state.gear_text == "P" and safe_get(car_state, "standstill", False):
+                        speed = safe_optional_float(car_state, "vEgo")
+                        if speed is not None and abs(speed) * 3.6 <= 0.1:
+                            pv5_hud_gear = "P"
                 # The confirmed radarCutin alert arrives through selfdriveState.
                 # Retire continuously active risk/tracking/braking popups only.
                 notices = tuple(e for e in driving_notice_events(self.sm, now) if not e.startswith('cutin'))
@@ -508,6 +518,7 @@ class OpenpilotLiveSource:
         return replace(
             state,
             onroad=onroad,
+            pv5_hud_gear=pv5_hud_gear,
             left_lane_probability=left_lane_probability,
             right_lane_probability=right_lane_probability,
             deceleration_banner=deceleration_banner,
