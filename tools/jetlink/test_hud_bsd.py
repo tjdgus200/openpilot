@@ -119,6 +119,17 @@ def test_snapshot_parked_brightness_only_for_confirmed_active_dashcam(monkeypatc
   assert builder.parked_brightness(now) == ([20, .15] if condition == 'parked' else None)
 
 
+def test_parked_brightness_survives_oversized_camera_metadata():
+  import json
+  from hud_protocol import encode_snapshot
+
+  record = {'events': {}, 'cameras': {'jpeg': 'x' * (96 * 1024)}, 'parked_brightness': [10, .2]}
+  packet = encode_snapshot(record)
+  assert len(packet) <= 96 * 1024
+  assert json.loads(packet)['parked_brightness'] == [10, .2]
+  assert json.loads(packet)['cameras'] == {}
+
+
 def test_main_brightness_resolver_preserves_stock_and_honors_warning_hook():
   import ast
   from pathlib import Path

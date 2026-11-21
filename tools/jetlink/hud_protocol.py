@@ -374,8 +374,6 @@ def encode_snapshot(record):
       size = len(data)
       if size <= 96 * 1024:
         return data
-  if size > 96 * 1024 and 'parked_brightness' in record:
-    size = without_field(record, 'parked_brightness', size)
   if size > 96 * 1024:
     if 'cameras' in record:
       size += 2 - value_size(record['cameras'])
@@ -389,6 +387,8 @@ def encode_snapshot(record):
     events = dict(record['events'].items())
     size = without_field(events, 'navRoute', size)
     record['events'] = events
+  if size > 96 * 1024 and 'parked_brightness' in record:
+    size = without_field(record, 'parked_brightness', size)
   if size > 96 * 1024:
     raise ValueError('HUD snapshot exceeds bounded display allocation')
   data = json.dumps(record, separators=(',', ':')).encode()
