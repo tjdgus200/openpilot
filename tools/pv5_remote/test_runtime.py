@@ -71,6 +71,16 @@ class RuntimeChecks(unittest.TestCase):
     self.assertIn(args, [['systemctl', 'daemon-reload'], ['systemctl', 'start', '--no-block', self.unit]])
     return b''
 
+  def test_park_trial_cannot_overwrite_inactive_home_enrollment(self):
+    initial = self.config.read_bytes()
+    with patch.dict(os.environ, {}, clear=True), patch.object(remote, 'kernel_resource_support') as check:
+      with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, 'other_mode_enrolled'):
+        remote.install(parked=True)
+    check.assert_not_called()
+    self.assertEqual(self.config.read_bytes(), initial)
+    self.assertFalse(self.units.exists())
+    self.assertFalse(any('start' in args for args in self.calls))
+
   def test_runtime_registration_and_simulated_boot_link_loss_restore(self):
     self.assertTrue(remote.restore_runtime()['boot_restore_requested'])
     link = self.units / self.unit
@@ -116,6 +126,17 @@ class RuntimeChecks(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, 'qualified_runtime_interpreter_changed'):
       remote.restore_runtime()
     self.assertFalse(any('start' in args for args in self.calls))
+
+  def test_vehicle_runtime_requires_matching_capped_unit_and_separate_mode(self):
+    self.write_config(qualified_modes=remote.PARK_MODES, resource_policy=remote.PARK_POLICY)
+    with self.assertRaisesRegex(ValueError, 'qualified_runtime_interpreter_changed'):
+      remote.restore_runtime()
+    (self.root / self.unit).write_bytes(remote.unit_text(sys.executable, remote.PARK_POLICY).encode())
+    self.assertTrue(remote.restore_runtime()['boot_restore_requested'])
+    self.assertNotIn('RuntimeMaxSec=', (self.root / self.unit).read_text())
+    self.write_config(qualified_modes=['detached_home', 'parked_vehicle'], resource_policy=remote.PARK_POLICY)
+    with self.assertRaises(ValueError):
+      remote.restore_runtime()
 
   def test_launcher_contains_exact_optional_nonblocking_hook(self):
     launcher = Path(__file__).parents[2] / 'launch_chffrplus.sh'

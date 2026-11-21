@@ -1,3 +1,44 @@
+## Parked vehicle automatic access (2026-11-18 candidate)
+
+The owner selected automatic access while the real PV5 remains in Park, with
+raw and filtered speed exactly zero and all cruise/control/selfdrive states OFF.
+The new `parked_vehicle_capped_v1` profile admits **only** `parked_vehicle`;
+it cannot reuse the home qualification, and does not enable detached-home access.
+The existing home-only uncapped profile stays separate. Mixed profiles refuse.
+No vehicle profile is qualified merely by installing these files.
+
+The new profile keeps source freshness, two-second admission, resource headroom,
+CAN identity/validity, emergency/disable rejection, one-second PID1 watchdog,
+private owner key and cgroup/host-bus isolation. Missing or non-boolean control
+fields refuse. Losing any gate closes all owned remote children; PID1 retries
+admission. Qualified operation has no 900-second expiry. A first local test is
+still bounded to 900 seconds until real key/isolation/cancellation checks pass.
+
+`--install-park-trial` first refuses kernels without existing CPU and memory
+controllers, before changing keys or files. The unit requests CPUQuota10%,
+MemoryMax256MiB and TasksMax64. Before any network child starts, the guard reads
+actual kernel limits, including the process count. The memory and process
+controllers must be available in cgroup2. An existing v1 CPU mount is accepted
+only if it places this exact service in the same group with an enforced quota.
+The installer leaves a separately enrolled home profile in place.
+No hierarchy mounting, host-controller changes or removal of limits is attempted.
+
+`connect.py --verify-park` must verify actual Park data, owner-key access,
+namespace isolation, the exact new guard, actual kernel caps, owned job closure
+and rejection of a new connection. Its separate, host/code/time-bound
+`park-qualification.json` is used by `/v1/remote/park-qualification`.
+Local `--enable-park-auto` additionally audits recorded PID/start-time exits,
+rechecks actual eligibility and the exact boot hook before removing trial expiry.
+`--park-check` and the client resource-policy selector retain actual Park proof.
+The boot supervisor accepts only the exact qualified home or park profile;
+it checks the matching unit including vehicle caps. It does not convert modes.
+
+PC-only tests do not qualify the actual comma. Installation, new host enrollment,
+real CPU controller support, real cancellation and next-boot reconnect still need
+actual device evidence. No old host pin or qualification should be overwritten.
+
+---
+
 # Conditional owner-PC remote access
 
 The owner's 2026-11-15 instruction replaces the earlier manual-only/15-minute

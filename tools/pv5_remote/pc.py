@@ -10,10 +10,11 @@ import re
 import threading
 
 from openpilot.system.pv5_incidents.archive_protocol import authenticate, encode
-from tools.pv5_remote.conditional_remote import HOME_POLICY
+from tools.pv5_remote.conditional_remote import HOME_POLICY, PARK_POLICY, PARK_MODES
 
 PATH = '/v1/remote/bootstrap'
 QUALIFICATION = '/v1/remote/qualification'
+PARK_QUALIFICATION = '/v1/remote/park-qualification'
 
 
 def public_key(value):
@@ -36,7 +37,7 @@ class Bootstrap:
       raise ValueError('private_remote_directory_required')
 
   def ingest(self, path, values, body, now):
-    if self.enabled() is not True or path not in (PATH, QUALIFICATION) or len(body) > 2048 or not authenticate(self.key, path, values, body, now):
+    if self.enabled() is not True or path not in (PATH, QUALIFICATION, PARK_QUALIFICATION) or len(body) > 2048 or not authenticate(self.key, path, values, body, now):
       raise PermissionError('unauthorized')
     value = json.loads(body)
     if not isinstance(value, dict) or set(value) != {'version', 'host_key'} or type(value['version']) is not int or value['version'] != 1:
@@ -57,7 +58,7 @@ class Bootstrap:
         if host_path.stat().st_size > 256 or host_path.read_text().strip() != host:
           raise ValueError('host_key_changed')  # Never silently accept a replacement identity.
       else:
-        if path == QUALIFICATION:
+        if path in (QUALIFICATION, PARK_QUALIFICATION):
           raise ValueError('host_not_pinned')
         with host_path.open('x', encoding='ascii') as stream:
           stream.write(host + '\n')
@@ -72,19 +73,27 @@ class Bootstrap:
       if not known.exists():
         with known.open('x', encoding='ascii') as stream:
           stream.write(text)
-      if path == QUALIFICATION:
-        proof = self.folder / 'home-qualification.json'
+      if path in (QUALIFICATION, PARK_QUALIFICATION):
+        parked = path == PARK_QUALIFICATION
+        policy = PARK_POLICY if parked else HOME_POLICY
+        proof = self.folder / ('park-qualification.json' if parked else 'home-qualification.json')
         if proof.is_symlink() or not proof.exists() or proof.stat().st_size > 8192:
           raise ValueError('qualification_required')
         result = json.loads(proof.read_bytes())
         if (
           result.get('passed') is not True or result.get('host_key') != host
-          or result.get('resource_policy') != HOME_POLICY or not 0 <= now - result['stamp'] < 1800
+          or result.get('resource_policy') != policy or not 0 <= now - result['stamp'] < 1800
         ):
           raise ValueError('qualification_required')
+        if parked and (
+          result.get('qualified_modes') != PARK_MODES or result.get('admitted_mode') != 'parked_vehicle'
+          or result.get('transport_closed') is not True or result.get('memory_limit') != 268435456
+          or result.get('CPU_quota_limit') != 0.1 or result.get('tasks_limit') != 64
+        ):
+          raise ValueError('park_qualification_required')
         return {
-          'version': 1, 'home_qualified': True, 'guard_sha256': result['guard_sha256'],
-          'resource_policy': HOME_POLICY, 'actual_device_key_auth': True, 'local_pid_audit_required': True,
+          'version': 1, ('park_qualified' if parked else 'home_qualified'): True, 'guard_sha256': result['guard_sha256'],
+          'resource_policy': policy, 'actual_device_key_auth': True, 'local_pid_audit_required': True,
         }
       return {'version': 1, 'client_public_key': client, 'host_key_pinned': True, 'host_fingerprint': hashlib.sha256(host.encode()).hexdigest()}
 
@@ -92,7 +101,7 @@ class Bootstrap:
 def handler(base, bootstrap):
   class Handler(base):
     def do_POST(self):
-      if self.path not in (PATH, QUALIFICATION):
+      if self.path not in (PATH, QUALIFICATION, PARK_QUALIFICATION):
         return super().do_POST()
       length = self.headers.get('Content-Length', '')
       if self.headers.get('Transfer-Encoding') or not re.fullmatch(r'[0-9]{1,4}', length) or not 0 < int(length) <= 2048:

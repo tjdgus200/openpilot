@@ -70,12 +70,14 @@ class SourceChecks(unittest.TestCase):
         pending['pandaStates'] = [packet(events['pandaStates'])]
         pending['deviceState'] = [packet(events['deviceState'])]
         self.assertEqual(eligible(source.read(), 10, ['parked_dashcam']), ('', 'normal_mode_code_reports_only'))
+        self.assertEqual(eligible(source.read(), 10, ['parked_vehicle']), ('parked_vehicle', ''))
         events['carParams'].carParams.dashcamOnly = True
         pending['carParams'] = [packet(events['carParams'])]
         self.assertEqual(eligible(source.read(), 10, ['parked_dashcam']), ('parked_dashcam', ''))
         events['carControl'].carControl.longActive = True
         pending['carControl'] = [packet(events['carControl'])]
         self.assertFalse(eligible(source.read(), 10, ['parked_dashcam'])[0])
+        self.assertFalse(eligible(source.read(), 10, ['parked_vehicle'])[0])
 
 
 if __name__ == '__main__':

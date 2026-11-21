@@ -35,12 +35,13 @@ def command(policy):
 
 def check(policy, runner=subprocess.run, sleep=time.sleep):
   module, root = connector(policy)
-  args = command(policy) + [module['remote'](module['CHECK'])]
+  parked = policy.get('conditional_remote', {}).get('resource_policy') == 'parked_vehicle_capped_v1'
+  args = command(policy) + [module['remote'](module['CHECK_PARK'] if parked else module['CHECK'])]
   expected = hashlib.sha256((root / 'conditional_remote.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
   flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
   for attempt in range(1, 4):
     try:
-      result = runner(args, stdin=subprocess.DEVNULL, capture_output=True, timeout=25, creationflags=flags)
+      result = runner(args, stdin=subprocess.DEVNULL, capture_output=True, timeout=75 if parked else 25, creationflags=flags)
       if result.returncode == 0:
         if len(result.stdout) > 8192:
           raise ValueError('invalid_remote_check')

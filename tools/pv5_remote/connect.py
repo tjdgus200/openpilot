@@ -13,6 +13,8 @@ import threading
 import time
 
 HOME_POLICY = 'detached_home_uncapped_v1'
+PARK_POLICY = 'parked_vehicle_capped_v1'
+PARK_MODES = ['parked_vehicle']
 
 CHECK = r'''
 import errno,hashlib,json,os,pathlib,socket,time
@@ -45,6 +47,19 @@ print(json.dumps({'root_key_session':True,'guard_cgroup':True,'host_service_isol
  'CPU_quota_limit':None,'CPU_controller_available':has_cpu,
  'qualified_modes':config['qualified_modes'],'trial':config.get('trial') is True,'guard_sha256':digest}))
 '''
+
+# Same owner-key, namespace and cancellation checks; vehicle limits are distinct.
+CHECK_PARK = CHECK.replace(
+  "assert config.get('qualified_modes')==['detached_home'] and config.get('resource_policy')=='detached_home_uncapped_v1','home_resource_policy'",
+  "assert config.get('qualified_modes')==['parked_vehicle'] and config.get('resource_policy')=='parked_vehicle_capped_v1','park_resource_policy'"
+)
+_start = CHECK_PARK.index("assert (root/'memory.max')")
+_end = CHECK_PARK.index('observed=[]', _start)
+CHECK_PARK = CHECK_PARK[:_start] + "import runpy\nm=runpy.run_path('/data/pv5-remote-access/conditional_remote.py')\nlimits=m['resource_limits'](config)\nassert limits['memory_limit']==268435456 and limits['CPU_quota_limit']==0.1 and limits['tasks_limit']==64\nsource=m['Source']()\nadmitted=m['await_eligible'](source,config['qualified_modes'])\nhas_cpu=limits['CPU_controller'] is not None\n" + CHECK_PARK[_end:]
+CHECK_PARK = CHECK_PARK.replace('observed.append(memory());time.sleep(.5)', 'observed.append(memory());source.read();time.sleep(.5)')
+CHECK_PARK = CHECK_PARK.replace("digest=hashlib.sha256", "admitted=m['eligible'](source.read(),time.monotonic(),config['qualified_modes'])[0]\nassert admitted=='parked_vehicle','actual_park_proof_required'\ndigest=hashlib.sha256")
+CHECK_PARK = CHECK_PARK.replace("'memory_limit':None", "'memory_limit':limits['memory_limit']")
+CHECK_PARK = CHECK_PARK.replace("'CPU_quota_limit':None", "'CPU_quota_limit':limits['CPU_quota_limit'],'admitted_mode':admitted,'tasks_limit':limits['tasks_limit']")
 
 JOB = r'''
 import json,os,pathlib,subprocess,time
@@ -125,25 +140,30 @@ def remote(code):
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--policy', type=Path, required=True)
-  parser.add_argument('--verify-home', action='store_true')
+  mode = parser.add_mutually_exclusive_group()
+  mode.add_argument('--verify-home', action='store_true')
+  mode.add_argument('--verify-park', action='store_true')
+  mode.add_argument('--park-check', action='store_true')
   args = parser.parse_args()
   policy = json.loads(args.policy.read_text(encoding='utf-8'))
   if policy.get('conditional_remote', {}).get('pc_enabled') is not True:
     raise ValueError('remote_pc_disabled')
+  expected_policy = PARK_POLICY if (args.verify_park or args.park_check) else HOME_POLICY
+  expected_modes = PARK_MODES if expected_policy == PARK_POLICY else ['detached_home']
   ssh, folder = command(policy), Path(policy['conditional_remote']['private_directory'])
   flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-  result = subprocess.run(ssh + [remote(CHECK)], stdin=subprocess.DEVNULL, capture_output=True, timeout=15, creationflags=flags)
+  result = subprocess.run(ssh + [remote(CHECK_PARK if expected_policy == PARK_POLICY else CHECK)], stdin=subprocess.DEVNULL, capture_output=True, timeout=70 if expected_policy == PARK_POLICY else 15, creationflags=flags)
   if result.returncode or len(result.stdout) > 8192:
     raise ValueError('key_auth_or_resource_check_failed')
   proof = json.loads(result.stdout)
   expected = hashlib.sha256(Path(__file__).with_name('conditional_remote.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
   if proof.get('guard_sha256') != expected:
     raise ValueError('guard_code_identity')
-  if not args.verify_home:
+  if not (args.verify_home or args.verify_park):
     print(json.dumps(proof))
     return
-  if proof.get('trial') is not True or proof.get('qualified_modes') != ['detached_home'] or proof.get('resource_policy') != HOME_POLICY:
-    raise ValueError('home_trial_required')
+  if proof.get('trial') is not True or proof.get('qualified_modes') != expected_modes or proof.get('resource_policy') != expected_policy:
+    raise ValueError('matching_mode_trial_required')
   client = subprocess.Popen(ssh + [remote(JOB)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, creationflags=flags)
   try:
     ready = queue.Queue(maxsize=1)
@@ -172,7 +192,7 @@ def main():
       local_pid_audit_pending=True,
       stop_and_rejection_seconds=round(time.monotonic() - began, 3),
     )
-    path = folder / 'home-qualification.json'
+    path = folder / ('park-qualification.json' if args.verify_park else 'home-qualification.json')
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(receipt) + '\n', encoding='utf-8')
     temporary.replace(path)

@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 import uuid
-from tools.pv5_remote.connect import CHECK
+from tools.pv5_remote.connect import CHECK, CHECK_PARK
 from tools.pv5_remote import conditional_remote as owner
 
 
@@ -37,6 +37,7 @@ def main():
     (root / 'authorized').write_bytes((root / 'client.pub').read_bytes())
     (root / 'passwd').write_text('root:x:0:0:root:/root:/bin/bash\nsshd:x:65534:65534:SSH isolation:/run/sshd:/usr/sbin/nologin\n')
     strict_parent = '--strict-parent' in sys.argv
+    parked = '--park-capped' in sys.argv
     auth_path, host_path = root / 'authorized', root / 'host'
     if strict_parent:
       data, safe = root / 'data', root / 'runtime'
@@ -82,8 +83,14 @@ def main():
     if strict_parent:
       (root / 'missing_key_config').write_text(config.replace('AuthorizedKeysFile ' + str(auth_path), 'AuthorizedKeysFile ' + str(root / 'not_created_yet')))
     (root / 'known_hosts').write_text('pv5-native-test ' + (root / 'host.pub').read_text())
-    (root / 'modes.json').write_text(json.dumps({'qualified_modes': ['detached_home'], 'resource_policy': owner.HOME_POLICY, 'trial': True}))
-    (root / 'guard.py').write_bytes(Path(__file__).with_name('conditional_remote.py').read_bytes())
+    (root / 'modes.json').write_text(json.dumps({'qualified_modes': owner.PARK_MODES if parked else ['detached_home'], 'resource_policy': owner.PARK_POLICY if parked else owner.HOME_POLICY, 'trial': True}))
+    guard_source = Path(__file__).with_name('conditional_remote.py').read_text()
+    if parked:
+      # Synthetic parked input ONLY inside this isolated PC resource/SSH fixture.
+      from tools.pv5_remote.test_remote import parked as parked_fixture
+      guard_source += '\nUNIT = ' + repr(token + '.service') + '\n'
+      guard_source += 'class Source:\n def read(self):\n  s=' + repr(parked_fixture()) + '\n  for v in s.values(): v["stamp"]=time.monotonic()\n  return s\n'
+    (root / 'guard.py').write_text(guard_source)
     helper = root / 'helper.py'
     helper.write_text('''import os,socket,subprocess,time
 from pathlib import Path
@@ -120,6 +127,8 @@ while not (r/'deny').exists():
       'TemporaryFileSystem=/run/sshd:ro',
     ):
       command.append('--property=' + setting)
+    if parked:
+      command += ['--property=CPUQuota=10%', '--property=MemoryMax=256M', '--property=TasksMax=64']
     command += ['--setenv=PV5_TEST_SSHD=' + str(binary), sys.executable, str(helper)]
     ssh = [
       'ssh',
@@ -174,7 +183,7 @@ while not (r/'deny').exists():
             time.sleep(0.1)
       wrong = subprocess.run(ssh + ['-i', str(root / 'wrong'), 'root@127.0.0.1', 'true'], capture_output=True, timeout=5)
       assert wrong.returncode != 0, 'unregistered_key_accepted'
-      check = CHECK.replace('/pv5-conditional-remote.service', '/' + token + '.service')
+      check = (CHECK_PARK if parked else CHECK).replace('/pv5-conditional-remote.service', '/' + token + '.service')
       check = check.replace('/data/pv5-remote-access/conditional_modes.json', str(root / 'modes.json'))
       check = check.replace('/data/pv5-remote-access/conditional_remote.py', str(root / 'guard.py'))
       validated = json.loads(run(ssh + ['-i', str(root / 'client'), 'root@127.0.0.1', shlex.quote(sys.executable) + ' -c ' + shlex.quote(check)]))

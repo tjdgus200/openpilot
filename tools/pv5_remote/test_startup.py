@@ -53,6 +53,13 @@ class StartupChecks(unittest.TestCase):
       (root / 'conditional_modes.json').write_text(json.dumps({
         'trial': True, 'qualified_modes': ['detached_home'], 'resource_policy': remote.HOME_POLICY, 'binaries': {},
       }))
+      proc = root / 'cgroup'
+      proc.write_text('0::/system.slice/' + remote.UNIT + '\n')
+      cg = root / 'sys/system.slice' / remote.UNIT
+      cg.mkdir(parents=True)
+      (cg / 'memory.max').write_text('max')
+      (cg / 'cpu.max').write_text('max 100000')
+      limits = remote.resource_limits
       clock = [0.0]
       opened = []
       scan = []
@@ -102,6 +109,7 @@ class StartupChecks(unittest.TestCase):
         patch.object(remote, 'RUNTIME', root),
         patch.object(remote, 'prerequisites', return_value={}),
         patch.object(remote, 'protected'),
+        patch.object(remote, 'resource_limits', side_effect=lambda cfg: limits(cfg, proc, root / 'sys')),
         patch.object(remote, 'Source', Source),
         patch.object(remote, 'notify'),
         patch.object(remote.time, 'monotonic', side_effect=lambda: clock[0]),

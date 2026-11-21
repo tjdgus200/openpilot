@@ -43,7 +43,9 @@ def configured():
   cfg = json.loads(path.read_bytes())
   if cfg.get('boot_restore') is not True or cfg.get('trial') is not False:
     return False
-  if cfg.get('qualified_modes') != ['detached_home'] or cfg.get('resource_policy') != 'detached_home_uncapped_v1':
+  home = cfg.get('qualified_modes') == ['detached_home'] and cfg.get('resource_policy') == 'detached_home_uncapped_v1'
+  park = cfg.get('qualified_modes') == ['parked_vehicle'] and cfg.get('resource_policy') == 'parked_vehicle_capped_v1'
+  if not (home or park):
     raise ValueError('home_resource_policy_required')
   script = ROOT / 'conditional_remote.py'
   protected(script)
@@ -108,7 +110,9 @@ def qualified_interpreter():
   if '..' in Path(interpreter).parts:
     raise ValueError('qualified_interpreter_metadata_invalid')
   module = runpy.run_path(str(ROOT / 'conditional_remote.py'))
-  if data != module['unit_text'](interpreter).encode():
+  cfg = json.loads((ROOT / 'conditional_modes.json').read_bytes())
+  expected = (module['unit_text'](interpreter, cfg['resource_policy']) if cfg['resource_policy'] == 'parked_vehicle_capped_v1' else module['unit_text'](interpreter))
+  if data != expected.encode():
     raise ValueError('qualified_interpreter_metadata_invalid')
   executable = Path(interpreter).resolve(strict=True)
   protected(executable)
