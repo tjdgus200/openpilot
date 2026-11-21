@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from openpilot.common import pv5_park_ssh
+
 from ..config import CARROT_SETTING_PROFILES_PATH
 from .params import (
   get_param_values,
@@ -92,7 +94,7 @@ def _clean_values(values: Any) -> Dict[str, Any]:
   allowed = {
     name
     for name, meta in by_name.items()
-    if not meta.get("search_only", False)
+    if name != pv5_park_ssh.PARAM and not meta.get("search_only", False)
   }
   return {
     str(key): value
@@ -106,7 +108,7 @@ def _setting_defaults() -> Dict[str, Any]:
   return {
     name: meta.get("default", 0)
     for name, meta in by_name.items()
-    if not meta.get("search_only", False)
+    if name != pv5_park_ssh.PARAM and not meta.get("search_only", False)
   }
 
 

@@ -29,6 +29,10 @@ and rejection of a new connection. Its separate, host/code/time-bound
 `park-qualification.json` is used by `/v1/remote/park-qualification`.
 Local `--enable-park-auto` additionally audits recorded PID/start-time exits,
 rechecks actual eligibility and the exact boot hook before removing trial expiry.
+After registration, enable Automatic Park SSH in CarrotWeb Settings → PV5 →
+Incident Reports. The preference defaults to OFF. OFF withdraws permission from
+the existing guard, which closes its own sessions. Registration and the resource,
+vehicle-state and owner-key checks still govern admission.
 `--park-check` and the client resource-policy selector retain actual Park proof.
 The boot supervisor accepts only the exact qualified home or park profile;
 it checks the matching unit including vehicle caps. It does not convert modes.

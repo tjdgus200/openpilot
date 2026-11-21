@@ -3,6 +3,8 @@ import os
 
 from aiohttp import web
 
+from openpilot.common import pv5_park_ssh
+
 from ..config import UNIT_CYCLE
 from ..services.device_info import (
   get_device_network_snapshot,
@@ -26,6 +28,19 @@ def _settings_catalog_payload(cache_parts: tuple | None = None, vehicle_brand: s
   groups, groups_list, categories, _hidden_names = filter_settings_catalog_for_brand(
     groups, groups_list, settings_cache.get("categories"), brand,
   )
+  if any(item.get("name") == pv5_park_ssh.PARAM for item in groups.get("PV5", [])):
+    ready = pv5_park_ssh.qualified()
+    status = {
+      "descr": "기기 등록 완료. " if ready else "최초 등록 및 PC 검증 필요. ",
+      "edescr": "Device enrolled. " if ready else "Device enrollment and PC verification required. ",
+      "cdescr": "设备已登记。 " if ready else "需要先登记设备并完成电脑验证。 ",
+    }
+    groups = dict(groups)
+    groups["PV5"] = [
+      {**item, **{key: prefix + item.get(key, "") for key, prefix in status.items()}}
+      if item.get("name") == pv5_park_ssh.PARAM else item
+      for item in groups["PV5"]
+    ]
   return {
     "path": path,
     "apilot": data.get("apilot"),

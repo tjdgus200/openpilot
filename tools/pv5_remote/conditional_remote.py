@@ -588,7 +588,8 @@ def guard():
   protected(SCRIPT)
   protected(ROOT / 'conditional_modes.json', private=True)
   config = json.loads((ROOT / 'conditional_modes.json').read_bytes())
-  if access_policy(config) == PARK_POLICY:
+  parked = access_policy(config) == PARK_POLICY
+  if parked:
     resource_limits(config)
   modes = config['qualified_modes']
   if config.get('binaries') != identities:
@@ -603,13 +604,27 @@ def guard():
     if config.get('trial') is True:
       print(json.dumps({'trial_exit': reason, 'bridge_exit_code': code, 'loop_gap_ms': gap}), flush=True)
 
-  notify('READY=1\nWATCHDOG=1')
+  menu_request, marker = None, None
+  if parked and config.get('trial') is not True:
+    if config.get('trial') is not False or config.get('boot_restore') is not True:
+      raise ValueError('matching_code_qualification_required')
+    from openpilot.common import pv5_park_ssh
+
+    protected(RUNTIME, directory=True)
+    marker = RUNTIME / pv5_park_ssh.MARKER_NAME
+    menu_request = pv5_park_ssh.requested
+
   try:
+    if marker is not None:
+      atomic(marker, b'', 0o644)
+    notify('READY=1\nWATCHDOG=1')
     while True:
       if config.get('trial') is True and (RUNTIME / 'stop-trial').exists():
         trial_exit('trial_requested_stop')
         return
       mode, _reason = eligible(source.read(), time.monotonic(), modes)
+      if menu_request is not None and not menu_request():
+        mode = ''
       if mode and not foreign_checked:
         for entry in Path('/proc').glob('[0-9]*'):
           try:
@@ -619,6 +634,8 @@ def guard():
             continue
         foreign_checked = True
         mode, _reason = eligible(source.read(), time.monotonic(), modes)
+        if menu_request is not None and not menu_request():
+          mode = ''
       now = time.monotonic()
       gap = round((now - gate.last) * 1000) if gate.last is not None else None
       action = gate.tick(mode, now)
@@ -635,6 +652,8 @@ def guard():
   finally:
     if child is not None:
       child.stdin.close()
+    if marker is not None:
+      marker.unlink(missing_ok=True)
 
 
 def runtime_unit():
@@ -871,7 +890,8 @@ def enable_home(parked=False):
   run(['systemctl', 'start', UNIT], timeout=35)
   print(
     json.dumps(
-      {'home_auto_enabled': not parked, 'park_auto_enabled': parked, 'manual_expiry_removed': True, 'boot_enabled': True, 'local_trial_pid_audit_passed': True, 'vehicle_dashcam_qualified': False}
+      {'home_auto_enabled': not parked, 'park_auto_qualified': parked, 'manual_expiry_removed': True,
+       'boot_enabled': True, 'local_trial_pid_audit_passed': True, 'vehicle_dashcam_qualified': False}
     ),
     flush=True,
   )

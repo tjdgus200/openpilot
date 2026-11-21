@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
-from openpilot.common import pv5_parked_dashcam
+from openpilot.common import pv5_park_ssh, pv5_parked_dashcam
 
 from ..config import PARAMS_BACKUP_PATH
 from ..services.param_changes import (
@@ -91,7 +91,7 @@ async def api_param_set(request: web.Request) -> web.Response:
   if name in INTERNAL_SESSION_PARAMS:
     return web.json_response({"ok": False, "error": "driver monitoring is controlled by the vehicle CANCEL gesture"}, status=403)
 
-  if name == pv5_parked_dashcam.PARAM:
+  if name in (pv5_parked_dashcam.PARAM, pv5_park_ssh.PARAM):
     origin = request.headers.get("Origin")
     try:
       if (origin and urlsplit(origin).netloc != request.host) or request.headers.get("Sec-Fetch-Site") == "cross-site":
@@ -101,7 +101,7 @@ async def api_param_set(request: web.Request) -> web.Response:
     if request.content_type != "application/json":
       return web.json_response({"ok": False, "error": "application/json required"}, status=415)
     if type(value) not in (int, bool) or value not in (0, 1):
-      return web.json_response({"ok": False, "error": "parked dashcam setting requires a boolean"}, status=400)
+      return web.json_response({"ok": False, "error": "setting requires a boolean"}, status=400)
 
   # clamp using settings if numeric
   p = None
@@ -133,6 +133,8 @@ async def api_param_set(request: web.Request) -> web.Response:
 
   try:
     set_param_value(name, value, p)
+  except pv5_park_ssh.QualificationRequired:
+    return web.json_response({"ok": False, "error": "P단 자동 SSH 최초 등록과 검증이 필요합니다."}, status=409)
   except Exception as e:
     return web.json_response({"ok": False, "error": str(e)}, status=500)
 

@@ -157,6 +157,56 @@ def test_parked_dashcam_toggle_rejects_cross_origin_and_invalid_writes(monkeypat
   assert writes == [(PARAM, 1), (PARAM, 0)]
 
 
+def test_park_ssh_toggle_checks_qualification_and_persists_only_explicit_requests(monkeypatch):
+  import asyncio
+
+  from aiohttp import web
+  from aiohttp.test_utils import TestClient, TestServer
+
+  from openpilot.common import pv5_park_ssh
+  from openpilot.selfdrive.carrot.server.features import params as feature
+
+  class NativeParams:
+    value = None
+
+    def get(self, name):
+      assert name == pv5_park_ssh.PARAM
+      return self.value
+
+    def put_bool(self, name, value):
+      assert name == pv5_park_ssh.PARAM
+      self.value = value
+
+  params = NativeParams()
+  ready = [False]
+  monkeypatch.setattr(params_service, "HAS_PARAMS", True)
+  monkeypatch.setattr(params_service, "Params", lambda: params)
+  monkeypatch.setattr(pv5_park_ssh, "qualified", lambda: ready[0])
+  monkeypatch.setattr(feature, "get_settings_cached", lambda: ({}, {}, {}, []))
+  monkeypatch.setattr(feature, "append_param_change", lambda *args, **kwargs: None)
+  monkeypatch.setattr(feature, "is_drive_engaged", lambda request: False)
+
+  async def run():
+    app = web.Application()
+    feature.register(app)
+    async with TestClient(TestServer(app)) as client:
+      url = "/api/param_set"
+      on = {"name": pv5_park_ssh.PARAM, "value": 1}
+      assert (await client.post(url, json=on, headers={"Origin": "https://other.test"})).status == 403
+      assert (await client.post(url, json=on | {"value": "1"})).status == 400
+      assert (await client.post(url, json=on)).status == 409
+      assert params.value is None
+      ready[0] = True
+      assert (await client.post(url, json=on)).status == 200
+      assert params.value is True
+      assert params_service.filter_param_backup_values({pv5_park_ssh.PARAM: True}) == {}
+      ready[0] = False
+      assert (await client.post(url, json=on | {"value": 0})).status == 200
+      assert params.value is False
+
+  asyncio.run(run())
+
+
 def test_web_params_cannot_write_internal_driver_monitoring_session_state():
   with pytest.raises(ValueError, match="controlled internally"):
     params_service.set_param_value("DriverMonitoringSessionDisabled", True, {"min": 0, "max": 1, "default": 0})

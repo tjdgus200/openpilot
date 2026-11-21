@@ -316,6 +316,30 @@ def test_parked_dashcam_trial_uses_default_off_toggle_in_pv5_menu(settings):
   assert f'{{"{PARAM}", {{PERSISTENT, BOOL}}}}' in PARAMS_KEYS_PATH.read_text(encoding="utf-8")
 
 
+def test_park_ssh_toggle_appears_in_incident_reports_with_registration_status(settings, monkeypatch):
+  from openpilot.common import pv5_park_ssh
+  from openpilot.selfdrive.carrot.server.features import settings as feature
+  from openpilot.selfdrive.carrot.server.services.settings import settings_cache
+
+  groups, by_name, groups_list = group_index(settings)
+  item = by_name[pv5_park_ssh.PARAM]
+  assert (item["control"], item["default"]) == ("toggle", 0)
+  categories = build_menu_categories(settings, by_name)
+  pv5 = next(category for category in categories if category["id"] == "PV5")
+  incident = next(group for group in pv5["groups"] if group["id"] == "PV5_MAINTENANCE")
+  assert any(pv5_park_ssh.PARAM in section["items"] for section in incident["sections"])
+  assert "Pv5IncidentReporting" in [name for section in incident["sections"] for name in section["items"]]
+  original = item["descr"]
+  monkeypatch.setitem(settings_cache, "categories", categories)
+  monkeypatch.setattr(feature, "HAS_PARAMS", False)
+  for ready, expected in [(False, "최초 등록"), (True, "기기 등록 완료")]:
+    monkeypatch.setattr(pv5_park_ssh, "qualified", lambda: ready)
+    data = feature._settings_catalog_payload((settings, groups, by_name, groups_list), vehicle_brand="hyundai")
+    entry = next(row for row in data["items_by_group"]["PV5"] if row["name"] == pv5_park_ssh.PARAM)
+    assert entry["descr"].startswith(expected)
+  assert item["descr"] == original
+
+
 def test_driver_monitoring_setting_is_default_on_search_only_and_session_state_is_internal(settings, params):
   by_name = {p["name"]: p for p in params}
   enabled = by_name["DriverMonitoringEnabled"]

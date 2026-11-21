@@ -131,6 +131,70 @@ class StartupChecks(unittest.TestCase):
       self.assertEqual(json.loads(output.getvalue())['trial_exit'], 'trial_requested_stop')
       self.assertEqual(len(output.getvalue().splitlines()), 1)
 
+  def test_qualified_park_toggle_blocks_admission_then_closes_only_its_child(self):
+    import hashlib
+
+    from openpilot.common import pv5_park_ssh
+    from tools.pv5_remote.test_remote import parked
+
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      script = root / 'conditional_remote.py'
+      script.write_bytes(b'fixture')
+      (root / 'conditional_modes.json').write_text(json.dumps({
+        'trial': False, 'boot_restore': True, 'qualified_modes': remote.PARK_MODES,
+        'resource_policy': remote.PARK_POLICY, 'binaries': {},
+        'guard_sha256': hashlib.sha256(script.read_bytes()).hexdigest(),
+      }))
+      clock = [0.]
+      opened = []
+      closed = []
+      writes = []
+
+      def read():
+        self.assertTrue((root / pv5_park_ssh.MARKER_NAME).is_file())
+        sample = parked()
+        for row in sample.values():
+          row['stamp'] = clock[0]
+        return sample
+
+      def spawn(*args, **kwargs):
+        opened.append(clock[0])
+        stdin = SimpleNamespace(fileno=lambda: 123, close=lambda: closed.append(clock[0]))
+        return SimpleNamespace(stdin=stdin, poll=lambda: None)
+
+      def sleep(seconds):
+        clock[0] += seconds
+        self.assertLess(clock[0], 12, 'guard did not exit after OFF')
+
+      with (
+        patch.object(remote, 'ROOT', root),
+        patch.object(remote, 'RUNTIME', root),
+        patch.object(remote, 'SCRIPT', script),
+        patch.object(remote, 'prerequisites', return_value={}),
+        patch.object(remote, 'protected'),
+        patch.object(remote, 'resource_limits') as limits,
+        patch.object(remote, 'Source', lambda: SimpleNamespace(read=read)),
+        patch.object(remote, 'notify'),
+        patch.object(remote.time, 'monotonic', side_effect=lambda: clock[0]),
+        patch.object(remote.time, 'sleep', side_effect=sleep),
+        patch.object(remote.os, 'PRIO_PROCESS', 0, create=True),
+        patch.object(remote.os, 'setpriority', create=True),
+        patch.object(remote.os, 'set_blocking', create=True),
+        patch.object(remote.os, 'write', side_effect=lambda *args: writes.append(clock[0])),
+        patch.object(remote.subprocess, 'Popen', side_effect=spawn),
+        patch.object(Path, 'glob', return_value=iter(())),
+        patch.object(pv5_park_ssh, 'requested', side_effect=lambda: 1 <= clock[0] < 2 or 4 <= clock[0] < 7),
+      ):
+        remote.guard()
+      limits.assert_called_once()
+      self.assertEqual(len(opened), 1)
+      self.assertGreaterEqual(opened[0], 6)
+      self.assertLess(writes[-1], 7)
+      self.assertEqual(len(closed), 1)
+      self.assertLessEqual(closed[0], 7.11)
+      self.assertFalse((root / pv5_park_ssh.MARKER_NAME).exists())
+
 
 if __name__ == '__main__':
   unittest.main()

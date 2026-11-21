@@ -425,6 +425,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"DriverMonitoringEnabled", {PERSISTENT, BOOL, "1"}},
     {"DriverMonitoringSessionDisabled", {CLEAR_ON_MANAGER_START | CLEAR_ON_IGNITION_ON, BOOL}},
     {"PV5ParkedDashcamTrial", {PERSISTENT, BOOL}},
+    {"PV5ParkAutoSsh", {PERSISTENT | DONT_LOG, BOOL, "0"}},
     {"DriverMonitoringMode", {PERSISTENT, INT, "0"}},
     {"CarrotVisionEnabled", {PERSISTENT, BOOL, "0"}},
     {"MuteDoor", {PERSISTENT, INT, "0"}},

@@ -11,6 +11,8 @@ from urllib.parse import urlparse, urlunparse
 
 from aiohttp import ClientSession
 
+from openpilot.common import pv5_park_ssh
+
 from .params import HAS_PARAMS, Params, get_param_values, infer_type_from_setting
 from .settings import get_settings_cached
 
@@ -207,7 +209,7 @@ def build_snapshot_payload() -> dict[str, Any] | None:
     return None
 
   data, _, by_name, _ = get_settings_cached()
-  param_names = [name for name in by_name.keys() if name]
+  param_names = [name for name in by_name if name and name != pv5_park_ssh.PARAM]
   if not param_names:
     return None
 
@@ -253,7 +255,7 @@ def _current_settings_hash() -> str:
     return ""
   try:
     data, _, by_name, _ = get_settings_cached()
-    param_names = [name for name in by_name.keys() if name]
+    param_names = [name for name in by_name if name and name != pv5_park_ssh.PARAM]
     return _settings_hash(data, param_names) if param_names else ""
   except Exception:
     return ""

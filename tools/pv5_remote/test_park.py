@@ -149,4 +149,21 @@ class ParkChecks(unittest.TestCase):
       root.joinpath('park-qualification.json').write_text(json.dumps(proof))
       with self.assertRaises(ValueError):call(pc.PARK_QUALIFICATION,'d'*32)
 
+  @unittest.skipUnless(hasattr(__import__('os'), 'O_NOFOLLOW'), 'requires no-follow file opens')
+  def test_park_menu_preference_accepts_only_exact_one_in_regular_file(self):
+    from openpilot.common import pv5_park_ssh
+
+    with tempfile.TemporaryDirectory() as tmp:
+      path = Path(tmp) / 'setting'
+      self.assertFalse(pv5_park_ssh.requested(path))
+      for value in (b'0', b'', b'1\\n', b'10'):
+        path.write_bytes(value)
+        self.assertFalse(pv5_park_ssh.requested(path))
+      path.write_bytes(b'1')
+      self.assertTrue(pv5_park_ssh.requested(path))
+      link = path.with_name('link')
+      link.symlink_to(path)
+      self.assertFalse(pv5_park_ssh.requested(link))
+
+
 if __name__ == '__main__': unittest.main()

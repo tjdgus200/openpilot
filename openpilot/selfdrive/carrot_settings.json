@@ -676,7 +676,8 @@
           "en": "Incident Reports",
           "zh": "故障报告",
           "params": [
-            "Pv5IncidentReporting"
+            "Pv5IncidentReporting",
+            "PV5ParkAutoSsh"
           ]
         },
         {
@@ -762,6 +763,23 @@
       "cgroup": "PV5",
       "ctitle": "自动故障报告（仅分析）",
       "cdescr": "完成设备注册及PC接收配置后开启并重启comma。PV5警告及进程退出代码去重，最新CAN速度为0时不限挡位或巡航状态尝试上传；移动或速度数据失效则停止。最多32类/64KiB/24小时，限制重试。PC仅向Discord报告原因及建议，不自动改代码、推送或安装。不发送视频、位置、原始日志或凭据。关闭约1秒内生效。",
+      "control": "toggle",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "PV5",
+      "name": "PV5ParkAutoSsh",
+      "title": "P단 자동 원격 SSH",
+      "descr": "등록된 PC에서 P단·완전 정지·주행보조 해제 상태일 때 자동으로 SSH에 접속할 수 있습니다. 끄면 이 옵션으로 열린 연결이 닫힙니다.",
+      "egroup": "PV5",
+      "etitle": "Automatic Park SSH",
+      "edescr": "The enrolled PC can connect by SSH while the vehicle is in Park, fully stopped and driving assistance is off. Switching off closes connections opened by this setting.",
+      "cgroup": "PV5",
+      "ctitle": "P挡自动远程 SSH",
+      "cdescr": "车辆处于P挡、完全静止且驾驶辅助关闭时，已登记的电脑可自动通过SSH连接。关闭此选项会断开由它开启的连接。",
       "control": "toggle",
       "min": 0,
       "max": 1,

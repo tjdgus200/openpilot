@@ -10,7 +10,7 @@ import threading
 import zlib
 from typing import Any, Dict, List, Optional
 
-from openpilot.common import pv5_parked_dashcam
+from openpilot.common import pv5_park_ssh, pv5_parked_dashcam
 
 try:
   import brotli
@@ -378,7 +378,7 @@ def put_typed(params: "Params", key: str, value: Any, p: Optional[Dict[str, Any]
 
 
 INTERNAL_SESSION_PARAMS = frozenset({"DriverMonitoringSessionDisabled", "JetsonLegacyUpdatePending"})
-BACKUP_EXCLUDED_PARAMS = frozenset({"DriverMonitoringEnabled", pv5_parked_dashcam.PARAM})
+BACKUP_EXCLUDED_PARAMS = frozenset({"DriverMonitoringEnabled", pv5_parked_dashcam.PARAM, pv5_park_ssh.PARAM})
 
 
 def filter_param_backup_values(values: dict[str, Any]) -> dict[str, Any]:
@@ -398,6 +398,18 @@ def read_param_backup_values(path: str) -> dict[str, Any]:
 
 
 def set_param_value(name: str, value: Any, p: Optional[Dict[str, Any]] = None) -> None:
+  if name == pv5_park_ssh.PARAM:
+    if type(value) not in (int, bool) or value not in (0, 1):
+      raise ValueError("Park SSH setting requires a boolean")
+    if bool(value) and not pv5_park_ssh.qualified():
+      raise pv5_park_ssh.QualificationRequired
+    if not HAS_PARAMS:
+      raise RuntimeError("Park SSH setting requires device Params")
+    params = Params()
+    params.put_bool(name, bool(value))
+    if params.get(name) is not bool(value):
+      raise OSError("Park SSH setting could not be saved")
+    return
   if name in INTERNAL_SESSION_PARAMS:
     raise ValueError(f"{name} is controlled internally")
   if name == pv5_parked_dashcam.PARAM:
