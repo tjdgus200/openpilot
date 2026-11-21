@@ -264,7 +264,7 @@ def test_parked_gate_revokes_even_when_selected_package_is_already_registered(mo
     startup.wait_for_boot_update(client, peer, None, lambda: True,
         lambda *a, **k: states.append(k['host_update']['state']), sleep=lambda _: None)
   assert sent == [{'pause': True}, {'pause': True}, value]
-  assert states == ['waiting_park', 'waiting_park', 'ready']
+  assert states == ['checking_usb', 'waiting_park', 'waiting_park', 'ready']
 
 
 @pytest.mark.parametrize('version,wrapped', [(1, False), (2, False), (1, True), (2, True)])

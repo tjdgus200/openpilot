@@ -158,7 +158,9 @@ class Controls:
     # carrot
     gear = car.CarState.GearShifter
     driving_gear = CS.gearShifter not in (gear.neutral, gear.park, gear.reverse, gear.unknown)
-    lateral_enabled = driving_gear and self.params.get_bool("AlwaysLateral")
+    # AlwaysLateral does not use selfdrived's NO_ENTRY events.
+    lateral_enabled = (driving_gear and not self.sm['selfdriveState'].parkedDashcamBlocking
+                       and self.params.get_bool("AlwaysLateral"))
     #self.soft_hold_active = CS.softHoldActive #car.OnroadEvent.EventName.softHold in [e.name for e in self.sm['onroadEvents']]
 
     # Check which actuators can be enabled

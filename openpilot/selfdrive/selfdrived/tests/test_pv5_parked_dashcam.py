@@ -89,23 +89,65 @@ def test_only_opted_in_real_pv5_and_fresh_data(monkeypatch):
   assert not park.fresh(False,TICK,TICK)
 
 
-def test_model_pause_needs_jetson_output_and_revokes_on_drive_or_stale_request():
+def test_model_pause_needs_fresh_vehicle_state_and_revokes_on_drive_or_stale_request():
   from collections import UserDict
 
   sm = UserDict(carState=state(), carControl=control(),
                 selfdriveState=NS(parkedDashcamRequested=True, enabled=False, active=False, state='disabled'))
   sm.valid = dict.fromkeys(sm, True)
   sm.logMonoTime = dict.fromkeys(sm, TICK)
-  options = dict(jetson_started=True, jetson_active=True, jetson_ready=True)
-  for key in options:
-    assert not park.pause_allowed(sm, TICK, **(options | {key: False}))
-  assert park.pause_allowed(sm, TICK, **options)
-  assert not park.pause_allowed(sm, TICK+park.FRESH_NS, **options)
+  assert park.recording_requested(sm, TICK)
+  assert not park.recording_requested(sm, TICK+park.FRESH_NS)
   sm['carState'].gearShifter = 'drive'
-  assert not park.pause_allowed(sm, TICK, **options)
+  assert not park.recording_requested(sm, TICK)
   sm['carState'].gearShifter = 'park'
   sm['selfdriveState'].parkedDashcamRequested = False
-  assert not park.pause_allowed(sm, TICK, **options)
+  assert not park.recording_requested(sm, TICK)
+
+
+@pytest.mark.parametrize("jetlink_wrapper", [False, True])
+def test_model_loop_pauses_without_a_ready_backend_and_resets_before_resuming(jetlink_wrapper):
+  import ast
+  from collections import UserDict
+  from pathlib import Path
+
+  source = Path(__file__).resolve().parents[2] / 'modeld' / 'modeld.py'
+  tree = ast.parse(source.read_text(encoding='utf-8'))
+  main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+  attach = next(i for i, node in enumerate(main.body)
+                if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == 'reset_parked_history')
+  setup = main.body[attach:attach+5]
+  pause = next(n for n in ast.walk(main) if isinstance(n, ast.If) and ast.unparse(n.test) == 'parked_pm is not None')
+  loop = ast.parse('for frame in frames:\n  update(frame)\n  inferred.append(frame)\n').body[0]
+  loop.body.insert(1, pause)
+  program = compile(ast.fix_missing_locations(ast.Module(body=[*setup, loop], type_ignores=[])), str(source), 'exec')
+
+  sm = UserDict(carState=state(), carControl=control(),
+                selfdriveState=NS(parkedDashcamRequested=True, enabled=False, active=False, state='disabled'))
+  sm.valid = dict.fromkeys(sm, True)
+  sm.logMonoTime = dict.fromkeys(sm, TICK)
+  camera = NS(frame_id=0)
+  resets, sent, inferred = [], [], []
+  clock = [TICK]
+
+  def update(frame):
+    camera.frame_id = frame
+    clock[0] = frame * TICK
+    sm.logMonoTime = dict.fromkeys(sm, clock[0])
+    if frame == 3:
+      sm['carState'].gearShifter = 'drive'
+
+  reset_name = 'reset_parked_history' if jetlink_wrapper else 'reset'
+  model = NS(**{reset_name: lambda: resets.append(camera.frame_id)})
+  park_api = NS(supported_for=lambda *args: True, recording_requested=park.recording_requested)
+  messaging = NS(new_message=lambda *args, **kw: NS(parkedDashcamState=NS(inferencePaused=False)))
+  publisher = NS(send=lambda _, msg: sent.append(msg.parkedDashcamState.inferencePaused))
+  exec(program, dict(USBGPU=False, SIMULATION=False, demo=False, CP=object(), pv5_parked_dashcam=park_api,
+                     model=model, PubMaster=lambda _: publisher, frames=(1, 2, 3), update=update, inferred=inferred,
+                     sm=sm, time=NS(monotonic_ns=lambda: clock[0]), messaging=messaging, meta_main=camera,
+                     log=NS(ModelDataV2=NS(Action=object)), PublishState=object, frame_dropped_filter=NS(x=1.)))
+  assert sent == [True, True, False]
+  assert inferred == resets == [3]
 
 
 def test_parked_state_round_trip_uses_dedicated_service():
@@ -115,9 +157,12 @@ def test_parked_state_round_trip_uses_dedicated_service():
   request = log.Event.new_message(valid=True)
   request.init('selfdriveState')
   assert not request.selfdriveState.parkedDashcamRequested
+  assert not request.selfdriveState.parkedDashcamBlocking
   request.selfdriveState.parkedDashcamRequested = True
+  request.selfdriveState.parkedDashcamBlocking = True
   with log.Event.from_bytes(request.to_bytes()) as parsed:
     assert parsed.selfdriveState.parkedDashcamRequested
+    assert parsed.selfdriveState.parkedDashcamBlocking
   report = log.Event.new_message(valid=True)
   report.init('parkedDashcamState')
   report.parkedDashcamState.inferencePaused = True
@@ -127,7 +172,8 @@ def test_parked_state_round_trip_uses_dedicated_service():
 
 
 @pytest.mark.parametrize("turn_off_in_park", [False, True])
-def test_selfdrived_blocks_enable_until_a_new_plan_consumes_fresh_model_data(turn_off_in_park):
+@pytest.mark.parametrize("cold_start", [False, True])
+def test_selfdrived_enters_park_before_models_are_ready_and_requires_fresh_plan_on_exit(turn_off_in_park, cold_start):
   import ast
   from collections import UserDict
   from pathlib import Path
@@ -148,7 +194,7 @@ def test_selfdrived_blocks_enable_until_a_new_plan_consumes_fresh_model_data(tur
   process.logMonoTime = dict.fromkeys(process, 0)
   events = NS(names=['existing_alert'])
   events.add = events.names.append
-  st = NS(sm=process, events=events, initialized=True, model_startup_complete=True, enabled=False, active=False,
+  st = NS(sm=process, events=events, initialized=not cold_start, model_startup_complete=not cold_start, enabled=False, active=False,
           state_machine=NS(state='disabled'), parked_dashcam=park.ParkedDashcamRequest(),
           parked_dashcam_enabled=False, car_state_valid=True, car_state_mono_time=0)
   cs = state()

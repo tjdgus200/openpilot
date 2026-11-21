@@ -31,10 +31,6 @@ def parked(car, control):
           and not car.cruiseState.enabled and not control.enabled and not control.latActive and not control.longActive)
 
 
-def pause_allowed(sm, now, *, jetson_started, jetson_active, jetson_ready):
-  return jetson_started and jetson_active and jetson_ready and recording_requested(sm, now)
-
-
 def recording_requested(sm, now):
   if not all(fresh(sm.valid[k], sm.logMonoTime[k], now) for k in ('carState', 'carControl', 'selfdriveState')):
     return False

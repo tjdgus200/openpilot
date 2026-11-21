@@ -801,6 +801,7 @@ class SelfdriveD:
     ss.engageable = not self.events.contains(ET.NO_ENTRY)
     if self.parked_dashcam is not None:
       ss.parkedDashcamRequested = self.parked_dashcam.requested
+      ss.parkedDashcamBlocking = self.parked_dashcam.requested or self.parked_dashcam.resume_after != 0
     ss.experimentalMode = self.experimental_mode
     ss.personality = self.personality
 
@@ -830,7 +831,8 @@ class SelfdriveD:
     now = time.monotonic_ns()
     current_control = pv5_parked_dashcam.fresh(self.sm.valid['carControl'], self.sm.logMonoTime['carControl'], now)
     current_car = pv5_parked_dashcam.fresh(self.car_state_valid, self.car_state_mono_time, now)
-    allowed = (self.parked_dashcam_enabled and self.initialized and self.model_startup_complete and self.sm['deviceState'].started
+    # Recording can start before the driving stack has produced a model result.
+    allowed = (self.parked_dashcam_enabled and self.sm['deviceState'].started
                and not self.enabled and not self.active and self.state_machine.state == State.disabled
                and current_car and current_control
                and pv5_parked_dashcam.parked(CS, self.sm['carControl']))

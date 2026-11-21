@@ -845,6 +845,7 @@ struct SelfdriveState {
   atcTurnDirection @15 :LaneChangeDirection;
 
   parkedDashcamRequested @16 :Bool;
+  parkedDashcamBlocking @17 :Bool;  # Recording active or awaiting fresh outputs after exit.
 
   enum OpenpilotState @0xdbe58b96d2d1ac61 {
     disabled @0;

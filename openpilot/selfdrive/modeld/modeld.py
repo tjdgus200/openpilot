@@ -411,11 +411,13 @@ def main(demo=False):
     CP = get_demo_car_params()
   else:
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
-  parked_supported = not demo and pv5_parked_dashcam.supported_for(CP, SIMULATION) and hasattr(model, 'reset_parked_history')
-  parked_pm = PubMaster(['parkedDashcamState']) if parked_supported else None
+  reset_parked_history = None
+  if not demo and not USBGPU and pv5_parked_dashcam.supported_for(CP, SIMULATION):
+    # Jetlink resets both histories. If its wrapper failed to load, reset the native model.
+    reset_parked_history = getattr(model, 'reset_parked_history', None) or model.reset
+  parked_pm = PubMaster(['parkedDashcamState']) if reset_parked_history is not None else None
   parked_paused = False
   parked_status_at = 0
-  jetson_boot_output = False
   cloudlog.info("modeld got CarParams: %s", CP.brand)
 
   # TODO this needs more thought, use .2s extra for now to estimate other delays
@@ -516,10 +518,9 @@ def main(demo=False):
       if has_wide_camera and wide_fov_index:
         model_transform_extra = wider_model_warp(extra, WIDE_MODEL_FOV_CHOICES[wide_fov_index - 1])
 
-    if parked_supported:
+    if parked_pm is not None:
       now_ns = time.monotonic_ns()
-      pause = pv5_parked_dashcam.pause_allowed(sm, now_ns, jetson_started=jetson_boot_output,
-                                               jetson_active=model.active, jetson_ready=model.ready)
+      pause = pv5_parked_dashcam.recording_requested(sm, now_ns)
       if pause != parked_paused or (pause and now_ns >= parked_status_at):
         status = messaging.new_message('parkedDashcamState', valid=True)
         status.parkedDashcamState.inferencePaused = pause
@@ -530,7 +531,7 @@ def main(demo=False):
         last_vipc_frame_id = meta_main.frame_id
         continue
       if parked_paused:
-        model.reset_parked_history()
+        reset_parked_history()
         prev_action = log.ModelDataV2.Action()
         publish_state = PublishState()
         frame_dropped_filter.x = 0.
@@ -707,8 +708,6 @@ def main(demo=False):
       pm.send('modelV2', modelv2_send)
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
-      if parked_supported and model.active and modelv2_send.valid and posenet_send.valid:
-        jetson_boot_output = True
       if usbgpu_startup_pending:
         # Clear only after all first-frame outputs are on the bus so selfdrived
         # cannot observe "ready" before modelV2 and its dependants can run.

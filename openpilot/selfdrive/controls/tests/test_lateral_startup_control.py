@@ -108,6 +108,19 @@ def test_full_control_loop_waits_only_for_first_readiness(enabled):
   assert cc.actuators.curvature > 0.005  # no new measured-curvature reset on reengagement
 
 
+def test_parked_dashcam_recovery_blocks_always_lateral_with_startup_already_latched():
+  control, step = control_fixture()
+  control.lateral_startup.ready = True
+  selfdrive = control.sm['selfdriveState']
+  assert not selfdrive.parkedDashcamRequested and not selfdrive.active
+  assert step()[0].latActive
+  selfdrive.parkedDashcamBlocking = True
+  blocked, _ = step()
+  assert not blocked.latActive and blocked.actuators.torque == 0
+  selfdrive.parkedDashcamBlocking = False
+  assert step()[0].latActive
+
+
 def test_normal_torque_reset_preserves_existing_integral_and_nn_history():
   control, _ = control_fixture()
   from collections import deque
