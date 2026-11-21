@@ -835,8 +835,8 @@ class SelfdriveD:
     allowed = (self.parked_dashcam_enabled and self.sm['deviceState'].started
                and not self.enabled and not self.active and self.state_machine.state == State.disabled
                and current_car and current_control
-               and pv5_parked_dashcam.parked(CS, self.sm['carControl']))
-    requested = self.parked_dashcam.update(allowed, now)
+               and pv5_parked_dashcam.parked(CS, self.sm['carControl'], allow_wheel_tick=self.parked_dashcam.requested))
+    requested = self.parked_dashcam.update(allowed, now, wheel_tick=CS.vEgoRaw != 0)
     if (requested and self.sm['parkedDashcamState'].inferencePaused
         and pv5_parked_dashcam.fresh(self.sm.valid['parkedDashcamState'], self.sm.logMonoTime['parkedDashcamState'], now)):
       self.events.add(EventName.dashcamMode)

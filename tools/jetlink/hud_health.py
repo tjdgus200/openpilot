@@ -147,12 +147,23 @@ class HealthRenderer(ClusterUiRenderer):
 
   def usb_brightness_setting(self, state, setting):
     from hud_protocol import read_snapshot
-    from hud_bsd import warning_sides, WarningBrightness
+    from hud_bsd import flashing_sides, warning_sides, WarningBrightness
     if not hasattr(self, '_bsd_brightness'):
       self._bsd_brightness = WarningBrightness()
-    return self._bsd_brightness.update(
-      setting, warning_sides(state, read_snapshot(), time.monotonic()),
-      (getattr(state, 'left_signal', False), getattr(state, 'right_signal', False)))
+    snapshot, now = read_snapshot(), time.monotonic()
+    warnings = warning_sides(state, snapshot, now)
+    signals = (getattr(state, 'left_signal', False), getattr(state, 'right_signal', False))
+    brightness = self._bsd_brightness.update(setting, warnings, signals)
+    if snapshot is None or any(flashing_sides(warnings, signals)):
+      return brightness
+    received, record = snapshot
+    parked = record.get('parked_brightness')
+    if isinstance(parked, list) and len(parked) == 2:
+      percent, remaining = parked
+      if (type(percent) is int and 1 <= percent <= 100 and type(remaining) in (int, float)
+          and 0 <= now - received < remaining <= .25):
+        return percent
+    return brightness
 
   def _host_metrics(self):
     from hud_runtime_stats import RuntimeFooterSampler

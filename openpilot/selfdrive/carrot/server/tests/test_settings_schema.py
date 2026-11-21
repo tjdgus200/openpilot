@@ -313,6 +313,11 @@ def test_parked_dashcam_trial_uses_default_off_toggle_in_pv5_menu(settings):
   pv5 = next(category for category in categories if category["id"] == "PV5")
   dashcam = next(group for group in pv5["groups"] if group["id"] == "PV5_PARKED_DASHCAM")
   assert any(PARAM in section["items"] for section in dashcam["sections"])
+  for name in ("Pv5ParkedHudBrightness", "Pv5ParkedCommaBrightness"):
+    value = by_name[name]
+    assert (value["min"], value["max"], value["default"], value["unit"]) == (0, 100, 0, 1)
+    assert any(name in section["items"] for section in dashcam["sections"])
+    assert f'{{"{name}", {{PERSISTENT, INT, "0"}}}}' in PARAMS_KEYS_PATH.read_text(encoding="utf-8")
   assert f'{{"{PARAM}", {{PERSISTENT, BOOL}}}}' in PARAMS_KEYS_PATH.read_text(encoding="utf-8")
 
 

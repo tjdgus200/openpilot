@@ -6,6 +6,7 @@ from collections.abc import Callable
 from enum import Enum
 from openpilot.cereal import messaging, car, log
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common import pv5_parked_dashcam
 from openpilot.common.params import Params
 from openpilot.common.obd_status import ObdBadgeStatus
 from openpilot.common.swaglog import cloudlog
@@ -57,6 +58,7 @@ class UIState:
         "wideRoadCameraState",
         "managerState",
         "selfdriveState",
+        "parkedDashcamState",
         "longitudinalPlan",
         "gpsLocationExternal",
         "carOutput",
@@ -232,6 +234,8 @@ class UIState:
     self.show_date_time = self.params.get_int("ShowDateTime")
     self.show_radar_info = self.params.get_int("ShowRadarInfo")
     self.show_brightness_ratio: float = self.params.get_int("ShowCustomBrightness") / 100.0
+    parked_brightness = self.params.get("Pv5ParkedCommaBrightness")
+    self.parked_dashcam_brightness = parked_brightness if type(parked_brightness) is int and 1 <= parked_brightness <= 100 else 0
     self.show_model_view = self.params.get_int("ShowModelView")
     self.share_data = self.params.get_bool("ShareData")
     self.show_camera_with_cluster = self.params.get_int("ShowCameraWithCluster") == 1
@@ -264,6 +268,7 @@ class Device:
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
     self._brightness_filter = FirstOrderFilter(BACKLIGHT_OFFROAD, 2.00, 1 / gui_app.target_fps)
+    self._parked_brightness_active = False
     self._brightness_thread: threading.Thread | None = None
     self._brightness_timer: int = 20
 
@@ -332,7 +337,19 @@ class Device:
     else:
       self._brightness_timer = 20
 
-    brightness = round(self._brightness_filter.update(clipped_brightness))
+    parked_brightness = ui_state.parked_dashcam_brightness
+    parked_active = (parked_brightness > 0 and ui_state.started and ui_state.CP is not None
+                     and ui_state.CP.carFingerprint == 'KIA_PV5' and not ui_state.CP.notCar
+                     and pv5_parked_dashcam.monitoring_pause_allowed(ui_state.sm, time.monotonic_ns())
+                     and ui_state.sm['selfdriveState'].alertStatus != log.SelfdriveState.AlertStatus.critical)
+    if parked_active:
+      brightness = parked_brightness
+    else:
+      # Leave a dim Park override immediately when the request/ack is lost.
+      if self._parked_brightness_active:
+        self._brightness_filter.x = clipped_brightness
+      brightness = round(self._brightness_filter.update(clipped_brightness))
+    self._parked_brightness_active = parked_active
     if not self._awake:
       brightness = 0
 

@@ -685,7 +685,7 @@
           "ko": "P단 대시캠",
           "en": "Parked Dashcam",
           "zh": "驻车记录",
-          "params": ["PV5ParkedDashcamTrial"]
+          "params": ["PV5ParkedDashcamTrial", "Pv5ParkedHudBrightness", "Pv5ParkedCommaBrightness"]
         },
         {
           "id": "PV5_CAMERA",
@@ -3347,6 +3347,38 @@
       "unit": 1,
       "control": "toggle",
       "risk": "high"
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5ParkedHudBrightness",
+      "title": "P단 대시캠 HUD 밝기 (%)",
+      "descr": "P단 대시캠이 켜진 동안 Jetson HUD 하드웨어 밝기를 조절합니다. 0은 기존 밝기 설정을 사용합니다.",
+      "egroup": "PV5",
+      "etitle": "Parked Dashcam HUD Brightness (%)",
+      "edescr": "Adjusts the Jetson HUD hardware backlight while Parked Dashcam is active. 0 keeps the usual brightness.",
+      "cgroup": "PV5",
+      "ctitle": "驻车记录 HUD 亮度 (%)",
+      "cdescr": "驻车记录启用时调整 Jetson HUD 的硬件背光。0 使用原有亮度。",
+      "min": 0,
+      "max": 100,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5ParkedCommaBrightness",
+      "title": "P단 대시캠 콤마 화면 밝기 (%)",
+      "descr": "P단 대시캠이 켜진 동안 콤마 화면의 하드웨어 밝기를 조절합니다. 0은 기존 밝기 설정을 사용합니다.",
+      "egroup": "PV5",
+      "etitle": "Parked Dashcam Comma Brightness (%)",
+      "edescr": "Adjusts the comma device backlight while Parked Dashcam is active. 0 keeps the usual brightness.",
+      "cgroup": "PV5",
+      "ctitle": "驻车记录 comma 屏幕亮度 (%)",
+      "cdescr": "驻车记录启用时调整 comma 屏幕的硬件背光。0 使用原有亮度。",
+      "min": 0,
+      "max": 100,
+      "default": 0,
+      "unit": 1
     },
     {
       "group": "시작",

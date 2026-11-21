@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from hud_rate import PARAM as FPS_PARAM, rate, selection, RATES, FrameRate
+from openpilot.common import pv5_parked_dashcam
 from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 
 HUD_MESSAGE = 0x4000
@@ -19,6 +20,7 @@ HUD_PACKET = Path('/dev/shm/carrot-jetlink-hud.packet')
 HEADER = struct.Struct('<d')
 PUBLISHER_RATE = struct.Struct('<4sB')
 RATE_MAGIC = b'HFPS'
+PARKED_BRIGHTNESS_PARAM = 'Pv5ParkedHudBrightness'
 SERVICES = ('carState', 'carParams', 'modelV2', 'radarState', 'liveTracks', 'longitudinalPlan',
             'lateralPlan', 'controlsState', 'selfdriveState', 'carControl', 'carOutput', 'deviceState',
             'roadCameraState', 'cameraOdometry', 'liveCalibration', 'livePose', 'drivingModelData',
@@ -131,11 +133,12 @@ class SnapshotBuilder:
   def __init__(self, nav_map=False, rate_control=False):
     from openpilot.cereal import messaging
     from openpilot.common.params import Params
-    self.sm = messaging.SubMaster([*SERVICES, 'driverMonitoringState'])
+    self.sm = messaging.SubMaster([*SERVICES, 'driverMonitoringState', 'parkedDashcamState'])
     self.params = Params()
     self.cached = {}
     self.settings = {}
     self.steering_car_params = None
+    self.parked_brightness_percent = 0
     self.next_params = self.next_send = 0.
     self.target_fps, self.requested_fps = 10, 10
     self.rate_control = rate_control
@@ -220,6 +223,22 @@ class SnapshotBuilder:
       return {'version': 1, 'sampled_at': now, 'status': 'waiting', 'fields': {}}
 
 
+  def parked_brightness(self, sent):
+    percent = getattr(self, 'parked_brightness_percent', 0)
+    if not percent:
+      return None
+    cp = self.steering_car_params
+    now_ns = round(sent * 1e9)
+    if (cp is None or not pv5_parked_dashcam.supported_for(cp)
+        or not pv5_parked_dashcam.monitoring_pause_allowed(self.sm, now_ns)
+        or str(self.sm['selfdriveState'].alertStatus) == 'critical'):
+      return None
+    oldest = min(self.sm.logMonoTime[name] for name in
+                 ('carState', 'carControl', 'selfdriveState', 'parkedDashcamState'))
+    # Only the remaining source lifetime travels, since the host clock is independent.
+    remaining = (pv5_parked_dashcam.FRESH_NS - (now_ns - oldest)) / 1e9
+    return [percent, remaining]
+
   def packet(self):
     from openpilot.cereal import log
     from openpilot.common.jetlink_status import badge, read_status
@@ -244,6 +263,11 @@ class SnapshotBuilder:
             self.settings[key] = base64.b64encode(value if isinstance(value, bytes) else str(value).encode()).decode()
         except Exception:
           pass
+      try:
+        percent = self.params.get(PARKED_BRIGHTNESS_PARAM)
+      except Exception:
+        percent = None
+      self.parked_brightness_percent = percent if type(percent) is int and 1 <= percent <= 100 else 0
       car_params = self.settings.get('CarParams')
       if car_params != previous_car_params:
         self.steering_car_params = None
@@ -295,6 +319,9 @@ class SnapshotBuilder:
     # above. Seal the snapshot after sampling/building so fresh services never
     # look future-dated, and slow optional work still counts toward their age.
     record['sent'] = time.monotonic()
+    parked_brightness = self.parked_brightness(record['sent'])
+    if parked_brightness is not None:
+      record['parked_brightness'] = parked_brightness
     # Only the advisory crosses the link, never the driver-monitoring event.
     if self.settings.get('IsOnroad') == 'MQ==':
       from openpilot.common.hud_driving_feedback import pv5_steering_warning
@@ -347,6 +374,8 @@ def encode_snapshot(record):
       size = len(data)
       if size <= 96 * 1024:
         return data
+  if size > 96 * 1024 and 'parked_brightness' in record:
+    size = without_field(record, 'parked_brightness', size)
   if size > 96 * 1024:
     if 'cameras' in record:
       size += 2 - value_size(record['cameras'])

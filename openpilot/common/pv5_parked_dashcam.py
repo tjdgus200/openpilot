@@ -4,6 +4,11 @@ import os
 PARAM = 'PV5ParkedDashcamTrial'
 FRESH_NS = 250_000_000
 PARK_CONFIRM_NS = 2_000_000_000
+# PV5 CANFD WHEEL_SPEEDS resolution is 0.03125 km/h. Round upward only
+# enough to include the decoded Float32 value of one sensor tick.
+PARK_WHEEL_TICK_MAX = 0.008681
+PARK_WHEEL_TICK_NS = 150_000_000
+PARK_FILTERED_STOP_MAX = 0.1  # m/s; raw wheel data decides movement.
 
 
 def supported(replay=False):
@@ -25,10 +30,20 @@ def fresh(valid, stamp, now):
   return valid is True and stamp > 0 and 0 <= now - stamp < FRESH_NS
 
 
-def parked(car, control):
-  return (str(car.gearShifter) == 'park' and car.standstill and car.canValid and not car.canTimeout
-          and car.vEgoRaw == 0 and car.vEgo == 0 and not car.gasPressed and not car.stockAeb
-          and not car.cruiseState.enabled and not control.enabled and not control.latActive and not control.longActive)
+def parked(car, control, *, allow_wheel_tick=False):
+  if not (str(car.gearShifter) == 'park' and car.standstill and car.canValid and not car.canTimeout
+          and abs(car.vEgo) <= PARK_FILTERED_STOP_MAX and not car.gasPressed and not car.stockAeb
+          and not car.cruiseState.enabled and not control.enabled and not control.latActive and not control.longActive):
+    return False
+  speeds = car.wheelSpeeds
+  wheels = (speeds.fl, speeds.fr, speeds.rl, speeds.rr)
+  if car.vEgoRaw == 0 and all(value == 0 for value in wheels):
+    return True
+  # Entry still requires every wheel to report zero. Once parked, only one
+  # wheel may register one tick, with a matching bound on the raw average.
+  return (allow_wheel_tick and 0 < car.vEgoRaw <= PARK_WHEEL_TICK_MAX / 4
+          and all(0 <= value <= PARK_WHEEL_TICK_MAX for value in wheels)
+          and sum(value != 0 for value in wheels) == 1)
 
 
 def recording_requested(sm, now):
@@ -36,7 +51,7 @@ def recording_requested(sm, now):
     return False
   state = sm['selfdriveState']
   return (state.parkedDashcamRequested and not state.enabled and not state.active and str(state.state) == 'disabled'
-          and parked(sm['carState'], sm['carControl']))
+          and parked(sm['carState'], sm['carControl'], allow_wheel_tick=True))
 
 
 def monitoring_pause_allowed(sm, now):
@@ -64,8 +79,15 @@ class ParkedDashcamRequest:
     self.last = None
     self.requested = False
     self.resume_after = start_after
+    self.wheel_tick_since = None
 
-  def update(self, allowed, now):
+  def update(self, allowed, now, *, wheel_tick=False):
+    if allowed and self.requested and wheel_tick:
+      if self.wheel_tick_since is None:
+        self.wheel_tick_since = now
+      allowed = now - self.wheel_tick_since < PARK_WHEEL_TICK_NS
+    else:
+      self.wheel_tick_since = None
     discontinuity = self.last is not None and not 0 <= now - self.last < FRESH_NS
     self.last = now
     if not allowed or discontinuity:

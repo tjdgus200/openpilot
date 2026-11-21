@@ -43,6 +43,82 @@ def test_brightness_hook_expires_stale_snapshot_without_rendering(monkeypatch):
   assert renderer.usb_brightness_setting(state, 40) == 0
 
 
+def test_parked_brightness_preserves_bsd_and_restores_driving_setting(monkeypatch):
+  import hud_health as hud
+  import hud_protocol
+  renderer = object.__new__(hud.HealthRenderer)
+  state = NS(left_signal=False, right_signal=False, left_blindspot=True, right_blindspot=False)
+  received, record = snapshot()
+  now = received + .05
+  record['parked_brightness'] = [20, .2]
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: (received, record))
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: now)
+  assert renderer.usb_brightness_setting(state, 65) == 20
+  state.left_signal = True
+  assert renderer.usb_brightness_setting(state, 65) == 100
+  state.left_signal = False
+  assert renderer.usb_brightness_setting(state, 65) == 20
+
+  now = received + .21
+  assert renderer.usb_brightness_setting(state, 65) == 0  # Existing post-BSD auto.
+  assert renderer.usb_brightness_setting(state, 67) == 67
+  now = received + .05
+  for parked in (None, [0, .2], [101, .2], [True, .2], [20, True], [20, .26], [20, float('nan')]):
+    record['parked_brightness'] = parked
+    assert renderer.usb_brightness_setting(state, 67) == 67
+  record['parked_brightness'] = [1, .2]
+  assert renderer.usb_brightness_setting(state, 67) == 1
+  del record['parked_brightness']
+  assert renderer.usb_brightness_setting(state, 67) == 67
+
+
+@pytest.mark.parametrize('condition', ['parked', 'off', 'other_car', 'not_car', 'passive', 'reverse', 'resume',
+                                       'stale', 'invalid', 'critical'])
+def test_snapshot_parked_brightness_only_for_confirmed_active_dashcam(monkeypatch, condition):
+  from hud_protocol import SnapshotBuilder
+  from openpilot.common import pv5_parked_dashcam
+
+  now = 100.0
+  car = NS(gearShifter='park', standstill=True, canValid=True, canTimeout=False,
+           vEgo=0.0, vEgoRaw=0.0, wheelSpeeds=NS(fl=0., fr=0., rl=0., rr=0.),
+           gasPressed=False, stockAeb=False, cruiseState=NS(enabled=False))
+  control = NS(enabled=False, latActive=False, longActive=False)
+  selfdrive = NS(parkedDashcamRequested=True, enabled=False, active=False, state='disabled', alertStatus='normal')
+  ack = NS(inferencePaused=True)
+  cp = NS(carFingerprint='KIA_PV5', notCar=False, passive=False)
+  sm = {'carState': car, 'carControl': control, 'selfdriveState': selfdrive, 'parkedDashcamState': ack}
+
+  class SubMaster(dict):
+    logMonoTime = dict.fromkeys(sm, 99_900_000_000)
+    valid = dict.fromkeys(sm, True)
+
+  builder = object.__new__(SnapshotBuilder)
+  builder.sm = SubMaster(sm)
+  builder.parked_brightness_percent = 20
+  builder.steering_car_params = cp
+  monkeypatch.setattr(pv5_parked_dashcam, 'supported', lambda replay=False: True)
+  if condition == 'off':
+    builder.parked_brightness_percent = 0
+  elif condition == 'other_car':
+    cp.carFingerprint = 'OTHER'
+  elif condition == 'not_car':
+    cp.notCar = True
+  elif condition == 'passive':
+    cp.passive = True
+  elif condition == 'reverse':
+    car.gearShifter = 'reverse'
+  elif condition == 'resume':
+    ack.inferencePaused = False
+  elif condition == 'stale':
+    builder.sm.logMonoTime['parkedDashcamState'] = 99_750_000_000
+  elif condition == 'invalid':
+    builder.sm.valid['parkedDashcamState'] = False
+  elif condition == 'critical':
+    selfdrive.alertStatus = 'critical'
+
+  assert builder.parked_brightness(now) == ([20, .15] if condition == 'parked' else None)
+
+
 def test_main_brightness_resolver_preserves_stock_and_honors_warning_hook():
   import ast
   from pathlib import Path

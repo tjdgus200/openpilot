@@ -9,7 +9,7 @@ TICK = 100_000_000
 
 def state(**kwargs):
   opts = dict(gearShifter='park', standstill=True, canValid=True, canTimeout=False, vEgoRaw=0., vEgo=0.,
-              gasPressed=False, stockAeb=False, cruiseState=NS(enabled=False))
+              gasPressed=False, stockAeb=False, cruiseState=NS(enabled=False), wheelSpeeds=NS(fl=0., fr=0., rl=0., rr=0.))
   return NS(**(opts | kwargs))
 
 
@@ -50,7 +50,7 @@ def test_scheduler_stall_cannot_count_as_park_evidence():
 
 @pytest.mark.parametrize('kwargs', [
   dict(gearShifter='drive'), dict(gearShifter='reverse'), dict(gearShifter='unknown'), dict(standstill=False),
-  dict(vEgoRaw=.0001), dict(vEgo=-.0001), dict(vEgo=float('nan')), dict(canValid=False), dict(canTimeout=True),
+  dict(vEgoRaw=.0001), dict(vEgo=-.101), dict(vEgo=float('nan')), dict(canValid=False), dict(canTimeout=True),
   dict(gasPressed=True), dict(stockAeb=True), dict(cruiseState=NS(enabled=True)),
 ])
 def test_park_must_be_proved_even_with_valid_gear(kwargs):
@@ -260,6 +260,76 @@ def test_monitoring_never_pauses_in_drive_or_on_stale_road_confirmation():
   sm.logMonoTime['parkedDashcamState'] = 2*TICK
   sm['carState'].gearShifter = 'drive'
   assert not park.monitoring_pause_allowed(sm, 2*TICK)
+
+
+def test_park_allows_filtered_residual_but_requires_zero_wheels_on_entry():
+  assert park.parked(state(vEgo=-.003), control())
+  one_tick = .03125 / 3.6
+  sample = state(vEgoRaw=one_tick / 4, vEgo=.003,
+                 wheelSpeeds=NS(fl=0., fr=one_tick, rl=0., rr=0.))
+  assert not park.parked(sample, control())
+  assert park.parked(sample, control(), allow_wheel_tick=True)
+  sample.wheelSpeeds.rl = one_tick
+  assert not park.parked(sample, control(), allow_wheel_tick=True)
+  sample.wheelSpeeds.rl = 0.
+  sample.wheelSpeeds.fr = 2 * one_tick
+  assert not park.parked(sample, control(), allow_wheel_tick=True)
+  sample.wheelSpeeds.fr = float('nan')
+  assert not park.parked(sample, control(), allow_wheel_tick=True)
+
+
+def test_single_short_wheel_tick_is_tolerated_but_sustained_tick_revokes():
+  request = park.ParkedDashcamRequest()
+  entered = enter(request)
+  first_shake = entered + 10_000_000
+  assert request.update(True, first_shake, wheel_tick=True)
+  assert request.update(True, first_shake + 50_000_000)
+  second_shake = first_shake + 70_000_000
+  assert request.update(True, second_shake, wheel_tick=True)
+  assert request.update(True, second_shake + 149_000_000, wheel_tick=True)
+  assert not request.update(True, second_shake + 150_000_000, wheel_tick=True)
+  assert request.block_engagement(True, second_shake, second_shake, True)
+  assert not request.update(True, second_shake + 160_000_000)
+
+
+def test_comma_brightness_uses_park_percent_and_restores_on_stale_ack_or_critical():
+  import ast
+  from collections import UserDict
+  from pathlib import Path
+
+  from openpilot.common.filter_simple import FirstOrderFilter
+
+  source = Path(__file__).parents[2] / 'ui' / 'ui_state.py'
+  tree = ast.parse(source.read_text(encoding='utf-8'))
+  method = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == '_update_brightness')
+  sm = UserDict(carState=state(), carControl=control(), parkedDashcamState=NS(inferencePaused=True),
+                selfdriveState=NS(parkedDashcamRequested=True, enabled=False, active=False, state='disabled', alertStatus='normal'))
+  sm.valid = dict.fromkeys(sm, True)
+  sm.logMonoTime = dict.fromkeys(sm, 3*TICK)
+  ui = NS(parked_dashcam_brightness=1, started=True, light_sensor=-1, sm=sm,
+          CP=NS(carFingerprint='KIA_PV5', notCar=False))
+  sent = []
+  hardware = NS(set_screen_brightness=sent.append)
+  thread = lambda *, target, args: NS(start=lambda: target(*args), is_alive=lambda: False)
+  log = NS(SelfdriveState=NS(AlertStatus=NS(critical='critical')))
+  env = dict(ui_state=ui, time=NS(monotonic_ns=lambda: 3*TICK), pv5_parked_dashcam=park, log=log,
+             HARDWARE=hardware, threading=NS(Thread=thread))
+  exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), 'exec'), env)
+  device = NS(_offroad_brightness=50, _awake=True, _last_brightness=50, _brightness_thread=None,
+              _brightness_filter=FirstOrderFilter(50, 2., .05), _parked_brightness_active=False)
+
+  env['_update_brightness'](device)
+  assert sent == [1]
+  sm['selfdriveState'].alertStatus = 'critical'
+  env['_update_brightness'](device)
+  assert sent == [1, 50]
+  sm['selfdriveState'].alertStatus = 'normal'
+  ui.parked_dashcam_brightness = 31
+  env['_update_brightness'](device)
+  assert sent[-1] == 31
+  sm.logMonoTime['parkedDashcamState'] -= park.FRESH_NS
+  env['_update_brightness'](device)
+  assert sent[-1] == 50
 
 
 def test_park_read_only_can_report_nonzero_speed_without_recording_admission():
