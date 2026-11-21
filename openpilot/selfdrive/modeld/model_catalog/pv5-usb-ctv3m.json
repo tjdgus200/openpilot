@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-ccnc-pr-hud-ctv3m-20261120-215fe153",
-  "source_commit": "215fe153826938487d4b424cd77112a3058cf918",
+  "profile": "jetson-pv5-park-brightness-ctv3m-20261122-eda23dca",
+  "source_commit": "eda23dca2fa693636ede1bd5f1dcfab5101e5ca7",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-ccnc-pr-hud-ctv3m-20261120-215fe153/host.tar.gz",
-    "sha256": "5e086222fd6982e85a0d84699d31a650a9cd79877c36d20de37d0c510fd05778",
-    "size": 65778968
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-park-brightness-ctv3m-20261122-eda23dca/host.tar.gz",
+    "sha256": "f5d0a7983898dc12826855100665541fe7d899885c1ad4b1721078ae51a0adfc",
+    "size": 65783415
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
