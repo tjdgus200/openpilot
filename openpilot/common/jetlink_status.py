@@ -85,9 +85,16 @@ def fresh_value(value, now, *, handshake=False, preparing=False):
       # Model/HUD/control data retain their independent original freshness.
       limit = 22
     update = value.get('host_update') or {}
-    if (preparing and value.get('state') == 'updating' and isinstance(update, dict)
-        and update.get('state') in ('downloading', 'checking_files')):
-      limit = 35
+    if preparing and value.get('state') == 'updating' and isinstance(update, dict):
+      phase = update.get('state')
+      if phase in ('downloading', 'checking_files'):
+        limit = 35
+      elif update.get('integrity') == 'sha256':
+        # USB updater waits for an ACK before publishing the next stage.
+        if phase in ('checking_usb', 'verifying'):
+          limit = 125
+        elif phase == 'transferring':
+          limit = 35
     if isinstance(value, dict) and 0 <= now - value['updated'] < limit:
       return value
   except (OSError, ValueError, KeyError, TypeError):

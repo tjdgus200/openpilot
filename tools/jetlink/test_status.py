@@ -88,6 +88,18 @@ def test_active_ready_and_expired_host_status(tmp_path, monkeypatch):
   assert status.badge() is None
 
 
+@pytest.mark.parametrize(('phase', 'limit'), [('checking_usb', 125), ('transferring', 35), ('verifying', 125)])
+def test_usb_update_status_stays_visible_until_ack_timeout(monkeypatch, phase, limit):
+  update = {'state': phase, 'integrity': 'sha256', 'fraction': 0.5}
+  link = {'updated': 100., 'state': 'updating', 'peer': {'carrot_host': 'jetson'}, 'host_update': update}
+  monkeypatch.setattr(status.time, 'monotonic', lambda: 100. + limit - 1.)
+  assert status.badge((link, {})) == status.update_badge(update)
+  assert status.fresh_value(link, 104.) == {}
+  assert status.badge(({**link, 'updated': 100. + limit - 1., 'state': 'retrying'}, {})) == ('jetSON ERROR', 'error')
+  monkeypatch.setattr(status.time, 'monotonic', lambda: 100. + limit)
+  assert status.badge((link, {})) == ('jetSON ERROR', 'error')
+
+
 def test_remote_badge_disappears_with_expired_snapshot(monkeypatch):
   import hud
   params = hud.DisplayParams()

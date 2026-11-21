@@ -4,6 +4,7 @@ No installed services, vehicle CAN, TensorRT execution or device access.
 """
 import builtins
 import copy
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -424,6 +425,7 @@ def test_matching_current_source_requires_read_only_registration_check(installed
   with pytest.raises(ConnectionError, match='reconnecting'):
     startup.wait_for_boot_update(wire.client, peer, None, lambda: True,
                                 lambda *a, **k: reports.append(k['host_update']['state']), sleep=offroad)
+  assert reports[0] == 'checking_usb'
   if registered:
     assert wire.kinds == [usb.CHECK] and 'waiting_park' not in reports
   else:
@@ -450,6 +452,68 @@ def test_download_failure_never_publishes_a_cache_entry(installed, monkeypatch, 
   with pytest.raises((ValueError, ConnectionError)):
     sender.asset(item, cache, allowed)
   assert not list(cache.iterdir())
+
+
+@pytest.mark.parametrize('failure', ['timeout', 'short_body', 'permission'])
+def test_interrupted_download_resumes_only_missing_bytes(tmp_path, monkeypatch, failure):
+  data = b'12345678'
+  item = {'url': 'https://example.invalid/model', 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+  partial = tmp_path / (item['sha256'] + '.part')
+  monkeypatch.setattr(sender, 'BLOCK', 4)
+
+  class InterruptedResponse(io.BytesIO):
+    url = item['url']
+
+    def read(self, size):
+      if failure == 'timeout' and self.tell() == 4:
+        raise TimeoutError
+      return super().read(size)
+
+  initial_body = data if failure == 'permission' else data[:4]
+  monkeypatch.setattr(sender.urllib.request, 'urlopen', lambda *a, **k: InterruptedResponse(initial_body))
+  permitted_checks = iter([True, True, False])
+  allowed = (lambda: next(permitted_checks)) if failure == 'permission' else (lambda: True)
+  with pytest.raises((TimeoutError, ConnectionError)):
+    sender.asset(item, tmp_path, allowed)
+  assert partial.read_bytes() == data[:4]
+
+  def resume(request, **kwargs):
+    assert request.get_header('Range') == 'bytes=4-'
+    response = io.BytesIO(data[4:])
+    response.url = item['url']
+    response.status = 206
+    response.headers = {'Content-Range': 'bytes 4-7/8'}
+    return response
+
+  monkeypatch.setattr(sender.urllib.request, 'urlopen', resume)
+  path = sender.asset(item, tmp_path, lambda: True)
+  assert path.read_bytes() == data
+  assert not partial.exists()
+
+  monkeypatch.setattr(sender.urllib.request, 'urlopen', lambda *a, **k: pytest.fail('HTTP cache miss'))
+  assert sender.asset(item, tmp_path, lambda: True) == path
+
+
+@pytest.mark.parametrize('reply', ['range_ignored', 'wrong_range', 'wrong_payload'])
+def test_resume_response_and_complete_asset_are_validated(tmp_path, monkeypatch, reply):
+  data = b'12345678'
+  item = {'url': 'https://example.invalid/model', 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+  path = tmp_path / item['sha256']
+  partial = path.with_suffix('.part')
+  partial.write_bytes(data[:4])
+  response = io.BytesIO(data if reply == 'range_ignored' else b'bad!')
+  response.url = item['url']
+  response.status = 200 if reply == 'range_ignored' else 206
+  response.headers = {'Content-Range': 'bytes 3-6/8' if reply == 'wrong_range' else 'bytes 4-7/8'}
+  monkeypatch.setattr(sender.urllib.request, 'urlopen', lambda *a, **k: response)
+
+  if reply == 'range_ignored':
+    assert sender.asset(item, tmp_path, lambda: True).read_bytes() == data
+  else:
+    with pytest.raises(ValueError, match='download (range|hash)'):
+      sender.asset(item, tmp_path, lambda: True)
+    assert not path.exists()
+  assert not partial.exists()
 
 
 @pytest.mark.parametrize('fault', ['sequence', 'kind', 'size', 'json'])

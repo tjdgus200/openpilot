@@ -79,7 +79,10 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
     if not usb_change:
       # A server installed through NAS can have the same commit but no USB
       # catalog. Query without writes; legacy SHA receivers check offroad.
-      usb_change = peer.get(CHECK_CAPABILITY) is not True or not available(client, manifest, connected)
+      usb_change = peer.get(CHECK_CAPABILITY) is not True
+      if not usb_change:
+        publish('updating', peer=peer, host_update={'state': 'checking_usb', 'fraction': None, 'integrity': 'sha256'})
+        usb_change = not available(client, manifest, connected)
     if usb_change:
       from openpilot.common.params import Params
       if not parked_gate:

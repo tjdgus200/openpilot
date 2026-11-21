@@ -1,9 +1,11 @@
 """Comma-side hash-pinned asset download and stop-and-wait boot-gate USB upload."""
 import hashlib
+from http.client import IncompleteRead
 import json
 import os
 from pathlib import Path
 import time
+from urllib.error import HTTPError, URLError
 import urllib.request
 
 from tools.jetlink.usb_release import ACK, BEGIN, BLOCK, CHECK, CHUNK, FINISH, HEADER, KINDS, NAMES, validate  # noqa: TID251
@@ -27,44 +29,78 @@ def asset(item, cache, allowed, progress=None):
     if progress is not None and (stage != last[0] or count in (0, item['size']) or now - last[1] >= .5):
       progress(stage, count)
       last[:] = [stage, now]
-  def matches():
-    if not path.is_file() or path.stat().st_size != item['size']:
-      return False
+  def hash_file(file):
     digest, count = hashlib.sha256(), 0
     report('checking_files', count)
-    with path.open('rb') as stream:
+    with file.open('rb') as stream:
       while data := stream.read(1 << 20):
         require_permission(allowed)
         digest.update(data)
         count += len(data)
         report('checking_files', count)
-    return digest.hexdigest() == item['sha256']
-  if matches():
-    return path
+    return digest, count
+
+  size = item['size']
+  if path.is_file() and path.stat().st_size == size:
+    digest, count = hash_file(path)
+    if count == size and digest.hexdigest() == item['sha256']:
+      return path
   partial = path.with_suffix('.part')
+  if partial.is_symlink():
+    raise ValueError('Invalid partial USB update asset')
+  keep_partial = False
   try:
     require_permission(allowed)
-    report('downloading', 0)
-    with urllib.request.urlopen(item['url'], timeout=30) as source, partial.open('wb') as output:
+    digest, count = hashlib.sha256(), 0
+    if partial.is_file() and 0 < partial.stat().st_size <= size:
+      digest, count = hash_file(partial)
+      if count == size and digest.hexdigest() == item['sha256']:
+        require_permission(allowed)
+        with partial.open('r+b') as output:
+          os.fsync(output.fileno())
+        os.replace(partial, path)
+        return path
+      if not 0 < count < size:
+        partial.unlink()
+        digest, count = hashlib.sha256(), 0
+    request = item['url']
+    if count:
+      request = urllib.request.Request(request, headers={'Range': f'bytes={count}-', 'Accept-Encoding': 'identity'})
+    with urllib.request.urlopen(request, timeout=30) as source:
       if not source.url.startswith('https://'):
         raise ValueError('Insecure asset redirect')
-      count, digest = 0, hashlib.sha256()
-      while data := source.read(BLOCK):
-        require_permission(allowed)
-        count += len(data)
-        if count > item['size']:
-          raise ValueError('Oversized USB update asset')
-        digest.update(data)
-        output.write(data)
-        report('downloading', count)
-      output.flush()
-      os.fsync(output.fileno())
-    if count != item['size'] or digest.hexdigest() != item['sha256']:
+      if count:
+        if source.status == 200:
+          # Servers without Range support can return the whole object.
+          digest, count = hashlib.sha256(), 0
+        elif source.status != 206 or source.headers.get('Content-Range') != f'bytes {count}-{size - 1}/{size}':
+          raise ValueError('Invalid USB update download range')
+      report('downloading', count)
+      with partial.open('ab' if count else 'wb') as output:
+        while data := source.read(BLOCK):
+          require_permission(allowed)
+          count += len(data)
+          if count > size:
+            raise ValueError('Oversized USB update asset')
+          digest.update(data)
+          output.write(data)
+          report('downloading', count)
+        output.flush()
+        os.fsync(output.fileno())
+    if count != size:
+      raise ConnectionError('USB update download interrupted before expected size')
+    if digest.hexdigest() != item['sha256']:
       raise ValueError('USB update download hash mismatch')
+    require_permission(allowed)
     os.replace(partial, path)
     return path
+  except (ConnectionError, TimeoutError, URLError, IncompleteRead) as error:
+    retryable = not isinstance(error, HTTPError) or error.code in (408, 429) or 500 <= error.code < 600
+    keep_partial = retryable and partial.is_file() and 0 < partial.stat().st_size <= size
+    raise
   finally:
-    partial.unlink(missing_ok=True)
+    if not keep_partial:
+      partial.unlink(missing_ok=True)
 
 
 def exchange(client, kind, payload, allowed, raw=False, timeout=30):
