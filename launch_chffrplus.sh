@@ -743,6 +743,11 @@ function launch {
   if [ "$PV5_BUILD_RECOVERY" = "1" ]; then
     rm -f "$PV5_BUILD_MARKER"
   fi
+  if [ -f /AGNOS ]; then
+    # Native alternatives are prepared before driving processes start. The
+    # optional build never withholds the bundled model or manager startup.
+    python3 -m openpilot.selfdrive.modeld.internal_model || echo "Optional PV5 native model unavailable"
+  fi
   start_big_model_update
   if ! run_startup_command start_manager; then
     show_startup_failure "Manager failed to start"

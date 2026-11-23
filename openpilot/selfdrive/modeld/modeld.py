@@ -132,11 +132,14 @@ def get_action_from_model(model_output: dict[str, np.ndarray], prev_action: log.
 
 class ModelState:
   prev_desire: np.ndarray  # for tracking the rising edge of the pulse
+  check_output = False
 
-  def __init__(self, cam_w: int, cam_h: int, usbgpu: bool, pkl_path=None, *, enable_shadow=True):
+  def __init__(self, cam_w: int, cam_h: int, usbgpu: bool, pkl_path=None, *, enable_shadow=True, single_file=False):
     input_devices = get_tg_input_devices(PROCESS_NAME, usbgpu)
     self.WARP_DEV, self.QUEUE_DEV = input_devices['WARP_DEV'], input_devices['QUEUE_DEV']
-    jits = load_oob(open_file_chunked(pkl_path or modeld_pkl_path(usbgpu)))
+    pkl_path = pkl_path or modeld_pkl_path(usbgpu)
+    with (pkl_path.open('rb') if single_file else open_file_chunked(pkl_path)) as artifact:
+      jits = load_oob(artifact)
     metadata = jits['metadata']
     self.input_shapes = metadata['input_shapes']
     self.vision_input_names = [k for k in self.input_shapes if 'img' in k]
@@ -221,8 +224,8 @@ class ModelState:
     )
     model_output = outs.numpy()[0]
     shadow_payload = self.signal_shadow.capture(model_output, self.npy) if self.signal_shadow is not None else None
-    if self.usbgpu and not np.all(np.isfinite(model_output)):
-      raise RuntimeError("eGPU model output is not finite")
+    if (self.usbgpu or self.check_output) and not np.all(np.isfinite(model_output)):
+      raise RuntimeError("eGPU model output is not finite" if self.usbgpu else "Vega 2 model output is not finite")
     outputs_dict = self.parser.parse_outputs(self.slice_outputs(model_output, self.output_slices))
     self.npy['prev_feat'][:] = model_output[self.output_slices['hidden_state']]
 
@@ -231,6 +234,24 @@ class ModelState:
     if shadow_payload is not None:
       outputs_dict['_signal_shadow'] = shadow_payload
     return outputs_dict
+
+
+class VegaModelState(ModelState):
+  check_output = True
+
+  def __init__(self, cam_w, cam_h, pkl_path):
+    from openpilot.selfdrive.modeld.internal_model import record_loaded
+    super().__init__(cam_w, cam_h, False, pkl_path, enable_shadow=False, single_file=True)
+    self.record_loaded = record_loaded
+
+  def run(self, bufs, transforms, inputs, prepare_only):
+    try:
+      return super().run(bufs, transforms, inputs, prepare_only)
+    except Exception:
+      # Let the manager restart the process with clean parser, action and model
+      # history. Missing model output still reaches the existing control gates.
+      self.record_loaded(False)
+      raise
 
 
 def main(demo=False):
@@ -349,9 +370,28 @@ def main(demo=False):
   # A standby model must not spawn a separate experimental ONNX observer that
   # receives no live samples. Keep standby inference/warmup and fallback intact;
   # optional comparison remains available when internal inference starts active.
-  small_model = ModelState(vipc_client_main.width, vipc_client_main.height, False,
-                           enable_shadow=not usbgpu_model_loaded) if model is None or USBGPU else None
-  if usbgpu_model_loaded:
+  small_model, CP = None, None
+  if not demo and not SIMULATION and os.path.isfile('/AGNOS'):
+    from openpilot.selfdrive.modeld import internal_model
+    if (candidate := internal_model.prepared_path()) is not None:
+      CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
+      if internal_model.supported_car(CP):
+        from openpilot.selfdrive.modeld.internal_model_warmup import warm_internal_model_from_camera
+        vega_model = None
+        try:
+          internal_model.starting()
+          vega_model = VegaModelState(vipc_client_main.width, vipc_client_main.height, candidate)
+          warm_internal_model_from_camera(vega_model, vipc_client_main)
+          internal_model.record_loaded(True)
+          small_model = vega_model
+        except Exception:
+          del vega_model
+          internal_model.record_loaded(False)
+          cloudlog.exception('Polaris Vega 2 load failed; using the bundled internal model')
+  if small_model is None and (model is None or USBGPU):
+    small_model = ModelState(vipc_client_main.width, vipc_client_main.height, False,
+                             enable_shadow=not usbgpu_model_loaded)
+  if usbgpu_model_loaded and not isinstance(small_model, VegaModelState):
     from openpilot.selfdrive.modeld.internal_model_warmup import warm_internal_model_from_camera
     warm_internal_model_from_camera(small_model, vipc_client_main)
   cloudlog.warning("model startup internal model: %.3fs, loaded=%s", time.monotonic() - phase_start, small_model is not None)
@@ -409,7 +449,7 @@ def main(demo=False):
 
   if demo:
     CP = get_demo_car_params()
-  else:
+  elif CP is None:
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   reset_parked_history = None
   if not demo and not USBGPU and pv5_parked_dashcam.supported_for(CP, SIMULATION):

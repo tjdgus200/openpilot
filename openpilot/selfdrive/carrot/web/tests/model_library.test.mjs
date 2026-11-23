@@ -106,3 +106,64 @@ test('status updates preserve the open dialog and focused selection across inven
   assert.equal(root.dataset.state, 'error');
   assert.equal(root.querySelector('p').textContent, 'eGPU unavailable');
 });
+
+const internalModel = {
+  models: [{ id: 'cd210', name: 'CD210' }, { id: 'polaris-vega-2', name: 'Polaris Vega 2' }],
+  selected: 'cd210', effective: 'cd210', reboot_required: false, state: 'ready',
+};
+
+test('PV5 distinguishes internal readiness and next-boot choice', t => {
+  const old = globalThis.document;
+  t.after(() => { globalThis.document = old; });
+  const { editor, elements } = setupDocument();
+  const internal = { ...internalModel, selected: 'polaris-vega-2', reboot_required: true, state: 'preparing' };
+  renderLibrary({ ...data, internal_model: internal });
+  const choices = editor.children.filter(x => x.tag === 'label').map(label => label.children[0]);
+  assert.deepEqual(choices.map(select => select.value), ['flip-flop', 'polaris-vega-2']);
+  assert.deepEqual(choices[1].children.map(option => option.textContent), ['CD210', 'Polaris Vega 2']);
+  assert.equal(elements.get('modelLibraryTitle').textContent, 'Driving models');
+  const copy = editor.children.map(x => x.textContent);
+  assert.ok(copy.includes('This boot CD210'));
+  assert.ok(copy.includes('Preparing the internal model'));
+  assert.ok(copy.includes('Saved. Reboot comma to apply.'));
+
+  renderLibrary({ ...data, internal_model: { ...internal, reboot_required: false, state: 'fallback' } });
+  assert.ok(editor.children.some(x => x.textContent === 'Using CD210 as the fallback'));
+  assert.ok(!editor.children.some(x => x.textContent === 'Saved. Reboot comma to apply.'));
+  renderLibrary(data);
+  assert.equal(editor.children.filter(x => x.tag === 'label').length, 1);
+  assert.equal(elements.get('modelLibraryTitle').textContent, 'External driving model');
+});
+
+test('internal saving protects both choices from polls and sends only the internal selection', async t => {
+  const old = { document: globalThis.document, postJson: globalThis.postJson, showAppToast: globalThis.showAppToast };
+  t.after(() => Object.assign(globalThis, old));
+  const { editor } = setupDocument();
+  const posted = [];
+  const toasts = [];
+  let respond;
+  globalThis.postJson = (url, body) => {
+    posted.push({url, body});
+    return new Promise(resolve => { respond = resolve; });
+  };
+  globalThis.showAppToast = message => toasts.push(message);
+  const library = { ...data, internal_model: internalModel };
+  renderLibrary(library);
+  const [external, internal] = editor.children.filter(x => x.tag === 'label').map(label => label.children[0]);
+  internal.value = 'polaris-vega-2';
+  const pending = internal.events.change();
+  assert.ok(external.disabled && internal.disabled);
+  renderLibrary({ ...library, selected: 'n16' });
+  assert.equal(editor.querySelector('select'), external);
+  assert.equal(internal.value, 'polaris-vega-2');
+  await external.events.change();
+  assert.deepEqual(posted, [{
+    url: '/api/egpu/model/library', body: { action: 'select_internal', model: 'polaris-vega-2' },
+  }]);
+  respond({ library: { ...library, internal_model: { ...internalModel, selected: 'polaris-vega-2', reboot_required: true } } });
+  await pending;
+  const choices = editor.children.filter(x => x.tag === 'label').map(label => label.children[0]);
+  assert.deepEqual(choices.map(select => select.value), ['flip-flop', 'polaris-vega-2']);
+  assert.ok(choices.every(select => !select.disabled));
+  assert.deepEqual(toasts, ['Saved. Reboot comma to apply.']);
+});

@@ -241,6 +241,29 @@ def test_library_maintenance_runs_off_request_thread_and_stops(feature, monkeypa
   asyncio.run(run())
 
 
+def test_internal_selection_only_changes_the_next_pv5_boot(feature, monkeypatch, tmp_path):
+  from openpilot.selfdrive.modeld import internal_model
+
+  monkeypatch.setenv('CARROT_BIG_MODEL_DIR', str(tmp_path / 'external'))
+  monkeypatch.setattr(internal_model, 'ROOT', tmp_path / 'internal')
+  monkeypatch.setattr(internal_model, 'BOOT_PATH', tmp_path / 'boot.json')
+  monkeypatch.setattr(internal_model, 'available', lambda: False)
+
+  class Request:
+    async def json(self):
+      return {'action': 'select_internal', 'model': internal_model.VEGA}
+
+  assert asyncio.run(feature.api_library(Request())).status == 409
+  monkeypatch.setattr(internal_model, 'available', lambda: True)
+  response = asyncio.run(feature.api_library(Request()))
+  assert response.status == 200
+  library = json.loads(response.body)['library']
+  assert library['effective'] == library['selected'] == 'n16'
+  assert library['internal_model']['effective'] == internal_model.CD210
+  assert library['internal_model']['selected'] == internal_model.VEGA
+  assert library['internal_model']['reboot_required']
+
+
 def test_library_retired_entry_cannot_be_selected(feature, monkeypatch, tmp_path):
   from openpilot.common import big_model_catalog as C
   monkeypatch.setenv('CARROT_BIG_MODEL_DIR', str(tmp_path))

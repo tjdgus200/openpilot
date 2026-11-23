@@ -144,15 +144,16 @@ async def api_compile_restart(_request: web.Request) -> web.Response:
 
 async def api_library(request: web.Request) -> web.Response:
   from openpilot.common import big_model_catalog as catalog
-  from openpilot.selfdrive.modeld import model_library as library
+  from openpilot.selfdrive.modeld import internal_model, model_library as library
   try:
     body = await request.json()
     if not isinstance(body, dict) or set(body) != {'action', 'model'}:
       raise ValueError('invalid model action')
     action, key = body['action'], body['model']
-    if action != 'select' or not isinstance(key, str) or key not in catalog.available():
+    selectors = {'select': catalog.select, 'select_internal': internal_model.select}
+    if not isinstance(action, str) or action not in selectors or not isinstance(key, str):
       raise ValueError('unknown model action')
-    await asyncio.to_thread(catalog.select, key)
+    await asyncio.to_thread(selectors[action], key)
     return web.json_response({'ok': True, 'library': await asyncio.to_thread(library.status)})
   except (ValueError, OSError) as exc:
     return web.json_response({'ok': False, 'error': str(exc)}, status=409)

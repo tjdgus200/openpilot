@@ -106,6 +106,8 @@ def cached_bytes(key):
 
 @C.synchronized
 def status():
+  from openpilot.selfdrive.modeld.internal_model import status as internal_status
+
   prefs, protected = C.preferences(), protected_ids()
   host = C.read_json(C.storage() / 'jetson-library.json')
   host_fresh = host.get('boot') == C.boot_id() and 0 <= time.monotonic() - host.get('updated', 0) < 30
@@ -118,7 +120,10 @@ def status():
                  'download_bytes': entry['egpu']['size'], 'jetson_sha256': sha,
                  'jetson_bytes': host.get('models', {}).get(sha) if host_fresh else None,
                  'delete_pending': key in queue})
-  return {'models': rows, 'effective': C.effective_id(), 'selected': prefs['selected'],
+  result = {'models': rows, 'effective': C.effective_id(), 'selected': prefs['selected'],
           'reboot_required': C.effective_id() != prefs['selected'], 'internal': 'CD210',
           'effective_name': C.catalog()[C.effective_id()]['name'], 'effective_noo': C.noo(C.effective_id()),
           'jetson_inventory_fresh': host_fresh}
+  if (internal := internal_status()) is not None:
+    result['internal_model'] = internal
+  return result
