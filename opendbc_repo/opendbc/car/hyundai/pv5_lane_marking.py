@@ -4,17 +4,20 @@ from collections import defaultdict
 import math
 
 from opendbc.can import CANParser
+from opendbc.car.hyundai.lane_line_time import PV5_LANE_MARKING_MAX_AGE_NS
 
 LANE_MESSAGES = ('CAM_0x2a4', 'CAM_0x362')
+PV5_CLUSTER_DASHED = 8
 
 
 class Pv5LaneMarking:
-  def __init__(self, *vehicle_parsers):
+  def __init__(self, camera_parser, alt_parser):
+    self.camera_parser = camera_parser
     # Register both formats from startup. These independent parsers are never
     # used for the vehicle CAN validity or transmit templates.
     self.parsers = {
       parser.bus: CANParser(parser.dbc_name, [(name, math.nan) for name in LANE_MESSAGES], parser.bus)
-      for parser in vehicle_parsers
+      for parser in (camera_parser, alt_parser)
     }
     self.addresses = {
       bus: {parser.dbc.name_to_msg[name].address: parser.dbc.name_to_msg[name].size for name in LANE_MESSAGES}
@@ -69,4 +72,24 @@ class Pv5LaneMarking:
           # Packets batched with the same timestamp have no reliable ordering.
           left = left if left == observed_left else -1
           right = right if right == observed_right else -1
-    return newest, left, right
+    # Prefer a fresh dedicated marking message, including an explicit solid
+    # or unknown side. Use only original camera-bus 0x161 as a fallback.
+    now = max(newest, self.camera_parser._last_update_nanos)
+    if newest and now - newest <= PV5_LANE_MARKING_MAX_AGE_NS:
+      return newest, left, right
+    return self._cluster_marking(now)
+
+  def _cluster_marking(self, now):
+    parser = self.camera_parser
+    address = 0x161
+    state = parser.message_states.get(address)
+    if state is None or not state.timestamps or len(parser.dat.get(address, b'')) != state.size:
+      return 0, -1, -1
+    stamp = state.timestamps[-1]
+    if stamp <= state.last_invalid_nanos or not 0 <= now - stamp <= PV5_LANE_MARKING_MAX_AGE_NS:
+      return 0, -1, -1
+    values = parser.vl[address]
+    # Synchronized PV5 CAN/video identifies code 8 as a dashed boundary on
+    # either side. The display field does not establish the paint color.
+    return (stamp, 0 if values['LANELINE_LEFT'] == PV5_CLUSTER_DASHED else -1,
+            0 if values['LANELINE_RIGHT'] == PV5_CLUSTER_DASHED else -1)

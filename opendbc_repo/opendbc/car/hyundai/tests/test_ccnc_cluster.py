@@ -124,6 +124,51 @@ def test_bsd_background_can_frames_preserve_payload_and_restore_on_event_end(mon
   assert stock == original
 
 
+@pytest.mark.parametrize('fingerprint,not_car,preserve_stock', (
+  (CAR.KIA_PV5, False, True),
+  (CAR.KIA_PV5, True, False),
+  (CAR.KIA_EV9, False, False),
+))
+@pytest.mark.parametrize('lat_active', (False, True))
+@pytest.mark.parametrize('trailer', (False, True))
+def test_ccnc_preserves_original_lane_fields_only_for_real_pv5(monkeypatch, fingerprint, not_car, preserve_stock, lat_active, trailer):
+  from openpilot.cereal import log
+  monkeypatch.setattr(hyundaicanfd, 'Params', lambda: SimpleNamespace(get_int=lambda key: 0, get=lambda key: '0'))
+  packer = CANPacker('hyundai_canfd_generated')
+  definition = packer.dbc.name_to_msg['ADRV_0x161']
+  original_lines = dict(LANELINE_LEFT=8, LANELINE_RIGHT=2, LANELINE_LEFT_POSITION=12,
+                        LANELINE_RIGHT_POSITION=14, LANELINE_CURVATURE=7, LANELINE_CURVATURE_DIRECTION=1)
+  stock = dict.fromkeys(definition.sigs, 0)
+  stock.update(original_lines, COUNTER=17)
+  original = stock.copy()
+  state = SimpleNamespace(
+    adrv_0x161=stock, lfahda_cluster=None, cruise_buttons_msg=None,
+    adrv_0x200=None, adrv_0x1ea=None, ccnc_0x162=None, is_metric=True,
+    paddle_button_prev=0, softHoldActive=0, trailer_connected=trailer,
+    out=structs.CarState(canValid=True, steeringAngleDeg=9., leftBlinker=True, leftBlindspot=True),
+    modelV2=log.ModelDataV2.new_message(),
+  )
+  cp = SimpleNamespace(flags=HyundaiFlags.CAMERA_SCC, carFingerprint=fingerprint, notCar=not_car)
+  control = structs.CarControl(latActive=lat_active, enabled=lat_active)
+  control.hudControl.leftLaneVisible = control.hudControl.rightLaneVisible = True
+  control.hudControl.leftLaneDepart = True
+  (address, payload, bus), = hyundaicanfd.create_ccnc_messages(
+    cp, packer, SimpleNamespace(ECAN=0, CAM=2), 5, control, state, control.hudControl,
+    0, False, False, 0, False, 0, 0)
+  assert (address, bus) == (0x161, 0)
+  values = {key: get_raw_value(payload, sig) for key, sig in definition.sigs.items()}
+  expected = original_lines if preserve_stock else dict(
+    original_lines, LANELINE_LEFT=2 if trailer else 4,
+    LANELINE_CURVATURE=3 if lat_active else 0, LANELINE_CURVATURE_DIRECTION=0)
+  assert {key: values[key] for key in original_lines} == expected
+  if fingerprint == CAR.KIA_PV5:
+    assert values['BACKGROUND'] == values['LANE_HIGHLIGHT'] == 5
+    assert values['BCA_LEFT'] == 2
+  assert values['COUNTER'] == 18
+  assert values['CHECKSUM'] == hyundaicanfd.hkg_can_fd_checksum(address, None, bytearray(payload))
+  assert stock == original
+
+
 @pytest.mark.parametrize('left,right', ((True, False), (False, True), (True, True)))
 def test_pv5_bsd_guide_is_independent_of_lane_visibility_with_exact_2_5hz(left, right):
   out = structs.CarState(canValid=True, leftBlinker=left, rightBlinker=right,

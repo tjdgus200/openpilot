@@ -1,4 +1,6 @@
-"""Timestamp of the exact cached OEM lane description; no control gate changes."""
+"""Timing for original OEM lane observations."""
+
+PV5_LANE_MARKING_MAX_AGE_NS = 250_000_000
 
 
 def lane_line_time(parsers, selected):

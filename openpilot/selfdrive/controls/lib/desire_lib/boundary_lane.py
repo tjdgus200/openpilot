@@ -2,8 +2,7 @@
 import math
 import time
 
-
-PV5_LANE_MARKING_MAX_AGE_NS = 250_000_000
+from opendbc.car.hyundai.lane_line_time import PV5_LANE_MARKING_MAX_AGE_NS
 
 
 def fresh_pv5_lane_types(cs):

@@ -89,3 +89,61 @@ def test_raw_type_has_no_decimal_alias_and_old_schema_defaults_are_unknown(lane_
   with structs.CarState.from_bytes(state.to_bytes()) as decoded:
     assert (decoded.pv5LaneMarking.monoTime, decoded.pv5LaneMarking.leftType,
             decoded.pv5LaneMarking.rightType) == (TICK, 0, 5)
+
+def cluster_frame(packer, bus=2, *, count=1, left=2, right=8):
+  return packer.make_can_msg('ADRV_0x161', bus, {
+    'COUNTER': count, 'LANELINE_LEFT': left, 'LANELINE_RIGHT': right,
+  })
+
+
+@pytest.mark.parametrize('left,right,expected', (
+  (2, 8, (-1, 0)), (8, 2, (0, -1)), (8, 8, (0, 0)),
+  (0, 2, (-1, -1)), (4, 6, (-1, -1)), (1, 15, (-1, -1)),
+))
+def test_original_cluster_fallback_preserves_verified_side_and_only_admits_eight(lane_input, left, right, expected):
+  reader, packer, camera, _ = lane_input
+  camera._add_message('ADRV_0x161')
+  packets = [(TICK, [cluster_frame(packer, left=left, right=right)])]
+  camera.update(packets)
+  assert reader.update(packets) == (TICK, *expected)
+
+
+def test_cluster_fallback_rejects_echo_invalid_checksum_and_stale_input(lane_input):
+  reader, packer, camera, alt = lane_input
+  camera._add_message('ADRV_0x161')
+  alt._add_message('ADRV_0x161')
+  other = [(TICK, [cluster_frame(packer, 1), cluster_frame(packer, 128)])]
+  camera.update(other)
+  alt.update(other)
+  assert reader.update(other) == (0, -1, -1)
+
+  valid = [(2 * TICK, [cluster_frame(packer)])]
+  camera.update(valid)
+  assert reader.update(valid) == (2 * TICK, -1, 0)
+
+  address, data, bus = cluster_frame(packer, count=2)
+  broken = [(3 * TICK, [(address, bytes([data[0] ^ 1]) + data[1:], bus)])]
+  camera.update(broken)
+  assert reader.update(broken) == (0, -1, -1)
+
+  valid = [(4 * TICK, [cluster_frame(packer, count=3)])]
+  camera.update(valid)
+  assert reader.update(valid) == (4 * TICK, -1, 0)
+  activity = [(10 * TICK, [])]
+  camera.update(activity)
+  assert reader.update(activity) == (0, -1, -1)
+
+
+@pytest.mark.parametrize('color', (0, 1))
+def test_cluster_fallback_cannot_override_fresh_dedicated_line(lane_input, color):
+  reader, packer, camera, _ = lane_input
+  camera._add_message('ADRV_0x161')
+  packets = [(TICK, [lane_frame(packer, PREFERRED, 1, left=1, right=1, color=color)]),
+             (2 * TICK, [cluster_frame(packer, left=8, right=8)])]
+  camera.update(packets)
+  expected = 1 if color else -1
+  assert reader.update(packets) == (TICK, expected, expected)
+
+  later = [(7 * TICK, [cluster_frame(packer, count=2, left=8, right=8)])]
+  camera.update(later)
+  assert reader.update(later) == (7 * TICK, 0, 0)
