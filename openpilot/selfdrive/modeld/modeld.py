@@ -428,7 +428,8 @@ def main(demo=False):
 
   from opendbc.car.tesla.values import TeslaFlags
   DH = DesireHelper(tesla_auto_signals=CP.brand == "tesla" and bool(CP.flags & TeslaFlags.AUTO_TURN_SIGNALS),
-                    boundary_indicator_supported=CP.carFingerprint == 'HYUNDAI_IONIQ_5_PE')
+                    boundary_indicator_supported=CP.carFingerprint == 'HYUNDAI_IONIQ_5_PE',
+                    pv5_oem_lane_check=CP.carFingerprint == 'KIA_PV5' and not CP.notCar)
   boundary_observer = BoundaryObserver(cloudlog.event) if DH.boundary_indicator_supported else None
   nav_input = MapInput()
 

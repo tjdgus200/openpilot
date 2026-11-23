@@ -10,6 +10,7 @@ from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.disable_ecu import disable_ecu
 from opendbc.car.hyundai.carcontroller import CarController
 from opendbc.car.hyundai.carstate import CarState
+from opendbc.car.hyundai.pv5_lane_marking import Pv5LaneMarking
 from opendbc.car.hyundai.radar_interface import RadarInterface
 from opendbc.car.hyundai.values import PEDAL_INTERCEPTOR_PARAMS, get_pedal_interceptor_params
 from opendbc.car.pedal_interceptor import PEDAL_INTERCEPTOR_SENSOR_ADDR, PEDAL_INTERCEPTOR_BUS
@@ -30,8 +31,20 @@ class CarInterface(CarInterfaceBase):
   CarController = CarController
   RadarInterface = RadarInterface
 
+  def __init__(self, CP):
+    super().__init__(CP)
+    self.pv5_lane_marking = (
+      Pv5LaneMarking(*(self.can_parsers[bus] for bus in (Bus.cam, Bus.alt)))
+      if CP.carFingerprint == CAR.KIA_PV5 and not CP.notCar else None
+    )
+
   def update(self, can_packets) -> structs.CarState:
     ret = super().update(can_packets)
+    if self.pv5_lane_marking is not None:
+      mono_time, left, right = self.pv5_lane_marking.update(can_packets)
+      ret.pv5LaneMarking.monoTime = mono_time
+      ret.pv5LaneMarking.leftType = left
+      ret.pv5LaneMarking.rightType = right
     if self.CP.carFingerprint == CAR.KIA_PV5 and not self.CS.pv5_gear_valid:
       # Unknown is not itself a common wrongGear event. Preserve all existing
       # CAN checks and use their NO_ENTRY/IMMEDIATE_DISABLE path as well.

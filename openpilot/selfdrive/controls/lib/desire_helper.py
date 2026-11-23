@@ -17,6 +17,7 @@ from openpilot.selfdrive.controls.lib.desire_lib.constants import (
   DESIRES, TURN_DESIRES
 )
 from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
+from openpilot.selfdrive.controls.lib.desire_lib.boundary_lane import fresh_pv5_lane_types
 from openpilot.selfdrive.controls.lib.desire_lib.maneuver_classifier import classify_maneuver_type
 from openpilot.selfdrive.controls.lib.desire_lib.lever import LEVER_REQUEST_WAIT_S, LaneCrossing, LeverForcedTurn, LeverRequestWait, lever_maneuver
 
@@ -28,8 +29,9 @@ AUTO_APP_WAIT_S = 10.0
 
 
 class DesireHelper:
-  def __init__(self, tesla_auto_signals=False, boundary_indicator_supported=False):
+  def __init__(self, tesla_auto_signals=False, boundary_indicator_supported=False, pv5_oem_lane_check=False):
     self.params = Params()
+    self.pv5_oem_lane_check = pv5_oem_lane_check
     self.boundary_indicator_supported = boundary_indicator_supported
     self.boundary_indicator_enabled = False
     self.boundary_indicator = BoundaryIndicator(
@@ -143,6 +145,8 @@ class DesireHelper:
           now-stamp < 20 and type(direction) is int and direction in (1, 2, 3)):
         self.boundary_indicator.own(now, direction)
         self.indicator_journal_time = stamp
+    if self.frame == 1 and self.pv5_oem_lane_check and self.params.get_int("LaneLineCheck") == 1:
+      self.laneLineCheck = 1
     if self.frame % 100 == 0:
       self.laneChangeNeedTorque = self.params.get_int("LaneChangeNeedTorque")
       self.laneChangeBsd = self.params.get_int("LaneChangeBsd")
@@ -335,9 +339,16 @@ class DesireHelper:
       cur_prob=modeldata.laneLineProbs[2],
     )
 
-    # lane line info (HUD용 raw는 기존대로 leftLaneLine/rightLaneLine)
-    self.left.update_lane_line_info(carstate.leftLaneLine)
-    self.right.update_lane_line_info(carstate.rightLaneLine)
+    # The published legacy fields may include vision overlays.
+    pv5_line_check = self.pv5_oem_lane_check and self.laneLineCheck == 1
+    left_was_unknown = pv5_line_check and self.left.lane_line_info_raw == -1
+    right_was_unknown = pv5_line_check and self.right.lane_line_info_raw == -1
+    if pv5_line_check:
+      left_line, right_line = fresh_pv5_lane_types(carstate)
+    else:
+      left_line, right_line = carstate.leftLaneLine, carstate.rightLaneLine
+    self.left.update_lane_line_info(left_line)
+    self.right.update_lane_line_info(right_line)
 
     # BSD 설정
     ignore_bsd = (self.laneChangeBsd < 0)
@@ -359,6 +370,12 @@ class DesireHelper:
       right_line_ok = self.right.lane_line_info_raw // 10 != 2
     self.left.compute_lane_change_available(lane_line_info_lt_20=left_line_ok, ignore_bsd=ignore_bsd)
     self.right.compute_lane_change_available(lane_line_info_lt_20=right_line_ok, ignore_bsd=ignore_bsd)
+    # Recovering after a CAN gap is not a solid-to-dashed or obstacle-release
+    # transition and must not skip a configured delay.
+    for side, was_unknown in ((self.left, left_was_unknown), (self.right, right_was_unknown)):
+      if was_unknown:
+        side.lane_line_info_edge_detect = False
+        side.lane_change_available_released = False
 
     self.left.update_triggers()
     self.right.update_triggers()
@@ -612,7 +629,16 @@ class DesireHelper:
               signal_ready = (not self.tesla_auto_signals or driver_enabled or
                               (self.auto_signal_request_id != 0 and
                                getattr(carstate, "autoTurnSignalReadyRequestId", 0) == self.auto_signal_request_id))
-              if start_gate and not lever_undecided and signal_ready:
+              line_ready = True
+              if self.pv5_oem_lane_check and self.laneLineCheck == 1:
+                same_nav_direction = (
+                  self.atc_type in ("fork left", "atc left") if blinker_state == BLINKER_LEFT else
+                  self.atc_type in ("fork right", "atc right")
+                )
+                driver_nav_exception = (atc_driver_confirm and same_nav_direction and atc_st == blinker_state
+                                        and side_clear_without_line and carstate.canValid and not getattr(carstate, 'canTimeout', False))
+                line_ready = side.lane_line_info_mod in (0, 5) or driver_nav_exception
+              if start_gate and line_ready and not lever_undecided and signal_ready:
                 if solid_line_blocked:
                   if atc_line_release or (torque_applied and not (bsd_active and block_lanechange_bsd)):
                     self.lane_change_state = LaneChangeState.laneChangeStarting

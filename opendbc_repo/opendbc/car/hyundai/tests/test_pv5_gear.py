@@ -7,6 +7,7 @@ from opendbc.can import CANPacker
 from opendbc.car import Bus, structs
 from opendbc.car.hyundai import carstate, hyundaicanfd
 from opendbc.car.hyundai.interface import CarInterface
+from opendbc.car.hyundai.pv5_lane_marking import Pv5LaneMarking
 from opendbc.car.hyundai.values import CAR, HyundaiExtFlags, HyundaiFlags
 from opendbc.car.interfaces import CarInterfaceBase
 
@@ -32,6 +33,7 @@ def make_state(monkeypatch):
     parsers = state.get_can_parsers(cp)
     ci = CarInterface.__new__(CarInterface)
     ci.CP, ci.CS, ci.can_parsers = cp, state, parsers
+    ci.pv5_lane_marking = Pv5LaneMarking(parsers[Bus.cam], parsers[Bus.alt]) if candidate == CAR.KIA_PV5 else None
     ci.v_ego_cluster_seen = False
     return ci, CANPacker("hyundai_canfd_generated"), time.monotonic_ns()
   return make
@@ -44,6 +46,24 @@ def frame(ci, packer, gear=5, counter=1, *, bus=None, **values):
 
 def update(ci, now, *frames):
   return ci.update([(now, list(frames))])
+
+
+def test_late_original_lane_frame_published_without_legacy_registration(make_state):
+  ci, packer, now = make_state()
+  ci.CS.controls_ready_count = carstate.READY_COUNT_OK + 1
+  received = packer.make_can_msg('CAM_0x362', ci.can_parsers[Bus.cam].bus, {
+    'COUNTER': 1, 'LEFT_LANE_TYPE': 0, 'RIGHT_LANE_TYPE': 1,
+    'LEFT_LANE_COLOR': 1, 'RIGHT_LANE_COLOR': 1,
+    'LEFT_LANE_LINE': 3, 'RIGHT_LANE_LINE': 3,
+  })
+
+  state = update(ci, now, frame(ci, packer), received)
+
+  assert state.canValid
+  assert (state.pv5LaneMarking.monoTime, state.pv5LaneMarking.leftType,
+          state.pv5LaneMarking.rightType) == (now, 0, 1)
+  assert state.laneLineInfoMonoTime == 0
+  assert 'CAM_0x362' not in ci.can_parsers[Bus.cam].vl
 
 
 @pytest.mark.parametrize("gear69", [False, True])

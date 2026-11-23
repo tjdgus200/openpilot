@@ -1,5 +1,22 @@
-"""Positive adjacent-lane evidence for manual indication only, never steering."""
+"""Lane-marking evidence for manual indication and PV5 lane-change admission."""
 import math
+import time
+
+
+PV5_LANE_MARKING_MAX_AGE_NS = 250_000_000
+
+
+def fresh_pv5_lane_types(cs):
+  if not cs.canValid or getattr(cs, 'canTimeout', False):
+    return -1, -1
+  marking = getattr(cs, 'pv5LaneMarking', None)
+  if marking is None or marking.monoTime == 0:
+    return -1, -1
+  now = time.clock_gettime_ns(time.CLOCK_BOOTTIME) if hasattr(time, 'CLOCK_BOOTTIME') else time.monotonic_ns()
+  if not 0 <= now - marking.monoTime <= PV5_LANE_MARKING_MAX_AGE_NS:
+    return -1, -1
+  return (marking.leftType if 0 <= marking.leftType <= 8 else -1,
+          marking.rightType if 0 <= marking.rightType <= 8 else -1)
 
 
 def adjacent_lane(cs, md, direction, now):

@@ -295,6 +295,14 @@ struct CarState {
   # Read-only original camera SCC evidence for the OFF-cruise display warning.
   # Never consumed by the actuator controller or engagement state machine.
   pv5CollisionWarning @113 :CollisionWarning;
+  pv5LaneMarking @114 :Pv5LaneMarking;
+
+  struct Pv5LaneMarking {
+    monoTime @0 :UInt64; # accepted original CAN observation, zero if absent
+    leftType @1 :Int8 = -1;
+    rightType @2 :Int8 = -1;
+  }
+
   struct CollisionWarning {
     version @0 :UInt8;
     sourceValid @1 :Bool;
