@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-park-brightness-flip-flop-20261122-2389b459",
-  "source_commit": "2389b459229e5c6400052ea5e6f0c1a2d30e2e67",
+  "profile": "jetson-pv5-usb-resume-flip-flop-20261123-575b204a",
+  "source_commit": "575b204a3464814e1a87a8ba32036ead7e09fc17",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-park-brightness-flip-flop-20261122-2389b459/host.tar.gz",
-    "sha256": "6cde5e6680f0d5c042d928992f0d12364e94a89b170b4b4f2d21396b5328dce9",
-    "size": 65783418
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-usb-resume-flip-flop-20261123-575b204a/host.tar.gz",
+    "sha256": "bb9396b7003ab243604e825e960a40d5a9d79b5f5c0478c22bf49606201a891a",
+    "size": 65786833
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",

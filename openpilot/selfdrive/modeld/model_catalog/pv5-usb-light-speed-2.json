@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-park-brightness-light-speed-2-20261122-3947a077",
-  "source_commit": "3947a07725bf496a5edb3d2f4ae7600f5ea74af8",
+  "profile": "jetson-pv5-usb-resume-light-speed-2-20261123-282a547c",
+  "source_commit": "282a547cee38e3a674c1d9e6d9d85d86e974f867",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-park-brightness-light-speed-2-20261122-3947a077/host.tar.gz",
-    "sha256": "f171849e5426edd1cafe347e064358f3875fcdcb20ec2ce294d2ccac50901401",
-    "size": 65783374
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-usb-resume-light-speed-2-20261123-282a547c/host.tar.gz",
+    "sha256": "b81541671d2deb27b2d6040e1de6da06a13fb5b8d5a536c0a3eedccb98be0ff0",
+    "size": 65787015
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/ea306f534159ac9a3caab0ac3bd4a5f82f9cd805/ea2f516f-f758-42be-a245-913bb818a64f/32768/big_driving_supercombo.onnx",

@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-fairy-tale-v1-1-20261123-9106572c",
-  "source_commit": "9106572cbf5cbddb9291017743a24de7a2afb4f4",
+  "profile": "jetson-pv5-usb-resume-fairy-tale-v1-1-20261123-11ed10d5",
+  "source_commit": "11ed10d58a63ee9167cc195569042fb4a6673cc9",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-fairy-tale-v1-1-20261123-9106572c/host.tar.gz",
-    "sha256": "29012b3fd71d9241cc10f0209efd41a4d55da1e79a8685898b293cfa323d0b8e",
-    "size": 65782902
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-usb-resume-fairy-tale-v1-1-20261123-11ed10d5/host.tar.gz",
+    "sha256": "b5216826efe57d66f50c66a6b9646d6a8cb4c19c4f9fb38be7f4b30a4b165e5c",
+    "size": 65786845
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/d6ca4432101dc1a938ae3ee3a8dbfbfdae33ccba/3f1a78e6-9a79-4d85-b796-1cd573bd5a3a/32768/big_driving_supercombo.onnx",
