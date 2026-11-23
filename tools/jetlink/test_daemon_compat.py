@@ -50,6 +50,29 @@ def test_greet_only_changes_protocol_for_next_connection_after_failure():
   assert choice.version == 2
 
 
+def test_update_failure_record_persists_through_retry_and_clears_on_ready(tmp_path, monkeypatch):
+  import json
+  from openpilot.common import jetlink_status
+
+  monkeypatch.setitem(sys.modules, 'openpilot.common.swaglog',
+                      SimpleNamespace(cloudlog=SimpleNamespace(event=lambda *a, **kw: None)))
+  monkeypatch.setattr(daemon, 'STATUS', tmp_path / 'status.json')
+  monkeypatch.setattr(daemon, 'LAST_STATUS_EVENT', None)
+  monkeypatch.setattr(daemon, 'LAST_UPDATE_FAILURE', None)
+  monkeypatch.setattr(daemon.time, 'monotonic', lambda: 10.)
+  peer = {'carrot_host': 'jetson'}
+  daemon.publish('updating', peer=peer, host_update={'state': 'failed', 'failure_stage': 'transferring'})
+  daemon.publish('retrying', peer=peer)
+  daemon.publish('connecting', peer=None)
+  snapshot = (json.loads(daemon.STATUS.read_text()), {})
+  assert 'USB 전송 실패' in jetlink_status.diagnostics(snapshot)['reason']
+  daemon.publish('updating', peer=peer, host_update={'state': 'transferring', 'fraction': .4})
+  snapshot = (json.loads(daemon.STATUS.read_text()), {})
+  assert '40% · 직전 실패: USB 전송' in jetlink_status.diagnostics(snapshot)['reason']
+  daemon.publish('updating', peer=peer, host_update={'state': 'ready'})
+  assert 'host_update_failure' not in json.loads(daemon.STATUS.read_text())
+
+
 @pytest.mark.parametrize('mode', ['usb', 'ios', 'android'])
 @pytest.mark.parametrize('speed', ['super-speed', 'super-speed-plus'])
 def test_all_modes_accept_usb3(mode, speed):

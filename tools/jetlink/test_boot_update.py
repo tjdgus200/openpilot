@@ -241,3 +241,21 @@ def test_vehicle_reconnects_if_gate_hands_usb_to_runtime_before_ready(monkeypatc
                                 lambda: True, lambda *a, **k: pytest.fail('not an update response'),
                                 sleep=lambda _: pytest.fail('must reconnect immediately'))
   assert len(sent) == 1
+
+
+def test_vehicle_keeps_reported_installation_failure_when_usb_disconnects(monkeypatch):
+  from openpilot.selfdrive.modeld.jetlink import startup
+  monkeypatch.setattr(startup, 'selected_release', lambda *a, **k: manifest())
+  replies = iter([{'state': 'verifying'}, {'state': 'failed', 'failure_stage': 'installing'}])
+  def state():
+    try:
+      return {'carrot_update': next(replies)}
+    except StopIteration:
+      raise ConnectionError('USB disconnected') from None
+  client = NS(t=NS(send_json=lambda *a: None), _next_seq=lambda: 1, state=state)
+  reports = []
+  with pytest.raises(ConnectionError, match='USB disconnected'):
+    startup.wait_for_boot_update(client, {'carrot_host': 'jetson', startup.CAPABILITY: True}, None,
+                                 lambda: True, lambda *a, **kw: reports.append(kw['host_update']),
+                                 sleep=lambda _: None)
+  assert reports == [{'state': 'verifying'}, {'state': 'failed', 'failure_stage': 'installing'}]

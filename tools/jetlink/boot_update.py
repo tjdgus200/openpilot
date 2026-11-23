@@ -73,13 +73,14 @@ class Gate:
     self.worker = None
     self.done = False
     self.error = ''
+    self.failure_stage = None
     self.internal = None
 
-  def report(self, state, fraction=None):
-    self.state, self.fraction = state, fraction
+  def report(self, state, fraction=None, *, failure_stage=None):
+    self.state, self.fraction, self.failure_stage = state, fraction, failure_stage
 
   def telemetry(self):
-    return {'state': self.state, 'fraction': self.fraction, 'error': self.error,
+    return {'state': self.state, 'fraction': self.fraction, 'error': self.error, 'failure_stage': self.failure_stage,
             'permission': 'internal_model' if self.internal is not None else 'park_or_offroad'}
 
   def select(self, manifest):
@@ -121,11 +122,12 @@ class Gate:
             (1. if self.require_permission else 5.))
 
   def _install(self, manifest):
+    stage = 'verifying' if manifest.get('delivery') in ('local', 'usb') else 'downloading'
     try:
-      stage = 'verifying' if manifest.get('delivery') in ('local', 'usb') else 'downloading'
       self.report(stage, 0.)
       update.stage_manifest(manifest, progress=lambda fraction: self.report(stage, fraction))
-      self.report('verifying')
+      stage = 'installing'
+      self.report(stage)
       # These services are still in wait_for_runtime(), but stop them before
       # swapping files so their next process imports the complete new release.
       subprocess.run(['systemctl', 'stop', 'carrot-jetlink', 'carrot-jetlink-hud'], check=True, timeout=45)
@@ -141,10 +143,14 @@ class Gate:
       self.report('waiting_park')
       self.error = ''
     except (urllib.error.URLError, TimeoutError, ConnectionError):
-      self.report('waiting_internet')
-      self.error = 'Download unavailable; retrying'
+      if stage == 'downloading':
+        self.report('waiting_internet')
+        self.error = 'Download unavailable; retrying'
+      else:
+        self.report('failed', failure_stage=stage)
+        self.error = 'Jetson update operation interrupted'
     except Exception as exc:
-      self.report('failed')
+      self.report('failed', failure_stage=stage)
       self.error = str(exc)[:160]
     finally:
       self.next_try = time.monotonic() + (1 if self.state == 'waiting_park' else 30)
@@ -172,12 +178,20 @@ class Gate:
 
 class BootstrapSession:
   def __init__(self, transport, gate):
-    self.transport, self.gate = transport, gate
-    self.last_seq = -1
+    self.gate = gate
     self.usb_receiver = None
+    self.attach(transport)
 
-  def close(self):
+  def attach(self, transport):
+    self.transport = transport
+    self.last_seq = -1
+    self.usb_started = False
+
+  def close(self, *, reconnect=False):
+    self.usb_started = False
     if self.usb_receiver is not None:
+      if reconnect and self.usb_receiver.resumable:
+        return
       self.usb_receiver.close()
       self.usb_receiver = None
 
@@ -186,6 +200,7 @@ class BootstrapSession:
     from wifi_protocol import CAPABILITY as wifi_capability, MESSAGE as wifi_message
     if msg.msg_type == p.Msg.HELLO_REQ:
       self.last_seq = msg.seq
+      self.usb_started = False
       # Optional dependency for older offline bootstrap payloads.
       try:
         import usb_release as usb
@@ -200,6 +215,7 @@ class BootstrapSession:
         'protocol': p.VERSION, 'carrot_host': 'jetson', CAPABILITY: True, LOCAL_CAPABILITY: True,
         wifi_capability: True, 'engine_state': 'none', 'loaded': None, 'sleep_after': 0,
         'carrot_usb_sha256_v1': sha256_usb, 'carrot_usb_sha256_check_v1': sha256_usb,
+        'carrot_usb_sha256_resume_v1': sha256_usb,
         'usb_source_commit': current,
         'carrot_park_update_gate_v1': self.gate.require_permission,
         INTERNAL_CAPABILITY: True,
@@ -208,7 +224,7 @@ class BootstrapSession:
     if msg.seq <= self.last_seq:
       return
     self.last_seq = msg.seq
-    if msg.msg_type in (0x4010, 0x4011, 0x4012, 0x4014):
+    if msg.msg_type in (0x4010, 0x4011, 0x4012, 0x4014, 0x4017):
       try:
         import usb_release as usb
         if self.gate.done or (self.gate.worker is not None and self.gate.worker.is_alive()):
@@ -218,7 +234,7 @@ class BootstrapSession:
         self.gate.selected = None
         if self.usb_receiver is None:
           self.usb_receiver = usb.Receiver(update.ROOT)
-        if msg.msg_type in (usb.BEGIN, usb.CHECK):
+        if msg.msg_type in (usb.BEGIN, usb.CHECK, usb.BEGIN_RESUME):
           if not 0 < len(msg.payload) <= 65536:
             raise ValueError('USB manifest size invalid')
           value = json.loads(bytes(msg.payload))
@@ -226,17 +242,23 @@ class BootstrapSession:
             usb.trusted(update.ROOT, value)
             result = {'complete': usb.registered(update.ROOT, value)}
           else:
-            result = self.usb_receiver.begin(value)
+            result = self.usb_receiver.begin(value, resume=msg.msg_type == usb.BEGIN_RESUME)
+            self.usb_started = True
+        elif not self.usb_started:
+          raise ValueError('USB transfer must start with BEGIN')
         elif msg.msg_type == usb.CHUNK:
           result = self.usb_receiver.chunk(msg.payload)
         else:
           if bytes(msg.payload) != b'{}':
             raise ValueError('Invalid USB finish')
           result = self.usb_receiver.finish()
-        self.transport.send_json(usb.ACK, msg.seq, dict(ok=True, **result))
       except Exception:
         self.close()
-        self.transport.send_json(0x4013, msg.seq, {'ok': False, 'error': 'USB package rejected; current release retained'})
+        reply = {'ok': False, 'error': 'USB package rejected; current release retained'}
+      else:
+        reply = dict(ok=True, **result)
+      # An ACK write failure is a link failure, so keep any accepted resume bytes.
+      self.transport.send_json(0x4013, msg.seq, reply)
     elif msg.msg_type == wifi_message:
       receive_wifi(msg.payload)
     elif msg.msg_type == MESSAGE:
@@ -253,7 +275,7 @@ class BootstrapSession:
       except Exception:
         # Do not report incoming data: provisioning credentials must never leak.
         self.gate.selected = None
-        self.gate.report('failed')
+        self.gate.report('failed', failure_stage='verifying')
         self.gate.error = 'Selected release verification failed'
     elif msg.msg_type == p.Msg.STATE_REQ:
       self.transport.send_json(p.Msg.STATE_RESP, msg.seq, {'carrot_update': self.gate.telemetry()})
@@ -283,20 +305,25 @@ def boot(parked=False):
     try:
       if transport is None:
         transport = UsbBulkTransport.open(timeout_ms=1000)
-        session = BootstrapSession(transport, gate)
+        if session is None:
+          session = BootstrapSession(transport, gate)
+        else:
+          session.attach(transport)
       try:
-        session.handle(transport.recv(timeout=.25))
+        message = transport.recv(timeout=.25)
       except LinkTimeout:
         pass
+      else:
+        session.handle(message)
       gate.tick()
       update.atomic_json(STATUS, dict(gate.telemetry(), updated=time.monotonic()))
       STATUS.chmod(0o644)  # Park worker's private umask must not hide diagnostics.
     except Exception:
       if session is not None:
-        session.close()
+        session.close(reconnect=True)
       if transport is not None:
         transport.close()
-      transport = session = None
+      transport = None
       # A disconnected USB link cannot approve starting on a remembered pin.
       gate.received = 0.
       time.sleep(1)

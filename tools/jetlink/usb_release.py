@@ -14,10 +14,12 @@ from urllib.parse import urlsplit
 
 SHA256_CAPABILITY = 'carrot_usb_sha256_v1'
 CHECK_CAPABILITY = 'carrot_usb_sha256_check_v1'
+RESUME_CAPABILITY = 'carrot_usb_sha256_resume_v1'
 SHA256_POLICY = 'usb-sha256-policy.json'
 SHA256_POLICY_VALUE = {'format': 1, 'integrity': 'sha256', 'transport': 'usb'}
 BEGIN, CHUNK, FINISH, ACK = 0x4010, 0x4011, 0x4012, 0x4013
 CHECK = 0x4014
+BEGIN_RESUME = 0x4017
 BLOCK = 256 * 1024
 HEADER = struct.Struct('<BQ')
 NAMES = ('host.tar.gz', 'model.onnx')
@@ -100,16 +102,13 @@ def registered(root, value, verify_files=True):
 
 
 class Receiver:
-  """One boot-gate session, fixed paths and sequential bounded writes.
-
-  Partial files are never registered. Reconnect restarts transfer; fully verified
-  registered releases can be reused. Only the locally installed USB policy grants permission.
-  """
+  """One boot-gate process, fixed paths and sequential bounded writes."""
   def __init__(self, root):
     self.root = Path(root)
     self.value = None
     self.directory = None
     self.offsets = [0, 0]
+    self.resumable = False
 
   def close(self):
     if self.directory is not None:
@@ -117,15 +116,27 @@ class Receiver:
       shutil.rmtree(self.directory)
       self.directory = None
     self.value = None
+    self.resumable = False
 
-  def begin(self, value):
+  def begin(self, value, *, resume=False):
     from local_release import owned
     trusted(self.root, value)  # Check local permission before allocation or cache writes.
     owned(self.root, directory=True)
-    self.close()
     if registered(self.root, value):
+      self.close()
       self.value = value
       return {'complete': True}
+    if (resume and self.resumable and self.directory is not None and
+        record(value) == record(self.value)):
+      owned(self.directory, directory=True)
+      for i, name in enumerate(NAMES):
+        path = self.directory / name
+        owned(path)
+        if path.stat().st_size != self.offsets[i]:
+          raise ValueError('USB staging length changed')
+      self.value = value
+      return {'complete': False, 'offsets': self.offsets[:]}
+    self.close()
     parent = self.root / 'usb-incoming'
     parent.mkdir(mode=0o700, exist_ok=True)
     owned(parent, directory=True)
@@ -140,9 +151,10 @@ class Receiver:
       shutil.rmtree(old)
     self.directory = Path(tempfile.mkdtemp(prefix='receive-', dir=parent))
     self.value, self.offsets = value, [0, 0]
+    self.resumable = resume
     for name in NAMES:
       (self.directory / name).touch(mode=0o600, exist_ok=False)
-    return {'complete': False}
+    return {'complete': False, 'offsets': self.offsets[:]} if resume else {'complete': False}
 
   def chunk(self, payload):
     if self.directory is None or not HEADER.size < len(payload) <= HEADER.size + BLOCK:
@@ -152,7 +164,8 @@ class Receiver:
     if index >= len(NAMES) or offset != self.offsets[index] or offset + len(data) > self.value[KINDS[index]]['size']:
       raise ValueError('USB chunk offset/length mismatch')
     with (self.directory / NAMES[index]).open('ab') as target:
-      target.write(data)
+      if target.write(data) != len(data):
+        raise OSError('Incomplete USB staging write')
     self.offsets[index] += len(data)
     return {'index': index, 'offset': self.offsets[index]}
 

@@ -185,11 +185,13 @@ function renderStatus(status) {
   // Saved FPS/fusion preferences still belong to the runtime/settings path.
   hostEl.hidden = !host;
   const usbBlocked = String(host?.reason || "").includes("[adb-handoff:");
+  const updating = host?.update === true;
   if (host) {
     const severity = ["ok", "warning", "error", "unknown"].includes(host.severity) ? host.severity : "unknown";
-    hostEl.textContent = `${host.label} · ${usbBlocked ? t("host_usb_error") : t(`host_${severity}`)} · ${t("host_ip")}: ${(host.addresses || []).join(", ") || t("host_no_ip")}`
+    hostEl.textContent = updating ? host.reason : (
+      `${host.label} · ${usbBlocked ? t("host_usb_error") : t(`host_${severity}`)} · ${t("host_ip")}: ${(host.addresses || []).join(", ") || t("host_no_ip")}`
       + (Number.isFinite(host.temp_c) ? ` · ${host.temp_c.toFixed(1)} °C` : "")
-        + (host.reason ? ` · ${hostReason(host.reason)}` : "");
+      + (host.reason ? ` · ${hostReason(host.reason)}` : ""));
     hostEl.style.color = severity === "error" ? "#ff7474" : severity === "warning" ? "#ffd166" : "";
   }
   if (!status.available) {
@@ -197,7 +199,8 @@ function renderStatus(status) {
     card.dataset.state = host.severity === "error" ? "error" : "compiled";
     card.classList.remove("is-running");
     document.getElementById("egpuModelTitle").textContent = `${host.label} · ${status.library?.models?.find(m => m.id === status.library.effective)?.name || "Jetson"}`;
-    stateEl.textContent = usbBlocked ? t("host_usb_error") : t(`host_${host.severity || "unknown"}`);
+    stateEl.textContent = updating ? host.reason : usbBlocked ? t("host_usb_error") : t(`host_${host.severity || "unknown"}`);
+    hostEl.hidden = updating;
     detailEl.textContent = "";
     progressEl.hidden = true;
     amountEl.textContent = "";

@@ -24,7 +24,7 @@ from openpilot.selfdrive.modeld.jetlink.power import UsbInputPower
 from openpilot.selfdrive.modeld.jetlink.scheduling import UsbCompletionPriority
 from openpilot.selfdrive.modeld.jetlink.contracts import JETSON_SPEC, model_name
 from openpilot.selfdrive.modeld.jetlink.selection import ModelChanged, check_loaded
-from openpilot.selfdrive.modeld.jetlink.startup import (CAPABILITY as BOOT_UPDATE_CAPABILITY, wait_for_boot_update,
+from openpilot.selfdrive.modeld.jetlink.startup import (CAPABILITY as BOOT_UPDATE_CAPABILITY, FAILURE_STAGES, wait_for_boot_update,
                                                        RuntimeHandoff, ConnectionStartup)
 from jetlink.client import JetlinkClient
 from jetlink.transport.base import LinkError, LinkTimeout
@@ -39,6 +39,7 @@ ACTIVE_UDC = None
 SESSION_DETACHED = False
 log = logging.getLogger('carrot.jetlink')
 LAST_STATUS_EVENT = None
+LAST_UPDATE_FAILURE = None
 sys.path.insert(0, str(VENDOR.parents[1] / 'tools/jetlink'))
 from hud_protocol import Publisher, HUD_MESSAGE
 from hud_rate import IdleBudget, request_ready
@@ -157,8 +158,19 @@ def _role_attached():
 
 
 def publish(status, spec=None, **extra):
-  global LAST_STATUS_EVENT
-  record = dict(state=status, updated=time.monotonic(), model=model_name(spec) if spec else 'App selection',
+  global LAST_STATUS_EVENT, LAST_UPDATE_FAILURE
+  now = time.monotonic()
+  peer = extra.get('peer') or {}
+  update = extra.get('host_update') or {}
+  if status == 'updating' and is_jetson(peer) and update.get('state') == 'failed':
+    stage = update.get('failure_stage')
+    LAST_UPDATE_FAILURE = {'updated': now, 'state': 'failed', 'failure_stage': stage if stage in FAILURE_STAGES else None}
+  elif (status not in ('connecting', 'retrying', 'updating') or (peer and not is_jetson(peer)) or
+        update.get('state') in ('ready', 'waiting_comma_reboot')):
+    LAST_UPDATE_FAILURE = None
+  if LAST_UPDATE_FAILURE is not None:
+    extra['host_update_failure'] = LAST_UPDATE_FAILURE
+  record = dict(state=status, updated=now, model=model_name(spec) if spec else 'App selection',
                 sha256=spec.sha256 if spec else None,
                 transport=SESSION_MODE if TRANSPORT_MODE == 'auto' else TRANSPORT_MODE,
                 configured_transport=TRANSPORT_MODE, **extra)
@@ -166,7 +178,6 @@ def publish(status, spec=None, **extra):
   temporary.write_text(json.dumps(record))
   os.replace(temporary, STATUS)
   preparation = extra.get('preparation') or {}
-  peer = extra.get('peer') or {}
   event = dict(state=status, stage=preparation.get('stage'), detail=str(extra.get('error') or '')[:300],
                message=str(preparation.get('message') or '')[:300], transport=record['transport'],
                host=peer.get('carrot_host'), source_commit=peer.get('carrot_source_commit'),

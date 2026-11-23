@@ -33,7 +33,7 @@ def lines(status):
   update = status.get('update', {})
   phase = update.get('state', 'waiting')
   phases = {'checking': '콤마 확인 대기', 'checking_usb': 'USB 패키지 확인', 'transferring': 'USB 전송 중',
-            'downloading': '다운로드 중', 'verifying': '설치 / 실행 검증 중',
+            'downloading': '다운로드 중', 'verifying': '설치 / 실행 검증 중', 'installing': '설치 / 실행 검증 중',
             'waiting_internet': '인터넷 연결 대기', 'waiting_park': '내부 모델 / P단 승인 대기',
             'waiting_comma_reboot': '업데이트 완료 · 콤마 재부팅 대기',
             'ready': 'USB 승인 완료 · 모델 준비 대기',

@@ -10,6 +10,14 @@ from openpilot.common.jetlink_peer import classify_auto_peer, is_mac_peer, may_p
 LINK_STATUS = Path('/dev/shm/carrot-jetlink.json')
 MODEL_STATUS = Path('/dev/shm/carrot-jetlink-model.json')
 HOST_LABELS = {'jetson': 'jetSON', 'mac': 'MAC'}
+UPDATE_FAILURE_LABELS = {'checking_usb': 'USB 업데이트 확인', 'checking_files': '캐시 파일 검사',
+                         'downloading': '다운로드', 'transferring': 'USB 전송',
+                         'verifying': '파일 검증', 'installing': '설치'}
+
+
+def update_failure_phase(value):
+  stage = value.get('failure_stage')
+  return UPDATE_FAILURE_LABELS.get(stage) if isinstance(stage, str) else None
 
 
 def update_badge(value):
@@ -33,7 +41,12 @@ def update_badge(value):
     return 'Jetson 업데이트 완료 · 콤마 재부팅 대기', 'loading'
   if state == 'verifying':
     return 'Jetson 업데이트 검증·적용 중', 'loading'
+  if state == 'installing':
+    return 'Jetson 업데이트 설치 중', 'loading'
   if state == 'failed':
+    phase = update_failure_phase(value)
+    if phase:
+      return f'Jetson 업데이트 {phase} 실패 · 재시도 대기', 'error'
     return 'Jetson 업데이트 실패 · 재시도 대기', 'error'
   return 'Jetson 업데이트 확인 중', 'loading'
 
@@ -134,6 +147,13 @@ def diagnostics(snapshot=None):
   now = time.monotonic()
   link = fresh_value(saved, now, handshake=True, preparing=True)
   model = fresh_value(saved_model, now)
+  failed_update = saved.get('host_update_failure')
+  stamp = failed_update.get('updated') if isinstance(failed_update, dict) else None
+  recent_failure = type(stamp) in (int, float) and 0 <= now - stamp < 35
+  if saved.get('state') in ('connecting', 'retrying') and recent_failure and not model.get('active'):
+    text, _ = update_badge(failed_update)
+    return {'label': 'jetSON', 'state': 'retrying', 'severity': 'error', 'reason': text, 'addresses': [],
+            'temp_c': None, 'active': False, 'fresh': True, 'update': True}
   if not saved.get('peer') and saved.get('state') not in ('connecting', 'loading', 'retrying', 'blocked') and not model.get('active'):
     return None
   result = {'label': host_label(saved.get('peer'), saved.get('transport', 'usb')), 'state': link.get('state', 'disconnected'),
@@ -144,7 +164,10 @@ def diagnostics(snapshot=None):
     result['reason'] = (result['reason'] + ' · ' + str(preparation.get('message') or '')[:160]).rstrip(' ·')
   if link.get('state') == 'updating' and result['label'] == 'jetSON':
     text, style = update_badge(link.get('host_update') or {})
-    result.update(severity='error' if style == 'error' else 'warning', reason=text, fresh=True, active=False)
+    previous = update_failure_phase(failed_update) if recent_failure else None
+    if previous and style != 'error':
+      text += f' · 직전 실패: {previous}'
+    result.update(severity='error' if style == 'error' else 'warning', reason=text, fresh=True, active=False, update=True)
     return result
   model_error = str(model.get('error') or '')[:240] if not model.get('active') else ''
   if model_error:
@@ -207,6 +230,8 @@ def badge(snapshot=None):
   health = diagnostics(snapshot)
   if health:
     label = health['label']
+    if health.get('update'):
+      return health['reason'], 'error' if health['severity'] == 'error' else 'loading'
     if health['state'] == 'waiting' and health['severity'] == 'unknown':
       return None
     if health['severity'] == 'error':

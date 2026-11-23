@@ -8,7 +8,7 @@ import time
 from urllib.error import HTTPError, URLError
 import urllib.request
 
-from tools.jetlink.usb_release import ACK, BEGIN, BLOCK, CHECK, CHUNK, FINISH, HEADER, KINDS, NAMES, validate  # noqa: TID251
+from tools.jetlink.usb_release import ACK, BEGIN, BEGIN_RESUME, BLOCK, CHECK, CHUNK, FINISH, HEADER, KINDS, NAMES, validate  # noqa: TID251
 
 
 class PermissionLost(ConnectionError):
@@ -66,6 +66,7 @@ def asset(item, cache, allowed, progress=None):
     request = item['url']
     if count:
       request = urllib.request.Request(request, headers={'Range': f'bytes={count}-', 'Accept-Encoding': 'identity'})
+    report('downloading', count)
     with urllib.request.urlopen(request, timeout=30) as source:
       if not source.url.startswith('https://'):
         raise ValueError('Insecure asset redirect')
@@ -114,8 +115,8 @@ def exchange(client, kind, payload, allowed, raw=False, timeout=30):
   if not isinstance(value, dict):
     raise ValueError('Invalid USB update acknowledgement')
   if value.get('ok') is not True:
-    stage = {BEGIN: 'begin', CHECK: 'check', CHUNK: 'transfer', FINISH: 'verify'}[kind]
-    raise ValueError(f'Jetson rejected USB update [{stage}]: ' + str(value.get('error', 'invalid reply')))
+    stage = {BEGIN: 'begin', BEGIN_RESUME: 'begin', CHECK: 'check', CHUNK: 'transfer', FINISH: 'verify'}[kind]
+    raise ValueError(f'Jetson rejected USB update [{stage}]')
   return value
 
 
@@ -125,29 +126,35 @@ def available(client, manifest, connected):
   return exchange(client, CHECK, manifest, connected, timeout=120).get('complete') is True
 
 
-def upload(client, manifest, cache, allowed, progress):
+def upload(client, manifest, cache, allowed, progress, *, resume=False):
   validate(manifest)
   def request(kind, payload, **kwargs):
     require_permission(allowed)
     return exchange(client, kind, payload, allowed, **kwargs)
   # An already registered package needs no network. BEGIN cannot activate it.
   progress('checking_usb', None)
-  result = request(BEGIN, manifest, timeout=120)
+  result = request(BEGIN_RESUME if resume else BEGIN, manifest, timeout=120)
   if result.get('complete') is True:
     return
-  total, sent, prepared = sum(manifest[k]['size'] for k in KINDS), 0, 0
+  sizes = [manifest[k]['size'] for k in KINDS]
+  offsets = result.get('offsets') if resume else [0] * len(KINDS)
+  if (not isinstance(offsets, list) or len(offsets) != len(sizes) or
+      any(type(offset) is not int or not 0 <= offset <= size for offset, size in zip(offsets, sizes, strict=True))):
+    raise ValueError('Invalid USB resume offsets')
+  total, sent, prepared = sum(sizes), sum(offsets), 0
   paths = []
   # Never leave the receiver between bundle/model while fetching a large model.
   # Verified cached files still get hash checks; registered packages use BEGIN only.
-  for kind in KINDS:
-    paths.append(asset(manifest[kind], Path(cache), allowed,
-                       progress=lambda stage, count, base=prepared: progress(stage, (base + count) / total)))
-    prepared += manifest[kind]['size']
-  progress('transferring', 0.)
-  for index, kind in enumerate(KINDS):
-    path = paths[index]
-    offset = 0
+  for kind, size, offset in zip(KINDS, sizes, offsets, strict=True):
+    paths.append(None if offset == size else asset(manifest[kind], Path(cache), allowed,
+                                                  progress=lambda stage, count, base=prepared: progress(stage, (base + count) / total)))
+    prepared += size
+  progress('transferring', sent / total)
+  for index, (path, offset, size) in enumerate(zip(paths, offsets, sizes, strict=True)):
+    if path is None:
+      continue
     with path.open('rb') as source:
+      source.seek(offset)
       while data := source.read(BLOCK):
         result = request(CHUNK, HEADER.pack(index, offset) + data, raw=True)
         offset += len(data)
@@ -155,7 +162,7 @@ def upload(client, manifest, cache, allowed, progress):
         if result.get('index') != index or result.get('offset') != offset:
           raise ValueError('USB acknowledgement offset mismatch')
         progress('transferring', sent / total)
-    if offset != manifest[kind]['size']:
+    if offset != size:
       raise ValueError('Cached USB asset changed during transfer: ' + NAMES[index])
   progress('verifying', 1.)
   if request(FINISH, {}, timeout=120).get('complete') is not True:

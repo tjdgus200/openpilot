@@ -15,6 +15,24 @@ function element() {
   };
 }
 
+test("Jetson update phases use the update status instead of a host temperature or link error", (t) => {
+  const saved = globalThis.document;
+  t.after(() => { globalThis.document = saved; });
+  const elements = new Map();
+  globalThis.document = {createElement: element, getElementById(id) {
+    if (!elements.has(id)) elements.set(id, element());
+    return elements.get(id);
+  }};
+  for (const [severity, reason] of [
+    ["warning", "Jetson 업데이트 USB 전송 중 60%"],
+    ["error", "Jetson 업데이트 USB 전송 실패 · 재시도 대기"],
+  ]) {
+    CarrotEgpuModel.render({available: false, jetlink: {label: "jetSON", severity, update: true, reason}});
+    assert.equal(elements.get("egpuModelState").textContent, reason);
+    assert.equal(elements.get("jetlinkHealth").hidden, true);
+  }
+});
+
 test("older host performance reports cannot restore retired tables or write saved preferences", (t) => {
   const saved = globalThis.document;
   const savedSetter = globalThis.setParam;

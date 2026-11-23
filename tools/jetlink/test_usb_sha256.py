@@ -175,7 +175,8 @@ def test_cached_asset_hash_check_reports_progress_without_network(installed, mon
 
 
 @pytest.mark.parametrize('recover', [True, False])
-def test_transfer_permission_gap_waits_without_rebuilding_usb(installed, monkeypatch, recover):
+@pytest.mark.parametrize('resumable', [True, False])
+def test_transfer_permission_gap_waits_without_rebuilding_usb(installed, monkeypatch, recover, resumable):
   from contextlib import nullcontext
   wire, permitted, connected, states = Wire(), [True], [True], []
   interrupted = []
@@ -184,8 +185,8 @@ def test_transfer_permission_gap_waits_without_rebuilding_usb(installed, monkeyp
   monkeypatch.setattr(startup, 'Permission', lambda *a, **kw: NS(allowed=lambda: permitted[0]))
   monkeypatch.setattr(startup, 'bulk_scheduling', nullcontext)
   monkeypatch.setattr(startup, 'selected_release', lambda *a, **kw: installed.value)
-  monkeypatch.setattr(sender, 'upload', lambda client, value, cache, allowed, progress:
-                      original_upload(client, value, cache_assets(installed), allowed, progress))
+  monkeypatch.setattr(sender, 'upload', lambda client, value, cache, allowed, progress, **kw:
+                      original_upload(client, value, cache_assets(installed), allowed, progress, **kw))
   def exchange(client, kind, *args, **kwargs):
     reply = original_exchange(client, kind, *args, **kwargs)
     if kind == usb.CHUNK and not interrupted:
@@ -198,14 +199,16 @@ def test_transfer_permission_gap_waits_without_rebuilding_usb(installed, monkeyp
     assert not usb.registered(installed.root, installed.value)
     assert wire.session.gate.selected is None
     permitted[0], connected[0] = recover, recover
-  peer = {'carrot_host': 'jetson', startup.CAPABILITY: True, usb.SHA256_CAPABILITY: True,
+  peer = {'carrot_host': 'jetson', startup.CAPABILITY: True, usb.SHA256_CAPABILITY: True, usb.RESUME_CAPABILITY: resumable,
           'engine_state': 'none', 'loaded': None}
   try:
     with pytest.raises(ConnectionError, match='reconnecting' if recover else 'USB setup'):
       startup.wait_for_boot_update(wire.client, peer, None, lambda: connected[0],
                                   lambda *a, **kw: states.append(kw['host_update']['state']), sleep=resume)
     assert 'waiting_park' in states
-    assert wire.kinds.count(usb.BEGIN) == (2 if recover else 1)
+    assert wire.kinds.count(usb.BEGIN_RESUME if resumable else usb.BEGIN) == (2 if recover else 1)
+    expected_chunks = 1 + int(recover) * (1 if resumable else 2)
+    assert wire.kinds.count(usb.CHUNK) == expected_chunks
     assert (usb.FINISH in wire.kinds) is recover
     assert usb.registered(installed.root, installed.value) is recover
     assert (installed.root / 'current').resolve() == installed.previous
@@ -312,7 +315,7 @@ def test_failed_transfer_or_probe_preserves_current(installed, monkeypatch, faul
       raise RuntimeError('synthetic probe failure')
     monkeypatch.setattr(update, 'probe_release', fail)
     gate = select_and_activate(value)
-    assert not gate.done and gate.state == 'failed'
+    assert not gate.done and gate.state == 'failed' and gate.telemetry()['failure_stage'] == 'installing'
     assert (installed.root / 'cache/last-loaded.json').read_text() == 'original-model'
   else:
     with pytest.raises(ValueError, match='checksum/length'):
@@ -570,6 +573,128 @@ def test_disconnect_removes_partial_transfer_without_registering(installed):
   assert not usb.registered(installed.root, installed.value)
   assert (installed.root / 'current').resolve() == installed.previous
   assert not (installed.root / 'updates/pending.json').exists()
+
+
+@pytest.mark.parametrize('drop', [usb.CHUNK, usb.FINISH])
+def test_negotiated_resume_uses_written_offsets_after_lost_ack(installed, monkeypatch, drop):
+  wire = Wire()
+  reply = wire.send_json
+  chunks = []
+  send = wire.send
+
+  def track(kind, seq, parts, **kwargs):
+    if kind == usb.CHUNK:
+      chunks.append(usb.HEADER.unpack_from(parts[0]))
+    send(kind, seq, parts, **kwargs)
+
+  def drop_ack(kind, seq, value):
+    # Simulate the link breaking while the Jetson writes an ACK, after
+    # accepting the request and before the sender sees the result.
+    if kind == usb.ACK and wire.kinds[-1] == drop:
+      raise TimeoutError('simulated ACK loss')
+    reply(kind, seq, value)
+
+  monkeypatch.setattr(wire, 'send', track)
+  monkeypatch.setattr(wire, 'send_json', drop_ack)
+  cache = cache_assets(installed)
+  with pytest.raises(TimeoutError, match='ACK loss'):
+    sender.upload(wire.client, installed.value, cache, lambda: True, lambda *a: None, resume=True)
+  if drop == usb.CHUNK:
+    assert chunks == [(0, 0)]
+    assert not usb.registered(installed.root, installed.value)
+  else:
+    assert usb.registered(installed.root, installed.value)
+  assert wire.session.gate.selected is None
+  assert (installed.root / 'current').resolve() == installed.previous
+
+  wire.session.close(reconnect=True)
+  wire.session.attach(wire)
+  monkeypatch.setattr(wire, 'send_json', reply)
+  monkeypatch.setattr(sender, 'asset', lambda item, *a, **k: cache / item['sha256']
+                      if item == installed.value['model'] else pytest.fail('already sent bundle was prepared again'))
+  states = []
+  sender.upload(wire.client, installed.value, cache, lambda: True,
+                lambda *s: states.append(s), resume=True)
+  assert chunks == [(0, 0), (1, 0)]
+  if drop == usb.CHUNK:
+    bundle, model = (installed.value[k]['size'] for k in usb.KINDS)
+    assert states[1] == ('transferring', bundle / (bundle + model))
+  else:
+    assert states == [('checking_usb', None)]
+  assert usb.registered(installed.root, installed.value)
+  assert (installed.root / 'current').resolve() == installed.previous
+  assert not (installed.root / 'updates/pending.json').exists()
+  wire.session.close()
+
+
+@pytest.mark.parametrize('resume,change_identity', [(False, False), (True, True)])
+def test_legacy_sender_and_different_package_do_not_reuse_partial(installed, resume, change_identity):
+  wire = Wire()
+  value = installed.value
+  begin = sender.exchange(wire.client, usb.BEGIN_RESUME, value, lambda: True)
+  assert begin == {'ok': True, 'complete': False, 'offsets': [0, 0]}
+  sender.exchange(wire.client, usb.CHUNK, usb.HEADER.pack(0, 0) + b'x', lambda: True, raw=True)
+  wire.session.close(reconnect=True)
+  wire.session.attach(wire)
+  if change_identity:
+    value = {**value, 'source_commit': 'c' * 40}
+  response = sender.exchange(wire.client, usb.BEGIN_RESUME if resume else usb.BEGIN, value, lambda: True)
+  assert response.get('offsets') == ([0, 0] if resume else None)
+  assert (wire.session.usb_receiver.directory / usb.NAMES[0]).stat().st_size == 0
+  wire.session.close()
+
+
+@pytest.mark.parametrize('offsets', [None, [], [0], [True, 0], [-1, 0], [0, 1 << 40]])
+def test_invalid_resume_offset_stops_before_cache_or_transfer(installed, monkeypatch, offsets):
+  calls = []
+  def reply(_, kind, *a, **kw):
+    calls.append(kind)
+    return {'complete': False, 'offsets': offsets}
+  monkeypatch.setattr(sender, 'exchange', reply)
+  monkeypatch.setattr(sender, 'asset', lambda *a, **k: pytest.fail('invalid offsets reached asset cache'))
+  with pytest.raises(ValueError, match='resume offsets'):
+    sender.upload(None, installed.value, None, lambda: True, lambda *a: None, resume=True)
+  assert calls == [usb.BEGIN_RESUME]
+
+
+def test_corrupted_resumed_prefix_never_registers_and_next_attempt_starts_clean(installed):
+  wire = Wire()
+  value, cache = installed.value, cache_assets(installed)
+  sender.exchange(wire.client, usb.BEGIN_RESUME, value, lambda: True)
+  sender.exchange(wire.client, usb.CHUNK, usb.HEADER.pack(0, 0) + b'?', lambda: True, raw=True)
+  wire.session.close(reconnect=True)
+  wire.session.attach(wire)
+  with pytest.raises(ValueError, match='rejected USB update'):
+    sender.upload(wire.client, value, cache, lambda: True, lambda *a: None, resume=True)
+  assert not usb.registered(installed.root, value)
+  assert wire.session.usb_receiver is None
+  response = sender.exchange(wire.client, usb.BEGIN_RESUME, value, lambda: True)
+  assert response['offsets'] == [0, 0]
+  wire.session.close()
+
+
+def test_resume_sends_only_the_missing_tail_of_model(installed, monkeypatch):
+  wire = Wire()
+  value, cache = installed.value, cache_assets(installed)
+  model = (installed.package / usb.NAMES[1]).read_bytes()
+  prefix = len(model) // 2
+  assert prefix > 0
+  sender.exchange(wire.client, usb.BEGIN_RESUME, value, lambda: True)
+  for index, data in enumerate(((installed.package / usb.NAMES[0]).read_bytes(), model[:prefix])):
+    sender.exchange(wire.client, usb.CHUNK, usb.HEADER.pack(index, 0) + data, lambda: True, raw=True)
+  wire.session.close(reconnect=True)
+  wire.session.attach(wire)
+  send = wire.send
+  sent = []
+  def capture(kind, seq, parts, **kw):
+    if kind == usb.CHUNK:
+      sent.append(parts[0])
+    send(kind, seq, parts, **kw)
+  monkeypatch.setattr(wire, 'send', capture)
+  sender.upload(wire.client, value, cache, lambda: True, lambda *a: None, resume=True)
+  assert sent == [usb.HEADER.pack(1, prefix) + model[prefix:]]
+  assert usb.registered(installed.root, value)
+  wire.session.close()
 
 
 def test_revoked_local_policy_prevents_completed_transfer_registration(installed):

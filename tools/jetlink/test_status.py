@@ -100,6 +100,26 @@ def test_usb_update_status_stays_visible_until_ack_timeout(monkeypatch, phase, l
   assert status.badge((link, {})) == ('jetSON ERROR', 'error')
 
 
+@pytest.mark.parametrize(('phase', 'label'), [('downloading', '다운로드'), ('transferring', 'USB 전송'),
+                                             ('verifying', '파일 검증'), ('installing', '설치')])
+def test_update_failure_phase_survives_reconnect_but_expires(monkeypatch, phase, label):
+  entry = {'state': 'failed', 'failure_stage': phase, 'updated': 100., 'error': 'https://private.invalid/secret'}
+  link = {'updated': 105., 'state': 'connecting', 'host_update_failure': entry}
+  monkeypatch.setattr(status.time, 'monotonic', lambda: 105.)
+  text = f'Jetson 업데이트 {label} 실패 · 재시도 대기'
+  assert status.badge((link, {})) == (text, 'error')
+  assert status.diagnostics((link, {}))['reason'] == text
+  assert status.diagnostics((link, {}))['update'] is True
+  link['updated'] = 135.
+  monkeypatch.setattr(status.time, 'monotonic', lambda: 135.)
+  assert status.badge((link, {})) != (text, 'error')
+
+
+def test_unknown_failure_stage_never_exposes_remote_text():
+  assert status.update_badge({'state': 'failed', 'failure_stage': ['private']}) == (
+    'Jetson 업데이트 실패 · 재시도 대기', 'error')
+
+
 def test_remote_badge_disappears_with_expired_snapshot(monkeypatch):
   import hud
   params = hud.DisplayParams()

@@ -7,6 +7,7 @@ from openpilot.common.jetson_model import selected_release
 CAPABILITY = 'carrot_boot_update_v1'
 MESSAGE = 0x4003
 RELEASE = Path(__file__).with_name('host_release.json')
+FAILURE_STAGES = ('checking_usb', 'checking_files', 'downloading', 'transferring', 'verifying', 'installing')
 
 
 class RuntimeHandoff(ConnectionError):
@@ -51,6 +52,25 @@ def initial_connection_wait(error, *, elapsed, ready_once, preparing):
 def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.sleep):
   if peer.get('carrot_host') != 'jetson' or peer.get(CAPABILITY) is not True:
     return
+  stage = 'checking_usb'
+
+  def report(value):
+    nonlocal stage
+    state = value.get('state')
+    stage = state if state in FAILURE_STAGES else None
+    publish('updating', peer=peer, host_update=value)
+
+  try:
+    _run_boot_update(client, peer, wifi, connected, report, sleep)
+  except RuntimeHandoff:
+    raise
+  except Exception:
+    if stage in FAILURE_STAGES:
+      report({'state': 'failed', 'failure_stage': stage})
+    raise
+
+
+def _run_boot_update(client, peer, wifi, connected, report, sleep):
   manifest = selected_release(RELEASE, required=True)
   from openpilot.common.jetlink_maintenance import CAPABILITY as INTERNAL_CAPABILITY, lease
   internal_gate = (peer.get(INTERNAL_CAPABILITY) is True and peer.get('engine_state') == 'none'
@@ -63,7 +83,7 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
     def waiting():
       # Explicit revocation also reaches a candidate probe already in progress.
       client.t.send_json(MESSAGE, client._next_seq(), {'pause': True})
-      publish('updating', peer=peer, host_update={'state': 'waiting_park', 'fraction': None})
+      report({'state': 'waiting_park', 'fraction': None})
       if wifi is not None:
         wifi.send(client)
       client.state()
@@ -71,7 +91,7 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
     raise ValueError('Install the PC-prepared package for this Jetson model on Jetson first')
   usb_change = False
   if manifest.get('delivery') == 'usb':
-    from tools.jetlink.usb_release import SHA256_CAPABILITY, CHECK_CAPABILITY  # noqa: TID251 -- shared standalone updater
+    from tools.jetlink.usb_release import SHA256_CAPABILITY, CHECK_CAPABILITY, RESUME_CAPABILITY  # noqa: TID251
     from tools.jetlink.usb_release_client import PermissionLost, available, upload  # noqa: TID251
     if peer.get(SHA256_CAPABILITY) is not True:
       raise ValueError('Install and locally enable the SHA-256 USB receiver on Jetson once')
@@ -81,7 +101,7 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
       # catalog. Query without writes; legacy SHA receivers check offroad.
       usb_change = peer.get(CHECK_CAPABILITY) is not True
       if not usb_change:
-        publish('updating', peer=peer, host_update={'state': 'checking_usb', 'fraction': None, 'integrity': 'sha256'})
+        report({'state': 'checking_usb', 'fraction': None, 'integrity': 'sha256'})
         usb_change = not available(client, manifest, connected)
     if usb_change:
       from openpilot.common.params import Params
@@ -94,23 +114,23 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
       def waiting():
         if parked_gate:
           client.t.send_json(MESSAGE, client._next_seq(), {'pause': True})
-        publish('updating', peer=peer, host_update={'state': 'waiting_park', 'fraction': None, 'integrity': 'sha256',
-                                                  'reason': getattr(permission, 'reason', 'vehicle_data_unavailable')})
+        report({'state': 'waiting_park', 'fraction': None, 'integrity': 'sha256',
+                'reason': getattr(permission, 'reason', 'vehicle_data_unavailable')})
         if wifi is not None:
           wifi.send(client)
         client.state()
       with bulk_scheduling():
+        options = {'resume': True} if peer.get(RESUME_CAPABILITY) is True else {}
         while True:
           wait_for_permission(permission, connected, waiting, sleep)
           try:
             upload(client, manifest, Path('/data/jetson-usb-cache'), allowed,
-                   lambda state, fraction: publish('updating', peer=peer,
-                                                  host_update={'state': state, 'fraction': fraction, 'integrity': 'sha256'}))
+                   lambda state, fraction: report({'state': state, 'fraction': fraction, 'integrity': 'sha256'}),
+                   **options)
             break
           except PermissionLost:
             # Permission loss is not a reason to tear down/re-enumerate USB.
-            # BEGIN restarts staging only after a new fresh approval; no install
-            # or file-byte requests are sent while waiting. Real I/O errors propagate.
+            # Renew permission before any new BEGIN or file-byte request.
             if not connected():
               raise ConnectionError('Jetson disconnected during USB transfer') from None
   while connected():
@@ -129,7 +149,7 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
       # The gate may hand USB to the runtime before our final STATE_REQ.
       # Greet the new server instead of sending boot selections indefinitely.
       break
-    publish('updating', peer=peer, host_update=value)
+    report(value)
     if value.get('state') == 'ready':
       break
     sleep(.2 if parked_gate or internal_gate else .5)
