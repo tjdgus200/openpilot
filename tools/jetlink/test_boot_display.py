@@ -18,6 +18,7 @@ import boot_status
   ('01effc679eb46d6036ce0302673a87fe2dcfcc95a679daeeb929679e53c3647a', 'N16 Nav'),
   ('6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21', 'Light speed'),
   ('909a140019050a9d7f00db22dd4f4085928d2af9474a82244672ddab964f95a8', 'Light speed v2'),
+  ('be6030a8b0c6a5a0d8b77675c6f1bd652ccfc32c818fbb914b2bc4a8799345b7', 'Fairy Tale v1.1'),
   ('404a18cf', '--'), (None, '--'), ({}, '--'),
 ])
 def test_boot_model_names_require_exact_known_sha(sha, label):

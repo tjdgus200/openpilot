@@ -58,8 +58,8 @@ def test_comma_only_reboot_retires_resident_host_before_any_engine_request(resid
   assert r.reports and r.owner.token == r.lease.token
 
 
-@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2'])
-def test_all_five_exact_model_pins_reconcile_without_preparing_old_engine(resident, monkeypatch, key):
+@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2', 'fairy-tale-v1-1'])
+def test_exact_model_pins_reconcile_without_preparing_old_engine(resident, monkeypatch, key):
   from jetlink.spec import ModelSpec
   from openpilot.common import big_model_catalog
   from openpilot.selfdrive.modeld.jetlink import contracts

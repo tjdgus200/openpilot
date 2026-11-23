@@ -116,6 +116,7 @@ def model_name(sha):
     '404a18cfd86d29637d20c697dfde245bb47c666ae016730ab674c65f4d1e1aa4': 'CTV3M',
     '6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21': 'Light speed',
     '909a140019050a9d7f00db22dd4f4085928d2af9474a82244672ddab964f95a8': 'Light speed v2',
+    'be6030a8b0c6a5a0d8b77675c6f1bd652ccfc32c818fbb914b2bc4a8799345b7': 'Fairy Tale v1.1',
   }.get(sha, '--') if isinstance(sha, str) else '--'
 
 

@@ -24,7 +24,8 @@ def pv5_manifest(key='n16'):
   spec = C.model_spec(key)
   value['model'].update(sha256=spec['sha256'], size=spec['nbytes'])
   value['profile'] = 'test-' + key
-  value['source_commit'] = {'n16': 'a', 'flip-flop': 'b', 'ctv3m': 'c', 'light-speed': 'd', 'light-speed-2': 'e'}[key] * 40
+  value['source_commit'] = {'n16': 'a', 'flip-flop': 'b', 'ctv3m': 'c', 'light-speed': 'd', 'light-speed-2': 'e',
+                            'fairy-tale-v1-1': 'f'}[key] * 40
   return value
 
 
@@ -91,15 +92,15 @@ def test_model_choice_does_not_use_retired_or_arbitrary_paths(store):
       C.usb_release(key)
 
 
-@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2'])
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2', 'fairy-tale-v1-1'])
 def test_pv5_model_requires_pv5_package_and_stays_frozen_until_reboot(store, monkeypatch, key):
   assert key not in C.available()  # Require our matching PV5 package, not an official host.
   with pytest.raises(ValueError, match='not available'):
     C.select(key)
   C.USB_PIN.write_text(json.dumps(pv5_manifest()))
-  for model in ('n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2'):
+  for model in ('n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2', 'fairy-tale-v1-1'):
     (C.USB_DIRECTORY / ('pv5-usb-' + model + '.json')).write_text(json.dumps(pv5_manifest(model)))
-  assert set(C.available()) == {'n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2'}
+  assert set(C.available()) == {'n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2', 'fairy-tale-v1-1'}
   assert C.freeze_boot() == 'n16'
   C.select(key)
   assert C.freeze_boot() == C.effective_id() == 'n16'
@@ -111,7 +112,7 @@ def test_pv5_model_requires_pv5_package_and_stays_frozen_until_reboot(store, mon
   assert C.effective_id() == key
 
 
-@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2'])
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2', 'fairy-tale-v1-1'])
 @pytest.mark.parametrize('fault', ['model', 'source'])
 def test_pv5_model_rejects_other_models_package_and_duplicate_runtime_id(store, fault, key):
   C.USB_PIN.write_text(json.dumps(pv5_manifest()))
@@ -280,7 +281,7 @@ def test_catalog_releases_are_signed_and_match_exact_onnx_contracts():
   from update_host import validate_manifest, verify_signature
   for key, entry in C.catalog().items():
     if entry.get('requires_pv5_usb'):
-      assert key in ('ctv3m', 'light-speed', 'light-speed-2') and 'jetson_release' not in entry
+      assert key in ('ctv3m', 'light-speed', 'light-speed-2', 'fairy-tale-v1-1') and 'jetson_release' not in entry
       continue  # USB owner policy is separate; never fabricate an official signature.
     release = json.loads((C.DIRECTORY / entry['jetson_release']).read_text())
     validate_manifest(release)
@@ -386,7 +387,25 @@ def test_light_speed_v2_has_its_own_identity_and_matching_state_contract():
   assert all(not np.any(value) for value in queues.state.values())
 
 
-@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2'])
+def test_fairy_tale_v1_1_uses_its_exact_checkpoint_and_operational_contract():
+  from jetlink.spec import ModelSpec
+  from openpilot.selfdrive.modeld.jetlink.contracts import model_name, validate_model_spec
+
+  key = 'fairy-tale-v1-1'
+  entry = C.catalog()[key]
+  pin = C.model_spec(key)
+  spec = ModelSpec.from_dict(pin)
+  assert validate_model_spec(spec) is spec and not C.noo(key)
+  assert spec.sha256 == 'be6030a8b0c6a5a0d8b77675c6f1bd652ccfc32c818fbb914b2bc4a8799345b7'
+  assert spec.nbytes == 766137036
+  assert spec.checkpoint.endswith('3f1a78e6-9a79-4d85-b796-1cd573bd5a3a/32768')
+  assert model_name(spec) == 'Fairy Tale v1.1 (3f1a78e6)'
+  assert json.loads((C.DIRECTORY / (key + '-egpu.json')).read_text()) == entry['egpu']
+  reference = C.model_spec('light-speed-2')
+  assert all(pin[field] == reference[field] for field in ('input_shapes', 'output_shapes', 'output_slices', 'frame_skip'))
+
+
+@pytest.mark.parametrize('key', ['ctv3m', 'light-speed', 'light-speed-2', 'fairy-tale-v1-1'])
 def test_missing_pv5_pin_does_not_fall_back_to_another_models_signed_host(store, key):
   import os
   import subprocess
@@ -454,7 +473,7 @@ assert C.effective_id() == 'n16'
   subprocess.run([sys.executable, '-P', '-c', code], env=dict(os.environ, PYTHONPATH=str(C.ROOT)), check=True)
 
 
-@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2'])
+@pytest.mark.parametrize('key', ['n16', 'flip-flop', 'ctv3m', 'light-speed', 'light-speed-2', 'fairy-tale-v1-1'])
 def test_published_pv5_selection_uses_frozen_models_own_usb_release(store, key):
   import os
   import subprocess
@@ -463,7 +482,7 @@ import sys
 from pathlib import Path
 from openpilot.common import big_model_catalog as C
 key=sys.argv[1]
-assert set(C.available()) == {'n16','flip-flop','ctv3m','light-speed','light-speed-2'}
+assert set(C.available()) == {'n16','flip-flop','ctv3m','light-speed','light-speed-2','fairy-tale-v1-1'}
 C.select(key)
 assert C.freeze_boot() == key
 original=Path.is_file

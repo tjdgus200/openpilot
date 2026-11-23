@@ -83,5 +83,20 @@
     "jetson_spec": "light-speed-2.json",
     "display_name": "Light speed v2 (ea2f516f)",
     "requires_pv5_usb": true
+  },
+  "fairy-tale-v1-1": {
+    "name": "Fairy Tale v1.1",
+    "display_name": "Fairy Tale v1.1 (3f1a78e6)",
+    "requires_pv5_usb": true,
+    "source_ref": "be5faaedf153f7f1d1303d2b74f20b1b784605aa",
+    "manifest_url": "https://raw.githubusercontent.com/tjdgus200/openpilot/carrot-nav-pv5/openpilot/selfdrive/modeld/model_catalog/fairy-tale-v1-1-egpu.json",
+    "egpu": {
+      "model_id": "comma-fairy-tale-v1-1-be5faae-e62c2ae9",
+      "filename": "big_driving_tinygrad.pkl",
+      "size": 764592225,
+      "sha256": "e62c2ae933bd6d3e7a4b3c548a8b6b90ebf9aee7420bb9cbafbd2b2e1e9379bc",
+      "url": "https://huggingface.co/buckets/commaai/openpilot-lfs/resolve/sha256/e62c2ae933bd6d3e7a4b3c548a8b6b90ebf9aee7420bb9cbafbd2b2e1e9379bc"
+    },
+    "jetson_spec": "fairy-tale-v1-1.json"
   }
 }
