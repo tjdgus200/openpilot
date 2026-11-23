@@ -358,9 +358,10 @@ case "${1:-gadget}" in
     else
       command -v dnsmasq >/dev/null || fail "dnsmasq is required for the iOS cable DHCP service"
       leases_prepare
+      # The paired Jetson image uses .254 for isolated, key-only USB SSH.
       dnsmasq --conf-file=/dev/null --bind-interfaces --interface="$dev" \
         --listen-address="$ADDRESS" --except-interface=lo --port=0 \
-        --dhcp-range=192.168.60.2,192.168.60.254,255.255.255.0,10m \
+        --dhcp-range=192.168.60.2,192.168.60.253,255.255.255.0,10m \
         --dhcp-option=3 --dhcp-option=6 --dhcp-leasefile="$LEASE_DIR/dnsmasq.leases" \
         --user="$dhcp_user" --group="$dhcp_group" --pid-file="$PIDFILE" 9>&-
       dhcp_process record

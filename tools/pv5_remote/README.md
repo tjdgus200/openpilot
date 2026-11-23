@@ -1,3 +1,31 @@
+## Jetson SSH through the parked comma
+
+The NVMe image containing `install_usb_management.py` accepts SSH for the
+`jetlink` account at `192.168.60.254:2222` on the Jetlink cable. Provision
+your public key through `CARROTSETUP/setup.json` (`ssh_public_keys`). Read the
+board's `/etc/ssh/ssh_host_ed25519_key.pub` from a trusted local console or
+existing authenticated channel after provisioning. On the PC, add the verified
+public host key to the user's SSH known_hosts under the alias `pv5-jetson-usb`,
+in the form `pv5-jetson-usb ssh-ed25519 <board-public-key>`.
+
+The comma needs this version's `jetson_usb.py` and DHCP range reservation, the
+existing enrolled and enabled Park SSH service, and a working composite CDC-NCM
+connection in the normal `auto` transport mode. With `pv5-park` configured in
+your PC SSH config for that enrolled comma (its specific host, port, user,
+owner identity and pinned host key), run the following using your Jetson identity
+file. Both private keys stay on the PC.
+
+```sh
+ssh -o HostKeyAlias=pv5-jetson-usb -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -i ~/.ssh/jetson_owner -o "ProxyCommand=ssh -T pv5-park python3 -IB /data/openpilot/tools/pv5_remote/jetson_usb.py" -p 2222 jetlink@192.168.60.254
+```
+
+The proxy opens one connection through the current helper-owned NCM
+interface from the existing Park guard cgroup. Revoking the Park guard
+closes its process. The proxy does not reconnect or replay commands.
+With bare USB bulk or unavailable NCM, SSH through this path is unavailable.
+The Jetson shell uses the isolated cable network namespace. The DHCP
+reservation takes effect when the cable's DHCP service starts again.
+
 ## Parked vehicle automatic access (2026-11-18 candidate)
 
 The owner selected automatic access while the real PV5 remains in Park, with
