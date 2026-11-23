@@ -5,6 +5,7 @@ from opendbc.car.hyundai.scalar import clip_float
 from opendbc.car import CanBusBase, DT_CTRL
 from opendbc.car.carlog import carlog
 from opendbc.car.crc import CRC16_XMODEM
+from opendbc.car.hyundai.lane_line_time import PV5_LANE_MARKING_MAX_AGE_NS
 from opendbc.car.hyundai.values import CAR, HyundaiFlags, HyundaiExtFlags
 from opendbc.car.hyundai.stopping import MOVING_SPEED, STOP_LOWER_BAND
 from opendbc.car.hyundai.stop_object import apply_signal_stop_object
@@ -19,6 +20,8 @@ LaneChangeDirection = log.LaneChangeDirection
 TurnDirection = log.Desire
 
 ACC_CONTROL_DT = 1.0 / 50.0
+# DBC display states and the observed PV5 dashed code 8.
+PV5_STOCK_CLUSTER_LINE_STATES = (0, 1, 2, 4, 6, 8)
 
 
 def longitudinal_interlock_active(CS) -> bool:
@@ -924,6 +927,23 @@ def _apply_pv5_bsd_cluster_guide(values, out, frame):
     values["BCA_RIGHT"] = 2
 
 
+def _pv5_stock_cluster_lanes_fresh(CS, camera_bus, now_ns):
+  """Validate the original camera template for display using controller time."""
+  parser = getattr(CS, "cp_cam", None)
+  if not CS.out.canValid or CS.out.canTimeout or now_ns is None or parser is None or parser.bus != camera_bus:
+    return False
+  state = parser.message_states.get(0x161)
+  if (state is None or not state.timestamps or state.ignore_checksum or state.ignore_counter or state.counter_fail
+      or len(parser.dat.get(0x161, b"")) != 32 or CS.adrv_0x161 is not parser.vl.get(0x161)):
+    return False
+  stamp = state.timestamps[-1]
+  # Reject a cached sample superseded by a bad frame, a regressed clock, or
+  # an ambiguous batch. No display validity is fed back to lane control.
+  return (state.last_invalid_nanos < stamp <= parser._last_update_nanos
+          and 0 <= now_ns - stamp <= PV5_LANE_MARKING_MAX_AGE_NS
+          and stamp == max(state.timestamps) and state.timestamps.count(stamp) == 1)
+
+
 def _apply_cluster_lane_lines(values, CS, lat_active, desire):
   curvature = round(CS.out.steeringAngleDeg / 3)
   mag = min(abs(curvature), 15)
@@ -1186,37 +1206,48 @@ def create_ccnc_messages(CP, packer, CAN, frame, CC, CS, hud_control,
         _suppress_trailer_mode_warning(values, CS)
 
         trailer_lane_change_blocked = CS.trailer_connected
-        # Preserve the received PV5 line pattern and geometry in the stock 0x161.
-        if not (pv5_cluster and not getattr(CP, "notCar", False)):
+        real_pv5 = pv5_cluster and not getattr(CP, "notCar", False)
+        stock_lanes_fresh = real_pv5 and _pv5_stock_cluster_lanes_fresh(CS, CAN.CAM, now_ns)
+        if real_pv5:
+          if not stock_lanes_fresh:
+            values["LANELINE_LEFT_POSITION"] = values["LANELINE_RIGHT_POSITION"] = 0
+            values["LANELINE_CURVATURE"] = values["LANELINE_CURVATURE_DIRECTION"] = 0
+        else:
           curvature = round(CS.out.steeringAngleDeg / 3)
           values["LANELINE_CURVATURE"] = (min(abs(curvature), 15) + (-1 if curvature < 0 else 0)) if lat_active else 0
           values["LANELINE_CURVATURE_DIRECTION"] = 1 if curvature < 0 and lat_active else 0
 
-          if trailer_lane_change_blocked:
-            values["LANELINE_LEFT"] = 2 if hud_control.leftLaneVisible else 0
-            values["LANELINE_RIGHT"] = 2 if hud_control.rightLaneVisible else 0
+        if trailer_lane_change_blocked:
+          values["LANELINE_LEFT"] = 2 if hud_control.leftLaneVisible else 0
+          values["LANELINE_RIGHT"] = 2 if hud_control.rightLaneVisible else 0
+        else:
+          lane_color = 6 if md is not None and md.meta.laneChangeAvailableLeft else 2
+          if lane_line_check >= 1:
+            lane_line_warn_left = CS.out.leftLaneLine % 10 not in (0, 5)
           else:
-            lane_color = 6 if md is not None and md.meta.laneChangeAvailableLeft else 2
-            if lane_line_check >= 1:
-              lane_line_warn_left = CS.out.leftLaneLine % 10 not in (0, 5)
-            else:
-              lane_line_warn_left = CS.out.leftLaneLine // 10 == 2
-            lane_color = 4 if lane_line_warn_left or CS.out.leftBlindspot else lane_color
-            if hud_control.leftLaneDepart:
-              values["LANELINE_LEFT"] = 4 if (frame // 50) % 2 == 0 else 1
-            else:
-              values["LANELINE_LEFT"] = lane_color if hud_control.leftLaneVisible else 0
+            lane_line_warn_left = CS.out.leftLaneLine // 10 == 2
+          lane_color = 4 if lane_line_warn_left or CS.out.leftBlindspot else lane_color
+          stock_left = values["LANELINE_LEFT"] if stock_lanes_fresh else None
+          if hud_control.leftLaneDepart:
+            values["LANELINE_LEFT"] = 4 if (frame // 50) % 2 == 0 else 1
+          elif stock_left in PV5_STOCK_CLUSTER_LINE_STATES and (lane_color == 2 or stock_left == 4):
+            values["LANELINE_LEFT"] = stock_left
+          else:
+            values["LANELINE_LEFT"] = lane_color if hud_control.leftLaneVisible or (real_pv5 and lane_color == 4) else 0
 
-            lane_color = 6 if md is not None and md.meta.laneChangeAvailableRight else 2
-            if lane_line_check >= 1:
-              lane_line_warn_right = CS.out.rightLaneLine % 10 not in (0, 5)
-            else:
-              lane_line_warn_right = CS.out.rightLaneLine // 10 == 2
-            lane_color = 4 if lane_line_warn_right or CS.out.rightBlindspot else lane_color
-            if hud_control.rightLaneDepart:
-              values["LANELINE_RIGHT"] = 4 if (frame // 50) % 2 == 0 else 1
-            else:
-              values["LANELINE_RIGHT"] = lane_color if hud_control.rightLaneVisible else 0
+          lane_color = 6 if md is not None and md.meta.laneChangeAvailableRight else 2
+          if lane_line_check >= 1:
+            lane_line_warn_right = CS.out.rightLaneLine % 10 not in (0, 5)
+          else:
+            lane_line_warn_right = CS.out.rightLaneLine // 10 == 2
+          lane_color = 4 if lane_line_warn_right or CS.out.rightBlindspot else lane_color
+          stock_right = values["LANELINE_RIGHT"] if stock_lanes_fresh else None
+          if hud_control.rightLaneDepart:
+            values["LANELINE_RIGHT"] = 4 if (frame // 50) % 2 == 0 else 1
+          elif stock_right in PV5_STOCK_CLUSTER_LINE_STATES and (lane_color == 2 or stock_right == 4):
+            values["LANELINE_RIGHT"] = stock_right
+          else:
+            values["LANELINE_RIGHT"] = lane_color if hud_control.rightLaneVisible or (real_pv5 and lane_color == 4) else 0
 
         values["LCA_LEFT_ARROW"] = 2 if CS.out.leftBlinker else 0
         values["LCA_RIGHT_ARROW"] = 2 if CS.out.rightBlinker else 0

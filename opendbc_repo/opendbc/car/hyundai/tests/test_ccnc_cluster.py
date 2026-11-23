@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from opendbc.can import CANDefine, CANPacker
+from opendbc.can import CANDefine, CANPacker, CANParser
 from opendbc.can.parser import get_raw_value
 from opendbc.car import structs
 from opendbc.car.hyundai import hyundaicanfd
@@ -124,6 +124,51 @@ def test_bsd_background_can_frames_preserve_payload_and_restore_on_event_end(mon
   assert stock == original
 
 
+@pytest.fixture
+def stock_lanes():
+  parser = CANParser('hyundai_canfd_generated', [('ADRV_0x161', 20)], 2)
+  packer = CANPacker('hyundai_canfd_generated')
+  line_fields = dict(LANELINE_LEFT=8, LANELINE_RIGHT=2, LANELINE_LEFT_POSITION=12,
+                     LANELINE_RIGHT_POSITION=14, LANELINE_CURVATURE=7, LANELINE_CURVATURE_DIRECTION=1)
+
+  def packet(counter=1, bus=2, **overrides):
+    return packer.make_can_msg('ADRV_0x161', bus, dict(line_fields, COUNTER=counter) | overrides)
+
+  return SimpleNamespace(parser=parser, packet=packet, fields=line_fields, stamp=1_000_000_000)
+
+
+@pytest.fixture
+def stock_lane_sender(monkeypatch, stock_lanes):
+  from openpilot.cereal import log
+  monkeypatch.setattr(hyundaicanfd, 'Params', lambda: SimpleNamespace(get_int=lambda key: 0, get=lambda key: '0'))
+  parser = stock_lanes.parser
+  stock = parser.vl[0x161]
+  state = SimpleNamespace(
+    cp_cam=parser, adrv_0x161=stock, lfahda_cluster=None, cruise_buttons_msg=None,
+    adrv_0x200=None, adrv_0x1ea=None, ccnc_0x162=None, is_metric=True,
+    paddle_button_prev=0, softHoldActive=0, trailer_connected=False,
+    out=structs.CarState(canValid=True), modelV2=log.ModelDataV2.new_message(),
+  )
+  cp = SimpleNamespace(flags=HyundaiFlags.CAMERA_SCC | HyundaiFlags.CANFD, carFingerprint=CAR.KIA_PV5, notCar=False)
+  control = structs.CarControl(enabled=True, latActive=True)
+  control.hudControl.leftLaneVisible = control.hudControl.rightLaneVisible = True
+  packer = CANPacker('hyundai_canfd_generated')
+  definition = packer.dbc.name_to_msg['ADRV_0x161']
+
+  def send(when, frame=5):
+    original = stock.copy()
+    (addr, data, bus), = hyundaicanfd.create_ccnc_messages(
+      cp, packer, SimpleNamespace(ECAN=0, CAM=2), frame, control, state, control.hudControl,
+      0, False, False, 0, False, 0, 0, now_ns=when)
+    assert (addr, bus) == (0x161, 0)
+    assert stock == original
+    values = {key: get_raw_value(data, sig) for key, sig in definition.sigs.items()}
+    assert values['CHECKSUM'] == hyundaicanfd.hkg_can_fd_checksum(addr, None, bytearray(data))
+    return values
+
+  return SimpleNamespace(state=state, control=control, send=send)
+
+
 @pytest.mark.parametrize('fingerprint,not_car,preserve_stock', (
   (CAR.KIA_PV5, False, True),
   (CAR.KIA_PV5, True, False),
@@ -131,18 +176,19 @@ def test_bsd_background_can_frames_preserve_payload_and_restore_on_event_end(mon
 ))
 @pytest.mark.parametrize('lat_active', (False, True))
 @pytest.mark.parametrize('trailer', (False, True))
-def test_ccnc_preserves_original_lane_fields_only_for_real_pv5(monkeypatch, fingerprint, not_car, preserve_stock, lat_active, trailer):
+def test_ccnc_preserves_original_lane_fields_only_for_real_pv5(monkeypatch, stock_lanes, fingerprint, not_car,
+                                                               preserve_stock, lat_active, trailer):
   from openpilot.cereal import log
   monkeypatch.setattr(hyundaicanfd, 'Params', lambda: SimpleNamespace(get_int=lambda key: 0, get=lambda key: '0'))
   packer = CANPacker('hyundai_canfd_generated')
   definition = packer.dbc.name_to_msg['ADRV_0x161']
-  original_lines = dict(LANELINE_LEFT=8, LANELINE_RIGHT=2, LANELINE_LEFT_POSITION=12,
-                        LANELINE_RIGHT_POSITION=14, LANELINE_CURVATURE=7, LANELINE_CURVATURE_DIRECTION=1)
-  stock = dict.fromkeys(definition.sigs, 0)
-  stock.update(original_lines, COUNTER=17)
+  original_lines = stock_lanes.fields
+  parser, stamp = stock_lanes.parser, stock_lanes.stamp
+  parser.update([(stamp, [stock_lanes.packet(counter=1)])])
+  stock = parser.vl[0x161]
   original = stock.copy()
   state = SimpleNamespace(
-    adrv_0x161=stock, lfahda_cluster=None, cruise_buttons_msg=None,
+    cp_cam=parser, adrv_0x161=stock, lfahda_cluster=None, cruise_buttons_msg=None,
     adrv_0x200=None, adrv_0x1ea=None, ccnc_0x162=None, is_metric=True,
     paddle_button_prev=0, softHoldActive=0, trailer_connected=trailer,
     out=structs.CarState(canValid=True, steeringAngleDeg=9., leftBlinker=True, leftBlindspot=True),
@@ -154,19 +200,97 @@ def test_ccnc_preserves_original_lane_fields_only_for_real_pv5(monkeypatch, fing
   control.hudControl.leftLaneDepart = True
   (address, payload, bus), = hyundaicanfd.create_ccnc_messages(
     cp, packer, SimpleNamespace(ECAN=0, CAM=2), 5, control, state, control.hudControl,
-    0, False, False, 0, False, 0, 0)
+    0, False, False, 0, False, 0, 0, now_ns=stamp)
   assert (address, bus) == (0x161, 0)
   values = {key: get_raw_value(payload, sig) for key, sig in definition.sigs.items()}
-  expected = original_lines if preserve_stock else dict(
+  expected = dict(original_lines, LANELINE_LEFT=2 if trailer else 4) if preserve_stock else dict(
     original_lines, LANELINE_LEFT=2 if trailer else 4,
     LANELINE_CURVATURE=3 if lat_active else 0, LANELINE_CURVATURE_DIRECTION=0)
   assert {key: values[key] for key in original_lines} == expected
   if fingerprint == CAR.KIA_PV5:
     assert values['BACKGROUND'] == values['LANE_HIGHLIGHT'] == 5
     assert values['BCA_LEFT'] == 2
-  assert values['COUNTER'] == 18
+  assert values['COUNTER'] == 2
   assert values['CHECKSUM'] == hyundaicanfd.hkg_can_fd_checksum(address, None, bytearray(payload))
   assert stock == original
+
+
+@pytest.mark.parametrize('fault', (
+  'fresh', 'limit', 'expired', 'future', 'missing_time', 'invalid_can', 'timeout', 'wrong_bus', 'echo',
+  'wrong_parser', 'wrong_template', 'ignore_checksum', 'ignore_counter', 'bad_crc', 'bad_counter',
+  'same_timestamp_bad_crc', 'short', 'duplicate_stamp', 'backward_stamp', 'regressed_parser_time',
+))
+def test_ccnc_pv5_stock_lane_source_faults(stock_lanes, stock_lane_sender, fault):
+  parser, stamp, packet = stock_lanes.parser, stock_lanes.stamp, stock_lanes.packet
+  stock = parser.vl[0x161]
+  state, send = stock_lane_sender.state, stock_lane_sender.send
+  bus = {'wrong_bus': 0, 'echo': 130}.get(fault, 2)
+  parser.update([(stamp, [packet(bus=bus, LANELINE_RIGHT=8)])])
+  now = stamp
+  if fault in ('limit', 'expired', 'future', 'missing_time'):
+    now = dict(limit=stamp + 250_000_000, expired=stamp + 250_000_001, future=stamp - 1, missing_time=0)[fault]
+  elif fault == 'invalid_can':
+    state.out.canValid = False
+  elif fault == 'timeout':
+    state.out.canTimeout = True
+  elif fault == 'wrong_parser':
+    parser.bus = 1
+  elif fault == 'wrong_template':
+    state.adrv_0x161 = stock.copy()
+  elif fault in ('ignore_checksum', 'ignore_counter'):
+    setattr(parser.message_states[0x161], fault, True)
+  elif fault in ('bad_crc', 'same_timestamp_bad_crc'):
+    addr, data, bus = packet(counter=2)
+    now = stamp if fault == 'same_timestamp_bad_crc' else stamp + 1
+    parser.update([(now, [(addr, bytes([data[0] ^ 1]) + data[1:], bus)])])
+    assert parser.message_states[0x161].timestamps[-1] == stamp
+  elif fault == 'bad_counter':
+    now = stamp + 1
+    parser.update([(now, [packet(counter=5, LANELINE_RIGHT=8)])])
+    assert parser.message_states[0x161].counter_fail > 0
+  elif fault == 'short':
+    parser.dat[0x161] = parser.dat[0x161][:-1]
+  elif fault in ('duplicate_stamp', 'backward_stamp'):
+    parser.update([(stamp - (fault == 'backward_stamp'), [packet(counter=2, LANELINE_RIGHT=8)])])
+  elif fault == 'regressed_parser_time':
+    parser.update([(stamp - 1, [])])
+
+  expected = dict(stock_lanes.fields, LANELINE_RIGHT=8) if fault in ('fresh', 'limit') else dict(
+    dict.fromkeys(stock_lanes.fields, 0), LANELINE_LEFT=2, LANELINE_RIGHT=2)
+  values = send(now)
+  assert {key: values[key] for key in expected} == expected
+
+  if fault in ('duplicate_stamp', 'backward_stamp', 'bad_crc', 'same_timestamp_bad_crc'):
+    parser.update([(stamp + 50_000_000, [packet(counter=3)])])
+    values = send(stamp + 50_000_000, 10)
+    assert {key: values[key] for key in stock_lanes.fields} == stock_lanes.fields
+
+
+@pytest.mark.parametrize('left,right,expected', ((0, 1, (0, 1)), (2, 6, (2, 6)), (8, 4, (8, 4)), (15, 8, (2, 8))))
+def test_ccnc_pv5_filters_unobserved_stock_codes_per_side(stock_lanes, stock_lane_sender, left, right, expected):
+  stamp = stock_lanes.stamp
+  stock_lanes.parser.update([(stamp, [stock_lanes.packet(LANELINE_LEFT=left, LANELINE_RIGHT=right)])])
+  values = stock_lane_sender.send(stamp)
+  assert (values['LANELINE_LEFT'], values['LANELINE_RIGHT']) == expected
+
+
+@pytest.mark.parametrize('reason,expected', (('departure_off', 1), ('bsd', 4), ('boundary', 4), ('available', 6), ('stock_warning', 4)))
+def test_ccnc_pv5_gives_lane_warnings_priority_over_stock_pattern(stock_lanes, stock_lane_sender, reason, expected):
+  state, control = stock_lane_sender.state, stock_lane_sender.control
+  if reason == 'departure_off':
+    control.hudControl.rightLaneDepart = True
+  elif reason == 'bsd':
+    control.hudControl.rightLaneVisible = False
+    state.out.rightBlindspot = True
+  elif reason == 'boundary':
+    state.out.rightLaneLine = 20
+  else:
+    state.modelV2.meta.laneChangeAvailableRight = True
+  stamp = stock_lanes.stamp
+  packet = stock_lanes.packet(LANELINE_RIGHT=4 if reason == 'stock_warning' else 8)
+  stock_lanes.parser.update([(stamp, [packet])])
+  values = stock_lane_sender.send(stamp, 55 if reason == 'departure_off' else 5)
+  assert (values['LANELINE_LEFT'], values['LANELINE_RIGHT']) == (8, expected)
 
 
 @pytest.mark.parametrize('left,right', ((True, False), (False, True), (True, True)))
