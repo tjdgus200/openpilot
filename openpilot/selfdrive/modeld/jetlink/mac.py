@@ -13,6 +13,7 @@ from openpilot.common.jetson_model import is_jetson
 from openpilot.selfdrive.modeld.jetlink.link import SPEC, validate_spec
 from openpilot.selfdrive.modeld.jetlink.contracts import JETSON_SPEC, validate_model_spec
 from openpilot.selfdrive.modeld.jetlink.selection import ModelChanged, approved_spec, remember_spec
+from openpilot.selfdrive.modeld.jetlink.startup import BootReceiverRequired, legacy_usb_receiver_required
 from jetlink.client import EngineMissing
 from jetlink.transport.base import LinkTimeout
 
@@ -131,6 +132,10 @@ def prepare(client, peer, offroad, connected, progress, cache=CACHE, mode='usb')
     try:
       result = client.ensure_engine(JETSON_SPEC.sha256, JETSON_SPEC.nbytes,
                                     frame_skip=JETSON_SPEC.frame_skip, build_timeout=30, should_stop=stopped)
+    except EngineMissing as exc:
+      if legacy_usb_receiver_required(peer):
+        raise BootReceiverRequired('The selected Jetson model needs the USB update receiver') from exc
+      raise
     finally:
       client.progress_cb = None
       client._should_stop = lambda: False

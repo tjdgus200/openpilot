@@ -25,6 +25,7 @@ from openpilot.selfdrive.modeld.jetlink.scheduling import UsbCompletionPriority
 from openpilot.selfdrive.modeld.jetlink.contracts import JETSON_SPEC, model_name
 from openpilot.selfdrive.modeld.jetlink.selection import ModelChanged, check_loaded
 from openpilot.selfdrive.modeld.jetlink.startup import (CAPABILITY as BOOT_UPDATE_CAPABILITY, FAILURE_STAGES, wait_for_boot_update,
+                                                      BootReceiverRequired, legacy_usb_receiver_required,
                                                        RuntimeHandoff, ConnectionStartup)
 from jetlink.client import JetlinkClient
 from jetlink.transport.base import LinkError, LinkTimeout
@@ -162,9 +163,9 @@ def publish(status, spec=None, **extra):
   now = time.monotonic()
   peer = extra.get('peer') or {}
   update = extra.get('host_update') or {}
-  if status == 'updating' and is_jetson(peer) and update.get('state') == 'failed':
+  if status == 'updating' and is_jetson(peer) and update.get('state') in ('failed', 'receiver_required'):
     stage = update.get('failure_stage')
-    LAST_UPDATE_FAILURE = {'updated': now, 'state': 'failed', 'failure_stage': stage if stage in FAILURE_STAGES else None}
+    LAST_UPDATE_FAILURE = {'updated': now, 'state': update['state'], 'failure_stage': stage if stage in FAILURE_STAGES else None}
   elif (status not in ('connecting', 'retrying', 'updating') or (peer and not is_jetson(peer)) or
         update.get('state') in ('ready', 'waiting_comma_reboot')):
     LAST_UPDATE_FAILURE = None
@@ -764,8 +765,12 @@ def main():
 
         peer = wait_for_selection(client, peer, progress)
         if needs_setup:
+          legacy_receiver = legacy_usb_receiver_required(peer)
           def waiting_for_park(report=progress, current_wifi=wifi, current_client=client):
-            report('waiting-park', None, 'Jetson setup waits for fresh Park and zero speed')
+            if legacy_receiver and setup_permission.reason == 'boot_receiver_required':
+              publish('updating', peer=peer, host_update={'state': 'receiver_required'})
+            else:
+              report('waiting-park', None, 'Jetson setup waits for fresh Park and zero speed')
             if current_wifi is not None:
               current_wifi.send(current_client)
             current_client.state()
@@ -797,6 +802,9 @@ def main():
       except RuntimeHandoff as exc:
         log.info('%s', exc)
         publish('connecting', peer=peer, preparation={'stage': 'runtime-handoff'})
+      except BootReceiverRequired as exc:
+        log.info('%s', exc)
+        publish('updating', peer=peer, host_update={'state': 'receiver_required'})
       except PreparationDeferred as exc:
         log.info('%s', exc)
         publish('loading', peer=peer, preparation={'stage': 'waiting', 'message': str(exc)})

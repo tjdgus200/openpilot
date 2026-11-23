@@ -2,7 +2,7 @@
 from pathlib import Path
 import time
 from openpilot.selfdrive.modeld.jetlink.update_permission import Permission, bulk_scheduling, wait_for_permission
-from openpilot.common.jetson_model import selected_release
+from openpilot.common.jetson_model import is_jetson, selected_release
 
 CAPABILITY = 'carrot_boot_update_v1'
 MESSAGE = 0x4003
@@ -12,6 +12,20 @@ FAILURE_STAGES = ('checking_usb', 'checking_files', 'downloading', 'transferring
 
 class RuntimeHandoff(ConnectionError):
   """The boot gate deliberately handed its transport to the selected runtime."""
+
+
+class BootReceiverRequired(ValueError):
+  """The selected USB package cannot be installed by the attached host."""
+
+
+def legacy_usb_receiver_required(peer):
+  if not is_jetson(peer) or any(peer.get(key) is True for key in (
+      CAPABILITY, 'carrot_park_update_v1', 'carrot_boot_update_installed')):
+    return False
+  try:
+    return selected_release(RELEASE, required=True).get('delivery') == 'usb'
+  except (OSError, ValueError, KeyError, TypeError):
+    return False
 
 
 class ConnectionStartup:
@@ -94,7 +108,7 @@ def _run_boot_update(client, peer, wifi, connected, report, sleep):
     from tools.jetlink.usb_release import SHA256_CAPABILITY, CHECK_CAPABILITY, RESUME_CAPABILITY  # noqa: TID251
     from tools.jetlink.usb_release_client import PermissionLost, available, upload  # noqa: TID251
     if peer.get(SHA256_CAPABILITY) is not True:
-      raise ValueError('Install and locally enable the SHA-256 USB receiver on Jetson once')
+      raise BootReceiverRequired('Install and locally enable the SHA-256 USB receiver on Jetson once')
     usb_change = peer.get('usb_source_commit') != manifest['source_commit']
     if not usb_change:
       # A server installed through NAS can have the same commit but no USB

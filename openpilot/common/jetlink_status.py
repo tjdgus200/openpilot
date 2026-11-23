@@ -24,6 +24,8 @@ def update_badge(value):
   if not isinstance(value, dict):
     value = {}
   state = value.get('state')
+  if state == 'receiver_required':
+    return 'Jetson USB 업데이트 수신기 설치 필요', 'loading'
   if state == 'waiting_internet':
     return 'Jetson 업데이트 필요 · 인터넷 연결 대기', 'loading'
   if state == 'downloading':
@@ -135,6 +137,8 @@ def preparation_text(link, model):
       if 'ignition off' in message.lower():
         return '시동 끄고 모델 준비 필요'
       return '모델 준비 보류'
+    if phase == 'waiting-park':
+      return '모델 준비 대기 · P단/정차 확인'
     return '모델 준비 중'
   if link.get('state') == 'ready' and model:
     return '콤마 영상 준비 중' if model.get('warp_preparing') else '모델 전환 대기'
@@ -151,8 +155,9 @@ def diagnostics(snapshot=None):
   stamp = failed_update.get('updated') if isinstance(failed_update, dict) else None
   recent_failure = type(stamp) in (int, float) and 0 <= now - stamp < 35
   if saved.get('state') in ('connecting', 'retrying') and recent_failure and not model.get('active'):
-    text, _ = update_badge(failed_update)
-    return {'label': 'jetSON', 'state': 'retrying', 'severity': 'error', 'reason': text, 'addresses': [],
+    text, style = update_badge(failed_update)
+    return {'label': 'jetSON', 'state': 'retrying', 'severity': 'error' if style == 'error' else 'warning',
+            'reason': text, 'addresses': [],
             'temp_c': None, 'active': False, 'fresh': True, 'update': True}
   if not saved.get('peer') and saved.get('state') not in ('connecting', 'loading', 'retrying', 'blocked') and not model.get('active'):
     return None

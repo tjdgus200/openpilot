@@ -102,6 +102,48 @@ def test_keyless_upload_registration_activation_and_cached_reuse(installed, monk
   assert (installed.root / 'updater/release-signing-public.pem').read_bytes() == installed.official_key
 
 
+def test_legacy_protected_image_enrolls_before_usb_selection(env, monkeypatch):
+  monkeypatch.setattr(usb.os, 'sync', lambda: None)
+  factory_marker = env.root / 'boot-update-required'
+  factory_marker.unlink()
+  root = env.temporary / 'factory-app'
+  systemd = root / 'etc/systemd/system'
+  systemd.mkdir(parents=True)
+  (root / 'etc/carrot-jetlink-protected.json').write_text('{}')
+  (systemd / 'carrot-jetlink-update-apply.service').write_text(
+    'ExecStart=/opt/carrot-jetlink/venv/bin/python /opt/carrot-jetlink/updater/update_host.py activate\n')
+  for unit in ('carrot-jetlink', 'carrot-jetlink-hud'):
+    (systemd / (unit + '.service')).write_text('[Service]\nExecStart=/bin/true\n')
+  previous = (env.root / 'current').resolve()
+  key = env.root / 'updater/release-signing-public.pem'
+  key_bytes = key.read_bytes()
+  assert not usb.sha256_enabled(env.root)
+  assert not boot.enabled()
+  enroll.install_legacy_image(root, env.root)
+  assert boot.enabled() and usb.sha256_enabled(env.root)
+  assert key.read_bytes() == key_bytes
+  assert (env.root / 'current').resolve() == previous
+  assert not (root / 'opt/carrot-jetlink/boot-update-required').exists()
+  for unit in ('carrot-jetlink', 'carrot-jetlink-hud'):
+    dropin = (systemd / (unit + '.service.d/usb-bootstrap.conf')).read_text()
+    assert 'After=carrot-jetlink-update-apply.service' in dropin
+    assert 'wait_for_runtime()' in dropin
+  wire = Wire()
+  try:
+    wire.session.handle(NS(msg_type=p.Msg.HELLO_REQ, seq=1, payload=b'{}'))
+    hello = json.loads(wire.recv().payload)
+    assert hello[startup.CAPABILITY] is True
+    assert hello[usb.SHA256_CAPABILITY] and hello[usb.RESUME_CAPABILITY]
+    assert hello['loaded'] is None
+  finally:
+    wire.session.close()
+  env.value = prepare.prepare(env.package / 'host.tar.gz', env.package / 'model.onnx', 'test-usb',
+                              'https://example.invalid/host.tar.gz', 'https://example.invalid/model.onnx', env.temporary / 'public')
+  upload(env)
+  assert select_and_activate(env.value).done
+  assert (env.root / 'current/SOURCE_COMMIT').read_text() == 'b' * 40
+
+
 @pytest.mark.parametrize('reject_second', [False, True])
 def test_distinct_model_sources_switch_back_or_retain_prior_release(installed, monkeypatch, reject_second):
   import hashlib

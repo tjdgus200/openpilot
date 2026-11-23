@@ -103,6 +103,36 @@ def test_wait_and_model_preparation_are_progress_not_red(reports):
   assert status.badge() == ('jetSON 모델 준비 중', 'loading')
 
 
+def test_legacy_factory_cannot_start_the_pinned_usb_update(monkeypatch, reports):
+  from openpilot.selfdrive.modeld.jetlink import mac
+  from jetlink.client import EngineMissing
+
+  legacy = {'carrot_host': 'jetson', 'backend': 'trt', 'protocol': 2, 'loaded': None}
+  monkeypatch.setattr(startup, 'selected_release', lambda *a, **kw: {'delivery': 'usb'})
+  def missing(*args, **kwargs):
+    raise EngineMissing('factory has no selected engine')
+  client = NS(ensure_engine=missing)
+  startup.wait_for_boot_update(client, legacy, None, lambda: True, lambda *a, **kw: pytest.fail('unexpected update'))
+  with pytest.raises(startup.BootReceiverRequired):
+    mac.prepare(client, legacy, lambda: True, lambda: True, lambda *a: None)
+  for capability in (startup.CAPABILITY, 'carrot_park_update_v1', 'carrot_boot_update_installed'):
+    with pytest.raises(EngineMissing):
+      mac.prepare(client, {**legacy, capability: True}, lambda: True, lambda: True, lambda *a: None)
+  client.ensure_engine = lambda *a, **kw: mac.JETSON_SPEC
+  assert mac.prepare(client, legacy, lambda: True, lambda: True, lambda *a: None) is mac.JETSON_SPEC
+  reports('updating')
+  value = json.loads(status.LINK_STATUS.read_text())
+  failure = {'state': 'receiver_required', 'updated': 20.}
+  value['host_update'] = failure
+  status.LINK_STATUS.write_text(json.dumps(value))
+  text = 'Jetson USB 업데이트 수신기 설치 필요'
+  assert status.badge() == (text, 'loading')
+  assert status.diagnostics()['reason'] == text
+  value.update(state='connecting', host_update_failure=failure)
+  status.LINK_STATUS.write_text(json.dumps(value))
+  assert status.badge() == (text, 'loading')
+
+
 @pytest.mark.parametrize('message,label', [
   ('Jetlink model setup requires ignition off', '시동 끄고 모델 준비 필요'),
   ('Jetson disconnected', '모델 준비 보류'),

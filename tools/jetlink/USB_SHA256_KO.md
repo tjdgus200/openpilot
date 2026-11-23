@@ -45,6 +45,25 @@ root 소유 `updater/usb-sha256-policy.json`을 DATA에 기록합니다. 직전 
 `updater/before-usb-experiments/`에 보관합니다. USB 데이터로 이 정책을 켤 수는 없습니다.
 기존 이미지에 이미 부팅 업데이트와 보호 저장소가 설정돼 있어야 합니다.
 
+### 부팅 업데이트가 빠진 구형 보호 이미지
+
+콤마의 **Jetson USB 업데이트 수신기 설치 필요**는 연결한 젯슨으로 현재 선택한 USB 패키지를
+설치할 수 없다는 뜻입니다. 기존 모델을 실제로 불러올 수 있는 호스트는 그대로 사용할 수 있습니다.
+
+기존 보호 이미지의 APP와 CARROT_DATA를 오프라인에서 각각 읽기·쓰기로 마운트한 뒤,
+신뢰하는 소스의 Linux 작업 복사본에서 아래 명령을 실행합니다. 디스크 이미지 파일의 파티션에도
+같은 절차를 적용할 수 있습니다.
+
+```bash
+sudo python3 tools/jetlink/install_usb_receiver.py --sha256 \
+  --legacy-image-root /mnt/jetson-app --runtime /mnt/jetson-data/runtime
+```
+
+이 절차는 DATA의 업데이트 코드·수신 정책과 APP의 서비스 시작 가드만 바꿉니다.
+기존 모델, 현재 릴리스와 서명 공개키를 보존합니다. 다음 부팅에서는 보호 DATA가 마운트된 경우
+기존 추론·HUD 서비스가 부팅 게이트 뒤에서 대기합니다. 콤마와 연결하고 기존 정차 승인 조건이
+충족되면 선택된 모델을 기존 USB 패키지 검증·설치 경로로 전달합니다.
+
 ## 제작자 배포 절차
 
 소스를 먼저 커밋하고 기존 `build_host_bundle.py`로 번들을 만듭니다. 이후 다음 도구로
