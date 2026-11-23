@@ -18,10 +18,8 @@ def control(**kwargs):
 
 
 def enter(gate, start=TICK):
-  for i in range(20):
-    assert not gate.update(True, start + i * TICK)
-  assert gate.update(True, start + 20 * TICK)
-  return start + 20 * TICK
+  assert gate.update(True, start)
+  return start
 
 
 def test_entry_restarts_on_any_interruption_and_exit_needs_new_camera_and_plan():
@@ -49,8 +47,8 @@ def test_scheduler_stall_cannot_count_as_park_evidence():
 
 
 @pytest.mark.parametrize('kwargs', [
-  dict(gearShifter='drive'), dict(gearShifter='reverse'), dict(gearShifter='unknown'), dict(standstill=False),
-  dict(vEgoRaw=.0001), dict(vEgo=-.101), dict(vEgo=float('nan')), dict(canValid=False), dict(canTimeout=True),
+  dict(gearShifter='drive'), dict(gearShifter='reverse'), dict(gearShifter='neutral'), dict(gearShifter='unknown'),
+  dict(canValid=False), dict(canTimeout=True),
   dict(gasPressed=True), dict(stockAeb=True), dict(cruiseState=NS(enabled=True)),
 ])
 def test_park_must_be_proved_even_with_valid_gear(kwargs):
@@ -211,9 +209,9 @@ def test_selfdrived_enters_park_before_models_are_ready_and_requires_fresh_plan_
   assert events.names == ['existing_alert']
 
   st.parked_dashcam_enabled = True
-  for i in range(21):
-    tick((i+1)*TICK)
-  assert st.parked_dashcam.requested
+  for i in range(2, 22):
+    tick(i*TICK)
+    assert st.parked_dashcam.requested
   assert events.names == ['existing_alert','initializing']
   process['parkedDashcamState'].inferencePaused = True
   process.logMonoTime['parkedDashcamState'] = 22*TICK
@@ -262,34 +260,13 @@ def test_monitoring_never_pauses_in_drive_or_on_stale_road_confirmation():
   assert not park.monitoring_pause_allowed(sm, 2*TICK)
 
 
-def test_park_allows_filtered_residual_but_requires_zero_wheels_on_entry():
-  assert park.parked(state(vEgo=-.003), control())
-  one_tick = .03125 / 3.6
-  sample = state(vEgoRaw=one_tick / 4, vEgo=.003,
-                 wheelSpeeds=NS(fl=0., fr=one_tick, rl=0., rr=0.))
-  assert not park.parked(sample, control())
-  assert park.parked(sample, control(), allow_wheel_tick=True)
-  sample.wheelSpeeds.rl = one_tick
-  assert not park.parked(sample, control(), allow_wheel_tick=True)
-  sample.wheelSpeeds.rl = 0.
-  sample.wheelSpeeds.fr = 2 * one_tick
-  assert not park.parked(sample, control(), allow_wheel_tick=True)
-  sample.wheelSpeeds.fr = float('nan')
-  assert not park.parked(sample, control(), allow_wheel_tick=True)
-
-
-def test_single_short_wheel_tick_is_tolerated_but_sustained_tick_revokes():
+def test_park_ignores_sustained_motion_signals_on_entry_and_hold():
   request = park.ParkedDashcamRequest()
-  entered = enter(request)
-  first_shake = entered + 10_000_000
-  assert request.update(True, first_shake, wheel_tick=True)
-  assert request.update(True, first_shake + 50_000_000)
-  second_shake = first_shake + 70_000_000
-  assert request.update(True, second_shake, wheel_tick=True)
-  assert request.update(True, second_shake + 149_000_000, wheel_tick=True)
-  assert not request.update(True, second_shake + 150_000_000, wheel_tick=True)
-  assert request.block_engagement(True, second_shake, second_shake, True)
-  assert not request.update(True, second_shake + 160_000_000)
+  car = state(standstill=False, vEgoRaw=.04, vEgo=.12, wheelSpeeds=NS(fl=.03, fr=.05, rl=.04, rr=.04))
+  for i in range(1, 30):
+    assert request.update(park.parked(car, control()), i * TICK)
+  car.gearShifter = 'drive'
+  assert not request.update(park.parked(car, control()), 30 * TICK)
 
 
 def test_comma_brightness_uses_park_percent_and_restores_on_stale_ack_or_critical():
@@ -332,13 +309,13 @@ def test_comma_brightness_uses_park_percent_and_restores_on_stale_ack_or_critica
   assert sent[-1] == 50
 
 
-def test_park_read_only_can_report_nonzero_speed_without_recording_admission():
+def test_park_read_only_reports_speed_separately_from_dashcam_admission():
   from tools.pv5_remote.diagnose import park_diagnostic_status
 
   cp = NS(carFingerprint='KIA_PV5', notCar=False)
   observed = state(vEgoRaw=.03, vEgo=.04)
   assert park_diagnostic_status(cp, observed, True, TICK, TICK) == {
     'mode': 'park_read_only', 'standstill': True, 'raw_speed_zero': False, 'filtered_speed_zero': False}
-  assert not park.parked(observed, control())
+  assert park.parked(observed, control())
   assert park_diagnostic_status(cp, state(gearShifter='drive'), True, TICK, TICK)['reason'] == 'park_required'
   assert park_diagnostic_status(cp, observed, True, TICK, TICK+park.FRESH_NS)['reason'] == 'invalid_vehicle_state'

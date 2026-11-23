@@ -14,7 +14,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from openpilot.system.pv5_incidents.core import MAX_BODY, MAX_COUNT, authenticated, encode, validate_batch
+from openpilot.system.pv5_incidents.core import MAX_AGE, MAX_BODY, MAX_COUNT, authenticated, encode, validate_batch
 
 from openpilot.system.pv5_incidents.priority import reportable
 
@@ -33,6 +33,7 @@ class Inbox:
           notified INTEGER DEFAULT 0, report_count INTEGER DEFAULT 0, report_time INTEGER DEFAULT 0,
           lease_until INTEGER DEFAULT 0, lost INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS reports(digest TEXT PRIMARY KEY, summary TEXT, stamp INTEGER, receipt TEXT);
+        CREATE TABLE IF NOT EXISTS memory_snapshots(id TEXT PRIMARY KEY, stamp INTEGER, fact TEXT);
       ''')
 
   @contextmanager
@@ -48,6 +49,20 @@ class Inbox:
       db.close()
 
   def accept(self, data, now):
+    if not isinstance(data, bytes) or len(data) > MAX_BODY:
+      raise ValueError('invalid_size')
+    if isinstance(message := json.loads(data), dict) and type(message.get('format')) is int and message['format'] == 2:
+      from openpilot.system.pv5_incidents.memory_pressure import validate_memory
+
+      snapshot = validate_memory(data)
+      if not now - MAX_AGE <= snapshot['captured_at'] <= now + 300:
+        raise ValueError('invalid_memory_time')
+      with self.open() as db:
+        db.execute('INSERT OR IGNORE INTO memory_snapshots VALUES(?,?,?)',
+                   (snapshot['id'], snapshot['captured_at'], encode(snapshot['fact']).decode()))
+        db.execute('''DELETE FROM memory_snapshots WHERE id NOT IN
+          (SELECT id FROM memory_snapshots ORDER BY stamp DESC, rowid DESC LIMIT 32)''')
+      return {'accepted': hashlib.sha256(data).hexdigest()}
     batch = validate_batch(data)
     with self.open() as db:
       db.execute('BEGIN IMMEDIATE')
@@ -81,6 +96,11 @@ class Inbox:
         db.execute('INSERT OR REPLACE INTO seen VALUES(?,?,?,?)', (row['id'], row['revision'], row['count'], now))
       db.execute('DELETE FROM seen WHERE id NOT IN (SELECT id FROM seen ORDER BY stamp DESC LIMIT 512)')
     return {'accepted': hashlib.sha256(data).hexdigest()}
+
+  def memory(self):
+    with self.open() as db:
+      rows = db.execute('SELECT stamp,fact FROM memory_snapshots ORDER BY stamp DESC, rowid DESC').fetchall()
+      return [{'captured_at': row['stamp'], **json.loads(row['fact'])} for row in rows]
 
   def pending(self, now, claim=False):
     with self.open() as db:
@@ -179,7 +199,7 @@ def handler(ingress):
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--config', type=Path, required=True)
-  parser.add_argument('action', choices=('serve', 'pending', 'notify', 'notified', 'complete', 'report'))
+  parser.add_argument('action', choices=('serve', 'pending', 'notify', 'notified', 'complete', 'report', 'memory'))
   parser.add_argument('--claim', action='store_true')
   parser.add_argument('--summary-file', type=Path)
   parser.add_argument('--digest')
@@ -211,6 +231,8 @@ def main():
     HTTPServer(('127.0.0.1', int(value['port'])), handler(Ingress(key, inbox))).serve_forever(poll_interval=.5)
   elif args.action == 'pending':
     print(json.dumps({'pending': inbox.pending(int(time.time()), args.claim)}))
+  elif args.action == 'memory':
+    print(json.dumps({'memory': inbox.memory()}))
   elif args.action == 'notify':
     print(json.dumps({'pending': inbox.notifications()}))
   elif args.action == 'notified':
