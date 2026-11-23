@@ -28,7 +28,9 @@ from model_pin import read_spec
 from cluster_live import OpenpilotLiveSource,standby_state
 from cluster_models import ClusterAlert
 from openpilot.cereal import log
-from openpilot.common.hud_driving_feedback import DRIVING_NOTICE_TEXT, DRIVING_POPUP_MOTION_SECONDS, DRIVING_POPUP_REPEAT_SECONDS
+from openpilot.common.hud_driving_feedback import (
+ DRIVING_NOTICE_TEXT, DRIVING_POPUP_MOTION_SECONDS, DRIVING_POPUP_REPEAT_SECONDS, LeadBrakeSample,
+)
 from openpilot.selfdrive.carrot import signal_mode
 from openpilot.common.performance_diagnostics import ENABLED
 assert not ENABLED and not server.PERF_DIAGNOSTICS
@@ -408,14 +410,19 @@ try:
                                  ('leadBrake',None,2),(None,'section',3),(None,'school',4)):
   ui._popup_slide.reset()
   ui._driving_notices.reset()
+  is_lead_brake=notice=='leadBrake'
   candidate=replace(state,driving_notices=(notice,) if notice else (),
-                    deceleration_banner='구역 감속' if not notice else None,cruise_override_label=source_label)
+                    deceleration_banner='구역 감속' if not notice else None,cruise_override_label=source_label,
+                    lead_brake_sample=LeadBrakeSample(7,-1.2,-1.4) if is_lead_brake else None)
   samples=[]
-  for now in (2000.,2001.3,2002.2,2004.7):
+  # A lead-brake episode needs continuous evidence and expires after one notice.
+  sample_times=(2000.7,2001.0,2001.3) if is_lead_brake else (2001.3,2002.2,2004.7)
+  warmup_times=(2000.,2000.2,2000.4) if is_lead_brake else (2000.,)
+  for now in (*warmup_times,*sample_times):
    texture_calls.clear()
    with patch('time.monotonic',return_value=now), patch.object(hud_health.rl,'draw_texture_pro',side_effect=track_notice):
     ui.render_to_file(candidate,notice_path)
-   if now>2000.:
+   if now in sample_times:
     assert len(texture_calls)==1 and texture_calls[0][0]==row*96
     x,y,w,h=texture_calls[0][1]
     assert abs(w-97.2)<1e-3 and abs(h-72.9)<1e-3
