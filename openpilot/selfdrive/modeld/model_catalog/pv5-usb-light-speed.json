@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-usb-resume-light-speed-20261123-b6b673bc",
-  "source_commit": "b6b673bc6b462d48682a81199057b88b24cb7604",
+  "profile": "jetson-pv5-stock-lanes-light-speed-20261124-34c1bddf",
+  "source_commit": "34c1bddff61f0660d558a96949bb7d91c97876ad",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-usb-resume-light-speed-20261123-b6b673bc/host.tar.gz",
-    "sha256": "9972e75eab8507eff7deccd0c24b9a7dc465e37455202680ec11cecf97d74c9b",
-    "size": 65786924
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-stock-lanes-light-speed-20261124-34c1bddf/host.tar.gz",
+    "sha256": "a73b0d7295045f66efbb9152b40611489fdd7122350a6cb38bf12ee0549b3bb0",
+    "size": 65792630
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",

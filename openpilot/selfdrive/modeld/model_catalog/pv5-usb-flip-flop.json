@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-usb-resume-flip-flop-20261123-575b204a",
-  "source_commit": "575b204a3464814e1a87a8ba32036ead7e09fc17",
+  "profile": "jetson-pv5-stock-lanes-flip-flop-20261124-6a198d49",
+  "source_commit": "6a198d4951d03479a309cb1f21d34e296e082a6d",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-usb-resume-flip-flop-20261123-575b204a/host.tar.gz",
-    "sha256": "bb9396b7003ab243604e825e960a40d5a9d79b5f5c0478c22bf49606201a891a",
-    "size": 65786833
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-stock-lanes-flip-flop-20261124-6a198d49/host.tar.gz",
+    "sha256": "33d130deb731eac8e64e8c50667d906f69277385e3ccbe8699a4d891454cdcdf",
+    "size": 65792638
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",
