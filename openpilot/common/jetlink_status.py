@@ -39,6 +39,10 @@ def update_badge(value):
     return f'Jetson 업데이트 {action} 중{percent}', 'loading'
   if state == 'waiting_park':
     return 'Jetson 업데이트 대기 · 내부 모델/P단 확인', 'loading'
+  if state == 'waiting_jetson_reboot':
+    return 'Jetson 모델 변경 · 젯슨 재부팅 필요', 'loading'
+  if state == 'handoff_rejected':
+    return 'Jetson 업데이트 전환 거부 · 재시도 대기', 'error'
   if state == 'waiting_comma_reboot':
     return 'Jetson 업데이트 완료 · 콤마 재부팅 대기', 'loading'
   if state == 'verifying':

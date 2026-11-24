@@ -131,6 +131,7 @@ def test_rejected_recent_host_inference_retries_without_new_probe_inference(resi
     r.run()
   assert len(attempts) == 2 and attempts[1] - attempts[0] >= 5.
   assert r.client.spec is None and r.owner.token == r.lease.token
+  assert any(report['host_update']['state'] == 'handoff_rejected' for report in r.reports)
 
 
 def test_legacy_park_handoff_does_not_require_internal_capability(resident, monkeypatch):
@@ -150,3 +151,48 @@ def test_pending_handoff_keeps_existing_wifi_provisioning_alive(resident):
   with pytest.raises(startup.RuntimeHandoff):
     r.run(wifi=NS(send=lambda client: provisioned.append(client)))
   assert provisioned and all(client is r.client for client in provisioned)
+
+
+@pytest.mark.parametrize('loaded', [None, 'different', 'requested'])
+def test_cross_model_resident_waits_for_jetson_boot_gate(resident, monkeypatch, tmp_path, loaded):
+  import park_update as host
+  import update_host
+  import usb_release
+  from jetlink.spec import ModelSpec
+  from openpilot.common import big_model_catalog
+  from openpilot.common.jetlink_status import update_badge
+  from openpilot.selfdrive.modeld.jetlink import contracts
+
+  r = resident
+  old_pin = big_model_catalog.usb_release('light-speed-2')
+  old_spec = big_model_catalog.model_spec('light-speed-2')
+  spec = ModelSpec.from_dict(big_model_catalog.model_spec('flip-flop'))
+  monkeypatch.setattr(contracts, 'JETSON_SPEC', spec)
+  r.value.clear()
+  r.value.update(big_model_catalog.usb_release('flip-flop'))
+  r.peer.update(carrot_source_commit=old_pin['source_commit'],
+                loaded={None: None, 'different': old_spec['sha256'], 'requested': spec.sha256}[loaded])
+
+  # Exercise the actual installed host's request admission on the fake wire.
+  monkeypatch.setattr(usb_release, 'trusted', lambda *a: None)
+  monkeypatch.setattr(update_host, 'validate_storage_compatibility', lambda *a: None)
+  monkeypatch.setattr(jetson_model, 'read_spec', lambda root: old_spec)
+  monkeypatch.setattr(comma.ParkPermission, 'allowed', lambda _: True)
+  attempts = []
+  def request(kind, seq, payload):
+    attempts.append(kind)
+    with pytest.raises(ValueError, match='cannot change the boot-selected model'):
+      host.validate_request(payload, tmp_path)
+  r.client.t.send_json = request
+  r.client._expect = lambda *a: NS(payload=b'{"accepted":false}')
+
+  start = r.now[0]
+  states = set()
+  with pytest.raises(ConnectionError, match='disconnected'):
+    comma.wait_for_running_update(r.client, r.peer, NS(), lambda: r.now[0] < start + 1800,
+                                  lambda *a, **kw: states.add(kw['host_update']['state']),
+                                  sleep=lambda dt: r.now.__setitem__(0, r.now[0] + dt))
+
+  assert states == {'waiting_jetson_reboot'}
+  assert attempts == []
+  assert '젯슨 재부팅' in update_badge({'state': 'waiting_jetson_reboot'})[0]

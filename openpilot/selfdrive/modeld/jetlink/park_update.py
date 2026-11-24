@@ -85,8 +85,28 @@ class Watcher:
     message = client._expect(RESPONSE, seq, 2.)
     if len(message.payload) > 128:
       raise ValueError('Oversized Park update acknowledgement')
-    if json.loads(bytes(message.payload)) == {'accepted': True}:
+    reply = json.loads(bytes(message.payload))
+    if reply == {'accepted': True}:
       raise RuntimeHandoff('Park update requested; reconnecting to empty boot gate')
+    if reply == {'accepted': False}:
+      return False
+
+
+def requires_jetson_reboot(peer, manifest):
+  # The resident handoff validates against the installed bundle's model pin.
+  # HELLO's loaded hash describes an engine cache entry, which can be empty
+  # or have a different model loaded. Match only known installed source pins.
+  from openpilot.common import big_model_catalog
+  source = peer.get('carrot_source_commit')
+  try:
+    for key in big_model_catalog.available():
+      installed = big_model_catalog.usb_release(key)
+      if installed is not None and installed['source_commit'] == source:
+        return (installed['model']['sha256'], installed['model']['size']) != (
+          manifest['model']['sha256'], manifest['model']['size'])
+  except (OSError, ValueError, KeyError, TypeError):
+    pass
+  return False
 
 
 def wait_for_running_update(client, peer, params, connected, publish, *, wifi=None, sleep=time.sleep):
@@ -105,9 +125,12 @@ def wait_for_running_update(client, peer, params, connected, publish, *, wifi=No
   manifest = watcher.changed_manifest(JETSON_SPEC)
   if manifest is None or not str(manifest.get('profile', '')).startswith('jetson-pv5-'):
     return  # Other peers and non-PV5 delivery keep their existing startup path.
+  needs_reboot = requires_jetson_reboot(peer, manifest)
+  state = 'waiting_jetson_reboot' if needs_reboot else 'waiting_park'
   while connected():
-    watcher.tick(client, spec=JETSON_SPEC)
-    publish('updating', peer=peer, host_update={'state': 'waiting_park', 'fraction': None})
+    if not needs_reboot and watcher.tick(client, spec=JETSON_SPEC) is False:
+      state = 'handoff_rejected'
+    publish('updating', peer=peer, host_update={'state': state, 'fraction': None})
     if wifi is not None:
       wifi.send(client)
     client.state()
