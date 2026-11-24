@@ -567,6 +567,28 @@ function show_startup_failure {
   done
 }
 
+function acquire_boot_repo_lock {
+  local wait_secs=300
+  local result
+  while true; do
+    if flock -E 75 -w "$wait_secs" 9; then
+      return 0
+    else
+      result=$?
+    fi
+    [ "$result" -eq 75 ] || return "$result"
+    if [ "$wait_secs" = "300" ]; then
+      echo "Another repository operation is still running. Recovery is available while startup waits."
+      (
+        exec 9>&-
+        unset CARROT_BOOT_LOCK_FD
+        start_carrot_recovery
+      )
+      wait_secs=30
+    fi
+  done
+}
+
 function launch {
   # Apply before a repository lock/update can delay normal initialization.
   if [ -f /AGNOS ]; then
@@ -577,11 +599,9 @@ function launch {
   # servers must not inherit it. Never delete the lock file itself.
   export CARROT_REPO_LOCK_PATH="${CARROT_REPO_LOCK_PATH:-/tmp/carrot_repo_update.lock}"
   exec 9>"$CARROT_REPO_LOCK_PATH"
-  if ! flock -w 300 9; then
-    echo "Another repository operation is still running; launch deferred."
-    exec 9>&-
-    start_carrot_recovery
-    while true; do sleep 1; done
+  if ! acquire_boot_repo_lock; then
+    show_startup_failure "Unable to acquire the startup repository lock"
+    return 1
   fi
   export CARROT_BOOT_LOCK_FD=9
   # The launcher owns startup failure display, including Python import errors.

@@ -1,3 +1,4 @@
+import ast
 import os
 import io
 from pathlib import Path
@@ -5,6 +6,7 @@ import shlex
 import subprocess
 import sys
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -182,6 +184,72 @@ def test_launcher_captures_failed_command_and_releases_lock_before_recovery(tmp_
   result = subprocess.run([bash, '-c', probe], cwd=tmp_path, capture_output=True, text=True, timeout=5,
                           env={**os.environ, 'PYTHONPATH': str(root)})
   assert result.returncode == 17 and 'failed' in (tmp_path / 'failure.log').read_text()
+
+
+@pytest.mark.parametrize('second_result', [75, 69])
+def test_launcher_retries_contended_lock_without_sharing_fd_with_recovery(tmp_path, second_result):
+  root = Path(__file__).resolve().parents[3]
+  source = (root / 'launch_chffrplus.sh').read_text(encoding='utf8')
+  acquire = source[source.index('function acquire_boot_repo_lock {'):source.index('function launch {')]
+  bash = 'C:/Program Files/Git/bin/bash.exe' if os.name == 'nt' else 'bash'
+  # Simulate two wait outcomes followed, when appropriate, by lock acquisition.
+  probe = f"""
+{acquire}
+count=0
+flock() {{
+  echo "flock:$*"
+  count=$((count + 1))
+  case "$count" in
+    1) return 75 ;;
+    2) return {second_result} ;;
+  esac
+}}
+start_carrot_recovery() {{
+  if [ -z "${{CARROT_BOOT_LOCK_FD+x}}" ] && ! ( : >&9 ) 2>/dev/null; then
+    echo "recovery:independent"
+  fi
+}}
+exec 9>boot.lock
+export CARROT_BOOT_LOCK_FD=9
+acquire_boot_repo_lock
+"""
+  result = subprocess.run([bash, '-c', probe], cwd=tmp_path, capture_output=True, text=True, timeout=5)
+  assert result.stdout.count('recovery:independent') == 1
+  attempts = [line for line in result.stdout.splitlines() if line.startswith('flock:')]
+  assert attempts == ['flock:-E 75 -w 300 9', 'flock:-E 75 -w 30 9'] + (
+    ['flock:-E 75 -w 30 9'] if second_result == 75 else []
+  )
+  assert result.returncode == (0 if second_result == 75 else second_result)
+
+
+def test_manager_thread_failure_reaches_launcher_after_cleanup():
+  root = Path(__file__).resolve().parents[3]
+  path = root / 'openpilot/system/manager/manager.py'
+  main = next(node for node in ast.parse(path.read_text(encoding='utf8')).body
+              if isinstance(node, ast.FunctionDef) and node.name == 'main')
+  calls = []
+  status = object()
+
+  def crash(update_status):
+    assert update_status is status
+    raise RuntimeError('startup process failed')
+
+  env = {
+    'manager_init': lambda: status,
+    'write_supported_cars_files': lambda: None,
+    'release_boot_lock': lambda: calls.append('release'),
+    'os': SimpleNamespace(getenv=lambda name: None),
+    'signal': SimpleNamespace(SIGTERM=None, signal=lambda *_: None),
+    'manager_thread': crash,
+    'traceback': SimpleNamespace(print_exc=lambda: None),
+    'sentry': SimpleNamespace(capture_exception=lambda: calls.append('report')),
+    'manager_cleanup': lambda: calls.append('cleanup'),
+    'Params': lambda: pytest.fail('Normal power actions must not run after a manager failure'),
+  }
+  exec(compile(ast.Module(body=[main], type_ignores=[]), str(path), 'exec'), env)
+  with pytest.raises(RuntimeError, match='startup process failed'):
+    env['main']()
+  assert calls == ['release', 'report', 'cleanup']
 
 
 def test_startup_capture_is_bounded_and_keeps_the_last_error(tmp_path):

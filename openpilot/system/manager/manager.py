@@ -288,6 +288,8 @@ def main() -> None:
   except Exception:
     traceback.print_exc()
     sentry.capture_exception()
+    # The launcher only takes over with a recovery screen on a failed exit.
+    raise
   finally:
     manager_cleanup()
 
