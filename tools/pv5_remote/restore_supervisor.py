@@ -8,6 +8,7 @@ import re
 import runpy
 from pathlib import Path
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -24,8 +25,55 @@ PERMANENT = frozenset({
   'owner_comma_local_install_required', 'systemd_required', 'unsafe_install_lock',
   'qualification_size', 'enrolled_binary_identity', 'existing_openssh_required',
   'qualified_interpreter_metadata_invalid',
+  'boot_msgq_ownership',
 })
 STAGES = frozenset({'entry', 'boot_qualification', 'runtime_unit_restore'})
+
+
+def prepare_msgq(uid, gid, root=Path('/dev/shm')):
+  from tools.pv5_remote.conditional_remote import SERVICES
+
+  # Both readers and writers open native queues read/write with O_CREAT. A
+  # root-owned queue in the root-owned sticky directory can be opened by both
+  # users even with fs.protected_regular. Give only the launcher's group write
+  # access and publish the new inode after its permissions are complete.
+  for name in SERVICES:
+    path = root / f'msgq_{name}'
+    try:
+      entry = path.lstat()
+    except FileNotFoundError:
+      fd, seed = tempfile.mkstemp(prefix='.pv5-msgq-', dir=root)
+      try:
+        with os.fdopen(fd, 'wb') as handle:
+          os.fchown(handle.fileno(), -1, gid)
+          os.fchmod(handle.fileno(), 0o660)
+          try:
+            os.link(seed, path, follow_symlinks=False)
+          except FileExistsError:
+            pass  # Normal startup already created this endpoint.
+      finally:
+        Path(seed).unlink(missing_ok=True)
+      entry = path.lstat()
+    launcher_owned = entry.st_uid == uid and entry.st_mode & 0o600 == 0o600
+    shared = entry.st_uid == 0 and entry.st_gid == gid and entry.st_mode & 0o660 == 0o660
+    if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1 or not (launcher_owned or shared):
+      raise ValueError('boot_msgq_ownership')
+
+
+def prepare_launcher_msgq():
+  import pwd
+
+  # The existing boot hook invokes this supervisor through sudo. Never infer a
+  # group from mutable queue files or prepare a simulated namespace.
+  if 'OPENPILOT_PREFIX' in os.environ or any(os.environ.get(key) for key in ('ZMQ', 'SIMULATION', 'REPLAY')):
+    raise ValueError('boot_msgq_ownership')
+  try:
+    uid, gid = int(os.environ['SUDO_UID']), int(os.environ['SUDO_GID'])
+    if uid <= 0 or gid <= 0 or pwd.getpwuid(uid).pw_gid != gid:
+      raise ValueError()
+  except (KeyError, ValueError, OverflowError) as exc:
+    raise ValueError('boot_msgq_ownership') from exc
+  prepare_msgq(uid, gid)
 
 
 def protected(path, directory=False):
@@ -124,6 +172,7 @@ def qualified_interpreter():
 def attempt_restore():
   try:
     interpreter = qualified_interpreter()
+    prepare_launcher_msgq()
     code, output = run_bounded([interpreter, '-B', str(ROOT / 'conditional_remote.py'), '--restore-runtime'], ATTEMPT_TIMEOUT)
   except subprocess.TimeoutExpired:
     return 'retry', 'attempt_timeout', 'entry'

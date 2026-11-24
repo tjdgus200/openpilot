@@ -12,11 +12,58 @@ from unittest.mock import patch
 from tools.pv5_remote import restore_supervisor as s
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux msgq file semantics')
+class BootMsgqChecks(unittest.TestCase):
+  def test_prepare_preserves_live_endpoint_and_creates_only_guard_endpoints(self):
+    from tools.pv5_remote.conditional_remote import SERVICES
+    with tempfile.TemporaryDirectory() as folder:
+      root = Path(folder)
+      live = root / 'msgq_deviceState'
+      live.write_bytes(b'live queue data')
+      live.chmod(0o600)
+      before = live.stat()
+      s.prepare_msgq(os.geteuid(), os.getegid(), root)
+      s.prepare_msgq(os.geteuid(), os.getegid(), root)
+      self.assertEqual({f.name for f in root.iterdir()}, {f'msgq_{name}' for name in SERVICES})
+      self.assertEqual(live.read_bytes(), b'live queue data')
+      self.assertEqual(live.stat().st_ino, before.st_ino)
+      self.assertEqual(live.stat().st_mode, before.st_mode)
+      self.assertTrue(all(f.stat().st_uid == os.geteuid() for f in root.iterdir()))
+      self.assertTrue(all((f.stat().st_mode & 0o777) == 0o660 for f in root.iterdir() if f != live))
+
+  def test_prepare_refuses_foreign_or_linked_paths_without_modifying_them(self):
+    with tempfile.TemporaryDirectory() as folder:
+      root = Path(folder)
+      path = root / 'msgq_deviceState'
+      target = root / 'unrelated'
+      target.write_bytes(b'untouched')
+      for link in (path.symlink_to, path.hardlink_to):
+        link(target)
+        with self.assertRaisesRegex(ValueError, 'boot_msgq_ownership'):
+          s.prepare_msgq(os.geteuid(), os.getegid(), root)
+        self.assertEqual(target.read_bytes(), b'untouched')
+        path.unlink()
+      path.write_bytes(b'foreign queue')
+      with self.assertRaisesRegex(ValueError, 'boot_msgq_ownership'):
+        s.prepare_msgq(path.stat().st_uid + 1, os.getegid(), root)
+      self.assertEqual(path.read_bytes(), b'foreign queue')
+
+  def test_refuses_invalid_launcher_and_nonproduction_namespaces(self):
+    with patch.object(s, 'prepare_msgq') as prepare:
+      for env in ({}, {'SUDO_UID': '0', 'SUDO_GID': '0'}, {'OPENPILOT_PREFIX': 'test'}):
+        with patch.dict(s.os.environ, env, clear=True), self.assertRaisesRegex(ValueError, 'boot_msgq_ownership'):
+          s.prepare_launcher_msgq()
+      prepare.assert_not_called()
+
+
 class RestoreSupervisorChecks(unittest.TestCase):
   def setUp(self):
     selected = patch.object(s, 'qualified_interpreter', return_value=sys.executable)
     selected.start()
     self.addCleanup(selected.stop)
+    prepare = patch.object(s, 'prepare_launcher_msgq')
+    prepare.start()
+    self.addCleanup(prepare.stop)
 
   def run_loop(self, results, configured=None):
     records, sleeps = [], []
@@ -52,6 +99,12 @@ class RestoreSupervisorChecks(unittest.TestCase):
       self.assertEqual(s.supervise(), 1)
       attempt.assert_not_called()
       self.assertEqual(record.call_args.args[:3], ('blocked', 0, 'matching_code_qualification_required'))
+
+  def test_unsafe_msgq_ownership_prevents_starting_the_privileged_guard(self):
+    with patch.object(s, 'prepare_launcher_msgq', side_effect=ValueError('boot_msgq_ownership')), \
+         patch.object(s, 'run_bounded') as run:
+      self.assertEqual(s.attempt_restore(), ('blocked', 'boot_msgq_ownership', 'boot_qualification'))
+      run.assert_not_called()
 
   def test_active_owned_unit_is_checked_without_any_restart_command(self):
     calls = []
@@ -193,7 +246,8 @@ class QualifiedInterpreterChecks(unittest.TestCase):
       def run(args, timeout):
         calls.append(args)
         return (0,b'{"already_running":true}') if '--restore-runtime' in args else (0,b'active')
-      with patch.object(s.sys,'executable','/different/bootstrap/python3'), patch.object(s,'run_bounded',side_effect=run):
+      with patch.object(s.sys,'executable','/different/bootstrap/python3'), patch.object(s,'run_bounded',side_effect=run), \
+           patch.object(s, 'prepare_launcher_msgq'):
         self.assertEqual(s.attempt_restore()[0],'ready')
       self.assertEqual(calls[0][0],registered)
       self.assertFalse(any('restart' in args or 'stop' in args for args in calls))
