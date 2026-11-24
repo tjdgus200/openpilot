@@ -203,7 +203,7 @@ def test_ccnc_preserves_original_lane_fields_only_for_real_pv5(monkeypatch, stoc
     0, False, False, 0, False, 0, 0, now_ns=stamp)
   assert (address, bus) == (0x161, 0)
   values = {key: get_raw_value(payload, sig) for key, sig in definition.sigs.items()}
-  expected = dict(original_lines, LANELINE_LEFT=2 if trailer else 4) if preserve_stock else dict(
+  expected = original_lines if preserve_stock else dict(
     original_lines, LANELINE_LEFT=2 if trailer else 4,
     LANELINE_CURVATURE=3 if lat_active else 0, LANELINE_CURVATURE_DIRECTION=0)
   assert {key: values[key] for key in original_lines} == expected
@@ -255,8 +255,8 @@ def test_ccnc_pv5_stock_lane_source_faults(stock_lanes, stock_lane_sender, fault
   elif fault == 'regressed_parser_time':
     parser.update([(stamp - 1, [])])
 
-  expected = dict(stock_lanes.fields, LANELINE_RIGHT=8) if fault in ('fresh', 'limit') else dict(
-    dict.fromkeys(stock_lanes.fields, 0), LANELINE_LEFT=2, LANELINE_RIGHT=2)
+  expected = (dict(stock_lanes.fields, LANELINE_RIGHT=8) if fault in ('fresh', 'limit')
+              else dict.fromkeys(stock_lanes.fields, 0))
   values = send(now)
   assert {key: values[key] for key in expected} == expected
 
@@ -266,31 +266,35 @@ def test_ccnc_pv5_stock_lane_source_faults(stock_lanes, stock_lane_sender, fault
     assert {key: values[key] for key in stock_lanes.fields} == stock_lanes.fields
 
 
-@pytest.mark.parametrize('left,right,expected', ((0, 1, (0, 1)), (2, 6, (2, 6)), (8, 4, (8, 4)), (15, 8, (2, 8))))
-def test_ccnc_pv5_filters_unobserved_stock_codes_per_side(stock_lanes, stock_lane_sender, left, right, expected):
+@pytest.mark.parametrize('left,right', ((0, 1), (2, 8), (8, 2), (8, 4), (6, 8), (15, 8)))
+def test_ccnc_pv5_forwards_stock_display_codes_per_side(stock_lanes, stock_lane_sender, left, right):
   stamp = stock_lanes.stamp
   stock_lanes.parser.update([(stamp, [stock_lanes.packet(LANELINE_LEFT=left, LANELINE_RIGHT=right)])])
   values = stock_lane_sender.send(stamp)
-  assert (values['LANELINE_LEFT'], values['LANELINE_RIGHT']) == expected
+  assert (values['LANELINE_LEFT'], values['LANELINE_RIGHT']) == (left, right)
 
 
-@pytest.mark.parametrize('reason,expected', (('departure_off', 1), ('bsd', 4), ('boundary', 4), ('available', 6), ('stock_warning', 4)))
-def test_ccnc_pv5_gives_lane_warnings_priority_over_stock_pattern(stock_lanes, stock_lane_sender, reason, expected):
+@pytest.mark.parametrize('reason', ('departure', 'bsd', 'boundary', 'available', 'stock_warning'))
+def test_ccnc_pv5_keeps_stock_pattern_during_lane_status_changes(stock_lanes, stock_lane_sender, reason):
   state, control = stock_lane_sender.state, stock_lane_sender.control
-  if reason == 'departure_off':
+  if reason == 'departure':
     control.hudControl.rightLaneDepart = True
   elif reason == 'bsd':
     control.hudControl.rightLaneVisible = False
     state.out.rightBlindspot = True
+    state.out.rightBlinker = True
   elif reason == 'boundary':
     state.out.rightLaneLine = 20
   else:
     state.modelV2.meta.laneChangeAvailableRight = True
   stamp = stock_lanes.stamp
-  packet = stock_lanes.packet(LANELINE_RIGHT=4 if reason == 'stock_warning' else 8)
+  stock_right = 4 if reason == 'stock_warning' else 8
+  packet = stock_lanes.packet(LANELINE_RIGHT=stock_right)
   stock_lanes.parser.update([(stamp, [packet])])
-  values = stock_lane_sender.send(stamp, 55 if reason == 'departure_off' else 5)
-  assert (values['LANELINE_LEFT'], values['LANELINE_RIGHT']) == (8, expected)
+  values = stock_lane_sender.send(stamp, 55 if reason == 'departure' else 5)
+  assert (values['LANELINE_LEFT'], values['LANELINE_RIGHT']) == (8, stock_right)
+  if reason == 'bsd':
+    assert (values['BACKGROUND'], values['LANE_HIGHLIGHT'], values['BCA_RIGHT']) == (5, 5, 2)
 
 
 @pytest.mark.parametrize('left,right', ((True, False), (False, True), (True, True)))

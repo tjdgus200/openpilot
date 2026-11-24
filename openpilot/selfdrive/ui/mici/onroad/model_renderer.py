@@ -6,10 +6,11 @@ from openpilot.cereal import messaging, car
 from dataclasses import dataclass, field
 from openpilot.common.params import Params
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.common.pv5_lane_display import pv5_lane_display_codes
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.vision_status import blindspot_source_packet, blindspot_sources
-from openpilot.selfdrive.ui.road_markings import lane_dash_segments, project_blindspot_barrier, blindspot_barrier_quads
+from openpilot.selfdrive.ui.road_markings import PV5_LANE_MARKING_RGB, lane_dash_segments, project_blindspot_barrier, blindspot_barrier_quads
 from openpilot.selfdrive.ui.mici.onroad import blend_colors
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.text_draw import draw_text_ui_style
@@ -87,6 +88,7 @@ class ModelRenderer(Widget):
     # Initialize ModelPoints objects
     self._path = ModelPoints()
     self._lane_lines = [ModelPoints() for _ in range(4)]
+    self._pv5_lane_codes = None
     self._lane_marking_codes = [-1] * 4
     self._lane_marking_segments: list[list[np.ndarray]] = [[] for _ in range(4)]
     self._road_edges = [ModelPoints() for _ in range(2)]
@@ -159,6 +161,7 @@ class ModelRenderer(Widget):
 
     # Update model data when needed
     model_updated = sm.recv_frame['modelV2'] != self._model_frame
+    pv5_lane_codes = pv5_lane_display_codes(sm)
     if model_updated or sm.recv_frame['radarState'] != self._radar_frame or self._transform_dirty:
       self._radar_frame = sm.recv_frame['radarState']
       if model_updated:
@@ -170,7 +173,7 @@ class ModelRenderer(Widget):
         return
 
       car_state = sm['carState'] if sm.valid['carState'] and sm.alive['carState'] else None
-      self._update_model(lead_one, path_x_array, car_state)
+      self._update_model(lead_one, path_x_array, car_state, pv5_lane_codes=pv5_lane_codes)
       if render_lead_indicator:
         self._update_leads_carrot(radar_state, path_x_array)
         
@@ -180,6 +183,14 @@ class ModelRenderer(Widget):
         self._radar_info_items = []
         
       self._transform_dirty = False
+    elif pv5_lane_codes != self._pv5_lane_codes:
+      # A marking may change or expire between model updates.
+      if self._path.raw_points.size == 0:
+        return
+      max_distance = float(np.clip(self._path.raw_points[-1, 0], MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE))
+      max_idx = self._get_path_length_idx(self._lane_lines[0].raw_points[:, 0], max_distance)
+      car_state = sm['carState'] if sm.valid['carState'] and sm.alive['carState'] else None
+      self._update_lane_marking_segments(car_state, max_distance, max_idx, pv5_lane_codes)
 
     # Draw elements (hide when disengaged)
     self._draw_lane_lines()
@@ -292,33 +303,45 @@ class ModelRenderer(Widget):
       else:
         self._lead_pt_filt[0] = None
         
-  def _update_model(self, lead, path_x_array, car_state=None):
+  def _update_lane_marking_segments(self, car_state, max_distance, max_idx, pv5_lane_codes):
+    self._pv5_lane_codes = pv5_lane_codes
+    if pv5_lane_codes is None:
+      lane_codes = (car_state.leftLaneLine, car_state.rightLaneLine) if car_state else (-1, -1)
+    else:
+      lane_codes = pv5_lane_codes
+    self._lane_marking_codes = [-1, *lane_codes, -1]
+    for i in (1, 2):
+      self._lane_marking_segments[i] = []
+      code = self._lane_marking_codes[i]
+      if code < 0 or not self._lane_line_probs[i] > 0.3:
+        continue
+      raw_points = self._lane_lines[i].raw_points
+      lane_type = code % 10
+      dashed = lane_type == 0 or (pv5_lane_codes is not None and lane_type == 5)
+      segments = lane_dash_segments(raw_points, float(max_distance)) if dashed else [raw_points]
+      for segment in segments:
+        points = self._map_line_to_polygon(segment, 0.05, 0.0, len(segment) - 1 if dashed else max_idx)
+        if points.size:
+          self._lane_marking_segments[i].append(points)
+      if pv5_lane_codes is None and i == 1 and lane_type == 4:
+        points = self._map_line_to_polygon(raw_points + np.array([0, -0.3, 0], dtype=np.float32), 0.05, 0.0, max_idx)
+        if points.size:
+          self._lane_marking_segments[i].append(points)
+
+  def _update_model(self, lead, path_x_array, car_state=None, *, pv5_lane_codes=None):
     """Update model visualization data based on model message"""
     max_distance = np.clip(path_x_array[-1], MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE)
     max_idx = self._get_path_length_idx(self._lane_lines[0].raw_points[:, 0], max_distance)
 
     # Update lane lines using raw points
     line_width_factor = 0.12
-    self._lane_marking_codes = [-1, car_state.leftLaneLine if car_state else -1, car_state.rightLaneLine if car_state else -1, -1]
     for i, lane_line in enumerate(self._lane_lines):
       if i in (1, 2):
         line_width_factor = 0.16
       lane_line.projected_points = self._map_line_to_polygon(
         lane_line.raw_points, line_width_factor * self._lane_line_probs[i], 0.0, max_idx
       )
-      self._lane_marking_segments[i] = []
-      code = self._lane_marking_codes[i]
-      if code >= 0 and self._lane_line_probs[i] > 0.3:
-        dashed = code % 10 == 0
-        segments = lane_dash_segments(lane_line.raw_points, float(max_distance)) if dashed else [lane_line.raw_points]
-        for segment in segments:
-          points = self._map_line_to_polygon(segment, 0.05, 0.0, len(segment) - 1 if dashed else max_idx)
-          if points.size:
-            self._lane_marking_segments[i].append(points)
-        if i == 1 and code % 10 == 4:
-          points = self._map_line_to_polygon(lane_line.raw_points + np.array([0, -0.3, 0], dtype=np.float32), 0.05, 0.0, max_idx)
-          if points.size:
-            self._lane_marking_segments[i].append(points)
+    self._update_lane_marking_segments(car_state, max_distance, max_idx, pv5_lane_codes)
 
     # Update road edges using raw points
     for road_edge in self._road_edges:
@@ -441,9 +464,14 @@ class ModelRenderer(Widget):
     for i, lane_line in enumerate(self._lane_lines):
       code = self._lane_marking_codes[i]
       if code >= 0 and self._lane_line_probs[i] > 0.3:
-        color = rl.Color(218, 202, 37, 220) if code >= 20 else rl.Color(255, 255, 255, 220)
+        if self._pv5_lane_codes is not None:
+          color = rl.Color(*PV5_LANE_MARKING_RGB[code // 10], 220)
+        else:
+          color = rl.Color(218, 202, 37, 220) if code >= 20 else rl.Color(255, 255, 255, 220)
         for points in self._lane_marking_segments[i]:
           draw_polygon(self._rect, points, color)
+        continue
+      if self._pv5_lane_codes is not None:
         continue
       if lane_line.projected_points.size == 0:
         continue

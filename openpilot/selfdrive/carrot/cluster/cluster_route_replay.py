@@ -29,6 +29,7 @@ from cluster_config import (
     MAX_SPEED_KPH,
     MAX_STEERING_ANGLE_DEG,
     MODEL_DIRECT_LANE_RECENTER_SECONDS,
+    MUTED,
     RADAR_TO_CAMERA_M,
     ROAD_CURVE_M_PER_M2,
     WHITE,
@@ -3693,7 +3694,11 @@ class RouteLogParser:
         self.lane_change_recenter_start_progress = 1.0
 
 
-def frame_to_state(frame: RouteReplayFrame) -> ClusterUiState:
+def frame_to_state(
+    frame: RouteReplayFrame,
+    *,
+    pv5_lane_codes: tuple[int, int] | None = None,
+) -> ClusterUiState:
     lane_width_m = clamp(frame.lane_width_m, 2.4, 4.6)
     observed_ego_lane_offset = 0.0
     if frame.lane_center_offset_m is not None:
@@ -3768,7 +3773,7 @@ def frame_to_state(frame: RouteReplayFrame) -> ClusterUiState:
         surround_yaw_deg=0.0,
         surround_pitch_deg=0.0,
         surround_view_active=False,
-        lanes=lanes_for_frame(frame, lane_grid_offset, use_animated_lane_grid),
+        lanes=lanes_for_frame(frame, lane_grid_offset, use_animated_lane_grid, pv5_lane_codes=pv5_lane_codes),
         extra_left_lane_visible=frame.extra_left_lane_visible,
         extra_right_lane_visible=frame.extra_right_lane_visible,
         left_road_edge_offset=left_road_edge_offset,
@@ -4071,10 +4076,22 @@ def blend_frames(left: RouteReplayFrame, right: RouteReplayFrame, amount: float)
     )
 
 
+PV5_LANE_COLORS = (MUTED, WHITE, YELLOW, BLUE)
+
+
+def pv5_lane_marking(code: int) -> tuple[tuple[int, int, int], str]:
+    if code < 0:
+        return MUTED, "unknown"
+    color, marking_type = divmod(code, 10)
+    return PV5_LANE_COLORS[color], "dashed" if marking_type in (0, 5) else "solid"
+
+
 def lanes_for_frame(
     frame: RouteReplayFrame,
     lane_grid_offset: float = 0.0,
     use_animated_lane_grid: bool = False,
+    *,
+    pv5_lane_codes: tuple[int, int] | None = None,
 ) -> tuple[LaneMarking, ...]:
     left_inner_color = frame.left_lane_color or BLUE
     right_inner_color = frame.right_lane_color or BLUE
@@ -4097,6 +4114,14 @@ def lanes_for_frame(
     # lane boundaries must remain visible while the grid moves.
     left_inner_visible = frame.left_lane_visible or use_animated_lane_grid
     right_inner_visible = frame.right_lane_visible or use_animated_lane_grid
+    left_inner_style = frame.left_lane_style
+    right_inner_style = frame.right_lane_style
+    if pv5_lane_codes is not None:
+        left_code, right_code = pv5_lane_codes
+        left_inner_color, left_inner_style = pv5_lane_marking(left_code)
+        right_inner_color, right_inner_style = pv5_lane_marking(right_code)
+        left_inner_visible = left_inner_visible and left_code >= 0
+        right_inner_visible = right_inner_visible and right_code >= 0
     road_edge_shift = lane_grid_offset if use_animated_lane_grid else 0.0
     left_road_edge_offset = shifted_optional_offset(frame.left_road_edge_offset, road_edge_shift)
     right_road_edge_offset = shifted_optional_offset(frame.right_road_edge_offset, road_edge_shift)
@@ -4108,13 +4133,13 @@ def lanes_for_frame(
         if index == 1:
             offset = left_inner
             color = left_inner_color
-            style = frame.left_lane_style
+            style = left_inner_style
             visible = left_inner_visible
             width = 7
         elif index == 2:
             offset = right_inner
             color = right_inner_color
-            style = frame.right_lane_style
+            style = right_inner_style
             visible = right_inner_visible
             width = 7
         elif index == 0:
@@ -4160,6 +4185,8 @@ def lanes_for_frame(
             style = model_lane_style_for_index(index)
             visible = True
             width = 5
+        if pv5_lane_codes is not None and index not in (1, 2):
+            visible = False
         visible = visible and lane_offset_inside_road_edges(
             offset,
             left_road_edge_offset,
@@ -4185,7 +4212,7 @@ def lanes_for_frame(
     if markings:
         return tuple(markings)
 
-    if use_animated_lane_grid and frame.lane_change == "left":
+    if pv5_lane_codes is None and use_animated_lane_grid and frame.lane_change == "left":
         left_outer = left_inner - 1.0
         left_outer_points = model_line_at(frame.model_lane_lines, 0)
         markings.append(
@@ -4214,7 +4241,7 @@ def lanes_for_frame(
         LaneMarking(
             left_inner,
             left_inner_color,
-            frame.left_lane_style,
+            left_inner_style,
             visible=left_inner_visible and lane_offset_inside_road_edges(
                 left_inner,
                 left_road_edge_offset,
@@ -4236,7 +4263,7 @@ def lanes_for_frame(
         LaneMarking(
             right_inner,
             right_inner_color,
-            frame.right_lane_style,
+            right_inner_style,
             visible=right_inner_visible and lane_offset_inside_road_edges(
                 right_inner,
                 left_road_edge_offset,
@@ -4253,7 +4280,7 @@ def lanes_for_frame(
             ),
         )
     )
-    if use_animated_lane_grid and frame.lane_change == "right":
+    if pv5_lane_codes is None and use_animated_lane_grid and frame.lane_change == "right":
         right_outer = right_inner + 1.0
         right_outer_points = model_line_at(frame.model_lane_lines, 3)
         markings.append(

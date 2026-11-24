@@ -1,6 +1,7 @@
 """Timing for original OEM lane observations."""
 
 PV5_LANE_MARKING_MAX_AGE_NS = 250_000_000
+PV5_CLUSTER_DASHED = 8
 
 
 def lane_line_time(parsers, selected):

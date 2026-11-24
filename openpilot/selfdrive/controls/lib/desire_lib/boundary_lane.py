@@ -2,7 +2,19 @@
 import math
 import time
 
-from opendbc.car.hyundai.lane_line_time import PV5_LANE_MARKING_MAX_AGE_NS
+from opendbc.car.hyundai.lane_line_time import PV5_CLUSTER_DASHED, PV5_LANE_MARKING_MAX_AGE_NS
+
+
+def fresh_pv5_camera_dashed(cs, direction):
+  if direction not in (1, 2) or not cs.canValid or getattr(cs, 'canTimeout', False):
+    return False
+  marking = getattr(cs, 'pv5LaneMarking', None)
+  stamp = getattr(marking, 'cameraMonoTime', 0)
+  if not stamp:
+    return False
+  now = time.clock_gettime_ns(time.CLOCK_BOOTTIME) if hasattr(time, 'CLOCK_BOOTTIME') else time.monotonic_ns()
+  code = marking.leftCameraCode if direction == 1 else marking.rightCameraCode
+  return code == PV5_CLUSTER_DASHED and 0 <= now - stamp <= PV5_LANE_MARKING_MAX_AGE_NS
 
 
 def fresh_pv5_lane_types(cs):

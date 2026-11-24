@@ -47,6 +47,7 @@ if OPENPILOT_ROOT is not None:
 from openpilot.common.hud_driving_feedback import (
     angle_steering_demand, driving_notice_events, lead_brake_sample, lane_line_probabilities, pv5_steering_warning,
 )
+from openpilot.common.pv5_lane_display import pv5_lane_display_codes
 from openpilot.selfdrive.carrot.deceleration_source import (
     deceleration_banner_text, deceleration_source_presentation, external_navigation_connected,
 )
@@ -314,6 +315,9 @@ class OpenpilotLiveSource:
         onroad_state = self.onroad_state()
         if onroad_state is not None:
             self.parser.trip_report_tracker.set_onroad(onroad_state)
+        source_times = getattr(self.sm, "source_log_mono_time", None)
+        source_car_mono_ns = source_times["carState"] if source_times is not None else None
+        lane_codes = pv5_lane_display_codes(self.sm, source_event_mono_ns=source_car_mono_ns)
         if self._service_alive("carState"):
             profile_stage = self._profile_start()
             event_t = self._service_time("carState")
@@ -321,7 +325,7 @@ class OpenpilotLiveSource:
             self._profile_add("source.live.car_frame", profile_stage)
 
             profile_stage = self._profile_start()
-            state = frame_to_state(frame)
+            state = frame_to_state(frame, pv5_lane_codes=lane_codes)
             self._profile_add("source.live.frame_to_state", profile_stage)
 
             self.last_state = self._with_live_hud_state(self._with_debug_state(state))
@@ -329,7 +333,7 @@ class OpenpilotLiveSource:
             return self.last_state
 
         profile_stage = self._profile_start()
-        state = self._standby_state
+        state = replace(self._standby_state, lanes=()) if lane_codes is not None else self._standby_state
         self._profile_add("source.live.standby_state", profile_stage)
 
         self.last_state = self._with_live_hud_state(self._with_debug_state(state))

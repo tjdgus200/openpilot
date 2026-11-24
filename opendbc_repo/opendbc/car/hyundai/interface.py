@@ -1,5 +1,8 @@
+import time
+
 from opendbc.car import Bus, get_safety_config, structs
 from opendbc.car.hyundai.hyundaicanfd import CanBus
+from opendbc.car.hyundai.lane_line_time import PV5_LANE_MARKING_MAX_AGE_NS
 from opendbc.car.hyundai.values import HyundaiFlags, CAR, DBC, CANFD_RADAR_SCC_CAR, \
                                                    CANFD_UNSUPPORTED_LONGITUDINAL_CAR, \
                                                    UNSUPPORTED_LONGITUDINAL_CAR, HyundaiSafetyFlags, HyundaiExtFlags, \
@@ -45,6 +48,19 @@ class CarInterface(CarInterfaceBase):
       ret.pv5LaneMarking.monoTime = mono_time
       ret.pv5LaneMarking.leftType = left
       ret.pv5LaneMarking.rightType = right
+      camera_time, camera_left, camera_right = self.pv5_lane_marking.camera
+      ret.pv5LaneMarking.cameraMonoTime = camera_time
+      ret.pv5LaneMarking.leftCameraCode = camera_left
+      ret.pv5LaneMarking.rightCameraCode = camera_right
+      display_time, display_left, display_right = self.pv5_lane_marking.display
+      if display_time and ret.canValid and not ret.canTimeout and (display_left >= 0 or display_right >= 0):
+        # CAN timestamps use CLOCK_BOOTTIME. carState events use CLOCK_MONOTONIC.
+        can_now = time.clock_gettime_ns(time.CLOCK_BOOTTIME) if hasattr(time, 'CLOCK_BOOTTIME') else time.monotonic_ns()
+        age = can_now - display_time
+        if 0 <= age <= PV5_LANE_MARKING_MAX_AGE_NS:
+          ret.pv5LaneMarking.displayMonoTime = time.monotonic_ns() - age
+          ret.pv5LaneMarking.leftDisplayCode = display_left
+          ret.pv5LaneMarking.rightDisplayCode = display_right
     if self.CP.carFingerprint == CAR.KIA_PV5 and not self.CS.pv5_gear_valid:
       # Unknown is not itself a common wrongGear event. Preserve all existing
       # CAN checks and use their NO_ENTRY/IMMEDIATE_DISABLE path as well.

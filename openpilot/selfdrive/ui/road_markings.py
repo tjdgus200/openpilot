@@ -8,6 +8,7 @@ from openpilot.system.ui.lib import native_draw, native_geometry
 
 LANE_DASH_LENGTH_M = 5.2
 LANE_DASH_GAP_M = 4.2
+PV5_LANE_MARKING_RGB = ((184, 190, 197), (255, 255, 255), (218, 202, 37), (64, 156, 255))
 
 
 def lane_dash_segments(line: np.ndarray, max_distance: float) -> list[np.ndarray]:

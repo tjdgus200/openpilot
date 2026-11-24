@@ -301,6 +301,14 @@ struct CarState {
     monoTime @0 :UInt64; # accepted original CAN observation, zero if absent
     leftType @1 :Int8 = -1;
     rightType @2 :Int8 = -1;
+    # Display-only source timestamp in the publishing carState event's clock.
+    displayMonoTime @3 :UInt64;
+    # -1 unknown, ones digit marking type, tens digit explicit OEM paint color.
+    leftDisplayCode @4 :Int8 = -1;
+    rightDisplayCode @5 :Int8 = -1;
+    cameraMonoTime @6 :UInt64; # validated original camera 0x161 in CLOCK_BOOTTIME
+    leftCameraCode @7 :Int8 = -1;
+    rightCameraCode @8 :Int8 = -1;
   }
 
   struct CollisionWarning {

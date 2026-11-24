@@ -170,7 +170,8 @@ def test_lane_draw_skips_zero_alpha_projection(model_renderer_module, monkeypatc
     valid = {"modelV2": True, "carState": True}
 
     def __getitem__(self, key):
-      assert key == "carState"
+      if key != "carState":
+        raise KeyError(key)
       return SimpleNamespace(leftLaneLine=24, rightLaneLine=0)
 
   renderer._draw_lane_lines_carrot(LaneSubMaster())
@@ -254,7 +255,8 @@ def test_negative_lane_type_keeps_model_geometry_visible(model_renderer_module, 
     valid = {"modelV2": True, "carState": True}
 
     def __getitem__(self, key):
-      assert key == "carState"
+      if key != "carState":
+        raise KeyError(key)
       return SimpleNamespace(leftLaneLine=-1, rightLaneLine=-1)
 
   renderer._draw_lane_lines_carrot(LaneSubMaster())
@@ -262,6 +264,48 @@ def test_negative_lane_type_keeps_model_geometry_visible(model_renderer_module, 
   assert len(projected) == 4
   assert all(actual is expected.raw_points for actual, expected in zip(projected, renderer._lane_lines, strict=True))
   assert len(draws) == 4
+
+
+@pytest.mark.parametrize('lane_code,rgb,dashed', [
+  (0, (184, 190, 197), True),
+  (11, (255, 255, 255), False),
+  (25, (218, 202, 37), True),
+  (31, (64, 156, 255), False),
+])
+def test_pv5_draws_only_confirmed_adjacent_markings(model_renderer_module, monkeypatch, lane_code, rgb, dashed):
+  module = model_renderer_module
+  renderer = object.__new__(module.ModelRenderer)
+  renderer._carrot_show_lane_info = 1
+  renderer._lane_line_probs = np.ones(4, dtype=np.float32)
+  renderer._road_edge_stds = np.zeros(2, dtype=np.float32)
+  renderer._lane_lines = [
+    module.ModelPoints(raw_points=np.array([[x, i, 0] for x in range(0, 21, 2)], dtype=np.float32))
+    for i in range(4)
+  ]
+  renderer._car_space_transform = np.eye(3)
+  renderer._clip_region = None
+  renderer._map_line_to_polygon = lambda line, *_args: line[:, :2]
+  monkeypatch.setattr(module, 'project_lane_segments', lambda segments, *_args: [segment[:, :2] for segment in segments])
+  draws = []
+  monkeypatch.setattr(module, 'draw_polygon_solid', lambda points, color: draws.append((points, color)))
+  now = 1_000_000_000
+  monkeypatch.setattr(module.time, 'monotonic_ns', lambda: now)
+
+  class SM(dict):
+    valid = {'modelV2': True, 'carState': True, 'carParams': True}
+    alive = valid
+    logMonoTime = dict.fromkeys(valid, now)
+
+  marking = SimpleNamespace(displayMonoTime=now, leftDisplayCode=-1, rightDisplayCode=lane_code)
+  car_state = SimpleNamespace(leftLaneLine=24, rightLaneLine=20, canValid=True, canTimeout=False, pv5LaneMarking=marking)
+  renderer._draw_lane_lines_carrot(SM(carState=car_state, carParams=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False)))
+
+  assert {int(points[0, 1]) for points, _ in draws} == {2}
+  right = [(points, color) for points, color in draws if points[0, 1] == 2]
+  assert len(right) == (3 if dashed else 1)
+  assert all((color.r, color.g, color.b) == rgb for _, color in right)
+  if dashed:
+    assert all(first[-1, 0] < second[0, 0] for (first, _), (second, _) in zip(right, right[1:]))
 
 
 def test_mode9_complex_path_preserves_segment_fill_outline_order(model_renderer_module, monkeypatch):

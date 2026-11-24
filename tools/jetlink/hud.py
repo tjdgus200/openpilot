@@ -98,6 +98,7 @@ class RemoteSubMaster:
     self.alive = dict.fromkeys(services, False)
     self.recv_time = dict.fromkeys(services, 0.)
     self.logMonoTime = dict.fromkeys(services, 0)
+    self.source_log_mono_time = dict.fromkeys(services, 0)
     self.generations = {}
     self.last_received = 0.
     self.steering_warning = 0
@@ -136,6 +137,8 @@ class RemoteSubMaster:
       with self.log.Event.from_bytes(raw) as reader:
         if reader.which() != name:
           raise ValueError('display service identity mismatch')
+        # Embedded CAN observation timestamps remain in the sender's clock.
+        self.source_log_mono_time[name] = reader.logMonoTime
         self.data[name] = reader.as_builder()
       self.generations[name] = mono
       self.updated[name] = True

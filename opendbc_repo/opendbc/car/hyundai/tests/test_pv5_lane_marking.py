@@ -83,6 +83,8 @@ def test_raw_type_has_no_decimal_alias_and_old_schema_defaults_are_unknown(lane_
   state = structs.CarState()
   assert state.pv5LaneMarking.monoTime == 0
   assert state.pv5LaneMarking.leftType == state.pv5LaneMarking.rightType == -1
+  assert state.pv5LaneMarking.cameraMonoTime == 0
+  assert state.pv5LaneMarking.leftCameraCode == state.pv5LaneMarking.rightCameraCode == -1
   state.pv5LaneMarking.monoTime = TICK
   state.pv5LaneMarking.leftType = 0
   state.pv5LaneMarking.rightType = 5
@@ -106,6 +108,7 @@ def test_original_cluster_fallback_preserves_verified_side_and_only_admits_eight
   packets = [(TICK, [cluster_frame(packer, left=left, right=right)])]
   camera.update(packets)
   assert reader.update(packets) == (TICK, *expected)
+  assert reader.camera == (TICK, left, right)
 
 
 def test_cluster_fallback_rejects_echo_invalid_checksum_and_stale_input(lane_input):
@@ -116,22 +119,59 @@ def test_cluster_fallback_rejects_echo_invalid_checksum_and_stale_input(lane_inp
   camera.update(other)
   alt.update(other)
   assert reader.update(other) == (0, -1, -1)
+  assert reader.camera == (0, -1, -1)
 
   valid = [(2 * TICK, [cluster_frame(packer)])]
   camera.update(valid)
   assert reader.update(valid) == (2 * TICK, -1, 0)
+  assert reader.camera == (2 * TICK, 2, 8)
 
   address, data, bus = cluster_frame(packer, count=2)
   broken = [(3 * TICK, [(address, bytes([data[0] ^ 1]) + data[1:], bus)])]
   camera.update(broken)
   assert reader.update(broken) == (0, -1, -1)
+  assert reader.camera == (0, -1, -1)
 
   valid = [(4 * TICK, [cluster_frame(packer, count=3)])]
   camera.update(valid)
   assert reader.update(valid) == (4 * TICK, -1, 0)
+  assert reader.camera == (4 * TICK, 2, 8)
   activity = [(10 * TICK, [])]
   camera.update(activity)
   assert reader.update(activity) == (0, -1, -1)
+  assert reader.camera == (0, -1, -1)
+
+
+@pytest.mark.parametrize('fault', ['short', 'oversize', 'duplicate', 'reordered'])
+def test_only_the_latest_unambiguous_camera_observation_can_authorize(lane_input, fault):
+  reader, packer, camera, _ = lane_input
+  camera._add_message('ADRV_0x161')
+  first = [(2 * TICK, [cluster_frame(packer, left=8, right=4)])]
+  camera.update(first)
+  reader.update(first)
+  assert reader.camera == (2 * TICK, 8, 4)
+
+  address, payload, bus = cluster_frame(packer, count=2, left=8, right=4)
+  stamp = 3 * TICK
+  if fault == 'short':
+    payload = payload[:-1]
+  elif fault == 'oversize':
+    payload = payload.ljust(65, b'\0')
+  elif fault == 'duplicate':
+    stamp = 2 * TICK
+  elif fault == 'reordered':
+    stamp = TICK
+  invalid = [(stamp, [(address, payload, bus)])]
+  camera.update(invalid)
+  reader.update(invalid)
+  assert reader.camera == (0, -1, -1)
+  assert reader.display == (0, -1, -1)
+
+  count = 2 if fault == 'oversize' else 3
+  valid = [(4 * TICK, [cluster_frame(packer, count=count, left=4, right=8)])]
+  camera.update(valid)
+  reader.update(valid)
+  assert reader.camera == (4 * TICK, 4, 8)
 
 
 @pytest.mark.parametrize('color', (0, 1))
@@ -143,7 +183,79 @@ def test_cluster_fallback_cannot_override_fresh_dedicated_line(lane_input, color
   camera.update(packets)
   expected = 1 if color else -1
   assert reader.update(packets) == (TICK, expected, expected)
+  assert reader.camera == (2 * TICK, 8, 8)
 
   later = [(7 * TICK, [cluster_frame(packer, count=2, left=8, right=8)])]
   camera.update(later)
   assert reader.update(later) == (7 * TICK, 0, 0)
+
+
+@pytest.mark.parametrize('color,confidence,expected', (
+  (1, 3, (10, 11)), (2, 2, (20, 21)), (3, 3, (30, 31)),
+  (0, 3, (-1, -1)), (2, 1, (-1, -1)),
+))
+def test_dedicated_display_uses_explicit_color_and_confident_known_type(lane_input, color, confidence, expected):
+  reader, packer, *_ = lane_input
+  packet = lane_frame(packer, PREFERRED, 1, color=color, confidence=confidence)
+  reader.update([(TICK, [packet])])
+  assert reader.display == (TICK, *expected)
+
+
+def test_dedicated_display_disagreement_is_per_side(lane_input):
+  reader, packer, *_ = lane_input
+  left = lane_frame(packer, PREFERRED, 1, left=4, right=5, color=2)
+  right = lane_frame(packer, FALLBACK, 2, left=0, right=5, color=2)
+  reader.update([(TICK, [left, right])])
+  assert reader.display == (TICK, -1, 25)
+
+
+def test_cluster_solid_needs_continuity_and_never_changes_control_type(lane_input):
+  reader, packer, camera, _ = lane_input
+  camera._add_message('ADRV_0x161')
+  states = [(2, 8), (2, 8), (2, 8), (2, 8), (4, 2), (2, 2), (2, 2), (2, 2)]
+  expected = [(-1, 0), (-1, 0), (-1, 0), (1, 0), (-1, -1), (-1, -1), (-1, -1), (-1, 1)]
+  for tick, ((left, right), display) in enumerate(zip(states, expected, strict=True), 1):
+    stamp = tick * TICK
+    packets = [(stamp, [cluster_frame(packer, count=tick, left=left, right=right)])]
+    camera.update(packets)
+    assert reader.update(packets) == (stamp, -1, 0 if right == 8 else -1)
+    assert reader.display == (stamp, *display)
+  stamp = 13 * TICK
+  packets = [(stamp, [cluster_frame(packer, count=9, left=2, right=2)])]
+  camera.update(packets)
+  assert reader.update(packets) == (stamp, -1, -1)
+  assert reader.display == (stamp, -1, -1)
+
+
+def test_cluster_display_rejects_counter_strike_without_changing_legacy_result(lane_input):
+  reader, packer, camera, _ = lane_input
+  camera._add_message('ADRV_0x161')
+  packets = [(TICK, [cluster_frame(packer, count=2, left=8, right=2)])]
+  camera.update(packets)
+  assert reader.update(packets) == (TICK, 0, -1)
+  assert reader.display == (0, -1, -1)
+  assert reader.camera == (0, -1, -1)
+
+
+def test_interface_publishes_display_age_without_changing_control_clock(monkeypatch):
+  from types import SimpleNamespace
+
+  from opendbc.car.hyundai import interface
+
+  can_stamp = 9_900_000_000
+  ctrl = object.__new__(interface.CarInterface)
+  ctrl.CP = SimpleNamespace(carFingerprint=interface.CAR.KIA_PV5)
+  ctrl.CS = SimpleNamespace(pv5_gear_valid=True)
+  ctrl.pv5_lane_marking = SimpleNamespace(
+    update=lambda packets: (can_stamp, 0, -1),
+    display=(can_stamp, 0, 1),
+    camera=(can_stamp, 8, 2),
+  )
+  monkeypatch.setattr(interface.CarInterfaceBase, 'update', lambda *_args: structs.CarState(canValid=True))
+  monkeypatch.setattr(interface.time, 'CLOCK_BOOTTIME', 7, raising=False)
+  monkeypatch.setattr(interface.time, 'clock_gettime_ns', lambda _clock: 10_000_000_000, raising=False)
+  monkeypatch.setattr(interface.time, 'monotonic_ns', lambda: 1_000_000_000)
+  result = ctrl.update([]).pv5LaneMarking
+  assert (result.monoTime, result.leftType, result.rightType) == (can_stamp, 0, -1)
+  assert (result.displayMonoTime, result.leftDisplayCode, result.rightDisplayCode) == (900_000_000, 0, 1)
+  assert (result.cameraMonoTime, result.leftCameraCode, result.rightCameraCode) == (can_stamp, 8, 2)

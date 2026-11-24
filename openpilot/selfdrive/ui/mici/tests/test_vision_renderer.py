@@ -47,12 +47,60 @@ def test_mici_draws_classified_dashes_and_double_yellow(mici_modules):
   renderer._map_line_to_polygon = lambda points, *_args, **_kwargs: points[:, :2]
   renderer._acceleration_x = []
   renderer._acceleration_x_filter = renderer._acceleration_x_filter2 = SimpleNamespace(update=lambda *_args: None)
+  renderer._display_clock = SimpleNamespace(update_filter=lambda *_args: None)
   renderer._experimental_mode = False
   renderer._path_offset_z = 0
   renderer._update_model(None, line[:, 0], SimpleNamespace(leftLaneLine=24, rightLaneLine=0))
   assert len(renderer._lane_marking_segments[1]) == 2
   assert len(renderer._lane_marking_segments[2]) > 2
   assert all(np.ptp(points[:, 0]) <= module.lane_dash_segments(line, 60)[0][-1, 0] + 0.01 for points in renderer._lane_marking_segments[2])
+
+
+def test_mici_pv5_dashes_clear_without_new_model_frame(mici_modules, monkeypatch):
+  module, _ = mici_modules
+  renderer = object.__new__(module.ModelRenderer)
+  line = np.array([[x, 0, 0] for x in range(0, 61, 2)], dtype=np.float32)
+  renderer._lane_lines = [
+    module.ModelPoints(raw_points=line + [0, i, 0], projected_points=(line + [0, i, 0])[:, :2]) for i in range(4)
+  ]
+  renderer._lane_line_probs = np.ones(4, dtype=np.float32)
+  renderer._road_edges = []
+  renderer._path = module.ModelPoints(raw_points=line)
+  renderer._lane_marking_segments = [[] for _ in range(4)]
+  renderer._pv5_lane_codes = None
+  renderer._map_line_to_polygon = lambda points, *_args: points[:, :2]
+  renderer._draw_blindspots = lambda _sm: None
+  renderer._display_clock = SimpleNamespace(tick=lambda: None, update_filter=lambda *_args: None)
+  renderer._torque_filter = None
+  renderer._rect = None
+  renderer._params_frame = renderer._model_frame = renderer._radar_frame = 5
+  renderer._longitudinal_control = renderer._transform_dirty = False
+
+  class SM(dict):
+    recv_frame = dict.fromkeys(('liveCalibration', 'modelV2', 'carParams', 'radarState', 'carState'), 5)
+    valid = {'carState': True, 'radarState': False, 'carParams': True, 'modelV2': True}
+    alive = valid
+    logMonoTime = dict.fromkeys(valid, NOW)
+
+  marking = SimpleNamespace(displayMonoTime=NOW, leftDisplayCode=35, rightDisplayCode=11)
+  car_state = SimpleNamespace(leftLaneLine=24, rightLaneLine=20, canValid=True, canTimeout=False, pv5LaneMarking=marking)
+  state = SM(carState=car_state, modelV2=None, carOutput=SimpleNamespace(actuatorsOutput=SimpleNamespace(torque=0)),
+             carParams=SimpleNamespace(carFingerprint='KIA_PV5', notCar=False),
+             liveCalibration=SimpleNamespace(height=[]), selfdriveState=SimpleNamespace(experimentalMode=False))
+  monkeypatch.setattr(module, 'ui_state', SimpleNamespace(sm=state, started_frame=1, show_radar_info=0, status=module.UIStatus.DISENGAGED))
+  clock = iter((NOW, NOW + 250_000_001))
+  monkeypatch.setattr(module.time, 'monotonic_ns', lambda: next(clock))
+  draws = []
+  monkeypatch.setattr(module, 'draw_polygon', lambda _rect, points, color: draws.append((int(points[0, 1]), (color.r, color.g, color.b))))
+  rect = module.rl.Rectangle(0, 0, 476, 240)
+
+  renderer._paint(rect)
+  assert draws.count((1, (64, 156, 255))) > 1
+  assert draws.count((2, (255, 255, 255))) == 1
+  assert {index for index, _ in draws} == {1, 2}
+  draws.clear()
+  renderer._paint(rect)
+  assert not draws
 
 
 @pytest.mark.parametrize('left,right,valid,expected_sides', [(True, False, True, 1), (True, True, True, 2), (False, False, True, 0), (True, False, False, 0)])

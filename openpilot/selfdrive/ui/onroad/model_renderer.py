@@ -10,12 +10,14 @@ from openpilot.cereal import messaging, car, log
 from dataclasses import dataclass, field
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.params import Params
+from openpilot.common.pv5_lane_display import pv5_lane_display_codes
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.radar_display import select_radar_display_points
 from openpilot.selfdrive.ui.vision_status import blindspot_source_packet, blindspot_sources
 from openpilot.selfdrive.ui.road_markings import (
   LANE_DASH_LENGTH_M as LANE_DASH_LENGTH_M, LANE_DASH_GAP_M as LANE_DASH_GAP_M,
+  PV5_LANE_MARKING_RGB,
   lane_dash_segments, project_lane_segments, project_blindspot_barrier, blindspot_barrier_quads,
 )
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -901,9 +903,11 @@ class ModelRenderer(Widget):
 
     max_distance = float(np.clip(lane_zero[-1, 0], MIN_DRAW_DISTANCE, MAX_DRAW_DISTANCE))
     max_idx = self._get_path_length_idx(lane_zero[:, 0], max_distance)
-    left_lane_line = car_state.leftLaneLine
-    right_lane_line = car_state.rightLaneLine
-    draw_double_left = left_lane_line % 10 == 4
+    pv5_codes = pv5_lane_display_codes(sm)
+    left_lane_line, right_lane_line = (car_state.leftLaneLine, car_state.rightLaneLine) if pv5_codes is None else pv5_codes
+    lane_codes = (-1, left_lane_line, right_lane_line, -1)
+    draw_double_left = pv5_codes is None and left_lane_line % 10 == 4
+    yellow_left = left_lane_line >= 20 if pv5_codes is None else left_lane_line // 10 == 2
 
     lane_vertices = []
     empty_vertices = np.empty((0, 2), dtype=np.float32)
@@ -913,17 +917,14 @@ class ModelRenderer(Widget):
       # The old path projected and submitted low-confidence lanes with alpha
       # zero. They cannot affect the framebuffer, so avoid both the projection
       # work and the draw call while preserving the > 0.3 visibility threshold.
-      if not lane_line_visible[i]:
+      lane_code = lane_codes[i]
+      if not lane_line_visible[i] or (pv5_codes is not None and lane_code < 0):
         lane_vertices.append([])
         continue
 
-      lane_code = left_lane_line if i == 1 else right_lane_line if i == 2 else None
-      line_width = 0.025
-      if i == 1 and left_lane_line >= 20:
-        line_width = 0.05
-      # Negative means the vehicle has no lane-type classification. Keep the
-      # high-confidence model geometry visible and use the legacy solid style.
-      is_dashed = lane_code is not None and lane_code >= 0 and lane_code % 10 == 0
+      line_width = 0.05 if i == 1 and yellow_left else 0.025
+      lane_type = lane_code % 10
+      is_dashed = lane_code >= 0 and (lane_type == 0 or (pv5_codes is not None and lane_type == 5))
       if is_dashed:
         projected_segments = project_lane_segments(
           lane_dash_segments(lane_line.raw_points, max_distance), line_width, self._car_space_transform, self._clip_region,
@@ -950,12 +951,12 @@ class ModelRenderer(Widget):
       if not lane_vertices[i]:
         continue
       alpha = 220
-      stroke = 0.0
-      if i == 1:
-        color = rl.Color(218, 202, 37, alpha) if left_lane_line >= 20 else rl.Color(255, 255, 255, alpha)
-        stroke = 1.0 if left_lane_line >= 20 else 0.0
-      elif i == 2:
-        color = rl.Color(218, 202, 37, alpha) if right_lane_line >= 20 else rl.Color(255, 255, 255, alpha)
+      lane_code = lane_codes[i]
+      stroke = 1.0 if i == 1 and yellow_left else 0.0
+      if pv5_codes is not None and lane_code >= 0:
+        color = rl.Color(*PV5_LANE_MARKING_RGB[lane_code // 10], alpha)
+      elif lane_code >= 20:
+        color = rl.Color(218, 202, 37, alpha)
       else:
         color = rl.Color(255, 255, 255, alpha)
 
