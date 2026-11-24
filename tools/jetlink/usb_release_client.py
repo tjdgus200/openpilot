@@ -15,6 +15,10 @@ class PermissionLost(ConnectionError):
   """Stop file writes and wait in the same boot session for renewed permission."""
 
 
+class DownloadUnavailable(ConnectionError):
+  """A temporary HTTP failure, separate from a failed USB exchange."""
+
+
 def require_permission(allowed):
   if not allowed():
     raise PermissionLost('USB update requires offroad or fresh Park/zero-speed state and USB connection')
@@ -66,7 +70,7 @@ def asset(item, cache, allowed, progress=None):
     request = item['url']
     if count:
       request = urllib.request.Request(request, headers={'Range': f'bytes={count}-', 'Accept-Encoding': 'identity'})
-    report('downloading', count)
+    report('connecting_download', count)
     with urllib.request.urlopen(request, timeout=30) as source:
       if not source.url.startswith('https://'):
         raise ValueError('Insecure asset redirect')
@@ -76,9 +80,10 @@ def asset(item, cache, allowed, progress=None):
           digest, count = hashlib.sha256(), 0
         elif source.status != 206 or source.headers.get('Content-Range') != f'bytes {count}-{size - 1}/{size}':
           raise ValueError('Invalid USB update download range')
-      report('downloading', count)
       with partial.open('ab' if count else 'wb') as output:
-        while data := source.read(BLOCK):
+        # HTTPResponse.read() fills the entire block before returning. Report
+        # bytes as they arrive and recheck permission even on a slow response.
+        while data := source.read1(BLOCK):
           require_permission(allowed)
           count += len(data)
           if count > size:
@@ -98,6 +103,8 @@ def asset(item, cache, allowed, progress=None):
   except (ConnectionError, TimeoutError, URLError, IncompleteRead) as error:
     retryable = not isinstance(error, HTTPError) or error.code in (408, 429) or 500 <= error.code < 600
     keep_partial = retryable and partial.is_file() and 0 < partial.stat().st_size <= size
+    if retryable and not isinstance(error, PermissionLost):
+      raise DownloadUnavailable('USB update download temporarily unavailable') from None
     raise
   finally:
     if not keep_partial:

@@ -172,7 +172,8 @@ def test_device_badge_describes_update_and_expires(tmp_path, monkeypatch):
   assert '인터넷' not in status.badge()[0]
 
 
-@pytest.mark.parametrize('phase,label', [('checking_files', '파일 검사'), ('downloading', '다운로드')])
+@pytest.mark.parametrize('phase,label', [('checking_files', '파일 검사'), ('downloading', '다운로드'),
+                                        ('connecting_download', '서버 응답 대기')])
 def test_blocking_asset_preparation_has_bounded_status_grace(tmp_path, monkeypatch, phase, label):
   from openpilot.common import jetlink_status as status
   path = tmp_path / 'link'
@@ -200,6 +201,15 @@ def test_preparation_grace_does_not_hide_stale_runtime_or_transfer(tmp_path, mon
   path.write_text(json.dumps({'updated': 10., 'state': state, 'peer': {'carrot_host': 'jetson'},
                              'host_update': {'state': phase}}))
   assert status.badge()[1] == 'error'
+
+
+def test_download_badge_distinguishes_waiting_and_subpercent_bytes():
+  from openpilot.common.jetlink_status import update_badge
+  assert '서버 응답 대기' in update_badge({'state': 'connecting_download', 'fraction': 0.})[0]
+  assert '재시도 대기' in update_badge({'state': 'retrying_download'})[0]
+  assert '0.1% 미만' in update_badge({'state': 'downloading', 'fraction': .0001})[0]
+  assert '0.5%' in update_badge({'state': 'downloading', 'fraction': .005})[0]
+  assert '99.9%' in update_badge({'state': 'downloading', 'fraction': .9999})[0]
 
 
 def test_bootstrap_migration_never_writes_immutable_os_and_defers_current_boot(tmp_path, monkeypatch):

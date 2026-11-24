@@ -71,6 +71,8 @@ def wait_for_boot_update(client, peer, wifi, connected, publish, sleep=time.slee
   def report(value):
     nonlocal stage
     state = value.get('state')
+    if state == 'connecting_download':
+      state = 'downloading'
     stage = state if state in FAILURE_STAGES else None
     publish('updating', peer=peer, host_update=value)
 
@@ -106,7 +108,7 @@ def _run_boot_update(client, peer, wifi, connected, report, sleep):
   usb_change = False
   if manifest.get('delivery') == 'usb':
     from tools.jetlink.usb_release import SHA256_CAPABILITY, CHECK_CAPABILITY, RESUME_CAPABILITY  # noqa: TID251
-    from tools.jetlink.usb_release_client import PermissionLost, available, upload  # noqa: TID251
+    from tools.jetlink.usb_release_client import DownloadUnavailable, PermissionLost, available, upload  # noqa: TID251
     if peer.get(SHA256_CAPABILITY) is not True:
       raise BootReceiverRequired('Install and locally enable the SHA-256 USB receiver on Jetson once')
     usb_change = peer.get('usb_source_commit') != manifest['source_commit']
@@ -147,6 +149,17 @@ def _run_boot_update(client, peer, wifi, connected, report, sleep):
             # Renew permission before any new BEGIN or file-byte request.
             if not connected():
               raise ConnectionError('Jetson disconnected during USB transfer') from None
+          except DownloadUnavailable:
+            # The HTTPS fetch runs on comma. A server timeout by itself does
+            # not require a new Jetson handshake or discarding staged bytes.
+            for _ in range(5):
+              if not connected():
+                raise ConnectionError('Jetson disconnected during download wait') from None
+              report({'state': 'retrying_download', 'fraction': None, 'integrity': 'sha256'})
+              if wifi is not None:
+                wifi.send(client)
+              client.state()
+              sleep(1.)
   while connected():
     if usb_change or parked_gate or internal_gate:
       wait_for_permission(permission, connected, waiting, sleep)

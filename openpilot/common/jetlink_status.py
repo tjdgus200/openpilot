@@ -28,9 +28,16 @@ def update_badge(value):
     return 'Jetson USB 업데이트 수신기 설치 필요', 'loading'
   if state == 'waiting_internet':
     return 'Jetson 업데이트 필요 · 인터넷 연결 대기', 'loading'
+  if state == 'connecting_download':
+    return 'Jetson 업데이트 다운로드 서버 응답 대기', 'loading'
+  if state == 'retrying_download':
+    return 'Jetson 업데이트 다운로드 일시 지연 · 재시도 대기', 'loading'
   if state == 'downloading':
     fraction = value.get('fraction')
-    percent = f' {int(fraction * 100)}%' if isinstance(fraction, (int, float)) and 0 <= fraction <= 1 else ''
+    percent = ''
+    if type(fraction) in (int, float) and 0 < fraction <= 1:
+      tenths = int(fraction * 1000)
+      percent = f' {tenths / 10:.1f}%' if tenths else ' 0.1% 미만'
     return f'Jetson 업데이트 다운로드 중{percent}', 'loading'
   if state in ('checking_files', 'transferring'):
     fraction = value.get('fraction')
@@ -106,7 +113,7 @@ def fresh_value(value, now, *, handshake=False, preparing=False):
     update = value.get('host_update') or {}
     if preparing and value.get('state') == 'updating' and isinstance(update, dict):
       phase = update.get('state')
-      if phase in ('downloading', 'checking_files'):
+      if phase in ('connecting_download', 'downloading', 'checking_files'):
         limit = 35
       elif update.get('integrity') == 'sha256':
         # USB updater waits for an ACK before publishing the next stage.

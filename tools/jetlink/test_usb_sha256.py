@@ -5,6 +5,7 @@ No installed services, vehicle CAN, TensorRT execution or device access.
 import builtins
 import copy
 import hashlib
+from http.client import HTTPResponse
 import io
 import json
 from pathlib import Path
@@ -214,6 +215,105 @@ def test_cached_asset_hash_check_reports_progress_without_network(installed, mon
   assert sender.asset(item, cache, lambda: True, progress=lambda *args: reports.append(args)).is_file()
   assert reports[0] == ('checking_files', 0)
   assert reports[-1] == ('checking_files', item['size'])
+
+
+def test_download_reports_data_before_a_full_block(tmp_path, monkeypatch):
+  data = b'x' * 512
+  item = {'url': 'https://example.invalid/model', 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+  reports = []
+  class Response(io.BytesIO):
+    url = item['url']
+
+    def read(self, _size):
+      pytest.fail('waiting for a full network block hides the first bytes')
+
+    def read1(self, size):
+      return super().read(min(size, 1 if self.tell() == 0 else size))
+
+  monkeypatch.setattr(sender.urllib.request, 'urlopen', lambda *a, **k: Response(data))
+  assert sender.asset(item, tmp_path, lambda: True, progress=lambda *a: reports.append(a)).read_bytes() == data
+  assert reports[:2] == [('connecting_download', 0), ('downloading', 1)]
+
+
+def test_http_timeouts_within_one_block_still_advance_resume(tmp_path, monkeypatch):
+  size, burst = 256 * 1024, 64 * 1024
+  data = b'x' * size
+  item = {'url': 'https://example.invalid/model', 'size': size, 'sha256': hashlib.sha256(data).hexdigest()}
+  offsets = []
+
+  class FragmentedSocket(io.RawIOBase):
+    def __init__(self, wire):
+      self.wire = io.BytesIO(wire)
+
+    def readable(self):
+      return True
+
+    def readinto(self, buffer):
+      received = self.wire.read(min(8192, len(buffer)))
+      if not received:
+        raise TimeoutError('Simulated socket inactivity')
+      buffer[:len(received)] = received
+      return len(received)
+
+  def fetch(request, **kw):
+    offset = 0 if isinstance(request, str) else int(request.get_header('Range').removeprefix('bytes=').rstrip('-'))
+    offsets.append(offset)
+    status = 206 if offset else 200
+    header = (f'HTTP/1.1 {status} OK\r\nContent-Length: {size - offset}\r\n'
+              f'Content-Range: bytes {offset}-{size - 1}/{size}\r\n\r\n').encode()
+    raw = io.BufferedReader(FragmentedSocket(header + data[offset:offset + burst]))
+    response = HTTPResponse(NS(makefile=lambda _: raw))
+    response.begin()
+    response.url = item['url']
+    return response
+
+  monkeypatch.setattr(sender.urllib.request, 'urlopen', fetch)
+  for expected in (burst, 2 * burst, 3 * burst):
+    with pytest.raises(ConnectionError):
+      sender.asset(item, tmp_path, lambda: True)
+    assert (tmp_path / (item['sha256'] + '.part')).stat().st_size == expected
+  assert sender.asset(item, tmp_path, lambda: True).read_bytes() == data
+  assert offsets == [0, burst, 2 * burst, 3 * burst]
+
+
+@pytest.mark.parametrize('drop_usb', [False, True])
+def test_boot_retries_http_timeout_without_resetting_usb(installed, monkeypatch, drop_usb):
+  from contextlib import nullcontext
+  wire, states, connections = Wire(), [], []
+  connected = [True]
+  monkeypatch.setitem(sys.modules, 'openpilot.common.params', NS(Params=lambda: object()))
+  monkeypatch.setattr(startup, 'Permission', lambda *a, **kw: NS(allowed=lambda: True))
+  monkeypatch.setattr(startup, 'bulk_scheduling', nullcontext)
+  monkeypatch.setattr(startup, 'selected_release', lambda *a, **kw: installed.value)
+  original = sender.upload
+  monkeypatch.setattr(sender, 'upload', lambda client, value, cache, allowed, progress, **kw:
+                      original(client, value, installed.temporary / 'retry-cache', allowed, progress, **kw))
+  def fetch(request, **kw):
+    url = request if isinstance(request, str) else request.full_url
+    connections.append(url)
+    if len(connections) == 1:
+      raise TimeoutError('No HTTP response')
+    name = next(name for kind, name in zip(usb.KINDS, usb.NAMES, strict=True) if installed.value[kind]['url'] == url)
+    response = io.BytesIO((installed.package / name).read_bytes())
+    response.url = url
+    return response
+  monkeypatch.setattr(sender.urllib.request, 'urlopen', fetch)
+  def sleep(_):
+    assert not usb.registered(installed.root, installed.value)
+    if drop_usb:
+      connected[0] = False
+  peer = {'carrot_host': 'jetson', startup.CAPABILITY: True, usb.SHA256_CAPABILITY: True,
+          usb.RESUME_CAPABILITY: True}
+  try:
+    with pytest.raises(ConnectionError, match='disconnected' if drop_usb else 'reconnecting'):
+      startup.wait_for_boot_update(wire.client, peer, None, lambda: connected[0],
+                                  lambda *a, **kw: states.append(kw['host_update']['state']), sleep=sleep)
+    assert states[:3] == ['checking_usb', 'connecting_download', 'retrying_download']
+    assert wire.kinds.count(usb.BEGIN_RESUME) == (1 if drop_usb else 2)
+    assert len(connections) == (1 if drop_usb else 3)
+    assert usb.registered(installed.root, installed.value) is not drop_usb
+  finally:
+    wire.session.close()
 
 
 @pytest.mark.parametrize('recover', [True, False])
@@ -509,7 +609,7 @@ def test_interrupted_download_resumes_only_missing_bytes(tmp_path, monkeypatch, 
   class InterruptedResponse(io.BytesIO):
     url = item['url']
 
-    def read(self, size):
+    def read1(self, size):
       if failure == 'timeout' and self.tell() == 4:
         raise TimeoutError
       return super().read(size)
