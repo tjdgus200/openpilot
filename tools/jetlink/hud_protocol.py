@@ -29,7 +29,7 @@ SERVICES = ('carState', 'carParams', 'modelV2', 'radarState', 'liveTracks', 'lon
 PARAMS = ('ClusterHud', 'ClusterHudDebug', 'JetsonHudFps', 'JetsonInputFusion', 'ClusterHudBrightness', 'ClusterHudOrientation',
           'ClusterHudMirror', 'ClusterHudTheme', 'ClusterHudRadarInfo', 'ClusterHudRadarDisplay',
           'ClusterHudRadarSourceColor', 'ClusterHudCameraViewMode', 'ClusterHudPanelLayout',
-          'ClusterHudScreenMode', 'ShowPlotMode', 'LanguageSetting', 'IsMetric', 'ShowDateTime',
+          'ClusterHudScreenMode', 'JetsonYoloEnabled', 'ShowPlotMode', 'LanguageSetting', 'IsMetric', 'ShowDateTime',
           'IsOnroad', 'CarParams', 'CalibrationParams', 'CustomSteerRatio', 'SteerActuatorDelay',
           'LateralAccelerationFactor', 'UsbGpuActive')
 
@@ -349,7 +349,7 @@ class SnapshotBuilder:
       requested = None
     record['input_fusion'] = {'mode': fusion_selection(requested), 'parked': gate(self.sm, record['sent']),
                               'hud_fps': self.target_fps}
-    if getattr(self, 'radar_context', None) is not None:
+    if getattr(self, 'radar_context', None) is not None and self.settings.get('JetsonYoloEnabled') != 'MA==':
       try:
         marker = self.radar_context.sample(self.sm)
         if marker is not None:

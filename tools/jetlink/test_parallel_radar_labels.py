@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from hud_yolo_protocol import HEADER as PREVIEW_HEADER, MAGIC, MAX_AGE_NS, MAX_BOXES, ROW, SnapshotReader, read_snapshot, write_snapshot
 from parallel_radar_labels import HEADER, OFFSETS, ParallelRadarLabels, WIDE_BYTES
 from test_device_state import runtime as engine_runtime
 
@@ -24,7 +25,7 @@ class Detector:
     assert self.continue_run.wait(2)
     if self.fail:
       raise RuntimeError('synthetic late CUDA failure')
-    return 1, bytes(24)
+    return 1, ROW.pack(2, .75, 256., 64., 512., 170.)
 
   def close(self):
     self.closed.set()
@@ -125,12 +126,118 @@ def test_stale_or_wrong_geometry_is_never_dispatched(runtime):
   assert aux.sample is None
 
 
+def test_preview_is_exact_successful_input_independent_of_radar_and_removed_on_yolo_off(tmp_path, monkeypatch):
+  detector = Detector()
+  detector.continue_run.set()
+  path = tmp_path / 'preview.packet'
+
+  def radar_unavailable(header, rows):
+    raise OSError('no association receiver')
+
+  aux = ParallelRadarLabels(lambda: detector, radar_unavailable, preview_path=path)
+  assert aux.ready.wait(1)
+  try:
+    def submit(seq, stamp, valid, preview):
+      monkeypatch.setattr('parallel_radar_labels.time.monotonic_ns', lambda: stamp)
+      aux.set_request(True, preview)
+      aux.offer(seq, seq + 10, stamp, pair())
+      aux.finish(seq, valid)
+      assert aux.slot.acquire(timeout=1)
+      aux.slot.release()
+
+    stamp = 1_000_000_000
+    submit(1, stamp, True, False)
+    assert not path.exists()
+    submit(2, stamp + 50_000_000, False, True)
+    assert not path.exists()
+    submit(3, stamp + 100_000_000, True, True)
+    preview = read_snapshot(path)
+    assert preview.frame_id == 13 and preview.stamp_ns == stamp + 100_000_000
+    assert preview.image == pair()[1].tobytes()
+    assert preview.rows == ((2, .75, 256., 64., 512., 170.),)
+    submit(4, stamp + 150_000_000, True, True)
+    assert read_snapshot(path) == preview  # Unchanged inside the 10 Hz budget.
+
+    aux.set_request(False, True)  # A stray preview bit must never enable YOLO.
+    aux.offer(5, 15, time.monotonic_ns(), pair())
+    assert aux.sample is None and len(detector.images) == 4
+    for _ in range(100):
+      if not path.exists():
+        break
+      time.sleep(.001)
+    assert not path.exists()
+  finally:
+    aux.close()
+    aux.thread.join(1)
+
+
+def test_yolo_off_cancels_a_queued_sample_even_after_reenable(tmp_path):
+  detector = Detector()
+  starting = threading.Event()
+  continue_open = threading.Event()
+
+  def open_detector():
+    starting.set()
+    assert continue_open.wait(1)
+    return detector
+
+  aux = ParallelRadarLabels(open_detector, lambda *_: None, preview_path=tmp_path / 'preview.packet')
+  try:
+    assert starting.wait(1)
+    aux.ready.set()  # Queue a sample while the auxiliary worker cannot dispatch.
+    aux.set_request(True, True)
+    aux.offer(1, 2, time.monotonic_ns(), pair())
+    pending = aux.sample
+    assert pending is not None
+    aux.set_request(False, False)
+    aux.set_request(True, True)
+    aux.finish(1, True)
+    continue_open.set()
+    assert aux.slot.acquire(timeout=1)
+    aux.slot.release()
+    assert not pending.valid and not detector.images
+  finally:
+    detector.continue_run.set()
+    continue_open.set()
+    aux.close()
+    aux.thread.join(1)
+
+
+def test_preview_reader_caches_fresh_identity_and_rejects_stale_or_invalid_frames(tmp_path):
+  path = tmp_path / 'preview.packet'
+  reader = SnapshotReader(path)
+  stamp = 1_000_000_000
+  image = bytes(WIDE_BYTES)
+  write_snapshot(path, 1, stamp, 0, b'', image)
+  first = reader.read(stamp)
+  assert first.frame_id == 1 and first.rows == () and first.image == image
+  assert reader.read(stamp + MAX_AGE_NS - 1) is first
+  assert reader.read(stamp + MAX_AGE_NS) is None
+  assert reader.read(stamp - 1) is None
+
+  row = ROW.pack(7, .5, 1., 2., 3., 4.)
+  write_snapshot(path, 2, stamp, 1, row, image)
+  assert reader.read(stamp).rows == ((7, .5, 1., 2., 3., 4.),)
+  for body in (PREVIEW_HEADER.pack(MAGIC, 3, stamp, MAX_BOXES + 1) + row + image,
+               PREVIEW_HEADER.pack(MAGIC, 3, stamp, 1) + row + image[:-1],
+               PREVIEW_HEADER.pack(MAGIC, 3, stamp, 1) + row + image + b'0',
+               PREVIEW_HEADER.pack(b'FAIL', 3, stamp, 1) + row + image,
+               PREVIEW_HEADER.pack(MAGIC, 3, stamp, 1) + ROW.pack(1, float('nan'), 1., 2., 3., 4.) + image,
+               PREVIEW_HEADER.pack(MAGIC, 3, stamp, 1) + ROW.pack(9, .5, 1., 2., 3., 4.) + image,
+               PREVIEW_HEADER.pack(MAGIC, 3, stamp, 1) + ROW.pack(1, .5, 2., 2., 1., 4.) + image):
+    path.write_bytes(body)
+    assert reader.read(stamp) is None
+  path.unlink()
+  assert reader.read(stamp) is None
+
+
 def test_production_session_admits_only_negotiated_decoded_wide_frame():
   import server
   from jetlink import protocol as P
 
-  calls = []
-  labels = SimpleNamespace(offer=lambda *a: calls.append(a), invalidate=lambda: calls.append('reset'))
+  calls, requests = [], []
+  labels = SimpleNamespace(offer=lambda *a: calls.append(a), invalidate=lambda: calls.append('reset'),
+                           set_request=lambda *a: requests.append(a))
   session = SimpleNamespace(labels=labels, t=SimpleNamespace(protocol_version=2))
   engine = SimpleNamespace(label_device=0, run=lambda after_enqueue=None: (after_enqueue and after_enqueue(), 'main')[1])
   msg = SimpleNamespace(seq=9, received_ns=100)
@@ -138,13 +245,20 @@ def test_production_session_admits_only_negotiated_decoded_wide_frame():
   def run(flags):
     return server.CarrotSession._run_with_labels(session, engine, warped, 2, flags, msg)
   assert run(0) == 'main' and not calls
+  assert requests.pop() == (False, False)
+  assert run(P.WIDE_YOLO_PREVIEW_FLAG) == 'main' and not calls
+  assert requests.pop() == (False, True)
   session.t.protocol_version = 3
   assert run(P.WIDE_LABELS_FLAG) == 'main' and not calls
+  assert requests.pop() == (False, False)
   session.t.protocol_version = 2
   assert run(P.WIDE_LABELS_FLAG | P.Flag.RESET_QUEUES) == 'main' and calls.pop() == 'reset'
   assert run(P.WIDE_LABELS_FLAG) == 'main'
+  assert requests.pop() == (True, False)
   seq, frame, stamp, pixels = calls.pop()
   assert (seq, frame, stamp) == (9, 2, 100) and pixels is warped
+  assert run(P.WIDE_LABELS_FLAG | P.WIDE_YOLO_PREVIEW_FLAG) == 'main'
+  assert requests.pop() == (True, True)
 
 
 def test_handoff_exception_does_not_skip_main_fence():
@@ -158,7 +272,7 @@ def test_handoff_exception_does_not_skip_main_fence():
     after_enqueue()
     events.append('fence')
     return 'main'
-  session = SimpleNamespace(labels=SimpleNamespace(offer=fail, close=lambda: events.append('close')),
+  session = SimpleNamespace(labels=SimpleNamespace(offer=fail, close=lambda: events.append('close'), set_request=lambda *_: None),
                             t=SimpleNamespace(protocol_version=2))
   result = server.CarrotSession._run_with_labels(session, SimpleNamespace(label_device=0, run=run), pair(),
                                                  2, P.WIDE_LABELS_FLAG, SimpleNamespace(seq=9, received_ns=100))

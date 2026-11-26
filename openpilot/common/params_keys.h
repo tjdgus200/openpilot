@@ -208,6 +208,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ClusterHudEncoder", {PERSISTENT, INT, "0"}},
     {"JetsonHudFps", {PERSISTENT, INT, "0"}},
     {"JetsonInputFusion", {PERSISTENT, INT, "1"}},
+    {"JetsonYoloEnabled", {PERSISTENT, BOOL, "1"}},
     {"ClusterHudPriority", {PERSISTENT, INT, "10"}},  // Retired: ignored; HUD always uses SCHED_OTHER.
     {"ClusterHudTheme", {PERSISTENT, INT, "0"}},
     {"ClusterNaviMapTheme", {PERSISTENT, INT, "1"}},

@@ -114,6 +114,29 @@ def test_hello_metadata_cannot_override_strict_header(hello):
   assert stream.closed
 
 
+@pytest.mark.parametrize('label_capable,preview_capable,peer', [
+  (True, True, 'jetson'), (True, False, 'jetson'), (False, True, 'jetson'), (True, True, 'mac'),
+])
+def test_wide_preview_request_is_scoped_to_negotiated_jetson(label_capable, preview_capable, peer):
+  hello = {'protocol': 2, 'stateful_v2': True, 'carrot_host': peer,
+           V2.WIDE_LABELS_CAPABILITY: label_capable, V2.WIDE_YOLO_PREVIEW_CAPABILITY: preview_capable}
+  stream = MemoryStream(incoming=packet(2, V2.Msg.HELLO_RESP, 1, json.dumps(hello).encode()))
+  client = JetlinkClient(stream)
+  client.hello()
+  client.spec = link.SPEC
+  images = np.zeros(client.spec.warped_shape, np.uint8)
+  packed = np.zeros(client.spec.packed_nelem, np.float32)
+  for frame, request_labels, request_preview in ((1, False, True), (2, True, False), (3, True, True)):
+    stream.out.clear()
+    client.infer_begin(images, packed, frame, wide_labels=request_labels, wide_yolo_preview=request_preview)
+    message = MemoryStream(incoming=stream.out).recv(1)
+    fid, flags = V2.unpack_infer_req(message.payload)
+    labels = peer == 'jetson' and label_capable and request_labels
+    assert fid == frame
+    assert bool(flags & V2.WIDE_LABELS_FLAG) == labels
+    assert bool(flags & V2.WIDE_YOLO_PREVIEW_FLAG) == (labels and preview_capable and request_preview)
+
+
 def test_v3_request_omits_previous_features_preserves_scalars_and_resets():
   stream = MemoryStream(3, gadget=True)
   client = compat.V3Client(stream)

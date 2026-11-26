@@ -2344,7 +2344,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--screen-mode",
         default=None,
-        help=("HUD screen override: 3d-fullscreen, default, debug-system, trip-report, navi, or battery; "
+        help=("HUD screen override: 3d-fullscreen, default, debug-system, trip-report, navi, battery, or yolo; "
               + f"reads {CLUSTER_SCREEN_MODE_PARAM} when omitted (unset: battery)."),
     )
     parser.add_argument(

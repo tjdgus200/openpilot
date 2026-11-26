@@ -24,6 +24,8 @@ VERSION = 2
 SUPPORTED_VERSIONS = (2, 3)
 WIDE_LABELS_CAPABILITY = 'pv5_wide_labels_v2'
 WIDE_LABELS_FLAG = 1 << 8  # INFER_REQ payload, opt-in display-only use of camera 1
+WIDE_YOLO_PREVIEW_CAPABILITY = 'carrot_wide_yolo_preview_v1'
+WIDE_YOLO_PREVIEW_FLAG = 1 << 9  # With WIDE_LABELS_FLAG, render the detector input locally
 
 # Legacy v2 packet size. A transfer that is an exact multiple does not terminate
 # a bulk read, so the sender adds one byte; v3 uses 512 (see packet_multiple()).

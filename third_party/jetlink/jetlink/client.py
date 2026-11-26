@@ -104,6 +104,7 @@ class JetlinkClient:
     self._infer_flags = 0
     self._stateful_v2 = False
     self.wide_labels_available = False
+    self.wide_yolo_preview_available = False
     self._nav_u8 = False
     # Native comma measurements show LZ4 encoding costs more than USB savings.
     # Keep exact map packing; full-block compression requires an explicit trial.
@@ -239,6 +240,7 @@ class JetlinkClient:
     never saw end; see Session._greet."""
     self._stateful_v2 = False
     self.wide_labels_available = False
+    self.wide_yolo_preview_available = False
     self._nav_u8 = False
     self._lz4 = False
     self._deferred_map = False
@@ -278,6 +280,7 @@ class JetlinkClient:
     self._stateful_v2 = selected == 2 and response.get('stateful_v2') is True
     self.wide_labels_available = (selected == 2 and response.get('carrot_host') == 'jetson'
                                   and response.get(P.WIDE_LABELS_CAPABILITY) is True)
+    self.wide_yolo_preview_available = self.wide_labels_available and response.get(P.WIDE_YOLO_PREVIEW_CAPABILITY) is True
     self._projection_negotiated = (self._allow_output_projection and self._stateful_v2 and
                                   projection.matches(response.get(projection.CAPABILITY)))
     from jetlink.packed_codec import CAPABILITY
@@ -451,7 +454,7 @@ class JetlinkClient:
 
   def infer_begin(self, warped: np.ndarray, packed: np.ndarray, frame_id: int = 0,
                   reset: bool = False, want_state: bool = False, deadline: float | None = None,
-                  nav_metadata=None, wide_labels=False) -> int:
+                  nav_metadata=None, wide_labels=False, wide_yolo_preview=False) -> int:
     """Send a frame and return immediately with its sequence number.
 
     Split from infer_end so the caller can work while the Jetson is busy;
@@ -472,6 +475,8 @@ class JetlinkClient:
     flags = (P.Flag.RESET_QUEUES if reset else 0) | (P.Flag.WANT_STATE if want_state else 0)
     if wide_labels and self.wide_labels_available and version == 2:
       flags |= P.WIDE_LABELS_FLAG
+      if wide_yolo_preview and self.wide_yolo_preview_available:
+        flags |= P.WIDE_YOLO_PREVIEW_FLAG
     if self.project_output:
       if version != 2 or not self.output_projection_available:
         raise LinkError('driving-output projection was not negotiated for this model')

@@ -14,7 +14,7 @@ from openpilot.selfdrive.modeld.jetlink import shared_input
 from openpilot.selfdrive.modeld.jetlink import VENDOR  # noqa: F401
 from openpilot.common.jetlink_status import badge  # noqa: F401
 from jetlink.spec import ModelSpec
-from jetlink.protocol import WIDE_LABELS_CAPABILITY
+from jetlink.protocol import WIDE_LABELS_CAPABILITY, WIDE_YOLO_PREVIEW_CAPABILITY
 from jetlink import output_projection as projection, deferred_map
 from openpilot.selfdrive.modeld.jetlink.contracts import DEFAULT_SPEC, validate_model_spec
 
@@ -26,6 +26,7 @@ REQUEST = struct.Struct('<IIQ')
 REPLY = struct.Struct('<I3I')
 MAX_PACKET = 1 << 20
 WIDE_LABELS_IPC_FLAG = 8
+WIDE_YOLO_PREVIEW_IPC_FLAG = 16
 
 
 def read_exact(sock, size, deadline=None):
@@ -149,6 +150,7 @@ class Client:
       hello = json.loads(receive(self.sock, time.monotonic() + timeout))
       self.spec = validate_model_spec(ModelSpec.from_dict(hello['spec']))
       self.wide_labels_available = hello.get(WIDE_LABELS_CAPABILITY) is True
+      self.wide_yolo_preview_available = self.wide_labels_available and hello.get(WIDE_YOLO_PREVIEW_CAPABILITY) is True
       self.project_output = (os.getenv('JETLINK_COMPACT_REPLY', '1') != '0' and
                              not os.getenv('SEND_RAW_PRED') and projection.eligible(self.spec) and
                              projection.matches(hello.get(projection.IPC_CAPABILITY)))
@@ -167,15 +169,15 @@ class Client:
   def image_buffer(self):
     return self.shared.begin() if self.shared is not None else None
 
-  def infer(self, image, packed, frame, reset=False, source_sof=0, nav_metadata=None, wide_labels=False):
+  def infer(self, image, packed, frame, reset=False, source_sof=0, nav_metadata=None, wide_labels=False, wide_yolo_preview=False):
     try:
-      return self._infer(image, packed, frame, reset, source_sof, nav_metadata, wide_labels)
+      return self._infer(image, packed, frame, reset, source_sof, nav_metadata, wide_labels, wide_yolo_preview)
     except Exception:
       # Neither late replies nor late USB readers may outlive a reused slot.
       self.close()
       raise
 
-  def _infer(self, image, packed, frame, reset=False, source_sof=0, nav_metadata=None, wide_labels=False):
+  def _infer(self, image, packed, frame, reset=False, source_sof=0, nav_metadata=None, wide_labels=False, wide_yolo_preview=False):
     if image.dtype != np.uint8 or image.shape != self.spec.warped_shape or not image.flags.c_contiguous:
       raise ValueError('invalid warped image')
     if packed.dtype != np.float32 or packed.size != self.spec.packed_nelem or not packed.flags.c_contiguous or not np.all(np.isfinite(packed)):
@@ -185,6 +187,8 @@ class Client:
     request_flags = int(reset) | (projection.IPC_FLAG if self.project_output else 0)
     if wide_labels and self.wide_labels_available:
       request_flags |= WIDE_LABELS_IPC_FLAG
+      if wide_yolo_preview and self.wide_yolo_preview_available:
+        request_flags |= WIDE_YOLO_PREVIEW_IPC_FLAG
     map_parts = ()
     if getattr(self, 'deferred_nav', False):
       request_flags |= deferred_map.IPC_FLAG

@@ -85,6 +85,41 @@ def test_real_snapshot_builder_cadence_is_not_limited_to_model_twenty_hz(monkeyp
   assert json.loads(builder.packet())['params']['JetsonHudFps'] == 'NA=='
 
 
+def test_mode_and_toggle_are_forwarded_to_the_host_at_existing_settings_poll(monkeypatch):
+  import hud
+  import hud_protocol as protocol
+
+  clock = [100.]
+  values = {'ClusterHudScreenMode': 9, 'JetsonYoloEnabled': False}
+  tracks = []
+  builder = object.__new__(protocol.SnapshotBuilder)
+  flags = dict.fromkeys(protocol.SERVICES, False)
+  builder.sm = NS(updated=flags, valid=flags, alive=flags, recv_time={}, logMonoTime={}, update=lambda _: None)
+  builder.params = NS(get=values.get)
+  builder.next_send = builder.next_params = 0.
+  builder.cached = {}
+  builder.settings = {}
+  builder.host_release = builder.nav_map = None
+  builder.target_fps = 10
+  builder.network = NS(address=lambda: '')
+  builder.camera_previews = lambda snapshot=None: {}
+  builder.battery_snapshot = lambda _: None
+  builder.radar_context = NS(sample=lambda _: tracks.append(True))
+  monkeypatch.setattr(protocol.time, 'monotonic', lambda: clock[0])
+  record = json.loads(builder.packet())
+  monkeypatch.setattr(hud, 'read_snapshot', lambda: (clock[0], record))
+  host = hud.DisplayParams()
+  assert host.get('ClusterHudScreenMode') == b'9'
+  assert host.get('JetsonYoloEnabled') == b'0'
+  assert not tracks
+  values.update(ClusterHudScreenMode=8, JetsonYoloEnabled=True)
+  clock[0] += 1
+  record = json.loads(builder.packet())
+  assert host.get('ClusterHudScreenMode') == b'8'
+  assert host.get('JetsonYoloEnabled') == b'1'
+  assert tracks == [True]
+
+
 def test_rate_metadata_is_private_and_reconnect_drops_old_or_oversized_packets(tmp_path, monkeypatch):
   import hud_protocol as p
   monkeypatch.setattr(p.time, 'monotonic', lambda: 100.)

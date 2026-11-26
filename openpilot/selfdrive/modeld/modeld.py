@@ -14,7 +14,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.egpu_events import log_event
 from openpilot.selfdrive.modeld.internal_daylight import InternalDaylight75, daylight75_crops
 from openpilot.common.runtime_diagnostics import RuntimeDiagnostics
-from openpilot.common.params import Params
+from openpilot.common.params import Params, UnknownKeyName
 from openpilot.common import pv5_parked_dashcam
 from openpilot.common.stopping_params import get_stopping_speed
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -29,6 +29,9 @@ from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 from openpilot.selfdrive.modeld.compile_modeld import make_input_queues, WARP_INPUTS, POLICY_INPUTS
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_driving_model_data, fill_pose_msg, PublishState
 from openpilot.common.file_chunker import open_file_chunked
+from openpilot.selfdrive.carrot.cluster.cluster_config import (
+  CLUSTER_SCREEN_MODE_PARAM, CLUSTER_SCREEN_MODE_YOLO, JETSON_YOLO_ENABLED_PARAM, normalize_cluster_screen_mode,
+)
 from openpilot.selfdrive.modeld.camera_sync import FrameMeta
 from openpilot.selfdrive.modeld.camera_gap import CameraGapTrace
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
@@ -465,8 +468,10 @@ def main(demo=False):
     reset_parked_history = getattr(model, 'reset_parked_history', None) or model.reset
   parked_pm = PubMaster(['parkedDashcamState']) if reset_parked_history is not None else None
   radar_label_marker = None
-  if (os.environ.get('PV5_RADAR_LABELS', '1') == '1' and use_extra_client and not (demo or SIMULATION or main_wide_camera or CP.notCar)
-      and CP.carFingerprint == 'KIA_PV5' and hasattr(model, 'radar_label_marker')):
+  wide_yolo_supported = (os.environ.get('PV5_RADAR_LABELS', '1') == '1' and use_extra_client
+                         and not (demo or SIMULATION or main_wide_camera or CP.notCar)
+                         and CP.carFingerprint == 'KIA_PV5' and hasattr(model, 'radar_label_marker'))
+  if wide_yolo_supported:
     try:
       from openpilot.common.pv5_radar_label_context import CaptureMarker
       radar_label_marker = model.radar_label_marker = CaptureMarker()
@@ -546,6 +551,13 @@ def main(demo=False):
     wide_fov_changed = False
     if loop_start >= next_wide_fov_poll:
       next_wide_fov_poll = loop_start + 0.25
+      if wide_yolo_supported:
+        try:
+          model.wide_yolo_enabled = params.get(JETSON_YOLO_ENABLED_PARAM, return_default=True) is not False
+        except UnknownKeyName:
+          model.wide_yolo_enabled = True  # An older native Params registry has no saved switch.
+        model.wide_yolo_preview = (model.wide_yolo_enabled and
+                                   normalize_cluster_screen_mode(params.get(CLUSTER_SCREEN_MODE_PARAM)) == CLUSTER_SCREEN_MODE_YOLO)
       selection = params.get_int("Pv5WideModelFov")
       selection = selection if 1 <= selection <= len(WIDE_MODEL_FOV_CHOICES) else 0
       wide_fov_changed = selection != wide_fov_index
@@ -784,8 +796,8 @@ def main(demo=False):
       pm.send('modelV2', modelv2_send)
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
-      if (radar_label_marker is not None and getattr(model, 'radar_label_marker', None) is radar_label_marker
-          and model.active and modelv2_send.valid):
+      if (radar_label_marker is not None and model.wide_yolo_enabled
+          and getattr(model, 'radar_label_marker', None) is radar_label_marker and model.active and modelv2_send.valid):
         radar_label_marker.publish(model.frame, (meta_extra.timestamp_sof + meta_extra.timestamp_eof) // 2)
       if usbgpu_startup_pending:
         # Clear only after all first-frame outputs are on the bus so selfdrived

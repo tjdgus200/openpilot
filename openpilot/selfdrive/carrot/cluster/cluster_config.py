@@ -84,9 +84,11 @@ CLUSTER_SCREEN_MODE_TRIP_REPORT = 5
 CLUSTER_SCREEN_MODE_NAVI = 6
 CLUSTER_SCREEN_MODE_NAV_MODEL = 7
 CLUSTER_SCREEN_MODE_BATTERY = 8
+CLUSTER_SCREEN_MODE_YOLO = 9
 # Initial choice; numeric mode 0 remains the selectable navigation/report mode.
 CLUSTER_SCREEN_MODE_INITIAL = CLUSTER_SCREEN_MODE_BATTERY
 CLUSTER_SCREEN_MODE_PARAM = "ClusterHudScreenMode"
+JETSON_YOLO_ENABLED_PARAM = "JetsonYoloEnabled"
 CLUSTER_RADAR_INFO_NONE = 0
 CLUSTER_RADAR_INFO_VEHICLE_SPEED = 1
 CLUSTER_RADAR_INFO_VEHICLE_SPEED_DISTANCE = 2
@@ -400,6 +402,7 @@ def normalize_cluster_screen_mode(value: object) -> int:
             "navigation": CLUSTER_SCREEN_MODE_NAVI,
             "nav-model": CLUSTER_SCREEN_MODE_NAV_MODEL,
             "battery": CLUSTER_SCREEN_MODE_BATTERY,
+            "yolo": CLUSTER_SCREEN_MODE_YOLO,
         }
         if normalized in aliases:
             return aliases[normalized]
@@ -422,6 +425,7 @@ def normalize_cluster_screen_mode(value: object) -> int:
         CLUSTER_SCREEN_MODE_NAVI,
         CLUSTER_SCREEN_MODE_NAV_MODEL,
         CLUSTER_SCREEN_MODE_BATTERY,
+        CLUSTER_SCREEN_MODE_YOLO,
     ):
         return mode
     return CLUSTER_SCREEN_MODE_INITIAL

@@ -153,6 +153,8 @@ class Warp:
 
 class JoiningModel:
   daylight75 = (False, False)
+  wide_yolo_enabled = True
+  wide_yolo_preview = False
 
   def __init__(self, small, width, height):
     from openpilot.selfdrive.modeld.parse_model_outputs import Parser
@@ -312,10 +314,14 @@ class JoiningModel:
         warped = time.monotonic()
         map_options = {'nav_metadata': getattr(self, 'nav_metadata', None)} if getattr(self.client, 'deferred_nav', False) else {}
         marker = getattr(self, 'radar_label_marker', None)
-        label_frame = (marker is not None and marker.geometry is not None
-                       and getattr(self.client, 'wide_labels_available', False))
-        if label_frame:
+        yolo_available = self.wide_yolo_enabled and getattr(self.client, 'wide_labels_available', False)
+        label_frame = yolo_available and marker is not None and marker.geometry is not None
+        preview_frame = (yolo_available and self.wide_yolo_preview
+                         and getattr(self.client, 'wide_yolo_preview_available', False))
+        if label_frame or preview_frame:
           map_options['wide_labels'] = True
+        if preview_frame:
+          map_options['wide_yolo_preview'] = True
         result = self.client.infer(images, self.packed, self.frame, self.reset, source_sof=self.source_sof, **map_options)
         replied = time.monotonic()
         if label_frame:

@@ -10,7 +10,7 @@ from openpilot.common.hud_driving_feedback import LANE_CENTER_STATUS
 from openpilot.common.jetlink_status import _fresh
 from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 from cluster_battery import remote_panel, StationaryBatteryView, valid_value
-from cluster_config import CLUSTER_SCREEN_MODE_BATTERY, CLUSTER_SCREEN_MODE_FULLSCREEN_3D
+from cluster_config import CLUSTER_SCREEN_MODE_BATTERY, CLUSTER_SCREEN_MODE_FULLSCREEN_3D, CLUSTER_SCREEN_MODE_YOLO
 from cluster_display import format_trip_distance
 from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT, OPENPILOT_FONT_DIR,
                               TOP_STATUS_CENTER_Y,
@@ -133,6 +133,7 @@ class HealthRenderer(ClusterUiRenderer):
   _trip_soc = TripSocUsage()
   _telemetry_font = None
   _pv5_hud_gear = None
+  _yolo_view = None
   _track_label_path = (Path(os.environ.get('PV5_RADAR_LABEL_DIR', '/run/pv5-radar-labels')) / 'labels.json'
                        if os.environ.get('PV5_RADAR_LABELS') == '1' else None)
 
@@ -269,6 +270,7 @@ class HealthRenderer(ClusterUiRenderer):
       rl.draw_rectangle(int(x - width if fraction < 0 else x), int(y + 17), width, 7, rl_color(color))
 
   def close(self):
+    self._close_yolo_view()
     if self._track_models:
       from cluster_track_models import unload_track_models
       unload_track_models(self._track_models)
@@ -285,14 +287,36 @@ class HealthRenderer(ClusterUiRenderer):
       self._telemetry_font = None
     super().close()
 
+  def _close_yolo_view(self):
+    if self._yolo_view is not None:
+      self._yolo_view.close()
+      self._yolo_view = None
+
+  def set_screen_mode(self, screen_mode):
+    super().set_screen_mode(screen_mode)
+    if self.screen_mode != CLUSTER_SCREEN_MODE_YOLO:
+      self._close_yolo_view()
+
+  def _draw_yolo_panel(self, state):
+    if getattr(getattr(state, 'alert', None), 'status', None) == 2:
+      return  # The critical alert is drawn last across the full panel.
+    if self._yolo_view is None:
+      from hud_yolo_view import YoloView
+      self._yolo_view = YoloView()
+    self._yolo_view.draw(self, self._information_panel_x(NAVI_LIVE_PANEL_X), NAVI_LIVE_PANEL_W,
+                         self._yolo_enabled, state.onroad)
+
   def render(self, state, signal_lights=None):
     from hud_protocol import read_snapshot
     from hud_bsd import warning_sides, WarningPulse
     snapshot = read_snapshot()
     self._vehicle_data_current = vehicle_data_ready(snapshot)
     now = time.monotonic()
+    # Saved flags in a fresh HUD packet. Older senders had the detector always on.
+    self._yolo_enabled = (snapshot[1].get('params', {}).get('JetsonYoloEnabled', 'MQ==') == 'MQ=='
+                          if snapshot is not None else None)
     if self._track_label_path is not None:
-      self._label_snapshot = snapshot if self._vehicle_data_current else None
+      self._label_snapshot = snapshot if self._vehicle_data_current and self._yolo_enabled else None
       self.hud_track_classes = None
       self.hud_labeled_radar_points = ()
     if not self._vehicle_data_current:

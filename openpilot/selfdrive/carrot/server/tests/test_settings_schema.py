@@ -520,7 +520,11 @@ def test_external_hud_brightness_and_orientation_use_catalog_controls(settings, 
     "Info left / driving right",
   ]
   screen_mode = by_name["ClusterHudScreenMode"]
-  assert (screen_mode["min"], screen_mode["max"], screen_mode["default"]) == (-1, 8, 8)
+  assert (screen_mode["min"], screen_mode["max"], screen_mode["default"]) == (-1, 9, 8)
+  assert all("9: YOLO" in screen_mode[key] for key in ("descr", "edescr", "cdescr"))
+  yolo = by_name["JetsonYoloEnabled"]
+  assert (yolo["control"], yolo["min"], yolo["max"], yolo["default"]) == ("toggle", 0, 1, 1)
+  assert '{"JetsonYoloEnabled", {PERSISTENT, BOOL, "1"}}' in PARAMS_KEYS_PATH.read_text(encoding="utf-8")
   assert screen_mode["descr"].startswith('-1: 3D 전체화면\n0: 내비/주행 리포트 자동')
   assert "8:" in screen_mode["edescr"]
   assert (by_name["JetsonHudFps"]["min"], by_name["JetsonHudFps"]["max"], by_name["JetsonHudFps"]["default"]) == (0, 4, 0)
@@ -544,6 +548,7 @@ def test_external_hud_brightness_and_orientation_use_catalog_controls(settings, 
     "JetsonHudFps",
     "JetsonInputFusion",
     "ClusterHudScreenMode",
+    "JetsonYoloEnabled",
     "ClusterHudPanelLayout",
     "ClusterHudCameraViewMode",
   ]

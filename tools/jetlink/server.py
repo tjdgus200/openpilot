@@ -155,6 +155,7 @@ class CarrotSession(Session):
       if host == 'jetson':
         if getattr(self, 'labels_supported', False) and self.t.protocol_version == 2:
           obj[P.WIDE_LABELS_CAPABILITY] = True
+          obj[P.WIDE_YOLO_PREVIEW_CAPABILITY] = True
         from park_update import supported, usb_connection, CAPABILITY as PARK_UPDATE_CAPABILITY
         obj[PARK_UPDATE_CAPABILITY] = usb_connection(self.t) and supported()
         from park_update import INTERNAL_CAPABILITY
@@ -375,18 +376,24 @@ class CarrotSession(Session):
       if self.labels is not None:
         self.labels.invalidate()
       return engine.run()
-    if (not flags & P.WIDE_LABELS_FLAG or self.t.protocol_version != 2
-        or getattr(engine, 'label_device', None) is None or tuple(warped.shape) != (2, 6, 128, 256)):
-      return engine.run()
+    enabled = (bool(flags & P.WIDE_LABELS_FLAG) and self.t.protocol_version == 2
+               and getattr(engine, 'label_device', None) is not None and tuple(warped.shape) == (2, 6, 128, 256))
     labels = self.labels
-    if labels is None and time.monotonic() >= self.next_label_open:
+    if enabled and labels is None and time.monotonic() >= self.next_label_open:
       self.next_label_open = time.monotonic() + 5.
       try:
         from parallel_radar_labels import ParallelRadarLabels
         self.labels = labels = ParallelRadarLabels.open(engine.label_device)
       except (ImportError, OSError, RuntimeError, MemoryError):
         pass
-    if labels is None:
+    if labels is not None:
+      try:
+        labels.set_request(enabled, bool(flags & P.WIDE_YOLO_PREVIEW_FLAG))
+      except Exception:
+        labels.close()
+        self.run_with_labels = None
+        return engine.run()
+    if not enabled or labels is None:
       return engine.run()
 
     def offer():

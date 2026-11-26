@@ -364,11 +364,12 @@ def test_regeneration_sign_green_and_no_temperature_history_row(monkeypatch, pow
 
 def test_mode_selection_defaults_and_valid_zero_rendering():
     assert normalize_cluster_screen_mode('battery') == normalize_cluster_screen_mode(8) == 8
-    assert normalize_cluster_screen_mode(9) == normalize_cluster_screen_mode(None) == 8
+    assert normalize_cluster_screen_mode(10) == normalize_cluster_screen_mode(None) == 8
+    assert normalize_cluster_screen_mode('yolo') == 9
     assert normalize_cluster_screen_mode('default') == normalize_cluster_screen_mode(b'') == 8
     assert renderer.ClusterUiRenderer().screen_mode == 8
     # Existing numeric choices are not silently changed by the new default.
-    for mode in range(-1, 9):
+    for mode in range(-1, 10):
         assert normalize_cluster_screen_mode(str(mode).encode()) == mode
     data = panel_from_wire(packet_from_metrics({'soc_percent': (0, 10), 'max_temp_c': (0, 10)}, 10))
     state = replace(standby_state(), battery=data)

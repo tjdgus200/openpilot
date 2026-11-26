@@ -59,6 +59,7 @@ from cluster_config import (
     CLUSTER_SCREEN_MODE_NAVI,
     CLUSTER_SCREEN_MODE_NAV_MODEL,
     CLUSTER_SCREEN_MODE_BATTERY,
+    CLUSTER_SCREEN_MODE_YOLO,
     CLUSTER_SCREEN_MODE_INITIAL,
     CLUSTER_SCREEN_MODE_TRIP_REPORT,
     CLUSTER_SCREEN_MODE_DEFAULT,
@@ -4188,6 +4189,10 @@ class ClusterUiRenderer:
                 self._draw_battery_panel(state)
                 self._draw_status_footer(state)
                 return
+            if screen_mode == CLUSTER_SCREEN_MODE_YOLO:
+                self._draw_yolo_panel(state)
+                self._draw_status_footer(state)
+                return
             if screen_mode == CLUSTER_SCREEN_MODE_DEBUG_SYSTEM:
                 profile_stage = self._profile_start()
                 self._draw_system_dashboard_panel(state)
@@ -4286,6 +4291,14 @@ class ClusterUiRenderer:
         legend = ('색상: 최저값 대비 차이 · 진단용 / 회색: 미수신' if ko else
                   'Color: difference from minimum / diagnostic only · Gray: unavailable')
         self._draw_text(self._ellipsize_text(legend, 15, width - 48), left, 461, 15, theme.muted)
+
+    def _draw_yolo_panel(self, state: ClusterUiState) -> None:
+        # The detector and its input frame are local to the Jetson renderer.
+        x = self._information_panel_x(NAVI_LIVE_PANEL_X)
+        theme = self._current_theme()
+        self._rounded_rect(x, 1, NAVI_LIVE_PANEL_W, DESIGN_HEIGHT - 2, 10, theme.panel_bg, theme.faint, 1)
+        message = "Jetson HUD에서 표시됩니다" if self.language == "ko" else "Available on the Jetson HUD"
+        self._draw_text(message, x + NAVI_LIVE_PANEL_W / 2, DESIGN_HEIGHT / 2, 27, theme.text, anchor="center")
 
     def _draw_battery_panel(self, state: ClusterUiState) -> None:
         data = state.battery or BatteryPanelData()

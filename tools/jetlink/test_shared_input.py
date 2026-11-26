@@ -283,6 +283,7 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
     spec = SPEC
     deferred_map_available = True
     wide_labels_available = projected  # Exercise both old and opted-in peers, including memfd.
+    wide_yolo_preview_available = deferred
     flush_map = lambda self: 0
     output_projection_available = projected
     project_output = False
@@ -293,6 +294,8 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
       options_expected = {'nav_metadata': (0, 0, 0)} if deferred else {}
       if projected and frame % 2:
         options_expected['wide_labels'] = True
+        if deferred and frame % 3 == 0:
+          options_expected['wide_yolo_preview'] = True
       assert options == options_expected
       captured.append((hashlib.sha256(image.tobytes() + packed.tobytes()).digest(), frame, reset))
       # Actual daemon must send the matching reply before a slot is reusable.
@@ -313,6 +316,7 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
     client = link.Client(str(path), timeout=1.)
     assert (client.shared is not None) == shared_enabled
     assert client.project_output == projected
+    assert client.wide_yolo_preview_available == (projected and deferred)
     for frame in range(1, 25):
       # Also accept a legacy payload on a negotiated connection when no slot
       # has been reserved, preserving existing Client.infer-only callers.
@@ -321,7 +325,8 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
       image[:] = frame
       packed = np.arange(SPEC.packed_nelem, dtype=np.float32) * frame
       expected.append((hashlib.sha256(image.tobytes() + packed.tobytes()).digest(), frame, frame == 1))
-      out = client.infer(image, packed, frame, reset=frame == 1, wide_labels=bool(frame % 2))
+      out = client.infer(image, packed, frame, reset=frame == 1, wide_labels=bool(frame % 2),
+                         wide_yolo_preview=frame % 3 == 0)
       assert np.all(out == frame)
       if client.shared is not None: assert not client.shared.busy
     assert captured == expected

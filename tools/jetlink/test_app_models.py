@@ -289,12 +289,15 @@ def test_joining_model_uses_selected_buffers_parser_and_recurrence(tmp_path, mon
   monkeypatch.setattr(model, 'WarpPreparation', lambda *a: SimpleNamespace(
     future=SimpleNamespace(done=lambda: True, result=lambda: (b'validated', .01)),
     close=lambda: None))
-  closed = []
+  closed, requests, identified = [], [], []
   class Remote:
     timings = (0, 0, 0)
+    wide_labels_available = True
+    wide_yolo_preview_available = True
     def image_buffer(self):
       return np.empty(spec.warped_shape, np.uint8) if shared else None
     def infer(self, image, packed, frame, reset, **kw):
+      requests.append(kw)
       assert packed.size == spec.packed_nelem
       assert bool(np.any(packed[12:])) == (not reset and not spec.stateful)
       output = np.zeros(spec.output_nelem, np.float32)
@@ -312,9 +315,21 @@ def test_joining_model_uses_selected_buffers_parser_and_recurrence(tmp_path, mon
   joining.small_runs, joining.ready, joining.join_allowed = 3, True, True
   inputs = {'desire_pulse': np.zeros(8, np.float32), 'traffic_convention': np.array([1, 0], np.float32),
             'action_t': np.array([.2, .3], np.float32)}
-  for _ in range(2):
+  marker = SimpleNamespace(geometry=None, identify=lambda frame, images: identified.append(frame))
+  joining.radar_label_marker = marker
+  for enabled, preview, geometry, expected in (
+      (True, False, None, {}),
+      (True, True, None, {'wide_labels': True, 'wide_yolo_preview': True}),
+      (False, True, True, {}),
+      (True, False, True, {'wide_labels': True}),
+      (True, True, True, {'wide_labels': True, 'wide_yolo_preview': True}),
+  ):
+    joining.wide_yolo_enabled, joining.wide_yolo_preview = enabled, preview
+    marker.geometry = geometry
     output = joining.run({}, {}, inputs, False)
     assert output['plan'].shape == (1, 33, 15)
+    assert requests[-1] == {'source_sof': 0, **expected}
+  assert identified == [4, 5]
   assert joining.active and joining.spec.sha256 == spec.sha256 and not closed
   def failed(*a, **kw):
     raise ConnectionError('App replaced its engine')
