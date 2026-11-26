@@ -9,6 +9,7 @@ from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.egl import init_egl, create_egl_image, destroy_egl_image, bind_egl_image_to_texture, EGLImage
 from openpilot.system.ui.widgets import Widget
 from openpilot.selfdrive.ui.onroad.camera_client_pool import CameraClientPool
+from openpilot.selfdrive.ui.onroad.camera_daylight import DAYLIGHT75_SHADER, DAYLIGHT75_EGL_SHADER, DAYLIGHT75_Y_SHADER, Daylight75Shader
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 
 VERSION = """
@@ -48,8 +49,12 @@ if TICI:
     uniform int engaged;
     uniform int enhance_driver;
 
+    """ + DAYLIGHT75_SHADER + DAYLIGHT75_EGL_SHADER + """
     void main() {
       vec4 color = texture(texture0, fragTexCoord);
+#ifdef DAYLIGHT75_ENABLED
+      color.rgb = daylight75RGB(color.rgb);
+#endif
       if (engaged == 1) {
         float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));  // Luma
         color.rgb = mix(vec3(gray), color.rgb, 0.2);  // 20% saturation
@@ -78,8 +83,12 @@ else:
     uniform int engaged;
     uniform int enhance_driver;
 
+    """ + DAYLIGHT75_SHADER + DAYLIGHT75_Y_SHADER + """
     void main() {
       float y = texture(texture0, fragTexCoord).r;
+#ifdef DAYLIGHT75_ENABLED
+      y = daylight75Y(y);
+#endif
       vec2 uv = texture(texture1, fragTexCoord).ra - 0.5;
       vec3 rgb = vec3(y + 1.402*uv.y, y - 0.344*uv.x - 0.714*uv.y, y + 1.772*uv.x);
       if (engaged == 1) {
@@ -104,7 +113,7 @@ else:
 
 
 class CameraView(Widget):
-  def __init__(self, name: str, stream_type: VisionStreamType):
+  def __init__(self, name: str, stream_type: VisionStreamType, *, model_daylight: bool = False):
     super().__init__()
     self._name = name
     # Primary stream
@@ -120,10 +129,10 @@ class CameraView(Widget):
 
     self._texture_needs_update = True
     self.shader = rl.load_shader_from_memory(VERTEX_SHADER, FRAME_FRAGMENT_SHADER)
-    self._texture1_loc: int = rl.get_shader_location(self.shader, "texture1") if not TICI else -1
-    self._engaged_loc = rl.get_shader_location(self.shader, "engaged")
+    self._daylight75 = Daylight75Shader(VERTEX_SHADER, FRAME_FRAGMENT_SHADER) if model_daylight else None
+    self._camera_bindings = self._shader_bindings(self.shader)
+    self._daylight_bindings = self._shader_bindings(self._daylight75.shader) if self._daylight75 is not None else None
     self._engaged_val = rl.ffi.new("int[1]", [1])
-    self._enhance_driver_loc = rl.get_shader_location(self.shader, "enhance_driver")
     self._enhance_driver_val = rl.ffi.new("int[1]", [1 if stream_type == VisionStreamType.VISION_STREAM_DRIVER else 0])
 
     self.frame: VisionBuf | None = None
@@ -196,6 +205,9 @@ class CameraView(Widget):
     if self.shader and self.shader.id:
       rl.unload_shader(self.shader)
       self.shader.id = 0
+    if self._daylight75 is not None:
+      self._daylight75.close()
+      self._daylight75 = None
 
     self.frame = None
     self.available_streams.clear()
@@ -280,6 +292,17 @@ class CameraView(Widget):
     if self._placeholder_color:
       rl.draw_rectangle_rec(rect, self._placeholder_color)
 
+  @staticmethod
+  def _shader_bindings(shader):
+    return (shader, rl.get_shader_location(shader, "texture1") if not TICI else -1,
+            rl.get_shader_location(shader, "engaged"), rl.get_shader_location(shader, "enhance_driver"))
+
+  def _begin_camera_shader(self):
+    if self._daylight75 is not None and self._daylight75.begin(ui_state, self._stream_type, self.client.timestamp_eof):
+      return self._daylight_bindings
+    rl.begin_shader_mode(self.shader)
+    return self._camera_bindings
+
   def _render_egl(self, src_rect: rl.Rectangle, dst_rect: rl.Rectangle) -> None:
     """Render using EGL for direct buffer access"""
     if self.frame is None or self.egl_texture is None:
@@ -304,8 +327,8 @@ class CameraView(Widget):
     bind_egl_image_to_texture(self.egl_texture.id, egl_image)
 
     # Render with shader
-    rl.begin_shader_mode(self.shader)
-    self._update_texture_color_filtering()
+    shader, _, engaged_loc, enhance_driver_loc = self._begin_camera_shader()
+    self._update_texture_color_filtering(shader, engaged_loc, enhance_driver_loc)
     rl.draw_texture_pro(self.egl_texture, src_rect, dst_rect, rl.Vector2(0, 0), 0.0, rl.WHITE)
     rl.end_shader_mode()
 
@@ -324,16 +347,16 @@ class CameraView(Widget):
       self._texture_needs_update = False
 
     # Render with shader
-    rl.begin_shader_mode(self.shader)
-    self._update_texture_color_filtering()
-    rl.set_shader_value_texture(self.shader, self._texture1_loc, self.texture_uv)
+    shader, texture1_loc, engaged_loc, enhance_driver_loc = self._begin_camera_shader()
+    self._update_texture_color_filtering(shader, engaged_loc, enhance_driver_loc)
+    rl.set_shader_value_texture(shader, texture1_loc, self.texture_uv)
     rl.draw_texture_pro(self.texture_y, src_rect, dst_rect, rl.Vector2(0, 0), 0.0, rl.WHITE)
     rl.end_shader_mode()
 
-  def _update_texture_color_filtering(self):
+  def _update_texture_color_filtering(self, shader, engaged_loc: int, enhance_driver_loc: int):
     self._engaged_val[0] = 1 if ui_state.status != UIStatus.DISENGAGED else 0
-    rl.set_shader_value(self.shader, self._engaged_loc, self._engaged_val, rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
-    rl.set_shader_value(self.shader, self._enhance_driver_loc, self._enhance_driver_val, rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.set_shader_value(shader, engaged_loc, self._engaged_val, rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.set_shader_value(shader, enhance_driver_loc, self._enhance_driver_val, rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
   def _ensure_connection(self) -> bool:
     if not self._clients.connected(self._stream_type):

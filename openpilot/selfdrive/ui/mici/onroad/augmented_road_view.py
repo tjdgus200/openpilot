@@ -142,7 +142,7 @@ class BookmarkIcon(Widget):
 
 class AugmentedRoadView(CameraView):
   def __init__(self, bookmark_callback=None, stream_type: VisionStreamType = VisionStreamType.VISION_STREAM_ROAD):
-    super().__init__("camerad", stream_type)
+    super().__init__("camerad", stream_type, model_daylight=True)
     self._fov_preview = StoppedFovPreview()
     self._bookmark_callback = bookmark_callback
     self._set_placeholder_color(rl.BLACK)

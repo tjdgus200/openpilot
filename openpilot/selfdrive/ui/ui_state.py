@@ -237,6 +237,7 @@ class UIState:
     parked_brightness = self.params.get("Pv5ParkedCommaBrightness")
     self.parked_dashcam_brightness = parked_brightness if type(parked_brightness) is int and 1 <= parked_brightness <= 100 else 0
     self.show_model_view = self.params.get_int("ShowModelView")
+    self.show_model_daylight75 = self.params.get_bool("ShowModelDaylight75")
     self.share_data = self.params.get_bool("ShareData")
     self.show_camera_with_cluster = self.params.get_int("ShowCameraWithCluster") == 1
     self.usbgpu_present = self.params.get_bool("UsbGpuPresent")
