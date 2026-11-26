@@ -146,6 +146,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"UseWideCamera", {PERSISTENT, BOOL, "1"}},
     {"ModelRoadDaylight75", {PERSISTENT, BOOL, "0"}},
     {"ModelWideRoadDaylight75", {PERSISTENT, BOOL, "0"}},
+    {"ShowModelDaylight75", {PERSISTENT, BOOL, "1"}},
     {"Version", {PERSISTENT, STRING}},
 
     // carrot

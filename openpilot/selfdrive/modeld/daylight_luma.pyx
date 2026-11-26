@@ -4,7 +4,26 @@
 from libc.math cimport nearbyint, pow
 from libc.stdint cimport uint8_t, uint32_t
 from libc.stdlib cimport abs
-from libc.string cimport memset
+from libc.string cimport memcpy, memset
+
+
+cdef extern from *:
+  """
+  #include <atomic>
+  static inline void daylight75_store_fence() {
+  #if defined(__aarch64__)
+    // Complete writes to the shared KGSL mapping before the policy GPU submission.
+    __asm__ volatile("dsb sy" ::: "memory");
+  #else
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+  #endif
+  }
+  """
+  void daylight75_store_fence() noexcept
+
+
+def fence_daylight75_writes():
+  daylight75_store_fence()
 
 
 cdef enum:
@@ -32,10 +51,12 @@ cdef uint32_t weighted_curve(const uint32_t* histogram, const uint8_t* used, int
   return total
 
 
-cdef void apply_crop(uint8_t* crop) noexcept nogil:
+cdef double apply_crop(uint8_t* crop, bint streaming_mapping) noexcept nogil:
   cdef uint32_t histogram[LEVELS]
   cdef uint8_t used[LEVELS]
   cdef uint8_t table[256]
+  cdef uint8_t block[PACKED_WIDTH]
+  cdef uint8_t* sample_row
   cdef uint32_t count = 0
   cdef uint32_t total = 0
   cdef uint32_t aim, trial_sum, lower_sum, upper_sum
@@ -47,15 +68,20 @@ cdef void apply_crop(uint8_t* crop) noexcept nogil:
   # Channel 0 is Y(2y, 2x). Every second packed row and column
   # reproduces the reference's 4x4 subsampling on the 512x256 crop.
   for row in range(0, PACKED_HEIGHT, 2):
+    sample_row = crop + row * PACKED_WIDTH
+    if streaming_mapping:
+      # WC/uncached mappings favor sequential bulk reads. Sample in cached stack memory.
+      memcpy(block, sample_row, PACKED_WIDTH)
+      sample_row = block
     for col in range(0, PACKED_WIDTH, 2):
-      value = crop[row * PACKED_WIDTH + col]
+      value = sample_row[col]
       if BLACK_Y <= value < HIGHLIGHT_Y:
         histogram[value - BLACK_Y] += 1
         count += 1
         total += value
   aim = TARGET_Y * count
   if total >= aim:
-    return
+    return 1.0
 
   for level in range(LEVELS):
     if histogram[level] != 0:
@@ -78,6 +104,9 @@ cdef void apply_crop(uint8_t* crop) noexcept nogil:
   # summation order. On an equal error prefer the smaller lift.
   exponent = upper if upper_error <= lower_error else lower
 
+  if exponent == 1.0:
+    return 1.0
+
   for value in range(256):
     table[value] = <uint8_t>value
   for level in range(LEVELS):
@@ -85,20 +114,36 @@ cdef void apply_crop(uint8_t* crop) noexcept nogil:
     if value > BLACK_Y + level:
       table[BLACK_Y + level] = <uint8_t>value
 
-  for index in range(LUMA_SIZE):
-    crop[index] = table[crop[index]]
+  if streaming_mapping:
+    for row in range(4 * PACKED_HEIGHT):
+      index = row * PACKED_WIDTH
+      memcpy(block, crop + index, PACKED_WIDTH)
+      for col in range(PACKED_WIDTH):
+        block[col] = table[block[col]]
+      memcpy(crop + index, block, PACKED_WIDTH)
+  else:
+    for index in range(LUMA_SIZE):
+      crop[index] = table[crop[index]]
+  return exponent
 
 
 def apply_daylight75(images, bint road_enabled, bint wide_enabled):
-  """Apply a separate Y75 LUT to each enabled road/wide crop in place."""
+  """Apply Y75 in place without requiring the caller to consume display metadata."""
+  apply_daylight75_with_exponents(images, road_enabled, wide_enabled)
+
+
+def apply_daylight75_with_exponents(images, bint road_enabled, bint wide_enabled, bint streaming_mapping=False):
+  """Return the fitted exponents for these exact crops; 1 means identity."""
+  cdef double main = 1.0, extra = 1.0
   if not (road_enabled or wide_enabled):
-    return
+    return (1.0, 1.0)
   cdef uint8_t[:, :, :, ::1] view = images
   if (view.shape[0] != 2 or view.shape[1] != 6 or
       view.shape[2] != PACKED_HEIGHT or view.shape[3] != PACKED_WIDTH):
     raise ValueError("Y75 expects a writable uint8 camera buffer shaped (2, 6, 128, 256)")
   with nogil:
     if road_enabled:
-      apply_crop(&view[0, 0, 0, 0])
+      main = apply_crop(&view[0, 0, 0, 0], streaming_mapping)
     if wide_enabled:
-      apply_crop(&view[1, 0, 0, 0])
+      extra = apply_crop(&view[1, 0, 0, 0], streaming_mapping)
+  return main, extra

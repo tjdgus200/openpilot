@@ -39,7 +39,7 @@ INF_POINT = np.array([1000.0, 0.0, 0.0])
 
 class AugmentedRoadView(CameraView):
   def __init__(self, stream_type: VisionStreamType = VisionStreamType.VISION_STREAM_ROAD):
-    super().__init__("camerad", stream_type)
+    super().__init__("camerad", stream_type, model_daylight=True)
     self._fov_preview = StoppedFovPreview()
     self._set_placeholder_color(BORDER_COLORS[UIStatus.DISENGAGED])
 

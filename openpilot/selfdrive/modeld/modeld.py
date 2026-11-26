@@ -12,6 +12,7 @@ from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from opendbc.car.car_helpers import get_demo_car_params
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.egpu_events import log_event
+from openpilot.selfdrive.modeld.internal_daylight import InternalDaylight75, daylight75_crops
 from openpilot.common.runtime_diagnostics import RuntimeDiagnostics
 from openpilot.common.params import Params
 from openpilot.common import pv5_parked_dashcam
@@ -147,6 +148,7 @@ class ModelState:
 
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
     self.usbgpu = usbgpu
+    self.internal_daylight = InternalDaylight75() if not usbgpu else None
 
     self.frame_skip = ModelConstants.MODEL_RUN_FREQ // ModelConstants.MODEL_CONTEXT_FREQ
     self.input_queues, self.npy = make_input_queues(self.input_shapes, self.frame_skip, device=self.QUEUE_DEV)
@@ -219,6 +221,10 @@ class ModelState:
     if prepare_only:
       return None
 
+    exponents = None
+    if self.internal_daylight is not None and self.internal_daylight.crops is not None:
+      exponents = self.internal_daylight.apply(warped)
+
     outs, = self.run_policy(
       **{k: self.input_queues[k] for k in POLICY_INPUTS if k in self.input_queues}, warped=warped
     )
@@ -231,6 +237,8 @@ class ModelState:
 
     if SEND_RAW_PRED:
       outputs_dict['raw_pred'] = model_output.copy()
+    if exponents is not None:
+      outputs_dict['_daylight75_exponents'] = exponents
     if shadow_payload is not None:
       outputs_dict['_signal_shadow'] = shadow_payload
     return outputs_dict
@@ -500,8 +508,12 @@ def main(demo=False):
     if diagnostics.enabled:
       cpu_start = time.thread_time()
     frame += 1
-    if frame % ModelConstants.MODEL_RUN_FREQ == 1 and hasattr(model, 'update_daylight75'):
-      model.update_daylight75(params, main_wide_camera, use_extra_client)
+    if frame % ModelConstants.MODEL_RUN_FREQ == 1:
+      crops = daylight75_crops(params, main_wide_camera, use_extra_client)
+      if small_model is not None:
+        small_model.internal_daylight.set_crops(crops)  # Keep fallback ready even while the external model is active.
+      if hasattr(model, 'update_daylight75'):
+        model.update_daylight75(crops)
     if frame % 100 == 0:
       custom_lat_delay = params.get_float("SteerActuatorDelay") * 0.01
       lat_smooth_seconds = params.get_float("LatSmoothSec") * 0.01
@@ -693,6 +705,16 @@ def main(demo=False):
       fill_model_msg(modelv2_send, model_output, action,
                      publish_state, meta_main.frame_id, meta_extra.frame_id, frame_id,
                      frame_drop_ratio, meta_main.timestamp_eof, model_execution_time, live_calib_seen)
+
+      exponents = model_output.pop('_daylight75_exponents', None)
+      if exponents is not None:
+        # For a single source the displayed feed follows its primary model crop.
+        if main_wide_camera:
+          modelv2_send.modelV2.daylightWideRoadExponent = exponents[0]
+        else:
+          modelv2_send.modelV2.daylightRoadExponent = exponents[0]
+          if use_extra_client:
+            modelv2_send.modelV2.daylightWideRoadExponent = exponents[1]
 
       desire_state = modelv2_send.modelV2.meta.desireState
       l_lane_change_prob = desire_state[log.Desire.laneChangeLeft]

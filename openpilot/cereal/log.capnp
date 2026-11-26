@@ -1102,6 +1102,11 @@ struct ModelDataV2 {
   pv5LaneCenter @27 :LaneCenterData; # modeld-owned upstream Blendful; display telemetry only
   frameDropStats @28 :FrameDropStats; # display only, counted at the publisher, not HUD packet loss
 
+  # Fitted Y75 curve of the physical camera used by this inference. Zero for absent
+  # metadata (including older producers); 1 means the crop used its original luma.
+  daylightRoadExponent @29 :Float32;
+  daylightWideRoadExponent @30 :Float32;
+
   struct FrameDropStats {
     valid @0 :Bool; # false during startup/reset/unobservable window
     count @1 :UInt32; # gaps observed in the preceding 1s capture-time window, refreshed at 1Hz

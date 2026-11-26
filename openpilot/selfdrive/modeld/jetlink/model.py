@@ -14,9 +14,9 @@ from openpilot.selfdrive.modeld.jetlink.inputs import fill_inputs
 from openpilot.selfdrive.modeld.model_join import may_join
 
 try:
-  from openpilot.selfdrive.modeld.daylight_luma import apply_daylight75
+  from openpilot.selfdrive.modeld.daylight_luma import apply_daylight75_with_exponents
 except ImportError:
-  apply_daylight75 = None
+  apply_daylight75_with_exponents = None
 
 MODEL_STATUS = Path('/dev/shm/carrot-jetlink-model.json')
 
@@ -202,7 +202,7 @@ class JoiningModel:
                 'execution': {'cpu_overlap': os.getenv('JETLINK_CPU_OVERLAP', '1') != '0',
                               'coherent_warp': bool(getattr(self.warp, 'coherent_output', False)),
                               'shared_input': getattr(self.client, 'shared', None) is not None,
-                              'daylight75_available': apply_daylight75 is not None,
+                              'daylight75_available': apply_daylight75_with_exponents is not None,
                               'daylight75_requested_crops': self.daylight75,
                               'compact_reply': bool(getattr(self.client, 'project_output', False))}}
       tmp = MODEL_STATUS.with_suffix('.tmp')
@@ -210,12 +210,8 @@ class JoiningModel:
       os.replace(tmp, MODEL_STATUS)
       self.next_status = now + 1
 
-  def update_daylight75(self, params, main_wide_camera, use_extra_client):
-    road = params.get_bool('ModelRoadDaylight75')
-    wide = params.get_bool('ModelWideRoadDaylight75')
-    # When only one VisionIPC stream is available both crops use that camera.
-    crops = (wide if main_wide_camera else road, wide if main_wide_camera or use_extra_client else road)
-    if crops != self.daylight75 and any(crops) and apply_daylight75 is None:
+  def update_daylight75(self, crops):
+    if crops != self.daylight75 and any(crops) and apply_daylight75_with_exponents is None:
       from openpilot.common.swaglog import cloudlog
       cloudlog.warning('Jetlink daylight Y75 unavailable: native module missing')
     self.daylight75 = crops
@@ -310,8 +306,9 @@ class JoiningModel:
                            output_buffer=self.client.image_buffer())
         # Warp has fenced the current pair and copied it into the outbound
         # buffer. Modify these crops before either transport publishes them.
-        if apply_daylight75 is not None and any(self.daylight75):
-          apply_daylight75(images, *self.daylight75)
+        exponents = None
+        if apply_daylight75_with_exponents is not None and any(self.daylight75):
+          exponents = apply_daylight75_with_exponents(images, *self.daylight75)
         warped = time.monotonic()
         map_options = {'nav_metadata': getattr(self, 'nav_metadata', None)} if getattr(self.client, 'deferred_nav', False) else {}
         marker = getattr(self, 'radar_label_marker', None)
@@ -334,6 +331,8 @@ class JoiningModel:
         # As in the generic eGPU runtime, run the full recurrent graph for each
         # received pair. Camera gaps still propagate unchanged into pose validity.
         parsed = parse_outputs(self.parser, self.spec, result)
+        if exponents is not None:
+          parsed['_daylight75_exponents'] = exponents
         if os.getenv('SEND_RAW_PRED'):
           parsed['raw_pred'] = result.copy()
         finished = time.monotonic()
