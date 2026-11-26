@@ -296,6 +296,11 @@ struct CarState {
   # Never consumed by the actuator controller or engagement state machine.
   pv5CollisionWarning @113 :CollisionWarning;
   pv5LaneMarking @114 :Pv5LaneMarking;
+  # Raw PV5 OEM BSD for the manual indicator tone.
+  pv5OemBlindspotValid @115 :Bool;
+  pv5OemBlindspotLeft @116 :Bool;
+  pv5OemBlindspotRight @117 :Bool;
+  pv5OemBlindspotMonoTime @118 :UInt64; # accepted CAN event time, zero if invalid
 
   struct Pv5LaneMarking {
     monoTime @0 :UInt64; # accepted original CAN observation, zero if absent

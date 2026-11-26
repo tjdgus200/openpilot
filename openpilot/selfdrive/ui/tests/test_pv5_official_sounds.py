@@ -41,7 +41,7 @@ def production_class(text=None):
   mapping = next(n.value for n in source.body if isinstance(n, ast.AnnAssign) and getattr(n.target, 'id', '') == 'sound_list')
   scope['sound_list'] = eval(compile(ast.Expression(mapping), 'actual-sound-map', 'eval'), scope)
   cls = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == 'Soundd')
-  methods = {'load_sounds', 'update_sound_profile', 'get_sound_data', 'update_alert', 'get_audible_alert', 'update_carrot_alert'}
+  methods = {'load_sounds', 'update_sound_profile', 'get_sound_data', 'update_alert', 'get_audible_alert', 'update_carrot_alert', 'update_manual_bsd_audio'}
   cls.body = [n for n in cls.body if isinstance(n, ast.Assign) or isinstance(n, ast.FunctionDef) and n.name in methods]
   exec(compile(ast.Module(body=[cls], type_ignores=[]), 'actual-sound-methods', 'exec'), scope)
   return scope['Soundd']
@@ -208,3 +208,24 @@ def test_real_malformed_wave_is_rejected(tmp_path, kind):
   cls = production_class()
   with pytest.raises((ValueError, EOFError, wave.Error)):
     load_official_sound_pack(tmp_path, cls.load_sounds.__globals__['sound_list'], A, {}, {})
+
+
+def test_manual_bsd_one_shot_private_gain_and_existing_alert_priority():
+  sound = engine()
+  sound.manual_bsd = NS(gain=0.25, eligible=True)
+  sound.loaded_sounds[A.bsdWarning] = np.ones(2, dtype=np.float32)
+  state = NS(alertSound=NS(raw=A.none), alertType='', alertStatus=log.SelfdriveState.AlertStatus.normal)
+  sound.update_manual_bsd_audio(state, True)
+  np.testing.assert_allclose(sound.get_sound_data(4), [0.25, 0.25, 0, 0])
+  # Same WAV transferred to assisted BSD must start at full normal gain, with its original repeat behavior.
+  sound.update_alert(A.bsdWarning, 'laneChangeBlocked/warning')
+  np.testing.assert_allclose(sound.get_sound_data(4), [1, 1, 1, 1])
+  sound.update_alert(A.warningImmediate, critical=True)
+  sound.update_manual_bsd_audio(state, True)
+  assert sound.current_alert == A.warningImmediate
+  sound.update_alert(A.none)
+  sound.current_sound_frame = len(sound.loaded_sounds[A.warningImmediate])
+  sound.update_alert(A.none)
+  state.alertStatus = log.SelfdriveState.AlertStatus.critical
+  sound.update_manual_bsd_audio(state, True)
+  assert sound.current_alert == A.none

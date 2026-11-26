@@ -136,6 +136,9 @@ def _read_param_value(params: "Params", name: str, default: Any) -> Any:
       return bool(params.get_bool(name))
 
     if ParamKeyType is not None and t == ParamKeyType.INT:
+      if name == "Pv5ManualBsdVolume":
+        # get_int returns 0 for an unset key, but 0 mutes this chime.
+        return int(params.get(name, return_default=True))
       return int(params.get_int(name))
 
     if ParamKeyType is not None and t == ParamKeyType.FLOAT:

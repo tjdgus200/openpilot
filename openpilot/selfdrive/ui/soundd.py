@@ -14,6 +14,7 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.common.utils import retry
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.car.openpilot_toggle import CruiseMainOpenpilotToggle
+from openpilot.selfdrive.ui.pv5_manual_bsd import ManualBsd
 from openpilot.selfdrive.ui.pv5_sound_assets import load_official_sound_pack
 
 from openpilot.system import micd
@@ -175,6 +176,7 @@ def linear_resample(samples, original_rate, new_rate):
 
 
 class Soundd:
+  manual_bsd_type = 'pv5ManualBsd'
   current_alert_critical = False
   steering_attention = False
   steering_attention_pending = False
@@ -182,6 +184,7 @@ class Soundd:
 
   def __init__(self):
     self.params = Params()
+    self.manual_bsd = ManualBsd()
     self.soundVolumeAdjust = 1.0
     self.carrot_count_down = 0
 
@@ -271,6 +274,13 @@ class Soundd:
       return
     self.next_language_check_time = now + 1.0
 
+    self.manual_bsd.enabled = self.params.get_bool('Pv5ManualBsdSound')
+    if self.manual_bsd.enabled:
+      try:
+        percentage = int(self.params.get('Pv5ManualBsdVolume', return_default=True))
+      except (TypeError, ValueError, OverflowError):
+        percentage = 0
+      self.manual_bsd.gain = max(0, min(100, percentage)) / 100.0
     lang = read_sound_language_setting(self.params)
     if lang == self.lang:
       return
@@ -290,7 +300,7 @@ class Soundd:
     loaded_sounds, critical_gains = pack if pack is not None else (self.loaded_sounds, getattr(self, 'critical_gains', {}))
 
     if alert != AudibleAlert.none:
-      num_loops = sound_list[alert][1]
+      num_loops = 1 if alert_type == self.manual_bsd_type else sound_list[alert][1]
       sound_data = loaded_sounds[alert]
       written_frames = 0
 
@@ -310,6 +320,8 @@ class Soundd:
 
     if critical:
       return ret * critical_gains.get(alert, MAX_VOLUME)
+    if alert_type == self.manual_bsd_type:
+      return ret * volume * self.manual_bsd.gain
     return ret * dm_warning_volume(alert, alert_type, volume)
 
   def callback(self, data_out: np.ndarray, frames: int, time, status) -> None:
@@ -323,6 +335,8 @@ class Soundd:
       cloudlog.error(f"soundd received unsupported alert {new_alert}")
       new_alert = AudibleAlert.none
 
+    if getattr(self, 'current_alert_type', '') == self.manual_bsd_type and new_alert == self.current_alert and alert_type != self.manual_bsd_type:
+      restart = True  # The existing assisted BSD alert uses the same WAV.
     current_alert_played_once = (
       self.current_alert == AudibleAlert.none or
       self.current_alert not in self.loaded_sounds or
@@ -397,6 +411,15 @@ class Soundd:
         new_alert = self.update_carrot_alert(sm, new_alert)
       self.update_alert(new_alert, alert_type, critical=critical, restart=restart)
 
+  def update_manual_bsd_audio(self, state, edge):
+    quiet = (state.alertSound.raw == AudibleAlert.none and state.alertStatus != log.SelfdriveState.AlertStatus.critical
+             and not state.alertType.startswith('laneChangeBlocked/'))
+    if edge and quiet and self.current_alert == AudibleAlert.none:
+      self.update_alert(AudibleAlert.bsdWarning, self.manual_bsd_type)
+    elif self.current_alert_type == self.manual_bsd_type and (not quiet or not self.manual_bsd.eligible):
+      self.current_alert = AudibleAlert.none
+      self.current_alert_type = ""
+
   def calculate_volume(self, weighted_db):
     volume = ((weighted_db - AMBIENT_DB) / DB_SCALE) * (MAX_VOLUME - MIN_VOLUME) + MIN_VOLUME
     return math.pow(VOLUME_BASE, (np.clip(volume, MIN_VOLUME, MAX_VOLUME) - 1))
@@ -429,6 +452,7 @@ class Soundd:
           self.spl_filter_weighted.update(sm["soundPressure"].soundPressureWeightedDb)
           self.current_volume = self.calculate_volume(float(self.spl_filter_weighted.x)) * self.soundVolumeAdjust
 
+        manual_bsd_edge = self.manual_bsd.update(sm, time.monotonic())
         cruise_toggled = cruise_main_toggle.update(sm['carState'].buttonEvents, sm['selfdriveState'].enabled)
         steering_warning = pv5_steering_warning(sm, time.monotonic())
         if (cruise_toggled and steering_warning < 2 and sm['selfdriveState'].alertStatus != log.SelfdriveState.AlertStatus.critical
@@ -437,6 +461,7 @@ class Soundd:
         else:
           self.get_audible_alert(sm, steering_warning == 2, steering_limit=steering_warning == 3)
 
+        self.update_manual_bsd_audio(sm['selfdriveState'], manual_bsd_edge)
         rk.keep_time()
 
         assert stream.active

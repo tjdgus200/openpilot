@@ -664,6 +664,13 @@
           "params": ["Pv5LaneBoundaryAssist", "Pv5SccDecelAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
         },
         {
+          "id": "PV5_BSD_SOUND",
+          "ko": "사각지대 알림",
+          "en": "Blind Spot Alert",
+          "zh": "盲点提示",
+          "params": ["Pv5ManualBsdSound", "Pv5ManualBsdVolume"]
+        },
+        {
           "id": "PV5_CLUSTER",
           "ko": "계기판",
           "en": "Instrument Cluster",
@@ -713,6 +720,40 @@
     }
   ],
   "params": [
+    {
+      "group": "PV5",
+      "name": "Pv5ManualBsdSound",
+      "title": "수동 방향지시등 사각지대 경고음",
+      "descr": "PV5에서 크루즈와 조향 보조가 모두 꺼진 상태로 방향지시등을 직접 켜면, 같은 방향의 순정 사각지대 감지 신호가 있을 때 콤마에서 경고음을 냅니다.",
+      "egroup": "PV5",
+      "etitle": "Manual Turn Signal Blind Spot Chime",
+      "edescr": "With both cruise and steering assist off, the comma device chimes when you signal manually and the PV5 reports a stock blind spot detection on the same side.",
+      "cgroup": "PV5",
+      "ctitle": "手动转向灯盲点提示音",
+      "cdescr": "巡航和转向辅助均关闭时，手动打开转向灯后，如果 PV5 原厂盲点监测在同侧检测到车辆，comma 设备会播放提示音。",
+      "control": "toggle",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5ManualBsdVolume",
+      "title": "사각지대 경고음 음량",
+      "descr": "수동 방향지시등 사각지대 경고음의 음량입니다. 0%는 음소거입니다.",
+      "egroup": "PV5",
+      "etitle": "Blind Spot Chime Volume",
+      "edescr": "Volume of the manual turn signal blind spot chime. 0% mutes it.",
+      "cgroup": "PV5",
+      "ctitle": "盲点提示音音量",
+      "cdescr": "手动转向灯盲点提示音的音量。0% 为静音。",
+      "min": 0,
+      "max": 100,
+      "default": 50,
+      "unit": 1,
+      "display_unit": "percent"
+    },
     {
       "group": "PV5",
       "name": "Pv5CcncClusterDisplay",

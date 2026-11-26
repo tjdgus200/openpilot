@@ -15,7 +15,7 @@ from opendbc.car.hyundai.collision_warning import SccRiskSource, write_inputs as
 from opendbc.car.hyundai.navi_speedcam import SpeedcamPolicy
 from opendbc.car.hyundai.section_average import DISTANCE_SCALE as SECTION_DISTANCE_SCALE, SectionAverage
 from opendbc.car.hyundai.steering_touch import HyundaiSteeringTouch
-from opendbc.car.hyundai.rear_gap import tbt_bsd_inputs
+from opendbc.car.hyundai.rear_gap import pv5_oem_bsd_inputs, tbt_bsd_inputs
 from opendbc.car.hyundai.lane_line_time import lane_line_time
 from opendbc.car.hyundai.vehicle_gps import VehicleGPS, register_vehicle_gps
 from opendbc.car.hyundai.values import HyundaiFlags, CAR, DBC, Buttons, CarControllerParams, CAMERA_SCC_CAR, HyundaiExtFlags, \
@@ -1554,8 +1554,14 @@ class CarState(CarStateBase):
 
     # The optional 250m trigger uses OEM BSD independently of corner display data.
     if self.CP.enableBsm:
-      ret.tbtRearInputsAvailable, ret.tbtRightRearBlocked = tbt_bsd_inputs(
-        self.cp_bsm, max(cp._last_update_nanos, cp_cam._last_update_nanos))
+      now = max(cp._last_update_nanos, cp_cam._last_update_nanos)
+      ret.tbtRearInputsAvailable, ret.tbtRightRearBlocked = tbt_bsd_inputs(self.cp_bsm, now)
+      if self.CP.carFingerprint == CAR.KIA_PV5:
+        stamp, left, right = pv5_oem_bsd_inputs(self.cp_bsm, now)
+        ret.pv5OemBlindspotValid = stamp != 0
+        ret.pv5OemBlindspotLeft = left
+        ret.pv5OemBlindspotRight = right
+        ret.pv5OemBlindspotMonoTime = stamp
 
     speed_limit_cam = False
     corner = False

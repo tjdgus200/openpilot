@@ -1,4 +1,4 @@
-"""Rear observations for the optional TBT indicator trigger, not a TTC estimate."""
+"""OEM blindspot and rear display observations."""
 
 import math
 
@@ -76,3 +76,26 @@ def tbt_bsd_inputs(bsm, now):
   if any(key not in values for key in fields):
     return False, True
   return True, any(values[key] != 0 for key in fields)
+
+
+def pv5_oem_bsd_inputs(bsm, now):
+  """Return the accepted OEM BSD CAN timestamp and indicators for manual audio."""
+  name = "BLINDSPOTS_REAR_CORNERS"
+  address = 0x1BA
+  invalid = (0, False, False)
+  if bsm is None or bsm.bus_timeout or len(bsm.dat.get(address, b"")) != 24:
+    return invalid
+
+  timestamps = bsm.ts_nanos.get(name, {})
+  stamp = timestamps.get("COUNTER", 0)
+  state = bsm.message_states.get(address)
+  if (stamp <= 0 or not 0 <= now - stamp <= REAR_INPUT_MAX_AGE_NS or state is None or
+      state.ignore_checksum or state.ignore_counter or state.counter_fail or state.last_invalid_nanos >= stamp):
+    return invalid
+
+  left = ("FL_INDICATOR", "INDICATOR_LEFT_TWO", "INDICATOR_LEFT_FOUR")
+  right = ("FR_INDICATOR", "INDICATOR_RIGHT_TWO", "INDICATOR_RIGHT_FOUR")
+  values = bsm.vl.get(name, {})
+  if any(field not in values or timestamps.get(field) != stamp for field in left + right):
+    return invalid
+  return stamp, any(values[field] != 0 for field in left), any(values[field] != 0 for field in right)
