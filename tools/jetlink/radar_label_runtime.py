@@ -92,17 +92,18 @@ def build_plan(output):
   config.clear_flag(trt.BuilderFlag.TF32)
   config.max_aux_streams = 0
   config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 256 << 20)
-  plan = builder.build_serialized_network(network, config)
-  if plan is None or not 0 < len(plan) <= 128 << 20:
+  serialized = builder.build_serialized_network(network, config)
+  plan = bytes(serialized) if serialized is not None else b''
+  if not 0 < len(plan) <= 128 << 20:
     raise ValueError('Invalid serialized YOLO engine')
-  output.write_bytes(bytes(plan))
+  output.write_bytes(plan)
 
 
 def check_plan(plan):
   from parallel_radar_labels import RustDetector, WIDE_BYTES
   # With no arguments the worker prints usage before touching any socket.
   result = subprocess.run([RUNTIME / WORKER], capture_output=True, timeout=3)
-  if result.returncode != 1 or b'usage: radar-label-worker' not in result.stderr:
+  if result.returncode != 1 or b'usage: radar-label-worker PRIVATE_RUN_DIRECTORY [HUD_PACKET]' not in result.stderr:
     raise RuntimeError('Packaged radar worker failed its loader check')
   detector = RustDetector(RUNTIME / LIB, plan)
   try:

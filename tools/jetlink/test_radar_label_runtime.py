@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -98,3 +100,28 @@ def test_comma_publisher_creates_and_releases_markers_only_for_a_real_pv5(monkey
   assert builder.radar_context is not None
   builder.select_radar_context(None)
   assert builder.radar_context is None and closed == [1]
+
+
+def test_build_accepts_tensorrt_hostmemory_without_a_length(tmp_path, monkeypatch):
+  from tools.pv5_radar_labels.native import build_engine
+
+  class HostMemory:
+    def __bytes__(self):
+      return b'serialized engine'
+
+  trt = MagicMock()
+  builder = trt.Builder.return_value
+  builder.create_network.return_value.num_inputs = builder.create_network.return_value.num_outputs = 1
+  builder.build_serialized_network.return_value = HostMemory()
+  monkeypatch.setitem(sys.modules, 'tensorrt', trt)
+  monkeypatch.setattr(build_engine, 'verified_model', lambda path: b'ONNX')
+  path = tmp_path / 'candidate.plan'
+  runtime.build_plan(path)
+  assert path.read_bytes() == b'serialized engine'
+
+
+def test_earlier_worker_cli_is_rejected_before_loading_detector(tmp_path, monkeypatch):
+  legacy = b'Error: "usage: radar-label-worker ENGINE.plan PRIVATE_RUN_DIRECTORY [HUD_PACKET]"'
+  monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=1, stderr=legacy))
+  with pytest.raises(RuntimeError, match='worker failed'):
+    runtime.check_plan(tmp_path/'unused.plan')
