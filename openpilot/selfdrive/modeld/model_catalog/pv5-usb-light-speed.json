@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-timing-light-speed-20261126-0180e10b",
-  "source_commit": "0180e10b9c48247955ed6edb51dc301bffcfb35f",
+  "profile": "jetson-pv5-yolo-mode9-light-speed-20261126-435c5eb4",
+  "source_commit": "435c5eb4aa78def31e35be5acbbdd5d7cbafa1d8",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-timing-light-speed-20261126-0180e10b/host.tar.gz",
-    "sha256": "f3742e33261d9f74d45769547b9cf57cf633f398296f0355f9636fdca5f522bf",
-    "size": 70139698
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-mode9-light-speed-20261126-435c5eb4/host.tar.gz",
+    "sha256": "7f731732e21373226dba03d8beedc9bb3935f1f5972dbf1b79ef68820acf59d4",
+    "size": 70149207
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",

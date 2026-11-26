@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-hud-timing-flip-flop-20261126-2cac7a80",
-  "source_commit": "2cac7a802c0ca5726ff08ece0fdb12eb4ede9086",
+  "profile": "jetson-pv5-yolo-mode9-flip-flop-20261126-d0fb5864",
+  "source_commit": "d0fb586426cb1e42ef95bc40aa1561fdc8d884b3",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-timing-flip-flop-20261126-2cac7a80/host.tar.gz",
-    "sha256": "e77e0d4a57488b6cd764a507488b8eae9ee704acafbf8e49187c9124f929a349",
-    "size": 70139742
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-mode9-flip-flop-20261126-d0fb5864/host.tar.gz",
+    "sha256": "a6db542c5996d2647c6a871945428159349da07b42ca232a4daa0832aba0df37",
+    "size": 70149191
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",
