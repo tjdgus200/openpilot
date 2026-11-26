@@ -317,7 +317,7 @@ mod linux {
         let mut publisher = Publisher::default();
         let mut pending = VecDeque::<Request>::with_capacity(MAX_PENDING);
         let mut latest: Option<(u32, u64)> = None;
-        let mut last_paired: Option<u32> = None;
+        let mut last_paired: Option<(u32, u64)> = None;
         let poll = Some(Duration::from_millis(5));
         save(dir, &publisher.output(0, 0, 0, 0, clock()?, &[]))?;
         loop {
@@ -380,12 +380,22 @@ mod linux {
                 let Some((g, radar_ns, points, host_capture)) = metadata.pair(r, now) else {
                     continue;
                 };
-                if !last_paired.is_some_and(|f| f.checked_add(1) == Some(r.frame)) {
+                // The auxiliary detector drops busy frames by design. One skipped
+                // offer can still have two fresh, independently matched radar samples.
+                let continues = last_paired.is_some_and(|(frame, capture)| {
+                    match r.frame.checked_sub(frame) {
+                        Some(1) => true,
+                        Some(2) => g.capture_ns.checked_sub(capture)
+                            .is_some_and(|dt| (1..=150_000_000).contains(&dt)),
+                        _ => false,
+                    }
+                });
+                if !continues {
                     labeler = Labeler::default();
                     publisher = Publisher::default();
                 }
                 let labels = labeler.update(&g, radar_ns, &points, Some(&r.detections));
-                last_paired = Some(r.frame);
+                last_paired = Some((r.frame, g.capture_ns));
                 newest = Some((
                     i,
                     publisher.output(r.frame, g.capture_ns, radar_ns, host_capture, now, &labels),
@@ -419,6 +429,16 @@ mod linux {
 
         #[test]
         fn datagrams_wait_for_independent_wide_evidence_in_one_hud_snapshot() {
+            verify_frame_pair(2, true);
+        }
+
+        #[test]
+        fn one_missed_detector_offer_preserves_spatial_confirmation() {
+            verify_frame_pair(3, true);
+            verify_frame_pair(4, false);
+        }
+
+        fn verify_frame_pair(second: u32, associated: bool) {
             let dir = std::env::temp_dir().join(format!(
                 "rl-{}-{}",
                 std::process::id(),
@@ -429,7 +449,7 @@ mod linux {
             wait_for_output(&dir, 0);
             let sender = UnixDatagram::unbound().unwrap();
             let mut markers = vec![];
-            for frame in [1, 2] {
+            for frame in [1, second] {
                 let now = clock().unwrap();
                 sender
                     .send_to(
@@ -444,11 +464,15 @@ mod linux {
             let bytes = crate::worker::tests::packet(now, now, markers);
             fs::write(dir.join("packet.tmp"), bytes).unwrap();
             fs::rename(dir.join("packet.tmp"), dir.join("hud.packet")).unwrap();
-            let value = wait_for_output(&dir, 2);
+            let value = wait_for_output(&dir, second);
             assert_eq!(value["lens"], "wide");
-            assert_eq!(value["labels"][0]["track_id"], 56);
-            assert_eq!(value["labels"][0]["class_id"], 2);
-            assert_eq!(value["labels"][0]["point"], json!([10.0, 0.0, 0.0]));
+            if associated {
+                assert_eq!(value["labels"][0]["track_id"], 56);
+                assert_eq!(value["labels"][0]["class_id"], 2);
+                assert_eq!(value["labels"][0]["point"], json!([10.0, 0.0, 0.0]));
+            } else {
+                assert_eq!(value["labels"], json!([]));
+            }
             assert!(value["radar_ns"].as_u64().unwrap() > 0);
             fs::remove_dir_all(dir).unwrap();
         }

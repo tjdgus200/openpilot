@@ -25,12 +25,12 @@ def test_wide_class_is_drawn_for_the_exact_measured_front_id(tmp_path, monkeypat
   renderer._track_tiles = {0: (object(),) * 16}
   now = 100.
   stamp = 34000
-  record = dict(sent=now, received={'carState': now}, events={'carState':'x', 'liveTracks':'x'},
+  record = dict(sent=now, received={'carState': now, 'liveTracks': now}, events={'carState':'x', 'liveTracks':'x'},
                 valid={'carState': True, 'liveTracks': True},
                 alive={'carState': True, 'liveTracks': True}, mono={'liveTracks': stamp})
   renderer._track_label_path = tmp_path / 'labels.json'
   renderer._track_label_path.write_text(json.dumps(dict(version=1, lens='wide', radar_ns=stamp, published_monotonic_ns=int(now*1e9),
-    labels=[dict(track_id=34,class_id=0,expires_monotonic_ns=int((now+.1)*1e9))])))
+    labels=[dict(track_id=34,class_id=0,confidence=.83,point=[25.,0.,0.],expires_monotonic_ns=int((now+.1)*1e9))])))
   monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: (now, record))
   monkeypatch.setattr(hud.time, 'monotonic', lambda: now)
   monkeypatch.setattr(hud.time, 'monotonic_ns', lambda: int(now*1e9))
@@ -38,7 +38,7 @@ def test_wide_class_is_drawn_for_the_exact_measured_front_id(tmp_path, monkeypat
   monkeypatch.setattr(indicator, 'draw', lambda *_: None)
   monkeypatch.setattr(hud.ClusterUiRenderer, 'render', lambda r, state, *_: r._render_world(state))
   monkeypatch.setattr(hud.ClusterUiRenderer, '_render_world', lambda *_: None)
-  front = NS(trackId=34, dRel=25., yRel=0., measured=True, radarSource='frontRadar')
+  front = NS(trackId=34, dRel=25., yRel=0., vRel=0., measured=True, radarSource='frontRadar')
   radar = NS(points=[front], radarTrackFlipped=False, errors=NS(to_dict=lambda: {}))
   event = NS(logMonoTime=stamp, valid=True, liveTracks=radar)
   observations = RadarRows()
@@ -58,6 +58,16 @@ def test_wide_class_is_drawn_for_the_exact_measured_front_id(tmp_path, monkeypat
   cached = renderer.hud_labeled_radar_points
   renderer.render(state)
   assert renderer.hud_labeled_radar_points is cached
+  # The packet reader can advance before the HUD subscriber decodes liveTracks.
+  now += .12
+  stamp += 120_000_000
+  record.update(sent=now, received={'carState': now, 'liveTracks': now}, mono={'liveTracks': stamp})
+  renderer.render(state)
+  assert not renderer.hud_labeled_radar_points
+  event.logMonoTime = stamp
+  observations.observe(event)
+  renderer.render(state)
+  assert renderer.hud_track_classes == {34: 0}
   radar.points.append(front)
   observations.observe(event)
   renderer.render(state)

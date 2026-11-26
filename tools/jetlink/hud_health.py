@@ -338,6 +338,10 @@ class HealthRenderer(ClusterUiRenderer):
     battery = remote_panel(snapshot, time.monotonic())
     vehicle_current = self._vehicle_data_current and vehicle_motion_fresh(snapshot, now)
     self._pv5_hud_gear = getattr(state, 'pv5_hud_gear', None) if vehicle_current else None
+    if (hasattr(self, '_label_reader') and
+        (not self._label_snapshot or not state.onroad or self._pv5_hud_gear == 'R'
+         or getattr(getattr(state, 'alert', None), 'status', None) == 2)):
+      self._label_reader.reset(time.monotonic_ns())
     self._trip_soc_used = self._trip_soc.update(battery, vehicle_current)
     if getattr(self, 'screen_mode', None) == CLUSTER_SCREEN_MODE_BATTERY:
       state = replace(state, battery=battery)
@@ -367,6 +371,12 @@ class HealthRenderer(ClusterUiRenderer):
           self.hud_labeled_radar_points = points
           if points:
             self.hud_track_classes = reader.radar_rows.display_names
+        elif (not hud.get('valid', {}).get('liveTracks') or not hud.get('alive', {}).get('liveTracks')
+              or not hud.get('events', {}).get('liveTracks') or reader.radar_rows.event is None
+              or reader.radar_rows.event.logMonoTime == hud.get('mono', {}).get('liveTracks')):
+          reader.reset(time.monotonic_ns())
+        # If the subscriber is one generation behind, wait for its decoded
+        # event. The reader checks elapsed source and host time on catch-up.
       super()._render_world(state, signal_lights)
 
   def _draw_hud(self, state, signal_lights=None):
