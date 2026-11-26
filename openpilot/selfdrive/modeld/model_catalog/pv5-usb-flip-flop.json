@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-stock-lanes-flip-flop-20261124-6a198d49",
-  "source_commit": "6a198d4951d03479a309cb1f21d34e296e082a6d",
+  "profile": "jetson-pv5-yolo-hud-flip-flop-20261126-bdaeae89",
+  "source_commit": "bdaeae898ed92241d9b33678aa0ec4723e9e00ca",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-stock-lanes-flip-flop-20261124-6a198d49/host.tar.gz",
-    "sha256": "33d130deb731eac8e64e8c50667d906f69277385e3ccbe8699a4d891454cdcdf",
-    "size": 65792638
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-hud-flip-flop-20261126-bdaeae89/host.tar.gz",
+    "sha256": "2cbe94842f6e8c2dc2b45bae89ce0c4fdddde837f9d6098dedd6851bf5aeaee4",
+    "size": 70138676
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-md-v3-1365126a/big_driving_supercombo.onnx",

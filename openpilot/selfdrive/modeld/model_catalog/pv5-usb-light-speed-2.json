@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-stock-lanes-light-speed-2-20261124-6afe6cf3",
-  "source_commit": "6afe6cf3378466723dfd54fcdcd3bc284b09b443",
+  "profile": "jetson-pv5-yolo-hud-light-speed-2-20261126-fd1c4c30",
+  "source_commit": "fd1c4c30cb4506b54aba6c8177a24759fb753fe5",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-stock-lanes-light-speed-2-20261124-6afe6cf3/host.tar.gz",
-    "sha256": "e7451a00fe82884b453c9464db7a0549b9bbda1de368ad79c87d63af4e5ffcf1",
-    "size": 65792650
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-hud-light-speed-2-20261126-fd1c4c30/host.tar.gz",
+    "sha256": "1c5b873d470d2c6e50f6e4ad8d033be016a1c4beff4f149828919184828228a9",
+    "size": 70138712
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/ea306f534159ac9a3caab0ac3bd4a5f82f9cd805/ea2f516f-f758-42be-a245-913bb818a64f/32768/big_driving_supercombo.onnx",

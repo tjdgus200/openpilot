@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-stock-lanes-light-speed-20261124-34c1bddf",
-  "source_commit": "34c1bddff61f0660d558a96949bb7d91c97876ad",
+  "profile": "jetson-pv5-yolo-hud-light-speed-20261126-120b97c4",
+  "source_commit": "120b97c439acb4aaf665af18c269bf70786fc1f3",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-stock-lanes-light-speed-20261124-34c1bddf/host.tar.gz",
-    "sha256": "a73b0d7295045f66efbb9152b40611489fdd7122350a6cb38bf12ee0549b3bb0",
-    "size": 65792630
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-hud-light-speed-20261126-120b97c4/host.tar.gz",
+    "sha256": "734c2e534a443008fbb644639d0bde9c816327e11b528a18e44d78f0a5167780",
+    "size": 70138669
   },
   "model": {
     "sha256": "6274eb4a3f3eb7ad1ab341d222bbba2ba709b06645dbbd15ac4971d6cb22ab21",
