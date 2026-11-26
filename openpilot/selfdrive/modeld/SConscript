@@ -16,7 +16,11 @@ CAMERA_CONFIGS = [
   (_os_fisheye.width, _os_fisheye.height),        # mici: 1344x760
 ]
 
-Import('env', 'arch')
+Import('env', 'arch', 'envCython')
+
+native_luma_env = envCython.Clone()
+native_luma_env.Append(CCFLAGS=['-fno-fast-math', '-ffp-contract=off'])
+native_luma_env.Program('daylight_luma.so', 'daylight_luma.pyx')
 chunker_file = File("#openpilot/common/file_chunker.py")
 lenv = env.Clone()
 

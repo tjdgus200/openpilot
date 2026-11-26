@@ -492,6 +492,8 @@ def main(demo=False):
     if diagnostics.enabled:
       cpu_start = time.thread_time()
     frame += 1
+    if frame % ModelConstants.MODEL_RUN_FREQ == 1 and hasattr(model, 'update_daylight75'):
+      model.update_daylight75(params, main_wide_camera, use_extra_client)
     if frame % 100 == 0:
       custom_lat_delay = params.get_float("SteerActuatorDelay") * 0.01
       lat_smooth_seconds = params.get_float("LatSmoothSec") * 0.01

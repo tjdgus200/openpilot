@@ -297,7 +297,7 @@ def test_wide_camera_fallback_setting_is_exposed(settings, params):
 
   system = next(category for category in settings["menu"] if category["id"] == "SYSTEM")
   camera = next(group for group in system["groups"] if group["id"] == "SYS_CAMERA")
-  assert camera["params"] == ["UseWideCamera"]
+  assert camera["params"][0] == "UseWideCamera"
 
   params_keys = PARAMS_KEYS_PATH.read_text(encoding="utf-8")
   assert '{"UseWideCamera", {PERSISTENT, BOOL, "1"}}' in params_keys
@@ -343,6 +343,22 @@ def test_park_ssh_toggle_appears_in_incident_reports_with_registration_status(se
     entry = next(row for row in data["items_by_group"]["PV5"] if row["name"] == pv5_park_ssh.PARAM)
     assert entry["descr"].startswith(expected)
   assert item["descr"] == original
+
+
+def test_model_input_brightness_controls_are_independent_and_default_off(settings):
+  _, by_name, _ = group_index(settings)
+  categories = build_menu_categories(settings, by_name)
+  system = next(category for category in categories if category["id"] == "SYSTEM")
+  camera = next(group for group in system["groups"] if group["id"] == "SYS_CAMERA")
+  names = ["ModelRoadDaylight75", "ModelWideRoadDaylight75"]
+  assert camera["sections"][0]["items"] == ["UseWideCamera", *names]
+
+  params_keys = PARAMS_KEYS_PATH.read_text(encoding="utf-8")
+  for name in names:
+    item = by_name[name]
+    assert (item["min"], item["max"], item["default"]) == (0, 1, 0)
+    assert (item["control"], item["risk"]) == ("toggle", "high")
+    assert f'{{"{name}", {{PERSISTENT, BOOL, "0"}}}}' in params_keys
 
 
 def test_driver_monitoring_setting_is_default_on_search_only_and_session_state_is_internal(settings, params):

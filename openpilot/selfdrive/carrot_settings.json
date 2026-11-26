@@ -615,7 +615,9 @@
           "en": "Camera",
           "zh": "摄像头",
           "params": [
-            "UseWideCamera"
+            "UseWideCamera",
+            "ModelRoadDaylight75",
+            "ModelWideRoadDaylight75"
           ]
         },
         {
@@ -2534,6 +2536,42 @@
       "min": 0,
       "max": 1,
       "default": 1,
+      "unit": 1,
+      "control": "toggle",
+      "risk": "high"
+    },
+    {
+      "group": "시스템",
+      "name": "ModelRoadDaylight75",
+      "title": "일반 전방 모델 입력 밝기 보정 (실험)",
+      "descr": "Jetlink 주행 모델의 일반 전방 입력에 Y75 밝기 보정을 적용합니다. 밝은 영역을 보존하는 실험 기능이며 모델 인식 결과가 달라질 수 있습니다. 기본값은 꺼짐입니다.",
+      "egroup": "SYSTEM",
+      "etitle": "Narrow Road Model Input Brightness (Experimental)",
+      "edescr": "Applies Y75 brightness correction to the narrow road input of the Jetlink driving model. This experimental correction preserves highlights and may change model recognition. Off by default.",
+      "cgroup": "系统",
+      "ctitle": "普通前向模型输入亮度校正（实验）",
+      "cdescr": "对 Jetlink 驾驶模型的普通前向输入应用 Y75 亮度校正。此实验功能保留高光，并可能改变模型识别结果。默认关闭。",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1,
+      "control": "toggle",
+      "risk": "high"
+    },
+    {
+      "group": "시스템",
+      "name": "ModelWideRoadDaylight75",
+      "title": "광각 전방 모델 입력 밝기 보정 (실험)",
+      "descr": "Jetlink 주행 모델의 광각 전방 입력에 Y75 밝기 보정을 적용합니다. 밝은 영역을 보존하는 실험 기능이며 모델 인식 결과가 달라질 수 있습니다. 기본값은 꺼짐입니다.",
+      "egroup": "SYSTEM",
+      "etitle": "Wide Road Model Input Brightness (Experimental)",
+      "edescr": "Applies Y75 brightness correction to the wide road input of the Jetlink driving model. This experimental correction preserves highlights and may change model recognition. Off by default.",
+      "cgroup": "系统",
+      "ctitle": "广角前向模型输入亮度校正（实验）",
+      "cdescr": "对 Jetlink 驾驶模型的广角前向输入应用 Y75 亮度校正。此实验功能保留高光，并可能改变模型识别结果。默认关闭。",
+      "min": 0,
+      "max": 1,
+      "default": 0,
       "unit": 1,
       "control": "toggle",
       "risk": "high"
