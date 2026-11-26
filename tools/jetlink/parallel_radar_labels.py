@@ -71,6 +71,8 @@ class ParallelRadarLabels:
     self.slot = threading.Lock()
     self.mailbox = queue.Queue(maxsize=1)
     self.sample = None
+    self.last_detection = None
+    self.timing_since = 0.
     self.thread = threading.Thread(target=self._worker, name='pv5-wide-yolo', daemon=True)
     self.thread.start()
 
@@ -152,6 +154,8 @@ class ParallelRadarLabels:
       sample.replied.set()
 
   def invalidate(self):
+    self.timing_since = time.perf_counter()
+    self.last_detection = None
     if self.sample is not None:
       self.sample.valid = False
       self.sample.replied.set()
@@ -178,11 +182,14 @@ class ParallelRadarLabels:
         try:
           if self.stopping.is_set() or time.monotonic_ns() - sample.stamp >= 50_000_000:
             continue
+          started = time.perf_counter()
           count, rows = detector.detect(sample.image)
+          finished = time.perf_counter()
           # A failed main inference or a reset must not seed HUD labels.
           deadline = sample.stamp + MAX_AGE_NS
           sample.replied.wait(max(0, (deadline - time.monotonic_ns()) * 1e-9))
           if sample.valid and not self.stopping.is_set() and time.monotonic_ns() < deadline:
+            self.last_detection = (started, finished)
             fingerprint = bytes(sample.image[i] for i in OFFSETS)
             header = HEADER.pack(b'RLD2', sample.frame, sample.stamp, fingerprint, count)
             try:
@@ -195,6 +202,7 @@ class ParallelRadarLabels:
       log.warning('Wide HUD detector disabled (%s)', type(error).__name__)
     finally:
       self.ready.clear()
+      self.last_detection = None
       self.stopping.set()
       try:
         if detector is not None:

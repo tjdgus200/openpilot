@@ -453,6 +453,14 @@ class ControlServer:
     summary = self.host.frame_stats.display_summary(self._display_since, include_samples=include_samples)
     if summary:
       summary = {**summary, 'model_sha256': loaded.sha256}
+      session = getattr(self.host, 'session', None)
+      labels = getattr(session, 'labels', None)
+      measured = getattr(labels, 'last_detection', None)
+      if measured is not None:
+        started, finished = measured
+        if max(self._display_since, labels.timing_since) <= started <= finished:
+          summary['yolo_finished_s'] = finished
+          summary['yolo_ms'] = (finished - started) * 1000.
       if include_samples:
         summary['sample_session'] = f'{loaded.sha256}:{self._display_since:.9f}'
     return {'display_stats': summary}

@@ -52,8 +52,10 @@ def pair():
   return image
 
 
-def test_one_in_flight_owns_only_wide_bytes_and_requires_main_success(runtime):
+def test_one_in_flight_owns_only_wide_bytes_and_requires_main_success(runtime, monkeypatch):
   detector, aux, output = runtime
+  clock = iter((1., 1.004))
+  monkeypatch.setattr('parallel_radar_labels.time.perf_counter', lambda: next(clock, 2.))
   warped = pair()
   expected = warped[1].tobytes()
   stamp = time.monotonic_ns()
@@ -70,6 +72,9 @@ def test_one_in_flight_owns_only_wide_bytes_and_requires_main_success(runtime):
   header, rows = output.get(timeout=1)
   assert HEADER.unpack(header) == (b'RLD2', 3, stamp, bytes(expected[i] for i in OFFSETS), 1)
   assert len(rows) == 24
+  assert aux.last_detection == (1., 1.004)
+  aux.invalidate()
+  assert aux.last_detection is None
 
 
 @pytest.mark.parametrize('cancel', ['failed', 'reset', 'close', 'late_error'])
@@ -89,6 +94,7 @@ def test_cancellation_does_not_free_inflight_gpu_resources(runtime, cancel):
   assert aux.slot.acquire(timeout=1)
   aux.slot.release()
   assert output.empty()
+  assert aux.last_detection is None
   if cancel in ('close', 'late_error'):
     assert detector.closed.wait(1)
     assert not aux.ready.is_set()

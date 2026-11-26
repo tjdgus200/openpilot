@@ -93,6 +93,7 @@ hud_health._fresh=lambda *_:{'severity':'ok','thermal_severity':'ok','temp_c':59
 signal_mode.signal_mode=lambda:0
 ui=hud_health.HealthRenderer(theme_mode='dark',screen_mode=8)
 ui._host_metrics=lambda:{'timing':{'window_s':10.,'count':200,'last_frame_age_s':.1,
+ 'yolo_finished_s':time.perf_counter(),'yolo_ms':3.2,
  'infer_ms':{'mean':25.,'p99':28.,'max':31.},'server_ms':{'mean':27.,'p99':30.,'max':33.}}}
 lines={}
 segments_drawn={}
@@ -110,7 +111,7 @@ try:
  assert ui._telemetry_font.texture.id!=hud_health.rl.get_font_default().texture.id
  ui.render_to_file(state,Path(sys.argv[2]))
  assert 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms' in lines['infer']
- assert 'COMMA 40.0 ms | DROP 1s:3' == lines['comma-infer']
+ assert 'YOLO 3.2 ms | COMMA 40.0 ms | DROP 1s:3' == lines['comma-infer']
  for row in ('infer','comma-infer'):
   assert sum(ui._runtime_line_layouts[row][2]) < 520
   assert ui._runtime_line_layouts[row][1]==18 # keep readable text, no title overlap

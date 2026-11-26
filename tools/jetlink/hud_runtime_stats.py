@@ -196,7 +196,7 @@ def inference_segments(host, *, comma_ms=None, comma_drops=None, include_comma=F
   if quality.get('kind') == 'fps-q92':
     from hud_rate import SHORT_NAMES
   active = quality.get('effective')
-  result = [(f'{SHORT_NAMES[active]} 10s ' if type(active) is int and 0 <= active < 8 else 'TRT 10s ', TEXT)]
+  result = [(f'JETSON {SHORT_NAMES[active]} 10s ' if type(active) is int and 0 <= active < 8 else 'JETSON TRT 10s ', TEXT)]
   timing = valid_timing(host.get('timing'))
   for label, key in (('AVG:', 'mean'), (' P99:', 'p99'), (' MAX:', 'max')):
     value = timing['infer_ms'][key] if timing else None
@@ -206,9 +206,16 @@ def inference_segments(host, *, comma_ms=None, comma_drops=None, include_comma=F
   if type(best) is int and 0 <= best < 8:
     result.append((f' B:{SHORT_NAMES[best]}', NORMAL))
   if include_comma:
+    # The control socket and HUD share the Jetson's monotonic performance clock.
+    finished = timing.get('yolo_finished_s') if timing else None
+    ms = timing.get('yolo_ms') if timing else None
+    fresh = (type(finished) in (int, float) and 0 <= time.perf_counter() - finished < 2.
+             and type(ms) in (int, float) and 0 <= ms <= 10000)
     valid_ms = type(comma_ms) in (int, float) and math.isfinite(comma_ms) and 0 < comma_ms <= 10000
     valid_drops = type(comma_drops) is int and 0 <= comma_drops <= 0xffffffff
     result.extend(((' | ', TEXT),
+                   (f'YOLO {ms:.1f} ms' if fresh else 'YOLO -- ms', TEXT if fresh else UNKNOWN),
+                   (' | ', TEXT),
                    (f"COMMA {comma_ms:.1f} ms" if valid_ms else 'COMMA -- ms',
                     metric_color(round(comma_ms, 1) if valid_ms else None, 'comma_infer')),
                    (' | ', TEXT), ('DROP 1s:', NORMAL),

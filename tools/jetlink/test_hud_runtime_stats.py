@@ -118,9 +118,29 @@ def test_sampler_accepts_real_top_level_control_reply_and_skips_events():
 
 def test_timing_readout_separates_host_window_from_latest_comma_sample():
   text = ''.join(text for text, _ in inference_segments({'timing': timing()}, comma_ms=48.9, include_comma=True))
-  assert text == 'TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms | COMMA 48.9 ms | DROP 1s:--'
+  assert text == 'JETSON TRT 10s AVG:25.0 P99:28.0 MAX:31.0 ms | YOLO -- ms | COMMA 48.9 ms | DROP 1s:--'
   text = ''.join(text for text, _ in inference_segments({}, include_comma=True))
-  assert text == 'TRT 10s AVG:-- P99:-- MAX:-- ms | COMMA -- ms | DROP 1s:--'
+  assert text == 'JETSON TRT 10s AVG:-- P99:-- MAX:-- ms | YOLO -- ms | COMMA -- ms | DROP 1s:--'
+
+
+def test_jetson_yolo_sample_expires_without_affecting_driving_stats(monkeypatch):
+  from jetlink.server import control
+  now = [50.]
+  monkeypatch.setattr(control.time, 'perf_counter', lambda: now[0])
+  labels = NS(last_detection=(50.05, 50.054), timing_since=0.)
+  server = object.__new__(ControlServer)
+  server.host = NS(loaded=NS(sha256='a' * 64), session=NS(labels=labels), frame_stats=FrameStats())
+  assert server._cmd_display_stats(None, {})['display_stats'] is None
+  now[0] = 51.
+  server.host.frame_stats.samples.append((50.8, 4000, 2000))
+  response = server._cmd_display_stats(None, {})
+  def row():
+    return ''.join(s for s, _ in inference_segments({'timing': response['display_stats']}, include_comma=True))
+  assert 'YOLO 4.0 ms' in row() and 'AVG:2.0' in row()
+  now[0] = 52.055
+  assert 'YOLO -- ms' in row()
+  labels.timing_since = 51.
+  assert 'yolo_ms' not in server._cmd_display_stats(None, {})['display_stats']
 
 
 @pytest.mark.parametrize('ms,color', [(0.1, NORMAL), (39.9, NORMAL), (40., NORMAL),
