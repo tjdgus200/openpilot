@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-yolo-hud-n16-20261126-754ed426",
-  "source_commit": "754ed42639467b0f40b8a3babab30bb67c685bc0",
+  "profile": "jetson-pv5-hud-timing-n16-20261126-3d66b592",
+  "source_commit": "3d66b592a962c86a59f01ee441730f52a23901ee",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-hud-n16-20261126-754ed426/host.tar.gz",
-    "sha256": "db47468bbf8877530b977e002d43cc092599bdabb5d69165a83183872d7cf1de",
-    "size": 70139141
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-timing-n16-20261126-3d66b592/host.tar.gz",
+    "sha256": "a0387b1660c2f4c8ddf67baad071a69314320dc8e85341b1bba7dbb4f4cd1150",
+    "size": 70140001
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

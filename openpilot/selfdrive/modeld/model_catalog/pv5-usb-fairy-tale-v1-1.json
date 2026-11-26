@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-yolo-hud-fairy-tale-v1-1-20261126-aac409c9",
-  "source_commit": "aac409c91bfb5a071afb4181a2fffc4def79a68e",
+  "profile": "jetson-pv5-hud-timing-fairy-tale-v1-1-20261126-073fce2d",
+  "source_commit": "073fce2d8acf7070e0f5fb3c18141ca03fafeebd",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-hud-fairy-tale-v1-1-20261126-aac409c9/host.tar.gz",
-    "sha256": "9f96854f8efa764f58a400ed3dd8c6a1bafa2fba333b8a9887b9b4114f91c9ef",
-    "size": 70138698
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-timing-fairy-tale-v1-1-20261126-073fce2d/host.tar.gz",
+    "sha256": "06a4d499f704c2953d0b048854b659fe6065d28e80acb65d292a2522d182b9e8",
+    "size": 70139741
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/d6ca4432101dc1a938ae3ee3a8dbfbfdae33ccba/3f1a78e6-9a79-4d85-b796-1cd573bd5a3a/32768/big_driving_supercombo.onnx",

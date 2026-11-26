@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-yolo-hud-ctv3m-20261126-b8801c2b",
-  "source_commit": "b8801c2b3ef1df440faeb377b0a6550fbd2f7a77",
+  "profile": "jetson-pv5-hud-timing-ctv3m-20261126-3df73f0c",
+  "source_commit": "3df73f0cab5f624543b3db5d54008111da8dde1b",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-hud-ctv3m-20261126-b8801c2b/host.tar.gz",
-    "sha256": "ea68cf6941be6c62d1bb5033aa975fac62f9941b0a026021e378e7069d902f5a",
-    "size": 70138694
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-timing-ctv3m-20261126-3df73f0c/host.tar.gz",
+    "sha256": "4b220381028eaac2d29d3ca841f283083b1fbfbeb465e29315986583913f2476",
+    "size": 70139715
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
