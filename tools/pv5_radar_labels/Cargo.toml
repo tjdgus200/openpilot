@@ -1,0 +1,23 @@
+[package]
+name = "pv5-radar-labels"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+tensorrt = []
+
+[dependencies]
+serde_json = "1"
+
+[[bin]]
+name = "radar-label-worker"
+path = "src/bin/worker.rs"
+
+[[bin]]
+name = "replay-detector"
+path = "src/bin/replay_detector.rs"
+required-features = ["tensorrt"]

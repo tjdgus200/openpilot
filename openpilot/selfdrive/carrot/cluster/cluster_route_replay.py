@@ -2299,6 +2299,7 @@ class RouteLogParser:
                     primary=True,
                     ttc_s=ttc_from_relative_speed(d_rel, relative_speed_mps),
                     radar_track_id=track_id,
+                    front_track_id=front_lead_label_track_id(lead, track_id),
                 )
             )
         for lead in recorded_cutin_leads:
@@ -2341,6 +2342,7 @@ class RouteLogParser:
                     primary=True,
                     ttc_s=ttc_from_relative_speed(d_rel, relative_speed_mps),
                     radar_track_id=track_id,
+                    front_track_id=front_lead_label_track_id(lead, track_id),
                 )
             )
         self.radar_detections = tuple(detections)
@@ -4716,6 +4718,11 @@ def live_track_to_radar_point(
         longitudinal_m=d_rel,
         lateral_m=lateral_m,
         source=CORNER_OBJECT_SOURCE if is_corner_object else "liveTracks",
+        front_track_id=track_id if (
+            track_id is not None and track_id >= 0 and not is_corner_object
+            and bool(safe_get(track, "measured", False))
+            and str(safe_get(track, "radarSource")) == "frontRadar"
+        ) else None,
         relative_speed_mps=rel_speed_mps,
         absolute_speed_kph=absolute_speed_kph,
         lateral_speed_mps=lat_speed_mps,
@@ -4727,6 +4734,15 @@ def live_track_to_radar_point(
 
 def radar_track_id_is_corner_object(track_id: int | None) -> bool:
     return track_id is not None and (is_corner_track_id(track_id) or is_stable_corner_track_id(track_id))
+
+
+def front_lead_label_track_id(lead: Any, track_id: int | None) -> int | None:
+    if (
+        track_id is not None and track_id >= 0
+        and not radar_track_id_is_corner_object(track_id) and safe_get(lead, "radar", False)
+    ):
+        return track_id
+    return None
 
 
 def corner_track_label(track_id: int, radar_source: str = "") -> str:

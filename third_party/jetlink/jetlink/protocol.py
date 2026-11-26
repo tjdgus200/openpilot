@@ -22,6 +22,8 @@ MAGIC = 0x4B4E4C4A  # b'JLNK'
 # Keep the vendored server pinned at v2; clients select v3 per stream.
 VERSION = 2
 SUPPORTED_VERSIONS = (2, 3)
+WIDE_LABELS_CAPABILITY = 'pv5_wide_labels_v2'
+WIDE_LABELS_FLAG = 1 << 8  # INFER_REQ payload, opt-in display-only use of camera 1
 
 # Legacy v2 packet size. A transfer that is an exact multiple does not terminate
 # a bulk read, so the sender adds one byte; v3 uses 512 (see packet_multiple()).

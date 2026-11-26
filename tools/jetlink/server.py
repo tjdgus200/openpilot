@@ -74,6 +74,8 @@ class CarrotSession(Session):
       if status != P.Status.OK:
         self.telemetry.health.record_error('Inference', f'result status {status}')
     result = super()._send(msg_type, seq, parts, flags)
+    if msg_type == P.Msg.INFER_RESP and getattr(self, 'labels', None) is not None:
+      self.labels.finish(seq, P.unpack_infer_resp(parts[0])[1] == P.Status.OK)
     measurement = getattr(self, '_input_measurement', None)
     if msg_type == P.Msg.INFER_RESP and measurement is not None:
       raw = self.t.transport if isinstance(self.t, ReadAheadTransport) else self.t
@@ -94,6 +96,17 @@ class CarrotSession(Session):
   def __init__(self, *args, **kwargs):
     self.hud_inference_timing = Path('/etc/nv_tegra_release').is_file()
     super().__init__(*args, **kwargs)
+    self.labels = None
+    self.labels_supported = False
+    if self.hud_inference_timing and os.environ.get('PV5_RADAR_LABELS') == '1':
+      try:
+        from parallel_radar_labels import assets
+        self.labels_supported = all(path.is_file() for path in assets())
+      except (ImportError, OSError):
+        pass
+      if self.labels_supported:
+        self.run_with_labels = self._run_with_labels
+        self.next_label_open = 0.
     self.request_chunks = request_chunks.Receiver()
     self.deferred_maps = deferred_map.Receiver()
     self.deferred_negotiated = False
@@ -117,6 +130,8 @@ class CarrotSession(Session):
     self.power_lease = SessionLease(self.t.transport if isinstance(self.t, ReadAheadTransport) else self.t)
 
   def _reset(self, seq):
+    if getattr(self, 'labels', None) is not None:
+      self.labels.invalidate()
     super()._reset(seq)
     if self.hud_inference_timing:
       self.host.frame_stats.samples.clear()
@@ -138,6 +153,8 @@ class CarrotSession(Session):
       if self.deferred_negotiated:
         obj[deferred_map.CAPABILITY] = deferred_map.descriptor()
       if host == 'jetson':
+        if getattr(self, 'labels_supported', False) and self.t.protocol_version == 2:
+          obj[P.WIDE_LABELS_CAPABILITY] = True
         from park_update import supported, usb_connection, CAPABILITY as PARK_UPDATE_CAPABILITY
         obj[PARK_UPDATE_CAPABILITY] = usb_connection(self.t) and supported()
         from park_update import INTERNAL_CAPABILITY
@@ -221,6 +238,8 @@ class CarrotSession(Session):
       raise request_chunks.LinkError('interrupted chunked request')
     if msg.msg_type == P.Msg.ENGINE_REQ:
       self.deferred_maps.clear()
+      if getattr(self, 'labels', None) is not None:
+        self.labels.invalidate()
     if msg.msg_type == deferred_map.MESSAGE:
       if msg.seq <= self.last_seq:
         return
@@ -351,6 +370,36 @@ class CarrotSession(Session):
     finally:
       self._input_measurement = None
 
+  def _run_with_labels(self, engine, warped, frame, flags, msg):
+    if flags & P.Flag.RESET_QUEUES:
+      if self.labels is not None:
+        self.labels.invalidate()
+      return engine.run()
+    if (not flags & P.WIDE_LABELS_FLAG or self.t.protocol_version != 2
+        or getattr(engine, 'label_device', None) is None or tuple(warped.shape) != (2, 6, 128, 256)):
+      return engine.run()
+    labels = self.labels
+    if labels is None and time.monotonic() >= self.next_label_open:
+      self.next_label_open = time.monotonic() + 5.
+      try:
+        from parallel_radar_labels import ParallelRadarLabels
+        self.labels = labels = ParallelRadarLabels.open(engine.label_device)
+      except (ImportError, OSError, RuntimeError, MemoryError):
+        pass
+    if labels is None:
+      return engine.run()
+
+    def offer():
+      try:
+        labels.offer(msg.seq, frame, msg.received_ns, warped)
+      except Exception:
+        # A Python handoff fault must not escape between enqueue and the
+        # driving engine's fence, which also protects its pinned allocations.
+        labels.close()
+        self.run_with_labels = None
+
+    return engine.run(after_enqueue=offer)
+
   def _resolve_context(self, spec, flags, context):
     if flags & deferred_map.FLAG:
       try:
@@ -361,6 +410,8 @@ class CarrotSession(Session):
     return flags, context
 
   def close(self):
+    if getattr(self, 'labels', None) is not None:
+      self.labels.close()
     if self.hud_inference_timing:
       self.host.frame_stats.samples.clear()
     try:
@@ -387,6 +438,8 @@ if __name__ == '__main__':
     raise SystemExit(0)
   if Path('/etc/nv_tegra_release').is_file():
     from blink_driver import prepare_optional
+    from radar_label_runtime import configure_installed
+    configure_installed()
     prepare_optional()
     health_worker()
   server.Session = CarrotSession

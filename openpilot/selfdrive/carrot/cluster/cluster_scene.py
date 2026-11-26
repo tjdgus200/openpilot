@@ -240,6 +240,7 @@ class VehicleBox:
     cut_in: bool = False
     primary: bool = False
     annotate: bool = False
+    front_track_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +258,7 @@ class RadarPointMarker:
     probability: float | None = None
     valid: int | None = None
     in_my_lane: int | None = None
+    front_track_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1988,9 +1990,13 @@ def radar_point_markers(
     max_forward_m: float = ROAD_FAR_M + 30.0,
     x_offset_m: float = 0.0,
     lateral_speed_offset_mps: float = 0.0,
+    points: tuple[RadarPoint, ...] | None = None,
 ) -> tuple[RadarPointMarker, ...]:
     markers: list[RadarPointMarker] = []
-    for point in sorted(state.radar_points, key=lambda item: radar_point_display_priority(item, state)):
+    for point in sorted(
+        state.radar_points if points is None else points,
+        key=lambda item: radar_point_display_priority(item, state),
+    ):
         if radar_point_hidden_by_vehicle_box(point, vehicle_points, state):
             continue
         forward_m = render_scene_forward_m(point.longitudinal_m, state)
@@ -2006,6 +2012,7 @@ def radar_point_markers(
                     0.20,
                 ),
                 radius_m=radar_point_radius(point),
+                front_track_id=point.front_track_id,
                 color=color,
                 label=point.label,
                 longitudinal_m=point.longitudinal_m,
@@ -2337,6 +2344,7 @@ def radar_vehicle_box(
         confidence=confidence,
         label=point.label,
         source=point.source,
+        front_track_id=point.front_track_id,
         longitudinal_m=point.longitudinal_m,
         relative_speed_mps=point.relative_speed_mps,
         absolute_speed_kph=radar_point_absolute_speed_kph(point, state),
@@ -2846,6 +2854,7 @@ def vehicle_box(
     x_offset_m: float = 0.0,
     center_x_m_override: float | None = None,
     center_z_m_offset: float = 0.0,
+    front_track_id: int | None = None,
 ) -> VehicleBox:
     confidence = clamp(confidence, 0.0, 1.0)
     alpha = int(92 + 163 * confidence)
@@ -2894,6 +2903,7 @@ def vehicle_box(
         label=label,
         source=source,
         longitudinal_m=actual_longitudinal_m,
+        front_track_id=front_track_id,
         relative_speed_mps=relative_speed_mps,
         absolute_speed_kph=absolute_speed_kph,
         acceleration_mps2=acceleration_mps2,
@@ -2983,6 +2993,7 @@ def translate_vehicle_box_x(vehicle: VehicleBox, shift_x_m: float) -> VehicleBox
         return vehicle
     return VehicleBox(
         center=translate_vec3_x(vehicle.center, shift_x_m),
+        front_track_id=vehicle.front_track_id,
         right_x=vehicle.right_x,
         right_y=vehicle.right_y,
         forward_x=vehicle.forward_x,
@@ -3014,6 +3025,7 @@ def translate_radar_marker_x(marker: RadarPointMarker, shift_x_m: float) -> Rada
         return marker
     return RadarPointMarker(
         center=translate_vec3_x(marker.center, shift_x_m),
+        front_track_id=marker.front_track_id,
         radius_m=marker.radius_m,
         color=marker.color,
         label=marker.label,
@@ -3513,6 +3525,7 @@ def build_cluster_scene(
     profile_add: ProfileAdd | None = None,
     highlight_lane_lit: bool = True,
     theme: ClusterTheme = LIGHT_CLUSTER_THEME,
+    labeled_front_points: tuple[RadarPoint, ...] = (),
 ) -> ClusterScene:
     profile_stage = profile_scene_start(profile_add)
     lane_width_m = max(2.4, min(4.6, state.lane_width_m or DEFAULT_LANE_WIDTH_M))
@@ -3715,6 +3728,7 @@ def build_cluster_scene(
                 confidence=detected.probability,
                 label=detected.label,
                 source=detected.source,
+                front_track_id=detected.front_track_id,
                 longitudinal_m=detected.longitudinal_m,
                 relative_speed_mps=detected.relative_speed_mps,
                 absolute_speed_kph=detected.absolute_speed_kph
@@ -3813,6 +3827,29 @@ def build_cluster_scene(
             x_offset_m=relative_scene_x_offset_m,
             lateral_speed_offset_mps=corner_lateral_speed_offset_mps,
         )
+    if labeled_front_points:
+        # A nearby corner reflection or vision box may hide a front track in the
+        # standard scene. Keep its measured position instead of labeling the neighbor.
+        vehicle_ids = {vehicle.front_track_id for vehicle in vehicles if vehicle.front_track_id is not None}
+        radar_points = tuple(
+            replace(point, front_track_id=None) if point.front_track_id in vehicle_ids else point
+            for point in radar_points
+        )
+        rendered_ids = vehicle_ids | {point.front_track_id for point in radar_points if point.front_track_id is not None}
+        missing_points = tuple(
+            point for point in labeled_front_points
+            if point.front_track_id is not None and point.front_track_id not in rendered_ids
+        )
+        if missing_points:
+            front_markers = radar_point_markers(
+                state,
+                lane_width_m,
+                min_forward_m=road_start_m,
+                max_forward_m=road_end_m if camera_active else ROAD_FAR_M + 30.0,
+                x_offset_m=relative_scene_x_offset_m,
+                points=missing_points,
+            )
+            radar_points = (*front_markers, *radar_points)[:RADAR_MARKER_DISPLAY_LIMIT]
     profile_scene_add(profile_add, "scene.build.radar_points", profile_stage)
 
     profile_stage = profile_scene_start(profile_add)

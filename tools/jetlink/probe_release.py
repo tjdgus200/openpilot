@@ -11,6 +11,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / 'third_party/jetlink')]
 
 
 def main():
+  label_deadline = time.monotonic() + 900  # Trusted outer probe timeout is 960s.
   from blink_driver import prepare_optional
   prepare_optional()
   import numpy as np
@@ -56,6 +57,8 @@ def main():
     print('CANDIDATE_PROBE_OK', spec['sha256'], flush=True)
   finally:
     host.close()
+  from radar_label_runtime import prepare_optional as prepare_labels
+  prepare_labels(Path(sys.argv[1]), label_deadline)
 
 
 if __name__ == '__main__':

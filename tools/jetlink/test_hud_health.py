@@ -10,6 +10,85 @@ from host_health import thermal_health, storage_health
 from cluster_battery import BatteryPanelData, packet_from_metrics, panel_from_wire
 
 
+def test_wide_class_is_drawn_for_the_exact_measured_front_id(tmp_path, monkeypatch):
+  import json
+  from dataclasses import replace
+  import hud_protocol
+  from hud_track_classes import RadarRows, TrackClassReader
+  from cluster_live import standby_state
+  from cluster_models import RadarPoint
+  from cluster_route_replay import live_track_to_radar_point
+  from cluster_scene import vehicle_box
+  import openpilot.common.indicator_display as indicator
+
+  renderer = hud.HealthRenderer(screen_mode=8, language='ko')
+  renderer._track_tiles = {0: (object(),) * 16}
+  now = 100.
+  stamp = 34000
+  record = dict(sent=now, received={'carState': now}, events={'carState':'x', 'liveTracks':'x'},
+                valid={'carState': True, 'liveTracks': True},
+                alive={'carState': True, 'liveTracks': True}, mono={'liveTracks': stamp})
+  renderer._track_label_path = tmp_path / 'labels.json'
+  renderer._track_label_path.write_text(json.dumps(dict(version=1, lens='wide', radar_ns=stamp, published_monotonic_ns=int(now*1e9),
+    labels=[dict(track_id=34,class_id=0,expires_monotonic_ns=int((now+.1)*1e9))])))
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: (now, record))
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: now)
+  monkeypatch.setattr(hud.time, 'monotonic_ns', lambda: int(now*1e9))
+  monkeypatch.setattr(hud, '_fresh', lambda *_: {})
+  monkeypatch.setattr(indicator, 'draw', lambda *_: None)
+  monkeypatch.setattr(hud.ClusterUiRenderer, 'render', lambda r, state, *_: r._render_world(state))
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_render_world', lambda *_: None)
+  front = NS(trackId=34, dRel=25., yRel=0., measured=True, radarSource='frontRadar')
+  radar = NS(points=[front], radarTrackFlipped=False, errors=NS(to_dict=lambda: {}))
+  event = NS(logMonoTime=stamp, valid=True, liveTracks=radar)
+  observations = RadarRows()
+  observations.observe(event)
+  renderer._label_reader = TrackClassReader(renderer._track_label_path, observations)
+  point = live_track_to_radar_point(front, 0, 0.)
+  state = replace(standby_state(), onroad=True, radar_points=(point,))
+  renderer.render(state)
+  assert isinstance(point, RadarPoint) and point.front_track_id == 34
+  assert renderer._track_icon_tile(point, 0., 25.) is renderer._track_tiles[0][0]
+  box = vehicle_box(0, 25., 0., 3.5, (255,255,255), False, front_track_id=34)
+  assert renderer._track_icon_tile(box, 0., 25.) is renderer._track_tiles[0][0]
+  assert renderer._track_icon_tile(replace(box, front_track_id=43), 0., 25.) is None
+  state = replace(state, radar_points=(), detected_vehicles=())
+  renderer.render(state)
+  assert [p.front_track_id for p in renderer.hud_labeled_radar_points] == [34]
+  cached = renderer.hud_labeled_radar_points
+  renderer.render(state)
+  assert renderer.hud_labeled_radar_points is cached
+  radar.points.append(front)
+  observations.observe(event)
+  renderer.render(state)
+  assert not renderer.hud_labeled_radar_points and not renderer.hud_track_classes
+  radar.points.pop()
+  front.measured = False
+  assert live_track_to_radar_point(front, 0, 0.).front_track_id is None
+  record['mono']['liveTracks'] += 1
+  renderer.render(state)
+  assert renderer._track_icon_tile(point, 0., 25.) is None
+
+
+def test_six_track_models_share_the_detector_ids_and_release_on_partial_load(monkeypatch):
+  import cluster_track_models as models
+  from cluster_renderer import CLUSTER_DIR
+  from hud_track_classes import HUD_CLASSES
+  assert tuple(style[0] for style in models.STYLES) == HUD_CLASSES
+  supplied, released = [], []
+  def upload(entry, palette, dimensions):
+    assert len(entry['vertices']) >= 4 and len(entry['faces']) >= 4 and len(palette) > 1 and min(dimensions) > 0
+    if len(supplied) == 3:
+      raise RuntimeError('model upload failed')
+    supplied.append(object())
+    return supplied[-1]
+  monkeypatch.setattr(models, '_upload_model', upload)
+  monkeypatch.setattr(models.rl, 'unload_model', released.append)
+  with pytest.raises(RuntimeError, match='model upload failed'):
+    models.load_track_models(CLUSTER_DIR / 'assets/models/track_classes.json')
+  assert len(released) == 3 and released == supplied
+
+
 @pytest.mark.parametrize('layout', (0, 1))
 def test_park_adds_partial_tpms_and_trip_in_unused_heatmap_row(monkeypatch, layout):
   from cluster_models import TpmsInfo, TripReportState

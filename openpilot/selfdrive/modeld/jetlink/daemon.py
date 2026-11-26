@@ -14,7 +14,7 @@ import numpy as np
 from openpilot.common.jetlink_peer import classify_auto_peer, may_provision
 from openpilot.common.jetson_model import is_jetson
 from openpilot.selfdrive.modeld.jetlink import VENDOR
-from openpilot.selfdrive.modeld.jetlink.link import (SOCKET, STATUS, REQUEST, REPLY, PacketReader, send, send_parts)
+from openpilot.selfdrive.modeld.jetlink.link import (SOCKET, STATUS, REQUEST, REPLY, PacketReader, send, send_parts, WIDE_LABELS_IPC_FLAG)
 from openpilot.selfdrive.modeld.jetlink.phase import Publisher as PhasePublisher
 from openpilot.selfdrive.modeld.jetlink.mac import prepare, PreparationDeferred
 from openpilot.selfdrive.modeld.jetlink.compat import ProtocolChoice
@@ -28,6 +28,7 @@ from openpilot.selfdrive.modeld.jetlink.startup import (CAPABILITY as BOOT_UPDAT
                                                       BootReceiverRequired, legacy_usb_receiver_required,
                                                        RuntimeHandoff, ConnectionStartup)
 from jetlink.client import JetlinkClient
+from jetlink.protocol import WIDE_LABELS_CAPABILITY
 from jetlink.transport.base import LinkError, LinkTimeout
 from jetlink.transport.ffs import FfsTransport
 
@@ -398,6 +399,9 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
         compact_reply = client.output_projection_available
         deferred_available = bool(getattr(client, 'deferred_map_available', False))
         hello = {'spec': spec.to_dict(), 'peer': peer, shared_input.CAPABILITY: shared_input.supported()}
+        wide_labels_available = getattr(client, 'wide_labels_available', False)
+        if wide_labels_available:
+          hello[WIDE_LABELS_CAPABILITY] = True
         if compact_reply:
           hello[projection.IPC_CAPABILITY] = projection.descriptor()
         if deferred_available:
@@ -473,7 +477,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
             frame, reset, source_sof = REQUEST.unpack_from(request)
             images = np.frombuffer(request, np.uint8, spec.warped_nbytes, REQUEST.size).reshape(spec.warped_shape)
             packed = np.frombuffer(request, np.float32, spec.packed_nelem, REQUEST.size + spec.warped_nbytes)
-          if (reset not in range(8) or (reset & projection.IPC_FLAG and not compact_reply) or
+          if (reset not in range(16) or (reset & WIDE_LABELS_IPC_FLAG and not wide_labels_available) or
+              (reset & projection.IPC_FLAG and not compact_reply) or
               bool(reset & deferred_map.IPC_FLAG) != (nav_meta is not None) or
               (nav_meta is not None and not deferred_available)):
             raise ValueError('invalid reset flag')
@@ -482,6 +487,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
             raise ValueError('invalid local model context')
           started = time.monotonic()
           map_options = {'nav_metadata': nav_meta} if nav_meta is not None else {}
+          if reset & WIDE_LABELS_IPC_FLAG:
+            map_options['wide_labels'] = True
           seq = client.infer_begin(images, packed, frame, reset=bool(reset & 1), want_state=(frame % 20 == 0), **map_options)
           sent = time.monotonic()
           if peer.get('carrot_host') == 'jetson':

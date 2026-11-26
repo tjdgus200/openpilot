@@ -154,10 +154,25 @@ class SnapshotBuilder:
     self.network = NetworkAddressProvider()
     self.battery = None
     self.battery_retry_at = 0.0
+    self.radar_context = None
+
+  def select_radar_context(self, cp):
+    if getattr(self, 'radar_context', None) is not None:
+      self.radar_context.sock.close()
+      self.radar_context = None
+    if (cp is not None and not cp.notCar and cp.carFingerprint == 'KIA_PV5'
+        and os.environ.get('PV5_RADAR_LABELS', '1') == '1'):
+      try:
+        from openpilot.common.pv5_radar_label_context import RadarContext
+        self.radar_context = RadarContext()
+      except (ImportError, OSError):
+        pass
 
   def close(self):
     if self.battery is not None:
       self.battery.close()
+    if getattr(self, 'radar_context', None) is not None:
+      self.radar_context.sock.close()
     if self.camera is not None:
       self.camera.close()
     self.network.close()
@@ -279,6 +294,7 @@ class SnapshotBuilder:
               self.steering_car_params = cp.as_builder()
           except (KjException, ValueError):
             pass
+        self.select_radar_context(self.steering_car_params)
       self.next_params = now + 1
       try:
         self.requested_fps = RATES[selection(base64.b64decode(self.settings.get(FPS_PARAM, 'MA==')))]
@@ -333,6 +349,13 @@ class SnapshotBuilder:
       requested = None
     record['input_fusion'] = {'mode': fusion_selection(requested), 'parked': gate(self.sm, record['sent']),
                               'hud_fps': self.target_fps}
+    if getattr(self, 'radar_context', None) is not None:
+      try:
+        marker = self.radar_context.sample(self.sm)
+        if marker is not None:
+          record['radar_labels'] = marker
+      except (AttributeError, ImportError, KeyError, ValueError, TypeError, OSError):
+        pass
     return encode_snapshot(record)
 
 def encode_snapshot(record):
@@ -340,6 +363,9 @@ def encode_snapshot(record):
   size = len(data)
   if size <= 96 * 1024:
     return data
+  if 'radar_labels' in record:
+    record.pop('radar_labels')
+    return encode_snapshot(record)
 
   def value_size(value):
     return len(json.dumps(value, separators=(',', ':')).encode())

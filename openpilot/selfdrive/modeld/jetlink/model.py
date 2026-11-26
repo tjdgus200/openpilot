@@ -177,6 +177,7 @@ class JoiningModel:
       SPEC.packed_shapes.items(), np.split(self.packed, np.cumsum(SPEC.packed_sizes[:-1])), strict=True)}
     self.prev_desire = np.zeros(8, np.float32)
     self.frame = 0
+    self.radar_label_marker = None
     self.join_allowed = False
     self.next_join = 0.
     self.next_status = 0.
@@ -313,8 +314,15 @@ class JoiningModel:
           apply_daylight75(images, *self.daylight75)
         warped = time.monotonic()
         map_options = {'nav_metadata': getattr(self, 'nav_metadata', None)} if getattr(self.client, 'deferred_nav', False) else {}
+        marker = getattr(self, 'radar_label_marker', None)
+        label_frame = (marker is not None and marker.geometry is not None
+                       and getattr(self.client, 'wide_labels_available', False))
+        if label_frame:
+          map_options['wide_labels'] = True
         result = self.client.infer(images, self.packed, self.frame, self.reset, source_sof=self.source_sof, **map_options)
         replied = time.monotonic()
+        if label_frame:
+          marker.identify(self.frame, images)
         self.reset = False
         if 'prev_feat' in self.views:
           self.views['prev_feat'][:] = result[self.spec.output_slices['hidden_state']]

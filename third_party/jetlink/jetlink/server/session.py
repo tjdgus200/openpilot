@@ -882,7 +882,9 @@ class Session:
       loaded.queues.step_into(warped, packed, loaded.host_inputs)
     queue_us = int((time.perf_counter() - t0) * 1e6)
 
-    outputs = loaded.engine.run()
+    run_with_labels = getattr(self, 'run_with_labels', None)
+    outputs = (loaded.engine.run() if run_with_labels is None else
+               run_with_labels(loaded.engine, warped, frame_id, flags, msg))
     out = outputs['outputs'].reshape(-1)
 
     # asarray, not astype: a no-op when the engine already outputs float32.

@@ -1,0 +1,100 @@
+import os
+from pathlib import Path
+import subprocess
+import time
+from types import SimpleNamespace
+
+import pytest
+
+import radar_label_runtime as runtime
+
+
+@pytest.fixture
+def package(monkeypatch, tmp_path):
+  root = tmp_path / 'release'
+  assets = root / 'tools/pv5_radar_labels/runtime'
+  assets.mkdir(parents=True)
+  (root / 'SOURCE_COMMIT').write_text('a' * 40)
+  (assets / runtime.LIB).touch()
+  (assets / runtime.WORKER).touch(mode=0o700)
+  cache = tmp_path / 'cache'
+  cache.mkdir()
+  for key in ('PV5_RADAR_LABELS', 'PV5_RADAR_LABEL_WORKER', 'PV5_RADAR_LABEL_LIB', 'PV5_RADAR_LABEL_PLAN',
+              'PV5_RADAR_LABEL_DIR'):
+    monkeypatch.delenv(key, raising=False)
+  monkeypatch.setattr(runtime, 'ROOT', root)
+  monkeypatch.setattr(runtime, 'RUNTIME', assets)
+  monkeypatch.setattr(runtime, 'CACHE', cache / 'pv5-radar-labels')
+  return cache
+
+
+def test_candidate_builds_once_and_only_enables_the_validated_release(package, monkeypatch):
+  actions = []
+  def run(cmd, check, timeout):
+    assert check and timeout > 0
+    action, path = cmd[-2], Path(cmd[-1])
+    actions.append(action)
+    if action == 'build':
+      path.write_bytes(b'valid test plan')
+    else:
+      assert path.read_bytes() == b'valid test plan'
+  monkeypatch.setattr(subprocess, 'run', run)
+  deadline = time.monotonic() + 5
+  assert runtime.prepare_optional(package, deadline) and runtime.prepare_optional(package, deadline)
+  assert actions == ['build', 'check', 'check']
+  (runtime.ROOT / 'SOURCE_COMMIT').write_text('b' * 40)
+  runtime.configure_installed()
+  assert 'PV5_RADAR_LABELS' not in os.environ
+  (runtime.ROOT / 'SOURCE_COMMIT').write_text('a' * 40)
+  runtime.configure_installed()
+  assert os.environ['PV5_RADAR_LABELS'] == '1'
+  assert Path(os.environ['PV5_RADAR_LABEL_PLAN']).read_bytes() == b'valid test plan'
+  assert Path(os.environ['PV5_RADAR_LABEL_WORKER']) == runtime.RUNTIME / runtime.WORKER
+  monkeypatch.setenv('PV5_RADAR_LABELS', '0')
+  runtime.configure_installed()
+  assert os.environ['PV5_RADAR_LABELS'] == '0'
+
+
+def test_failed_candidate_preserves_plan_and_clears_permission(package, monkeypatch):
+  runtime.CACHE.mkdir()
+  plan = runtime.CACHE / runtime.PLAN_NAME
+  plan.write_bytes(b'previous')
+  marker = runtime.ready_file(runtime.CACHE)
+  marker.touch()
+  actions = []
+  def fail(cmd, **kwargs):
+    actions.append(cmd[-2])
+    raise subprocess.CalledProcessError(1, cmd)
+  monkeypatch.setattr(subprocess, 'run', fail)
+  assert not runtime.prepare_optional(package, time.monotonic() + 5)
+  assert actions == ['check', 'build'] and not marker.exists() and plan.read_bytes() == b'previous'
+  runtime.configure_installed()
+  assert 'PV5_RADAR_LABELS' not in os.environ
+
+
+def test_missing_bin_and_expired_probe_budget_fail_soft(package, monkeypatch):
+  def no_child(*args, **kwargs):
+    pytest.fail('A missing prerequisite or expired validation cannot launch a GPU build')
+  monkeypatch.setattr(subprocess, 'run', no_child)
+  assert not runtime.prepare_optional(package, time.monotonic() - 1)
+  (runtime.RUNTIME / runtime.WORKER).unlink()
+  assert not runtime.prepare_optional(package, time.monotonic() + 5)
+  assert not runtime.ready_file(runtime.CACHE).exists()
+
+
+def test_comma_publisher_creates_and_releases_markers_only_for_a_real_pv5(monkeypatch):
+  from hud_protocol import SnapshotBuilder
+  from openpilot.common import pv5_radar_label_context as labels
+  closed = []
+  monkeypatch.delenv('PV5_RADAR_LABELS', raising=False)
+  monkeypatch.setattr(labels, 'RadarContext', lambda: SimpleNamespace(sock=SimpleNamespace(close=lambda: closed.append(1))))
+  builder = SnapshotBuilder.__new__(SnapshotBuilder)
+  builder.radar_context = None
+  for vehicle in (None, SimpleNamespace(notCar=True, carFingerprint='KIA_PV5'),
+                  SimpleNamespace(notCar=False, carFingerprint='OTHER')):
+    builder.select_radar_context(vehicle)
+    assert builder.radar_context is None
+  builder.select_radar_context(SimpleNamespace(notCar=False, carFingerprint='KIA_PV5'))
+  assert builder.radar_context is not None
+  builder.select_radar_context(None)
+  assert builder.radar_context is None and closed == [1]

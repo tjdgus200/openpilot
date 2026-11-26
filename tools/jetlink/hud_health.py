@@ -1,7 +1,9 @@
 """Jetson-local temperature/module power; never substitute vehicle statistics."""
 import math
+import os
 import time
 from dataclasses import replace
+from pathlib import Path
 
 from host_health import STATUS
 from openpilot.common.hud_driving_feedback import LANE_CENTER_STATUS
@@ -131,11 +133,21 @@ class HealthRenderer(ClusterUiRenderer):
   _trip_soc = TripSocUsage()
   _telemetry_font = None
   _pv5_hud_gear = None
+  _track_label_path = (Path(os.environ.get('PV5_RADAR_LABEL_DIR', '/run/pv5-radar-labels')) / 'labels.json'
+                       if os.environ.get('PV5_RADAR_LABELS') == '1' else None)
 
   def open(self, hidden=False):
     if self._window_open:
       return
     super().open(hidden=hidden)
+    if self._track_label_path is not None:
+      from cluster_renderer import CLUSTER_DIR
+      from cluster_track_models import load_track_models
+      self._track_texture, self._track_tiles = self._load_camera_track_atlas(CLUSTER_DIR / 'assets/images/track_classes.png')
+      try:
+        self._track_models = load_track_models(CLUSTER_DIR / 'assets/models/track_classes.json')
+      except (OSError, ValueError, KeyError, RuntimeError, MemoryError) as exc:
+        print(f'Track model load failed: {exc}')
     # Only this readout uses regular weight. Load its small glyph set once.
     chars = '0123456789.- WC°|'
     glyphs = rl.ffi.new('int[]', [ord(char) for char in chars])
@@ -257,6 +269,13 @@ class HealthRenderer(ClusterUiRenderer):
       rl.draw_rectangle(int(x - width if fraction < 0 else x), int(y + 17), width, 7, rl_color(color))
 
   def close(self):
+    if self._track_models:
+      from cluster_track_models import unload_track_models
+      unload_track_models(self._track_models)
+      self._track_models = None
+    if self._track_texture is not None:
+      rl.unload_texture(self._track_texture)
+      self._track_texture = self._track_tiles = None
     footer = getattr(self, '_runtime_footer', None)
     if footer is not None:
       footer.close()
@@ -272,6 +291,10 @@ class HealthRenderer(ClusterUiRenderer):
     snapshot = read_snapshot()
     self._vehicle_data_current = vehicle_data_ready(snapshot)
     now = time.monotonic()
+    if self._track_label_path is not None:
+      self._label_snapshot = snapshot if self._vehicle_data_current else None
+      self.hud_track_classes = None
+      self.hud_labeled_radar_points = ()
     if not self._vehicle_data_current:
       self._model_call = None
       self._model_drops = None
@@ -306,6 +329,20 @@ class HealthRenderer(ClusterUiRenderer):
     if self._pv5_hud_gear == 'R':
       self._clear_world()
     else:
+      if ((self._track_tiles or self._track_models) and getattr(self, '_label_snapshot', None)
+          and state.onroad
+          and getattr(getattr(state, 'alert', None), 'status', None) != 2):
+        if not hasattr(self, '_label_reader'):
+          from hud_track_classes import TrackClassReader
+          self._label_reader = TrackClassReader(self._track_label_path)
+        reader = self._label_reader
+        hud = self._label_snapshot[1]
+        if reader.radar_rows.present(hud):
+          names = reader.read(self._label_snapshot, time.monotonic_ns())
+          points = reader.radar_rows.for_display(hud, names, state.speed_kph)
+          self.hud_labeled_radar_points = points
+          if points:
+            self.hud_track_classes = reader.radar_rows.display_names
       super()._render_world(state, signal_lights)
 
   def _draw_hud(self, state, signal_lights=None):

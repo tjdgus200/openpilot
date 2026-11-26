@@ -101,6 +101,10 @@ class RemoteSubMaster:
     self.source_log_mono_time = dict.fromkeys(services, 0)
     self.generations = {}
     self.last_received = 0.
+    self.label_radar = None
+    if 'liveTracks' in services and os.environ.get('PV5_RADAR_LABELS') == '1':
+      from hud_track_classes import HUD_RADAR
+      self.label_radar = HUD_RADAR
     self.steering_warning = 0
     for name in services:
       self.data[name] = log.Event.new_message(**{name: {}}) if name != 'liveTracks' else log.Event.new_message(liveTracks={})
@@ -140,6 +144,8 @@ class RemoteSubMaster:
         # Embedded CAN observation timestamps remain in the sender's clock.
         self.source_log_mono_time[name] = reader.logMonoTime
         self.data[name] = reader.as_builder()
+      if name == 'liveTracks' and self.label_radar is not None:
+        self.label_radar.observe(self.data[name])
       self.generations[name] = mono
       self.updated[name] = True
 
@@ -159,6 +165,8 @@ def main():
   if '--help' not in sys.argv:
     from boot_update import wait_for_runtime
     wait_for_runtime()
+    from radar_label_runtime import configure_installed
+    configure_installed()
   if '--help' not in sys.argv:
     settings = DisplayParams()
     while not (settings.get_int('ClusterHud') == 1 and

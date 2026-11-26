@@ -282,6 +282,7 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
   class USB:
     spec = SPEC
     deferred_map_available = True
+    wide_labels_available = projected  # Exercise both old and opted-in peers, including memfd.
     flush_map = lambda self: 0
     output_projection_available = projected
     project_output = False
@@ -289,7 +290,10 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
     last_timings = (24000, 600, 25000)
     t = NS(last_receive={})
     def infer_begin(self, image, packed, frame, reset, want_state, **options):
-      assert options == ({'nav_metadata': (0, 0, 0)} if deferred else {})
+      options_expected = {'nav_metadata': (0, 0, 0)} if deferred else {}
+      if projected and frame % 2:
+        options_expected['wide_labels'] = True
+      assert options == options_expected
       captured.append((hashlib.sha256(image.tobytes() + packed.tobytes()).digest(), frame, reset))
       # Actual daemon must send the matching reply before a slot is reusable.
       return frame
@@ -317,7 +321,7 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
       image[:] = frame
       packed = np.arange(SPEC.packed_nelem, dtype=np.float32) * frame
       expected.append((hashlib.sha256(image.tobytes() + packed.tobytes()).digest(), frame, frame == 1))
-      out = client.infer(image, packed, frame, reset=frame == 1)
+      out = client.infer(image, packed, frame, reset=frame == 1, wide_labels=bool(frame % 2))
       assert np.all(out == frame)
       if client.shared is not None: assert not client.shared.busy
     assert captured == expected

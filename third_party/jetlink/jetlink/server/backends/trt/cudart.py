@@ -60,6 +60,15 @@ def stream_create() -> int:
   return check(_rt.cudaStreamCreate())
 
 
+def priority_stream_create():
+  _, greatest = check(_rt.cudaDeviceGetStreamPriorityRange())
+  return check(_rt.cudaStreamCreateWithPriority(1, greatest))
+
+
+def current_device():
+  return int(check(_rt.cudaGetDevice()))
+
+
 def stream_destroy(stream: int) -> None:
   check(_rt.cudaStreamDestroy(stream))
 

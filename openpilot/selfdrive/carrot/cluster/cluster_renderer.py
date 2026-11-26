@@ -75,6 +75,8 @@ from cluster_config import (
     TEXT,
     VEHICLE_NAVI,
     VEHICLE_LENGTH_M,
+    VEHICLE_WIDTH_M,
+    VEHICLE_HEIGHT_M,
     WHITE,
     cluster_camera_view_is_road_camera,
     cluster_camera_view_prefers_wide,
@@ -96,6 +98,7 @@ from cluster_models import (
     NaviLaneInfo,
     NaviLiveState,
     NaviTrafficLightInfo,
+    RadarPoint,
     RouteOverlay,
     TripReportState,
 )
@@ -108,6 +111,7 @@ from cluster_scene import (
     VehicleBox,
     build_cluster_scene,
     cluster_scene_state_key,
+    vehicle_heading_from_velocity,
 )
 from cluster_system_monitor import SystemStats, SystemStatsSampler
 from cluster_utils import blink_visible, clamp
@@ -659,6 +663,15 @@ class CameraOverlayProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class CameraTrackTile:
+    source: rl.Rectangle
+    pivot: tuple[float, float]
+    bounds: tuple[float, float, float, float]  # Visible edges relative to the ground pivot.
+    half_width_m: float
+    height_m: float
+
+
+@dataclass(frozen=True, slots=True)
 class VehicleMetricLine:
     text: str
     x: float
@@ -726,6 +739,38 @@ def vehicle_distance_label(vehicle: VehicleBox, is_metric: bool = True) -> str:
             return distance
         return f"{vehicle.label} {distance}"
     return distance
+
+
+COMPACT_WIDTH_SCALE = .68
+COMPACT_LENGTH_SCALE = .64
+
+
+def compact_vehicle_marker(vehicle: VehicleBox) -> bool:
+    return bool(vehicle.source and (vehicle.source.startswith("modelV2")
+                or vehicle.source in ("radarState", "radarPoint", "cornerRadar") or not (vehicle.primary or vehicle.cut_in)))
+
+
+def track_world_scale(obj: VehicleBox | RadarPointMarker) -> tuple[float, float, float]:
+    # Keep the footprint of the marker this mesh replaces. Height scales with
+    # width to keep a recognizable silhouette rather than flattening the roof.
+    if isinstance(obj, VehicleBox):
+        x, y, z = obj.width_m / VEHICLE_WIDTH_M, obj.length_m / VEHICLE_LENGTH_M, obj.height_m / VEHICLE_HEIGHT_M
+        if not compact_vehicle_marker(obj):
+            return x, y, z
+        return x * COMPACT_WIDTH_SCALE, y * COMPACT_LENGTH_SCALE, z * COMPACT_WIDTH_SCALE
+    return COMPACT_WIDTH_SCALE, COMPACT_LENGTH_SCALE, COMPACT_WIDTH_SCALE
+
+
+def track_forward(obj: VehicleBox | RadarPointMarker) -> tuple[float, float]:
+    if isinstance(obj, VehicleBox):
+        fx, fy = obj.forward_x, obj.forward_y
+    else:
+        # Classified raw markers are measured front-radar returns. Use the
+        # same motion threshold and straight-ahead fallback as their radar boxes.
+        _, _, fx, fy = vehicle_heading_from_velocity(obj.absolute_speed_kph, obj.lateral_speed_mps, (1., 0., 0., 1.))
+    if math.isfinite(fx) and math.isfinite(fy) and (fx or fy):
+        return fx, fy
+    return 0., 1.
 
 
 def vehicle_distance_m(vehicle: VehicleBox) -> float:
@@ -1676,7 +1721,8 @@ class ClusterUiRenderer:
         highlight_lane_lit: bool,
         theme: ClusterTheme,
     ) -> ClusterScene:
-        cache_key = (*cluster_scene_state_key(state), highlight_lane_lit, theme)
+        labeled_front_points = self.hud_labeled_radar_points
+        cache_key = (*cluster_scene_state_key(state), highlight_lane_lit, theme, labeled_front_points)
         if self._scene_cache is not None and cache_key == self._scene_cache_key:
             return self._scene_cache
         scene = build_cluster_scene(
@@ -1684,6 +1730,7 @@ class ClusterUiRenderer:
             self._profile_add_elapsed if self.profile_enabled else None,
             highlight_lane_lit=highlight_lane_lit,
             theme=theme,
+            labeled_front_points=labeled_front_points,
         )
         self._scene_cache_key = cache_key
         self._scene_cache = scene
@@ -2117,68 +2164,24 @@ class ClusterUiRenderer:
             priority = 2
         return priority, -vehicle_distance_m(vehicle)
 
-    def _draw_camera_overlay_vehicle_frame(
+    def _camera_overlay_track_frame(
         self,
-        vehicle: VehicleBox,
+        base: Vec3,
+        half_width_m: float,
+        height_m: float,
         projection: CameraOverlayProjection,
         scene_shift_x_m: float,
-        radar_info_mode: int,
-        metric_labels: list[VehicleMetricLabel] | None = None,
-    ) -> None:
-        center_y_m = vehicle.center.y + RADAR_TO_CAMERA_M + VEHICLE_LENGTH_M
-        base_z = CAMERA_OVERLAY_VEHICLE_ROAD_HEIGHT_M
-        center = self._camera_overlay_screen_xy(
-            Vec3(vehicle.center.x, center_y_m, base_z),
-            projection,
-            scene_shift_x_m,
-        )
-        if center is None:
-            return
-
-        label = vehicle.label.upper()
-        lead_two = label.startswith("L2") or "CUT-IN" in label
-        lead_one = label.startswith("L1") or (vehicle.primary and not lead_two)
-        emphasized = vehicle.primary or vehicle.cut_in
-        half_width_m = max(0.6, vehicle.width_m * 0.58)
-        frame_height_m = max(0.8, vehicle.height_m * 1.12)
-        left_base = self._camera_overlay_screen_xy(
-            Vec3(
-                vehicle.center.x - half_width_m,
-                center_y_m,
-                base_z,
-            ),
-            projection,
-            scene_shift_x_m,
-        )
-        right_base = self._camera_overlay_screen_xy(
-            Vec3(
-                vehicle.center.x + half_width_m,
-                center_y_m,
-                base_z,
-            ),
-            projection,
-            scene_shift_x_m,
-        )
-        left_top = self._camera_overlay_screen_xy(
-            Vec3(
-                vehicle.center.x - half_width_m,
-                center_y_m,
-                base_z + frame_height_m,
-            ),
-            projection,
-            scene_shift_x_m,
-        )
-        right_top = self._camera_overlay_screen_xy(
-            Vec3(
-                vehicle.center.x + half_width_m,
-                center_y_m,
-                base_z + frame_height_m,
-            ),
-            projection,
-            scene_shift_x_m,
-        )
+        *,
+        perspective: bool = False,
+    ) -> rl.Rectangle | None:
+        project = self._camera_overlay_screen_xy
+        left, right, top = base.x - half_width_m, base.x + half_width_m, base.z + height_m
+        left_base = project(Vec3(left, base.y, base.z), projection, scene_shift_x_m)
+        right_base = project(Vec3(right, base.y, base.z), projection, scene_shift_x_m)
+        left_top = project(Vec3(left, base.y, top), projection, scene_shift_x_m)
+        right_top = project(Vec3(right, base.y, top), projection, scene_shift_x_m)
         if left_base is None or right_base is None or left_top is None or right_top is None:
-            return
+            return None
 
         min_x = min(left_base[0], right_base[0], left_top[0], right_top[0])
         max_x = max(left_base[0], right_base[0], left_top[0], right_top[0])
@@ -2187,17 +2190,19 @@ class ClusterUiRenderer:
         width = max_x - min_x
         height = max_y - min_y
         if not (math.isfinite(width) and math.isfinite(height)) or width <= 0.0 or height <= 0.0:
-            return
-        pad_x = max(4.0, width * 0.08)
-        pad_y = max(4.0, height * 0.08)
+            return None
+        min_pad = 0.0 if perspective else 4.0
+        pad_x = max(min_pad, width * 0.08)
+        pad_y = max(min_pad, height * 0.08)
+        min_size = 0.0 if perspective else CAMERA_OVERLAY_FRAME_MIN_SIZE_PX
         frame_width = clamp(
             width + pad_x * 2.0,
-            CAMERA_OVERLAY_FRAME_MIN_SIZE_PX,
+            min_size,
             projection.dest.width * CAMERA_OVERLAY_FRAME_MAX_WIDTH_RATIO,
         )
         frame_height = clamp(
             height + pad_y * 2.0,
-            CAMERA_OVERLAY_FRAME_MIN_SIZE_PX,
+            min_size,
             projection.dest.height * CAMERA_OVERLAY_FRAME_MAX_HEIGHT_RATIO,
         )
         if frame_width > frame_height * CAMERA_OVERLAY_FRAME_MAX_ASPECT:
@@ -2214,43 +2219,77 @@ class ClusterUiRenderer:
             frame_center_y - projection.dest.y - CAMERA_OVERLAY_FRAME_EDGE_PAD_PX,
             projection.dest.y + projection.dest.height - frame_center_y - CAMERA_OVERLAY_FRAME_EDGE_PAD_PX,
         )
-        minimum_half_size = CAMERA_OVERLAY_FRAME_MIN_SIZE_PX * 0.5
-        if available_half_width < minimum_half_size or available_half_height < minimum_half_size:
-            return
+        available = min(available_half_width, available_half_height)
+        if available <= 0.0 or available < min_size * 0.5:
+            return None
         frame_width = min(frame_width, available_half_width * 2.0)
         frame_height = min(frame_height, available_half_height * 2.0)
-        marker = rl.Rectangle(
+        return rl.Rectangle(
             frame_center_x - frame_width * 0.5,
             frame_center_y - frame_height * 0.5,
             frame_width,
             frame_height,
         )
 
+    def _draw_camera_overlay_vehicle_frame(
+        self,
+        vehicle: VehicleBox,
+        projection: CameraOverlayProjection,
+        scene_shift_x_m: float,
+        radar_info_mode: int,
+        metric_labels: list[VehicleMetricLabel] | None = None,
+    ) -> None:
+        base = Vec3(vehicle.center.x, vehicle.center.y + RADAR_TO_CAMERA_M + VEHICLE_LENGTH_M,
+                    CAMERA_OVERLAY_VEHICLE_ROAD_HEIGHT_M)
+        center = self._camera_overlay_screen_xy(base, projection, scene_shift_x_m)
+        if center is None:
+            return
+        half_width_m = max(0.6, vehicle.width_m * 0.58)
+        height_m = max(0.8, vehicle.height_m * 1.12)
+        tile = self._track_icon_tile(vehicle, base.x + scene_shift_x_m, base.y - EGO_FORWARD_M)
+        frame = self._camera_overlay_track_frame(base, half_width_m, height_m, projection, scene_shift_x_m,
+                                                 perspective=tile is not None)
+        if frame is None:
+            return
+
+        label = vehicle.label.upper()
+        lead_two = label.startswith("L2") or "CUT-IN" in label
+        lead_one = label.startswith("L1") or (vehicle.primary and not lead_two)
+        emphasized = vehicle.primary or vehicle.cut_in
         confidence = clamp(vehicle.confidence, 0.0, 1.0)
         _fill_base, _side_base, ring_base = camera_overlay_vehicle_coin_colors(vehicle, lead_one, lead_two)
         ring_alpha = int(180 + 65 * confidence)
-        rl.draw_rectangle_rounded_lines_ex(
-            marker,
-            0.20,
-            CAMERA_OVERLAY_FRAME_ROUND_SEGMENTS,
-            3.5 if emphasized else 3.0,
-            rl_color(ring_base, ring_alpha),
-        )
+        icon_span = None
+        if tile is not None:
+            icon_span = self._draw_camera_track_icon(tile, center, frame, projection.dest,
+                                                    rl_color(ring_base) if emphasized else rl.WHITE)
+        if icon_span is None:
+            if tile is not None:
+                frame = self._camera_overlay_track_frame(base, half_width_m, height_m, projection, scene_shift_x_m)
+                if frame is None:
+                    return
+            rl.draw_rectangle_rounded_lines_ex(
+                frame, 0.20, CAMERA_OVERLAY_FRAME_ROUND_SEGMENTS,
+                3.5 if emphasized else 3.0, rl_color(ring_base, ring_alpha),
+            )
 
-        label = self._vehicle_overlay_label(vehicle, radar_info_mode)
+        label = self._vehicle_overlay_label(vehicle, radar_info_mode, stacked=icon_span is not None)
         if label:
             label_size = LEAD_ONE_DISTANCE_FONT_SIZE if vehicle_has_lead_one_metrics(vehicle) else 17 if emphasized else 15
             label_color = (*ring_base[:3], 255 if vehicle.primary or vehicle.cut_in else 230)
-            label_y = marker.y - 12.0
-            if lead_one:
-                label_y = marker.y - 18.0
-            elif lead_two:
-                label_y = marker.y + marker.height + 16.0
-            metric = VehicleMetricLabel(
-                vehicle,
-                (VehicleMetricLine(label, marker.x + marker.width * 0.5, max(14.0, label_y), label_size),),
-                label_color,
-            )
+            if icon_span is not None:
+                top, bottom = icon_span
+                parts = label.splitlines()
+                step = label_size + 2
+                label_y = bottom + 16.0 if lead_two else top - (18.0 if lead_one else 12.0) - step * (len(parts) - 1)
+                label_y = clamp(label_y, projection.dest.y + label_size * .5,
+                                projection.dest.y + projection.dest.height - label_size * .5 - step * (len(parts) - 1))
+                lines = tuple(VehicleMetricLine(part, center[0], label_y + i * step, label_size) for i, part in enumerate(parts))
+            else:
+                frame_center_x = frame.x + frame.width * 0.5
+                label_y = frame.y + frame.height + 16.0 if lead_two else frame.y - (18.0 if lead_one else 12.0)
+                lines = (VehicleMetricLine(label, frame_center_x, max(14.0, label_y), label_size),)
+            metric = VehicleMetricLabel(vehicle, lines, label_color)
             if metric_labels is None:
                 self._draw_vehicle_metric_labels([metric], (
                     projection.dest.x, projection.dest.y,
@@ -2259,7 +2298,58 @@ class ClusterUiRenderer:
             else:
                 metric_labels.append(metric)
 
-    def _vehicle_overlay_label(self, vehicle: VehicleBox, radar_info_mode: int) -> str:
+    hud_track_classes: dict[int, int] | None = None
+    hud_labeled_radar_points: tuple[RadarPoint, ...] = ()
+    _track_texture = None
+    _track_tiles = None
+    _track_models = None
+
+    def _track_icon_tile(self, obj: RadarPointMarker | VehicleBox, ray_x: float, ray_y: float):
+        if self.hud_track_classes and self._track_tiles:
+            views = self._track_tiles.get(self.hud_track_classes.get(obj.front_track_id))
+            if views and math.isfinite(ray_x) and math.isfinite(ray_y):
+                fx, fy = track_forward(obj)
+                # Signed yaw about +Z relative to the camera-to-object ray.
+                yaw = math.atan2(ray_x * fy - ray_y * fx, ray_x * fx + ray_y * fy)
+                return views[math.floor(yaw * len(views) / math.tau + .5) % len(views)]
+        return None
+
+    def _draw_camera_track_icon(self, tile: CameraTrackTile, ground: tuple[float, float], frame: rl.Rectangle,
+                                viewport: rl.Rectangle, tint) -> tuple[float, float] | None:
+        left, top, right, bottom = tile.bounds
+        x, y = ground
+        # An elevated atlas view shows the roof as well as the rear. Allow some
+        # height headroom so the silhouette can fill more of the projected width.
+        height_limit = min(frame.height * 1.4, viewport.height * CAMERA_OVERLAY_FRAME_MAX_HEIGHT_RATIO)
+        scale = min(frame.width / (right - left), height_limit / (bottom - top))
+        pad = CAMERA_OVERLAY_FRAME_EDGE_PAD_PX
+        for extent, available in ((-left, x - viewport.x - pad), (-top, y - viewport.y - pad),
+                                  (right, viewport.x + viewport.width - pad - x),
+                                  (bottom, viewport.y + viewport.height - pad - y)):
+            if available <= 0.0:
+                return None
+            if extent > 0.0:
+                scale = min(scale, available / extent)
+        width, height = tile.source.width * scale, tile.source.height * scale
+        dest = rl.Rectangle(x - tile.pivot[0] * scale, y - tile.pivot[1] * scale, width, height)
+        rl.draw_texture_pro(self._track_texture, tile.source, dest, rl.Vector2(0, 0), 0., tint)
+        return y + top * scale, y + bottom * scale
+
+    def _draw_world_track_model(self, model, obj, tint):
+        fx, fy = track_forward(obj)
+        yaw = math.degrees(math.atan2(-fx, fy))
+        rl.draw_model_ex(model, rl.Vector3(obj.center.x, obj.center.y, .035), rl.Vector3(0, 0, 1),
+                         yaw, rl.Vector3(*track_world_scale(obj)), tint)
+
+    def _track_label_height(self, obj, fallback):
+        if self._track_models and self.hud_track_classes:
+            ident = self.hud_track_classes.get(obj.front_track_id)
+            if ident in self._track_models:
+                from cluster_track_models import TRACK_SIZE_M
+                return .035 + TRACK_SIZE_M[ident][2] * track_world_scale(obj)[2]
+        return fallback
+
+    def _vehicle_overlay_label(self, vehicle: VehicleBox, radar_info_mode: int, *, stacked: bool = False) -> str:
         parts: list[str] = []
         stopped = camera_overlay_vehicle_is_stopped(vehicle)
         if vehicle.label and (vehicle.primary or vehicle.cut_in):
@@ -2270,7 +2360,7 @@ class ClusterUiRenderer:
             parts.append(format_radar_distance(vehicle.longitudinal_m, self.is_metric))
         if not stopped and radar_info_shows_speed(radar_info_mode) and vehicle.absolute_speed_kph is not None:
             parts.append(f"{display_speed(vehicle.absolute_speed_kph, self.is_metric):.0f} {speed_unit(self.is_metric)}")
-        return " ".join(parts)
+        return ("\n" if stacked else " ").join(parts)
 
     def _draw_camera_overlay_radar_point(
         self,
@@ -2283,26 +2373,31 @@ class ClusterUiRenderer:
         screen = self._camera_overlay_screen_xy(camera_point, projection, scene_shift_x_m)
         if screen is None:
             return
-        radius = max(2.5, min(5.0, 40.0 / max(6.0, abs(point.longitudinal_m))))
-        marker = rl.Rectangle(
-            screen[0] - radius,
-            screen[1] - radius,
-            radius * 2.0,
-            radius * 2.0,
-        )
-        rl.draw_rectangle_rec(marker, rl_color(point.color, 225))
-        if not radar_info_shows_radar_points(radar_info_mode):
+        tile = self._track_icon_tile(point, camera_point.x + scene_shift_x_m, camera_point.y - EGO_FORWARD_M)
+        icon_span = None
+        if tile is not None:
+            frame = self._camera_overlay_track_frame(camera_point, tile.half_width_m, tile.height_m,
+                                                     projection, scene_shift_x_m, perspective=True)
+            if frame is not None:
+                icon_span = self._draw_camera_track_icon(tile, screen, frame, projection.dest, rl.WHITE)
+        if icon_span is None:
+            radius = max(2.5, min(5.0, 40.0 / max(6.0, abs(point.longitudinal_m))))
+            marker = rl.Rectangle(screen[0] - radius, screen[1] - radius, radius * 2.0, radius * 2.0)
+            rl.draw_rectangle_rec(marker, rl_color(point.color, 225))
+        show_radar_info = radar_info_shows_radar_points(radar_info_mode)
+        if not show_radar_info:
             return
         label_parts = []
-        if radar_info_shows_distance(radar_info_mode):
+        if show_radar_info and radar_info_shows_distance(radar_info_mode):
             label_parts.append(format_radar_distance(point.longitudinal_m, self.is_metric))
-        if point.absolute_speed_kph is not None:
+        if show_radar_info and point.absolute_speed_kph is not None:
             label_parts.append(f"{display_speed(point.absolute_speed_kph, self.is_metric):.0f} {speed_unit(self.is_metric)}")
-        if label_parts:
+        caption = " ".join(label_parts)
+        if caption:
             self._draw_world_label_text(
-                " ".join(label_parts),
+                caption,
                 screen[0],
-                screen[1] - 16.0,
+                icon_span[0] - 10.0 if icon_span is not None else screen[1] - 16.0,
                 15,
                 (*WHITE[:3], 220),
                 anchor="center",
@@ -2989,6 +3084,57 @@ class ClusterUiRenderer:
             print(f"{label} icon load failed: {exc}")
             return None
 
+    @staticmethod
+    def _load_camera_track_atlas(path: Path):
+        from cluster_track_models import ATLAS_PIVOT, ATLAS_TILE, ATLAS_VIEWS, STYLES, TRACK_SIZE_M
+
+        if not path.exists():
+            return None, None
+        image = texture = None
+        try:
+            image = rl.load_image(str(path))
+            tile = ATLAS_TILE
+            if not rl.is_image_valid(image) or (image.width, image.height) != (tile * len(STYLES), tile * ATLAS_VIEWS):
+                return None, None
+            rgba = rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+            if image.format != rgba:
+                rl.image_format(image, rgba)
+                if image.format != rgba:
+                    return None, None
+            raw = rl.ffi.buffer(image.data, image.width * image.height * 4)
+            alpha = np.frombuffer(raw, dtype=np.uint8).reshape(image.height, image.width, 4)[..., 3]
+            pivot = (ATLAS_PIVOT[0] * tile, ATLAS_PIVOT[1] * tile)
+            tiles = {}
+            for column, (ident, _) in enumerate(STYLES):
+                views = []
+                width_m, length_m, height_m = TRACK_SIZE_M[ident]
+                x = column * tile
+                for row in range(ATLAS_VIEWS):
+                    y = row * tile
+                    ys, xs = np.nonzero(alpha[y:y + tile, x:x + tile])
+                    if not ys.size:
+                        return None, None
+                    bounds = (int(xs.min()) - pivot[0], int(ys.min()) - pivot[1],
+                              int(xs.max()) + 1 - pivot[0], int(ys.max()) + 1 - pivot[1])
+                    yaw = row * math.tau / ATLAS_VIEWS
+                    span_m = width_m * abs(math.cos(yaw)) + length_m * abs(math.sin(yaw))
+                    views.append(CameraTrackTile(rl.Rectangle(x, y, tile, tile), pivot, bounds,
+                                                 span_m * 0.58, height_m * 1.12))
+                tiles[ident] = tuple(views)
+            texture = rl.load_texture_from_image(image)
+            if texture.id <= 0:
+                return None, None
+            rl.set_texture_filter(texture, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+            return texture, tiles
+        except Exception as exc:
+            if texture is not None and texture.id > 0:
+                rl.unload_texture(texture)
+            print(f"Track atlas load failed: {exc}")
+            return None, None
+        finally:
+            if image is not None and rl.is_image_valid(image):
+                rl.unload_image(image)
+
     def _load_alpha_cropped_icon_texture(self, path: Path, label: str):
         if not path.exists():
             return None
@@ -3194,12 +3340,22 @@ class ClusterUiRenderer:
                 self._draw_strip(strip)
             self._profile_add("draw_scene.planned_path", profile_stage)
             profile_stage = self._profile_start()
+            models = self.hud_track_classes and self._track_models
             for point in scene.radar_points:
-                self._draw_radar_point(point)
+                style = models.get(self.hud_track_classes.get(point.front_track_id)) if models else None
+                if style is None:
+                    self._draw_radar_point(point)
+                else:
+                    self._draw_world_track_model(style, point, rl.WHITE)
             self._profile_add("draw_scene.radar_points", profile_stage)
             profile_stage = self._profile_start()
             for vehicle in scene.vehicles:
-                self._draw_vehicle(vehicle)
+                style = models.get(self.hud_track_classes.get(vehicle.front_track_id)) if models else None
+                if style is None:
+                    self._draw_vehicle(vehicle)
+                else:
+                    tint = rl_color(vehicle.body_color) if vehicle.primary or vehicle.cut_in else rl.WHITE
+                    self._draw_world_track_model(style, vehicle, tint)
             self._profile_add("draw_scene.vehicles", profile_stage)
         finally:
             rl.rl_pop_matrix()
@@ -3487,18 +3643,12 @@ class ClusterUiRenderer:
         return points, point_count
 
     def _draw_vehicle(self, vehicle: VehicleBox) -> None:
-        source_marker = vehicle.source.startswith("modelV2") or vehicle.source in ("radarState", "radarPoint", "cornerRadar")
-        use_model = (
-            self._vehicle_model is not None
-            and not source_marker
-            and (not vehicle.source or vehicle.primary or vehicle.cut_in)
-        )
-        if use_model:
+        if compact_vehicle_marker(vehicle):
+            self._draw_vehicle_marker(vehicle)
+            return
+        if self._vehicle_model is not None:
             self._draw_vehicle_shadow(vehicle)
             self._draw_vehicle_model(vehicle)
-            return
-        if vehicle.source and (source_marker or (not vehicle.primary and not vehicle.cut_in)):
-            self._draw_vehicle_marker(vehicle)
             return
         self._draw_vehicle_box(vehicle)
 
@@ -3514,8 +3664,8 @@ class ClusterUiRenderer:
         marker_vehicle = replace(
             vehicle,
             center=Vec3(vehicle.center.x, vehicle.center.y, marker_base_z + marker_height_m * 0.5),
-            width_m=max(0.55, vehicle.width_m * 0.68),
-            length_m=max(1.05, vehicle.length_m * 0.64),
+            width_m=max(0.55, vehicle.width_m * COMPACT_WIDTH_SCALE),
+            length_m=max(1.05, vehicle.length_m * COMPACT_LENGTH_SCALE),
             height_m=marker_height_m,
             body_color=with_alpha(vehicle.body_color),
             side_color=with_alpha(vehicle.side_color),
@@ -3539,8 +3689,11 @@ class ClusterUiRenderer:
         scene_shift_x_m: float = 0.0,
         radar_info_mode: int = CLUSTER_RADAR_INFO_ALL_SPEED_DISTANCE,
     ) -> None:
-        if not radar_info_shows_radar_points(radar_info_mode):
+        show_radar_info = radar_info_shows_radar_points(radar_info_mode)
+        if not show_radar_info:
             return
+        show_distance = show_radar_info and radar_info_shows_distance(radar_info_mode)
+        show_speed = show_radar_info and radar_info_shows_speed(radar_info_mode)
         theme = self._current_theme()
         profile_enabled = self.profile_enabled
         profile_stage = self._profile_start()
@@ -3568,7 +3721,7 @@ class ClusterUiRenderer:
             anchor = rl.Vector3(
                 point.center.x + scene_shift_x_m,
                 point.center.y,
-                point.center.z + RADAR_LABEL_ANCHOR_Z_OFFSET_M,
+                self._track_label_height(point, point.center.z) + RADAR_LABEL_ANCHOR_Z_OFFSET_M,
             )
             if profile_enabled:
                 project_stage = time.perf_counter()
@@ -3581,12 +3734,12 @@ class ClusterUiRenderer:
                 layout_stage = time.perf_counter()
             distance = (
                 radar_point_distance_label(point, self.is_metric)
-                if radar_info_shows_distance(radar_info_mode)
+                if show_distance
                 else ""
             )
             speed = (
                 radar_point_speed_label(point, self.is_metric)
-                if radar_info_shows_speed(radar_info_mode)
+                if show_speed
                 else ""
             )
             if not distance and not speed:
@@ -3721,7 +3874,7 @@ class ClusterUiRenderer:
             anchor = rl.Vector3(
                 vehicle.center.x + scene_shift_x_m,
                 vehicle.center.y,
-                vehicle.height_m + VEHICLE_BADGE_ANCHOR_Z_OFFSET_M,
+                self._track_label_height(vehicle, vehicle.height_m) + VEHICLE_BADGE_ANCHOR_Z_OFFSET_M,
             )
             if profile_enabled:
                 project_stage = time.perf_counter()

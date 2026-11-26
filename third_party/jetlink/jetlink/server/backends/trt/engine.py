@@ -86,7 +86,17 @@ class TrtEngine:
     self.context = self.engine.create_execution_context()
     # 외부로 엔진을 넘기기 전까지 획득 직후 회수 책임을 등록한다.
     with ExitStack() as cleanup:
-      self.stream = cudart.stream_create()
+      self.label_device = None
+      if os.environ.get('PV5_RADAR_LABELS') == '1' and os.path.isfile('/etc/nv_tegra_release'):
+        try:
+          label_device = cudart.current_device()
+          self.stream = cudart.priority_stream_create()
+          self.label_device = label_device
+        except (AttributeError, RuntimeError):
+          # Optional HUD stream priority is unavailable; run driving inference normally.
+          self.stream = cudart.stream_create()
+      else:
+        self.stream = cudart.stream_create()
       cleanup.callback(_release_resource, cudart.stream_destroy, self.stream)
 
       self.bindings: dict[str, Binding] = {}
@@ -225,7 +235,7 @@ class TrtEngine:
               if self.device_state is not None else 'cuda graph captured')
     return 'cuda graph unavailable, enqueueing per frame'
 
-  def run(self) -> dict[str, np.ndarray]:
+  def run(self, after_enqueue=None) -> dict[str, np.ndarray]:
     """Run one frame. Returns views over pinned output memory, valid until the next run."""
     t0 = time.perf_counter()
     if self.device_state is not None:
@@ -234,6 +244,8 @@ class TrtEngine:
       cudart.graph_launch(self.graph_exec, self.stream)
     else:
       self._enqueue()
+    if after_enqueue is not None:
+      after_enqueue()
     if self.device_state is not None:
       cudart.event_sync(self.device_state.reply)
     else:

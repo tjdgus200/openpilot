@@ -456,6 +456,14 @@ def main(demo=False):
     # Jetlink resets both histories. If its wrapper failed to load, reset the native model.
     reset_parked_history = getattr(model, 'reset_parked_history', None) or model.reset
   parked_pm = PubMaster(['parkedDashcamState']) if reset_parked_history is not None else None
+  radar_label_marker = None
+  if (os.environ.get('PV5_RADAR_LABELS', '1') == '1' and use_extra_client and not (demo or SIMULATION or main_wide_camera or CP.notCar)
+      and CP.carFingerprint == 'KIA_PV5' and hasattr(model, 'radar_label_marker')):
+    try:
+      from openpilot.common.pv5_radar_label_context import CaptureMarker
+      radar_label_marker = model.radar_label_marker = CaptureMarker()
+    except (ImportError, OSError):
+      pass
   parked_paused = False
   parked_status_at = 0
   cloudlog.info("modeld got CarParams: %s", CP.brand)
@@ -560,6 +568,9 @@ def main(demo=False):
       model_transform_extra = extra.astype(np.float32)
       if has_wide_camera and wide_fov_index:
         model_transform_extra = wider_model_warp(extra, WIDE_MODEL_FOV_CHOICES[wide_fov_index - 1])
+      if radar_label_marker is not None and live_calib_seen:
+        radar_label_marker.calibrate(sm['liveCalibration'], sm.logMonoTime['liveCalibration'], dc.ecam.intrinsics,
+                                    model_transform_extra, calib_done and sm.valid['liveCalibration'])
 
     if parked_pm is not None:
       now_ns = time.monotonic_ns()
@@ -751,6 +762,9 @@ def main(demo=False):
       pm.send('modelV2', modelv2_send)
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
+      if (radar_label_marker is not None and getattr(model, 'radar_label_marker', None) is radar_label_marker
+          and model.active and modelv2_send.valid):
+        radar_label_marker.publish(model.frame, (meta_extra.timestamp_sof + meta_extra.timestamp_eof) // 2)
       if usbgpu_startup_pending:
         # Clear only after all first-frame outputs are on the bus so selfdrived
         # cannot observe "ready" before modelV2 and its dependants can run.

@@ -132,6 +132,79 @@ def test_road_camera_radar_point_keeps_optional_text(monkeypatch):
   assert labels == ["25 m 50 km/h"]
 
 
+def test_confirmed_class_icons_replace_markers_without_optional_metrics(metric_renderer, monkeypatch):
+  renderer, labels = metric_renderer
+  renderer.language = "ko"
+  renderer.is_metric = True
+  renderer.hud_track_classes = {34: 0, 35: 3}
+  person = SimpleNamespace(half_width_m=0.38, height_m=1.92)
+  motorcycle = object()
+  renderer._track_tiles = {0: (person,) * 16, 3: (motorcycle,) * 16}
+  point = RadarPointMarker(Vec3(1.0, 25.0, 0.2), 0.2, (44, 211, 112), "T34", 25.0, 1.0,
+                           absolute_speed_kph=50.0, front_track_id=34)
+  vehicle = replace(_metric_vehicle("T35", distance=25, primary=False), front_track_id=35)
+  squares, icons = [], []
+  monkeypatch.setattr(cluster_renderer.rl, "draw_rectangle_rec", lambda *_args: squares.append(1))
+  def draw_icon(tile, *_args):
+    icons.append(tile)
+    return 190.0, 220.0
+
+  monkeypatch.setattr(renderer, "_draw_camera_track_icon", draw_icon)
+  monkeypatch.setattr(cluster_renderer.rl, "draw_rectangle_rounded_lines_ex", lambda *_args: pytest.fail("classified vehicle still boxed"))
+  projection = SimpleNamespace(dest=cluster_renderer.rl.Rectangle(0.0, 0.0, 1124.0, 480.0))
+
+  for front_id in (34, 99):
+    candidate = replace(point, front_track_id=front_id)
+    renderer._draw_camera_overlay_radar_point(candidate, projection, 0.0, CLUSTER_RADAR_INFO_NONE)
+    renderer._draw_radar_point_labels((candidate,), object(), radar_info_mode=CLUSTER_RADAR_INFO_NONE)
+  renderer._draw_camera_overlay_vehicle_frame(vehicle, projection, 0.0, CLUSTER_RADAR_INFO_NONE)
+  renderer._draw_vehicle_badges((vehicle,), object(), radar_info_mode=CLUSTER_RADAR_INFO_NONE)
+  assert icons == [person, motorcycle] and squares == [1]
+  assert labels == []
+
+
+@pytest.mark.parametrize("fx,fy,ray_x,ray_y,expected_yaw,view", [
+  (0., 1., 0., 20., 0., 0), (1., 0., 0., 20., -90., 12), (-1., 0., 0., 20., 90., 4),
+  (0., -1., 0., 20., -180., 8), (0., 1., 10., 10., 0., 2), (0., 1., -10., 10., 0., 14),
+  (.001, -1., 0., 20., -179.9427, 8), (-.001, -1., 0., 20., 179.9427, 8),
+])
+def test_track_models_use_box_heading_and_camera_bearing(fx, fy, ray_x, ray_y, expected_yaw, view, monkeypatch):
+  ui = object.__new__(ClusterUiRenderer)
+  ui.hud_track_classes = {34: 2}
+  ui._track_tiles = {2: tuple(range(16))}
+  car = replace(_metric_vehicle("T34", distance=25, primary=False), forward_x=fx, forward_y=fy, front_track_id=34)
+  angles = []
+  monkeypatch.setattr(cluster_renderer.rl, "draw_model_ex", lambda _m, _p, _axis, yaw, *_: angles.append(yaw))
+  ui._draw_world_track_model(object(), car, None)
+  assert angles == pytest.approx([expected_yaw], abs=.001)
+  assert ui._track_icon_tile(car, ray_x, ray_y) == view
+
+
+def test_raw_track_heading_uses_radar_box_threshold_and_handles_missing_motion():
+  point = RadarPointMarker(Vec3(0., 20., .2), .2, (255, 255, 255), "T34", 20., 0.)
+  assert cluster_renderer.track_forward(point) == (0., 1.)
+  assert cluster_renderer.track_forward(replace(point, lateral_speed_mps=.01)) == (0., 1.)
+  assert cluster_renderer.track_forward(replace(point, lateral_speed_mps=-8.)) == (-1., 0.)
+  assert cluster_renderer.track_forward(replace(point, absolute_speed_kph=-35.)) == (0., -1.)
+
+
+def test_track_world_footprint_matches_marker_and_is_independent_of_distance(monkeypatch):
+  renderer = object.__new__(ClusterUiRenderer)
+  car = replace(_metric_vehicle("T34", distance=8, primary=False), source="radarState",
+                width_m=cluster_renderer.VEHICLE_WIDTH_M, length_m=cluster_renderer.VEHICLE_LENGTH_M,
+                height_m=cluster_renderer.VEHICLE_HEIGHT_M)
+  boxes, scales = [], []
+  monkeypatch.setattr(renderer, "_draw_vehicle_box", boxes.append)
+  monkeypatch.setattr(cluster_renderer.rl, "draw_model_ex", lambda _m, _p, _axis, _yaw, s, _: scales.append((s.x, s.y)))
+  renderer._draw_vehicle_marker(car)
+  for d in (8., 30., 90.):
+    renderer._draw_world_track_model(object(), replace(car, center=Vec3(0., d, car.center.z)), None)
+  for sx, sy in scales:
+    assert (car.width_m * sx, car.length_m * sy) == pytest.approx((boxes[0].width_m, boxes[0].length_m))
+  full_car = replace(car, primary=True, source="vision")
+  assert cluster_renderer.track_world_scale(full_car) == (1., 1., 1.)
+
+
 def test_road_camera_detected_vehicle_uses_transparent_colored_rounded_frame(monkeypatch):
   renderer = object.__new__(ClusterUiRenderer)
   outlines = []
@@ -608,6 +681,41 @@ def test_renderer_reuses_scene_when_only_hud_state_changes(monkeypatch) -> None:
   assert first is hud_only
   assert changed_world is not first
   assert len(scenes) == 2
+
+
+def test_classified_front_points_use_exact_scene_anchors_and_cache():
+  renderer = ClusterUiRenderer()
+  corner = RadarPoint("CR235_01", 27.0, 1.8, "cornerRadar", absolute_speed_kph=20.0)
+  front = RadarPoint("T34", 27.0, 2.0, "liveTracks", front_track_id=34)
+  anchor = DetectedVehicle("L1", 29.0, 2.0, source="radarState", primary=True)
+  state = _cluster_state(radar_points=(corner, front), detected_vehicles=(anchor,))
+  base = renderer._scene_for_state(state, True, LIGHT_CLUSTER_THEME)
+  assert not any(point.front_track_id == 34 for point in base.radar_points)
+
+  renderer.hud_labeled_radar_points = (front,)
+  fallback = renderer._scene_for_state(state, True, LIGHT_CLUSTER_THEME)
+  assert fallback is renderer._scene_for_state(state, True, LIGHT_CLUSTER_THEME)
+  point, = (point for point in fallback.radar_points if point.front_track_id == 34)
+  assert (point.label, point.longitudinal_m, point.lateral_m) == ("T34", 27.0, 2.0)
+  assert all(vehicle.front_track_id is None for vehicle in fallback.vehicles)
+  exact_track = replace(state, detected_vehicles=(replace(anchor, front_track_id=34, radar_track_id=34),))
+  exact = renderer._scene_for_state(exact_track, True, LIGHT_CLUSTER_THEME)
+  assert [vehicle.label for vehicle in exact.vehicles if vehicle.front_track_id == 34] == ["L1"]
+  assert all(point.front_track_id != 34 for point in exact.radar_points)
+
+  renderer.hud_labeled_radar_points = ()
+  assert renderer._scene_for_state(state, True, LIGHT_CLUSTER_THEME) == base
+
+
+def test_geometry_merge_keeps_front_id_only_on_the_original_anchor():
+  anchor = DetectedVehicle("L1", 25.0, 0.0, source="radarState")
+  nearby = DetectedVehicle("OTHER", 26.0, 0.1, source="liveTracks", radar_track_id=34, front_track_id=34)
+
+  merged = cluster_scene.merge_detected_vehicle_for_display(anchor, nearby)
+  assert merged.longitudinal_m == anchor.longitudinal_m
+  assert merged.radar_track_id == 34
+  assert merged.front_track_id is None
+  assert cluster_scene.merge_detected_vehicle_for_display(nearby, anchor).front_track_id == 34
 
 
 @pytest.mark.parametrize(

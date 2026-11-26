@@ -304,6 +304,7 @@ class DetectedVehicle:
     x_std_m: float | None = None
     y_std_m: float | None = None
     radar_track_id: int | None = None
+    front_track_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,6 +323,7 @@ class RadarPoint:
     in_my_lane: int | None = None
     motion_consistent: bool | None = None
     promotion_held: bool = False
+    front_track_id: int | None = None
 
 
 RADAR_ZERO_POSITION_EPS_M = 1e-3

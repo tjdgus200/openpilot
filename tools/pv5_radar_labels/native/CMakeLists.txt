@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.18)
+project(pv5_yolo LANGUAGES CXX CUDA)
+find_path(TENSORRT_INCLUDE NvInfer.h REQUIRED)
+add_library(pv5_yolo STATIC detector.cu)
+target_include_directories(pv5_yolo PRIVATE ${TENSORRT_INCLUDE})
+set_target_properties(pv5_yolo PROPERTIES CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED YES POSITION_INDEPENDENT_CODE ON)
+add_executable(pv5_yolo_kernel_test EXCLUDE_FROM_ALL kernels_test.cu)
+set_target_properties(pv5_yolo_kernel_test PROPERTIES CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED YES)
