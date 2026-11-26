@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-yolo-mode9-ctv3m-20261126-b846962b",
-  "source_commit": "b846962b11914fc3284236f4047b8ec76b22be31",
+  "profile": "jetson-pv5-radar-hold-ctv3m-20261126-782da47c",
+  "source_commit": "782da47c7f447935954068facb835e4bfb62c66f",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-mode9-ctv3m-20261126-b846962b/host.tar.gz",
-    "sha256": "42e1eac026cb2e597a90baaa3a41250e6f602266c2141ca1e3f99de1fd6ccd60",
-    "size": 70149180
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-radar-hold-ctv3m-20261126-782da47c/host.tar.gz",
+    "sha256": "26274b5cad3c7f54e85d1e82af1af30d29f49a332e1ca2a806112674cd87c276",
+    "size": 70151306
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",

@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-yolo-mode9-fairy-tale-v1-1-20261126-f8b9514a",
-  "source_commit": "f8b9514a698997305278cae3df2db9d20da8a7ce",
+  "profile": "jetson-pv5-radar-hold-fairy-tale-v1-1-20261126-38590b92",
+  "source_commit": "38590b925394bcb88caa90c88c9c47db2a4a40d7",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-yolo-mode9-fairy-tale-v1-1-20261126-f8b9514a/host.tar.gz",
-    "sha256": "804975fe2417caa7b3c7b2f7f2b76aa66519705a7f943d9fb4467b52e079843c",
-    "size": 70149199
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-radar-hold-fairy-tale-v1-1-20261126-38590b92/host.tar.gz",
+    "sha256": "d27861706bd0094485bbdc7823059b4f711750ef0e3a0d0e2c447975e6b87fc8",
+    "size": 70151321
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/d6ca4432101dc1a938ae3ee3a8dbfbfdae33ccba/3f1a78e6-9a79-4d85-b796-1cd573bd5a3a/32768/big_driving_supercombo.onnx",
