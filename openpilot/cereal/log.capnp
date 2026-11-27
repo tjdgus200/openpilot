@@ -1189,6 +1189,8 @@ struct ModelDataV2 {
     indicatorPrepareDirection @33 :LaneChangeDirection; # Display only; never an actuation request.
     indicatorPrepareSource @34 :Text;
     laneChangeWaitReason @35 :Text; # Display only.
+    pv5LaneReview @36 :Text; # Shadow result only; empty when inactive.
+    pv5LaneReviewSide @37 :LaneChangeDirection;
 
 
     deprecated :group {

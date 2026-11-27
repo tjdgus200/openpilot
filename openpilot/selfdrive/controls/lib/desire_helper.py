@@ -1,6 +1,8 @@
 import math
 import time
 
+from opendbc.car.hyundai.rear_gap import REAR_INPUT_MAX_AGE_NS
+
 from openpilot.cereal import log
 from openpilot.common.constants import CV
 from openpilot.common.realtime import DT_MDL
@@ -20,6 +22,7 @@ from openpilot.selfdrive.controls.lib.desire_lib.side_state import SideState
 from openpilot.selfdrive.controls.lib.desire_lib.boundary_lane import fresh_pv5_camera_dashed, fresh_pv5_lane_types
 from openpilot.selfdrive.controls.lib.desire_lib.maneuver_classifier import classify_maneuver_type
 from openpilot.selfdrive.controls.lib.desire_lib.lever import LEVER_REQUEST_WAIT_S, LaneCrossing, LeverForcedTurn, LeverRequestWait, lever_maneuver
+from openpilot.selfdrive.controls.lib.desire_lib.pv5_lane_review import Pv5LaneReview
 
 # Without a model-detected crossing, a lever press this early in laneChangeFinishing is still the driver
 # re-lighting the lamp of the change that just crossed, not a request for the next one.
@@ -32,6 +35,8 @@ class DesireHelper:
   def __init__(self, tesla_auto_signals=False, boundary_indicator_supported=False, pv5_oem_lane_check=False):
     self.params = Params()
     self.pv5_oem_lane_check = pv5_oem_lane_check
+    self.pv5_lane_review = Pv5LaneReview() if pv5_oem_lane_check else None
+    self._pv5_lane_review_inputs_valid = False
     self.boundary_indicator_supported = boundary_indicator_supported
     self.boundary_indicator_enabled = False
     self.boundary_indicator = BoundaryIndicator(
@@ -394,7 +399,8 @@ class DesireHelper:
   # ─────────────────────────────────────────────
   # main update
   # ─────────────────────────────────────────────
-  def update(self, carstate, modeldata, lateral_active, lane_change_prob, carrotMan, radarState, *, indicator_valid=False, indicator_curvature=None):
+  def update(self, carstate, modeldata, lateral_active, lane_change_prob, carrotMan, radarState, *,
+             indicator_valid=False, indicator_curvature=None, lane_review=None, lane_review_inputs_valid=False):
     self.frame += 1
     self._update_params_periodic()
     if self.boundary_indicator_supported:
@@ -705,6 +711,37 @@ class DesireHelper:
       self.lane_change_direction = LaneChangeDirection.none
       self.lane_change_state = LaneChangeState.off
       self.blinker_ignore = True
+
+    if self.pv5_lane_review is not None and lane_review_inputs_valid:
+      # This result feeds shadow diagnostics and capture admission only. The
+      # original fresh-camera gate above is the only PV5 steering admission.
+      self._pv5_lane_review_inputs_valid = True
+      review_now = time.monotonic_ns()
+      boot_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME) if hasattr(time, "CLOCK_BOOTTIME") else review_now
+      bsd_stamp = carstate.pv5OemBlindspotMonoTime
+      review_inputs_valid = (
+        lateral_active and not trailer_maneuver_blocked
+        and math.isfinite(v_ego) and not below_lane_change_speed
+        and str(carstate.gearShifter) == "drive" and not carstate.vehicleSensorsInvalid
+        and self.laneChangeBsd >= 0 and not self.desire_disable_count
+        and carstate.pv5OemBlindspotValid and bsd_stamp > 0 and 0 <= boot_ns - bsd_stamp <= REAR_INPUT_MAX_AGE_NS
+      )
+      target_clear = (
+        driver_enabled and not self.blinker_ignore and not atc_enabled and side is not None
+        and self.lane_change_state == LaneChangeState.preLaneChange and self.maneuver_type == "lane_change"
+        and not self.next_lane_change and self.turn_direction == TurnDirection.none
+        and side.lane_available and side.edge_available and 0.5 < side.cur_prob <= 1.0
+        and 0.5 < modeldata.laneLineProbs[0 if driver_st == BLINKER_LEFT else 3] <= 1.0
+        and not (carstate.pv5OemBlindspotLeft if driver_st == BLINKER_LEFT else carstate.pv5OemBlindspotRight)
+        and not side.bsd_detected_now and side.bsd_hold_counter == 0 and not side.side_object_detected
+      )
+      self.pv5_lane_review.update(
+        carstate, now_ns=review_now, boot_ns=boot_ns, inputs_valid=review_inputs_valid,
+        driver_direction=driver_st, target_clear=target_clear, visual=lane_review,
+      )
+    elif self._pv5_lane_review_inputs_valid:
+      self.pv5_lane_review.reset()
+      self._pv5_lane_review_inputs_valid = False
 
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange):
       self.crossing = LaneCrossing()

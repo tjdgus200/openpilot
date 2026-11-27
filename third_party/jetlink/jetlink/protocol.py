@@ -26,6 +26,24 @@ WIDE_LABELS_CAPABILITY = 'pv5_wide_labels_v2'
 WIDE_LABELS_FLAG = 1 << 8  # INFER_REQ payload, opt-in display-only use of camera 1
 WIDE_YOLO_PREVIEW_CAPABILITY = 'carrot_wide_yolo_preview_v1'
 WIDE_YOLO_PREVIEW_FLAG = 1 << 9  # With WIDE_LABELS_FLAG, render the detector input locally
+LANE_REVIEW_CAPABILITY = 'pv5_lane_review_v1'
+LANE_LEFT_FLAG = 1 << 10
+LANE_RIGHT_FLAG = 1 << 11
+LANE_MASK = LANE_LEFT_FLAG | LANE_RIGHT_FLAG
+# Negotiated shadow result follows the drive vector and precedes optional JSON.
+LANE_RESULT = struct.Struct('<IBbf')
+NO_LANE_RESULT = LANE_RESULT.pack(0, 0, -1, 0.0)
+
+
+def pack_lane_result(value):
+  if value is not None:
+    try:
+      frame, side, kind, confidence = value
+      if side in (1, 2) and kind in (-1, 0, 1) and 0 <= confidence <= 1:
+        return LANE_RESULT.pack(frame, side, kind, confidence)
+    except (TypeError, ValueError, OverflowError, struct.error):
+      pass
+  return NO_LANE_RESULT
 
 # Legacy v2 packet size. A transfer that is an exact multiple does not terminate
 # a bulk read, so the sender adds one byte; v3 uses 512 (see packet_multiple()).

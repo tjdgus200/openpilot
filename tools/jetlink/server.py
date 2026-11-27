@@ -69,6 +69,9 @@ class DisplayTelemetry:
 
 class CarrotSession(Session):
   def _send(self, msg_type, seq, parts=(), flags=0):
+    if (getattr(self, '_lane_review', None) is not None and msg_type == P.Msg.INFER_RESP
+        and P.unpack_infer_resp(parts[0])[1] != P.Status.OK):
+      self._lane_review.invalidate()
     if msg_type == P.Msg.INFER_RESP and self.telemetry.health is not None:
       status = P.unpack_infer_resp(parts[0])[1]
       if status != P.Status.OK:
@@ -96,6 +99,19 @@ class CarrotSession(Session):
   def __init__(self, *args, **kwargs):
     self.hud_inference_timing = Path('/etc/nv_tegra_release').is_file()
     super().__init__(*args, **kwargs)
+    self._lane_review = None
+    if self.hud_inference_timing and os.environ.get('PV5_LANE_REVIEW') == '1':
+      try:
+        from pv5_lane_runtime import Predictor, installed_plan
+        plan = installed_plan()
+        if plan is not None:
+          from pv5_lane_worker import LaneReview
+          self._lane_device = None
+          self._lane_review = LaneReview(lambda: Predictor(*plan, device=self._lane_device))
+          self.lane_review_result = self._lane_review.latest
+          self.lane_review_offer = self._offer_lane_review
+      except (ImportError, OSError, RuntimeError):
+        pass
     self.labels = None
     self.labels_supported = False
     if self.hud_inference_timing and os.environ.get('PV5_RADAR_LABELS') == '1':
@@ -129,7 +145,12 @@ class CarrotSession(Session):
     self.maintenance_hold = False
     self.power_lease = SessionLease(self.t.transport if isinstance(self.t, ReadAheadTransport) else self.t)
 
+  def _offer_lane_review(self, frame, flags, stamp, warped, slices, output, valid):
+    self._lane_review.offer(frame, stamp, warped, slices, output, valid)
+
   def _reset(self, seq):
+    if getattr(self, '_lane_review', None) is not None:
+      self._lane_review.invalidate()
     if getattr(self, 'labels', None) is not None:
       self.labels.invalidate()
     super()._reset(seq)
@@ -153,6 +174,8 @@ class CarrotSession(Session):
       if self.deferred_negotiated:
         obj[deferred_map.CAPABILITY] = deferred_map.descriptor()
       if host == 'jetson':
+        if getattr(self, '_lane_review', None) is not None and self.t.protocol_version == 2:
+          obj[P.LANE_REVIEW_CAPABILITY] = True
         if getattr(self, 'labels_supported', False) and self.t.protocol_version == 2:
           obj[P.WIDE_LABELS_CAPABILITY] = True
           obj[P.WIDE_YOLO_PREVIEW_CAPABILITY] = True
@@ -238,6 +261,8 @@ class CarrotSession(Session):
       self.request_chunks.clear()
       raise request_chunks.LinkError('interrupted chunked request')
     if msg.msg_type == P.Msg.ENGINE_REQ:
+      if getattr(self, '_lane_review', None) is not None:
+        self._lane_review.invalidate()
       self.deferred_maps.clear()
       if getattr(self, 'labels', None) is not None:
         self.labels.invalidate()
@@ -346,7 +371,14 @@ class CarrotSession(Session):
     try:
       if msg.payload.nbytes < P.INFER_REQ_SIZE:
         raise ValueError('incomplete frame')
-      _, flags = P.unpack_infer_req(msg.payload)
+      frame, flags = P.unpack_infer_req(msg.payload)
+      review = getattr(self, '_lane_review', None)
+      if review is not None:
+        request = flags & P.LANE_MASK
+        self._lane_device = getattr(loaded.engine, 'label_device', None)
+        if self.t.protocol_version != 2 or flags & P.Flag.RESET_QUEUES or self._lane_device is None:
+          request = 0
+        review.set_side(1 if request == P.LANE_LEFT_FLAG else 2 if request == P.LANE_RIGHT_FLAG else 0, frame)
       if flags & deferred_map.FLAG:
         from jetlink.block_codec import FLAG as LZ4_FLAG
         if (not self.deferred_negotiated or self.t.protocol_version != 2 or
@@ -358,6 +390,8 @@ class CarrotSession(Session):
         # Every inline request supersedes the old image, including cancellation.
         self.deferred_maps.clear()
     except ValueError:
+      if getattr(self, '_lane_review', None) is not None:
+        self._lane_review.invalidate()
       self.deferred_maps.clear()
       self._input_measurement = None
       self._send(P.Msg.INFER_RESP, msg.seq, (P.pack_infer_resp(0, P.Status.BAD_SHAPE, 0, 0, 0),))
@@ -417,6 +451,8 @@ class CarrotSession(Session):
     return flags, context
 
   def close(self):
+    if getattr(self, '_lane_review', None) is not None:
+      self._lane_review.close()
     if getattr(self, 'labels', None) is not None:
       self.labels.close()
     if self.hud_inference_timing:

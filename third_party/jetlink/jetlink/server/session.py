@@ -910,6 +910,12 @@ class Session:
     projected = projected and status == P.Status.OK
     parts = [P.pack_infer_resp(frame_id, status, loaded.engine.last_gpu_us, queue_us, total_us),
              out32[:projection.COUNT] if projected else out32]
+    if flags & P.LANE_MASK:
+      latest = getattr(self, 'lane_review_result', None)
+      try:
+        parts.append(P.pack_lane_result(latest()) if latest is not None else P.NO_LANE_RESULT)
+      except Exception:
+        parts.append(P.NO_LANE_RESULT)
     if flags & P.Flag.WANT_STATE:
       parts.append(json.dumps(self.telemetry.read()).encode())
     send_started = time.perf_counter()
@@ -918,6 +924,13 @@ class Session:
     else:
       self._send(P.Msg.INFER_RESP, msg.seq, parts)
     send_us = int((time.perf_counter() - send_started) * 1e6)
+    if flags & P.LANE_MASK:
+      offer = getattr(self, 'lane_review_offer', None)
+      if offer is not None:
+        try:
+          offer(frame_id, flags, msg.received_ns, warped, spec.output_slices, out32, status == P.Status.OK)
+        except Exception:
+          log.debug("skipped optional lane review", exc_info=True)
     self.frames += 1
     if total_us > SLOW_FRAME_US or send_us > 10_000:
       # After the reply, so the log never delays it. The comma logs the same

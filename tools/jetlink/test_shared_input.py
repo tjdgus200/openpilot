@@ -283,6 +283,8 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
     spec = SPEC
     deferred_map_available = True
     wide_labels_available = projected  # Exercise both old and opted-in peers, including memfd.
+    lane_review_available = projected
+    last_lane_review = None
     wide_yolo_preview_available = deferred
     flush_map = lambda self: 0
     output_projection_available = projected
@@ -292,6 +294,9 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
     t = NS(last_receive={})
     def infer_begin(self, image, packed, frame, reset, want_state, **options):
       options_expected = {'nav_metadata': (0, 0, 0)} if deferred else {}
+      if projected and 2 <= frame <= 7:
+        options_expected['lane_review_side'] = 1 if frame <= 4 else 2
+        self.last_lane_review = (frame - 1, options_expected['lane_review_side'], 0, .875)
       if projected and frame % 2:
         options_expected['wide_labels'] = True
         if deferred and frame % 3 == 0:
@@ -326,7 +331,12 @@ def test_actual_daemon_consumes_exact_inputs_before_matching_reply(tmp_path, mon
       packed = np.arange(SPEC.packed_nelem, dtype=np.float32) * frame
       expected.append((hashlib.sha256(image.tobytes() + packed.tobytes()).digest(), frame, frame == 1))
       out = client.infer(image, packed, frame, reset=frame == 1, wide_labels=bool(frame % 2),
-                         wide_yolo_preview=frame % 3 == 0)
+                         wide_yolo_preview=frame % 3 == 0,
+                         lane_review=(1 if frame <= 4 else 2, frame * 50000000) if 2 <= frame <= 7 else None)
+      if projected and frame in (3, 4, 6, 7):
+        assert client.last_lane_review == ((frame - 1) * 50000000, 1 if frame <= 4 else 2, 0, .875)
+      else:
+        assert client.last_lane_review is None
       assert np.all(out == frame)
       if client.shared is not None: assert not client.shared.busy
     assert captured == expected

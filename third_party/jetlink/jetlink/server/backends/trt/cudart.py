@@ -65,6 +65,13 @@ def priority_stream_create():
   return check(_rt.cudaStreamCreateWithPriority(1, greatest))
 
 
+def background_stream_create():
+  least, greatest = check(_rt.cudaDeviceGetStreamPriorityRange())
+  if least == greatest:
+    raise CudaError('Distinct CUDA stream priorities unavailable')
+  return check(_rt.cudaStreamCreateWithPriority(1, least))
+
+
 def current_device():
   return int(check(_rt.cudaGetDevice()))
 

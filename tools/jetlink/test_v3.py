@@ -21,6 +21,31 @@ from jetlink.transport.base import LinkError, StreamTransport
 from jetlink.transport.tcp import TcpTransport
 
 
+@pytest.mark.parametrize('peer,capable,side,reset,expected', [
+  ('jetson', True, 1, False, V2.LANE_LEFT_FLAG), ('jetson', True, 2, False, V2.LANE_RIGHT_FLAG),
+  ('jetson', True, 2, True, 0), ('jetson', False, 2, False, 0), ('mac', True, 1, False, 0),
+])
+def test_optional_lane_review_does_not_change_model_vector(peer, capable, side, reset, expected):
+  hello = {'protocol': 2, 'stateful_v2': True, 'carrot_host': peer, V2.LANE_REVIEW_CAPABILITY: capable}
+  output = np.arange(link.SPEC.output_nelem, dtype=np.float32)
+  trailer = V2.pack_lane_result((17, side, 0, .75)) if expected else b''
+  response = V2.pack_infer_resp(18, V2.Status.OK, 2, 3, 4) + output.tobytes() + trailer + b'{"temp_c":41}'
+  stream = MemoryStream(incoming=packet(2, V2.Msg.HELLO_RESP, 1, json.dumps(hello).encode())
+                        + packet(2, V2.Msg.INFER_RESP, 2, response))
+  client = JetlinkClient(stream)
+  client.hello()
+  stream.out.clear()
+  client.spec = link.SPEC
+  seq = client.infer_begin(np.zeros(client.spec.warped_shape, np.uint8),
+                           np.zeros(client.spec.packed_nelem, np.float32), 18, reset=reset,
+                           want_state=True, lane_review_side=side)
+  _, flags = V2.unpack_infer_req(stream.out[V2.HEADER_SIZE:])
+  assert flags & V2.LANE_MASK == expected
+  np.testing.assert_array_equal(client.infer_end(seq), output)
+  assert client.last_state == {'temp_c': 41}
+  assert client.last_lane_review == ((17, side, 0, .75) if expected else None)
+
+
 class MemoryStream(StreamTransport):
   def __init__(self, version=2, incoming=b'', gadget=False):
     super().__init__()

@@ -15,7 +15,7 @@ from openpilot.common.jetlink_peer import classify_auto_peer, may_provision
 from openpilot.common.jetson_model import is_jetson
 from openpilot.selfdrive.modeld.jetlink import VENDOR
 from openpilot.selfdrive.modeld.jetlink.link import (SOCKET, STATUS, REQUEST, REPLY, PacketReader, send, send_parts,
-                                                     WIDE_LABELS_IPC_FLAG, WIDE_YOLO_PREVIEW_IPC_FLAG)
+                                                     WIDE_LABELS_IPC_FLAG, WIDE_YOLO_PREVIEW_IPC_FLAG, LANE_LEFT_IPC, LANE_RIGHT_IPC)
 from openpilot.selfdrive.modeld.jetlink.phase import Publisher as PhasePublisher
 from openpilot.selfdrive.modeld.jetlink.mac import prepare, PreparationDeferred
 from openpilot.selfdrive.modeld.jetlink.compat import ProtocolChoice
@@ -30,6 +30,7 @@ from openpilot.selfdrive.modeld.jetlink.startup import (CAPABILITY as BOOT_UPDAT
                                                        RuntimeHandoff, ConnectionStartup)
 from jetlink.client import JetlinkClient
 from jetlink.protocol import WIDE_LABELS_CAPABILITY, WIDE_YOLO_PREVIEW_CAPABILITY
+from jetlink.protocol import LANE_REVIEW_CAPABILITY, pack_lane_result
 from jetlink.transport.base import LinkError, LinkTimeout
 from jetlink.transport.ffs import FfsTransport
 
@@ -401,6 +402,9 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
         deferred_available = bool(getattr(client, 'deferred_map_available', False))
         hello = {'spec': spec.to_dict(), 'peer': peer, shared_input.CAPABILITY: shared_input.supported()}
         wide_labels_available = getattr(client, 'wide_labels_available', False)
+        lane_available = getattr(client, 'lane_review_available', False)
+        if lane_available:
+          hello[LANE_REVIEW_CAPABILITY] = True
         wide_yolo_preview_available = wide_labels_available and getattr(client, 'wide_yolo_preview_available', False)
         if wide_labels_available:
           hello[WIDE_LABELS_CAPABILITY] = True
@@ -481,7 +485,9 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
             frame, reset, source_sof = REQUEST.unpack_from(request)
             images = np.frombuffer(request, np.uint8, spec.warped_nbytes, REQUEST.size).reshape(spec.warped_shape)
             packed = np.frombuffer(request, np.float32, spec.packed_nelem, REQUEST.size + spec.warped_nbytes)
-          if (reset not in range(32) or (reset & WIDE_LABELS_IPC_FLAG and not wide_labels_available) or
+          lane_flags = reset & (LANE_LEFT_IPC | LANE_RIGHT_IPC)
+          if (reset not in range(128) or (lane_flags and (not lane_available or reset & 1 or lane_flags == (LANE_LEFT_IPC | LANE_RIGHT_IPC))) or
+              (reset & WIDE_LABELS_IPC_FLAG and not wide_labels_available) or
               (reset & WIDE_YOLO_PREVIEW_IPC_FLAG and not (wide_yolo_preview_available and reset & WIDE_LABELS_IPC_FLAG)) or
               (reset & projection.IPC_FLAG and not compact_reply) or
               bool(reset & deferred_map.IPC_FLAG) != (nav_meta is not None) or
@@ -492,6 +498,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
             raise ValueError('invalid local model context')
           started = time.monotonic()
           map_options = {'nav_metadata': nav_meta} if nav_meta is not None else {}
+          if lane_flags:
+            map_options['lane_review_side'] = 1 if lane_flags == LANE_LEFT_IPC else 2
           if reset & WIDE_LABELS_IPC_FLAG:
             map_options['wide_labels'] = True
           if reset & WIDE_YOLO_PREVIEW_IPC_FLAG:
@@ -518,7 +526,8 @@ def _serve_local(listener, client, peer, publisher, phase, wifi=None, blinker=No
           completed = time.monotonic()
           idle_budget.completed(completed, completed - started)
           try:
-            send_parts(connection, REPLY.pack(frame, *client.last_timings), output)
+            lane_tail = (pack_lane_result(client.last_lane_review),) if lane_flags else ()
+            send_parts(connection, REPLY.pack(frame, *client.last_timings), output, *lane_tail)
           finally:
             # Preserve the send/response split even when modeld already timed
             # out and the local reply raises BrokenPipeError.

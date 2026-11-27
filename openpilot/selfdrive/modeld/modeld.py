@@ -492,6 +492,8 @@ def main(demo=False):
                     boundary_indicator_supported=CP.carFingerprint == 'HYUNDAI_IONIQ_5_PE',
                     pv5_oem_lane_check=CP.carFingerprint == 'KIA_PV5' and not CP.notCar)
   boundary_observer = BoundaryObserver(cloudlog.event) if DH.boundary_indicator_supported else None
+  lane_review_supported = (DH.pv5_oem_lane_check and use_extra_client and not (main_wide_camera or demo or SIMULATION)
+                           and hasattr(model, 'lane_review_request'))
   nav_input = MapInput()
 
 
@@ -651,6 +653,21 @@ def main(demo=False):
     inputs.update(nav_input.update(model, sm, v_ego))
 
     inference_started = time.monotonic()
+    lane_inputs_valid = False
+    if lane_review_supported and getattr(getattr(model, 'client', None), 'lane_review_available', False):
+      radar_errors = sm['radarState'].radarErrors
+      lane_inputs_valid = (not prepare_only and live_calib_seen and sm.valid['liveCalibration'] and sm.alive['liveCalibration']
+                           and sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.calibrated
+                           and not (radar_errors.canError or radar_errors.radarFault or radar_errors.wrongConfig
+                                    or radar_errors.radarUnavailableTemporary)
+                           and all(sm.valid[k] and sm.alive[k] and 0 <= inference_started - sm.recv_time[k] < .25
+                                   for k in ('carState', 'radarState')))
+      side = DH.pv5_lane_review.request_direction
+      cs = sm['carState']
+      signal = int(cs.leftBlinker) + 2 * int(cs.rightBlinker)
+      eligible = (lane_inputs_valid and side and signal == side and cs.pv5OemBlindspotValid
+                  and not (cs.pv5OemBlindspotLeft if side == 1 else cs.pv5OemBlindspotRight))
+      model.lane_review_request = (side, meta_main.timestamp_sof) if eligible else None
     mt1 = time.perf_counter()
     camera_age_at_run_ms = (inference_started - meta_main.timestamp_eof * 1e-9) * 1000
     if diagnostics.enabled:
@@ -737,7 +754,14 @@ def main(demo=False):
         sm.valid[k] and sm.alive[k] and 0 <= indicator_now-sm.recv_time[k] < .35
         for k in ('carState', 'carControl'))
       DH.update(sm['carState'], modelv2_send.modelV2, sm['carControl'].latActive, lane_change_prob, sm['carrotMan'], sm['radarState'],
-                indicator_valid=indicator_valid, indicator_curvature=sm['carControl'].actuators.curvature)
+                indicator_valid=indicator_valid, indicator_curvature=sm['carControl'].actuators.curvature,
+                lane_review=model_output.pop('_pv5_lane_review', None),
+                lane_review_inputs_valid=bool(lane_inputs_valid and modelv2_send.valid and indicator_valid
+                                              and getattr(model, 'active', False)
+                                              and getattr(getattr(model, 'client', None), 'lane_review_available', False)))
+      if lane_review_supported and DH.pv5_lane_review.decision != 'idle':
+        modelv2_send.modelV2.meta.pv5LaneReview = DH.pv5_lane_review.decision
+        modelv2_send.modelV2.meta.pv5LaneReviewSide = DH.pv5_lane_review.signal_direction
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction
       modelv2_send.modelV2.meta.desireLog = DH.desireLog #carrot

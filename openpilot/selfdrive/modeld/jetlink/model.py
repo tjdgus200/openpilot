@@ -155,6 +155,7 @@ class JoiningModel:
   daylight75 = (False, False)
   wide_yolo_enabled = True
   wide_yolo_preview = False
+  lane_review_request = None
 
   def __init__(self, small, width, height):
     from openpilot.selfdrive.modeld.parse_model_outputs import Parser
@@ -322,6 +323,9 @@ class JoiningModel:
           map_options['wide_labels'] = True
         if preview_frame:
           map_options['wide_yolo_preview'] = True
+        lane_request = self.lane_review_request
+        if lane_request and getattr(self.client, 'lane_review_available', False):
+          map_options['lane_review'] = lane_request
         result = self.client.infer(images, self.packed, self.frame, self.reset, source_sof=self.source_sof, **map_options)
         replied = time.monotonic()
         if label_frame:
@@ -337,6 +341,8 @@ class JoiningModel:
         # As in the generic eGPU runtime, run the full recurrent graph for each
         # received pair. Camera gaps still propagate unchanged into pose validity.
         parsed = parse_outputs(self.parser, self.spec, result)
+        if lane_request and getattr(self.client, 'last_lane_review', None) is not None:
+          parsed['_pv5_lane_review'] = self.client.last_lane_review
         if exponents is not None:
           parsed['_daylight75_exponents'] = exponents
         if os.getenv('SEND_RAW_PRED'):

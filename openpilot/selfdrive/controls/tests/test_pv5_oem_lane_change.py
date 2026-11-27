@@ -21,8 +21,9 @@ def _line(y):
 
 @pytest.fixture
 def lane_change(monkeypatch):
-  clock = SimpleNamespace(CLOCK_BOOTTIME=7, clock_gettime_ns=lambda _clock_id: NOW_NS,
-                          monotonic=lambda: NOW_NS / 1e9, monotonic_ns=lambda: NOW_NS)
+  now = NOW_NS
+  clock = SimpleNamespace(CLOCK_BOOTTIME=7, clock_gettime_ns=lambda _clock_id: now,
+                          monotonic=lambda: now / 1e9, monotonic_ns=lambda: now)
   monkeypatch.setattr(desire_helper, "time", clock)
   monkeypatch.setattr(boundary_lane, "time", clock)
   monkeypatch.setattr(desire_helper, "Params", Mock())
@@ -42,6 +43,9 @@ def lane_change(monkeypatch):
     helper.laneChangeDelay = 0.0
     car = SimpleNamespace(
       canValid=True, canTimeout=False, trailerConnected=False, vEgo=20.0, aEgo=0.0,
+      gearShifter="drive", vehicleSensorsInvalid=False,
+      pv5OemBlindspotValid=True, pv5OemBlindspotMonoTime=NOW_NS,
+      pv5OemBlindspotLeft=False, pv5OemBlindspotRight=False,
       steeringAngleDeg=0.0, leftBlinker=False, rightBlinker=False, steeringPressed=False,
       steeringTorque=0.0, leftLaneLine=10, rightLaneLine=10, leftBlindspot=False, rightBlindspot=False,
       pv5LaneMarking=SimpleNamespace(
@@ -59,9 +63,20 @@ def lane_change(monkeypatch):
                             leadsLeft=(), leadsRight=())
     nav = SimpleNamespace(atcType="", carrotCmdIndex=0, carrotCmd="", carrotArg="")
 
-    def step(count=1, lane_change_prob=0.5):
+    def step(count=1, lane_change_prob=0.5, *, review_inputs_valid=False, visual_kind=None, radar_block=None, bsd_age=0):
+      nonlocal now
       for _ in range(count):
-        helper.update(car, model, True, lane_change_prob, nav, radar)
+        visual = None
+        if review_inputs_valid:
+          now += 50_000_000
+          car.pv5LaneMarking.cameraMonoTime = now
+          car.pv5OemBlindspotMonoTime = now - bsd_age * 1_000_000
+          if visual_kind is not None:
+            visual = (now - 10_000_000, 1 if car.leftBlinker else 2, visual_kind, 0.95)
+        if radar_block is not None:
+          setattr(radar, f"lead{radar_block.title()}", SimpleNamespace(status=True, dRel=3.0))
+        helper.update(car, model, True, lane_change_prob, nav, radar,
+                      lane_review=visual, lane_review_inputs_valid=review_inputs_valid)
 
     step(warmup)
     return helper, car, model, nav, step
@@ -266,3 +281,67 @@ def test_other_vehicles_keep_legacy_behavior(lane_change, mode, legacy_line, cam
   car.steeringTorque = 1.0 if torque else 0.0
   step(12)
   assert helper.lane_change_state == (STATE.laneChangeStarting if allowed else STATE.preLaneChange)
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_visual_dashed_never_substitutes_for_live_oem_gate(lane_change, side):
+  helper, car, _, _, step = lane_change()
+  step(review_inputs_valid=True)
+  setattr(car, f"{side}Blinker", True)
+  setattr(car.pv5LaneMarking, f"{side}CameraCode", 0)
+  step(review_inputs_valid=True)
+  assert helper.pv5_lane_review.request_direction == (1 if side == "left" else 2)
+  step(2, review_inputs_valid=True, visual_kind=0)
+  assert helper.pv5_lane_review.decision == "visualDashed"
+  assert helper.lane_change_state == STATE.preLaneChange
+  assert helper.desire == log.Desire.none
+
+  setattr(car.pv5LaneMarking, f"{side}CameraCode", 8)
+  step(2, review_inputs_valid=True)
+  assert helper.lane_change_state == STATE.laneChangeStarting
+  assert helper.pv5_lane_review.request_direction == 0
+
+
+@pytest.mark.parametrize("side", SIDES)
+@pytest.mark.parametrize("blocker", ["bsd", "rawBsd", "staleBsd", "radar", "opposingTorque"])
+def test_obstacle_and_driver_cancel_clear_shadow_request(lane_change, side, blocker):
+  helper, car, _, _, step = lane_change()
+  step(review_inputs_valid=True)
+  setattr(car, f"{side}Blinker", True)
+  setattr(car.pv5LaneMarking, f"{side}CameraCode", 0)
+  step(review_inputs_valid=True)
+  assert helper.pv5_lane_review.request_direction
+  if blocker == "bsd":
+    setattr(car, f"{side}Blindspot", True)
+  elif blocker == "rawBsd":
+    setattr(car, f"pv5OemBlindspot{side.title()}", True)
+  elif blocker == "opposingTorque":
+    car.steeringPressed = True
+    car.steeringTorque = -1.0 if side == "left" else 1.0
+  step(review_inputs_valid=True, visual_kind=0, radar_block=side if blocker == "radar" else None,
+       bsd_age=151 if blocker == "staleBsd" else 0)
+  assert helper.pv5_lane_review.request_direction == 0
+  assert helper.pv5_lane_review.decision == "idle"
+  assert helper.lane_change_state != STATE.laneChangeStarting
+
+
+@pytest.mark.parametrize("is_pv5", [True, False])
+def test_no_review_reads_on_non_jetson_or_non_pv5(lane_change, is_pv5):
+  helper, car, _, _, step = lane_change(pv5_oem_lane_check=is_pv5)
+  del car.pv5OemBlindspotMonoTime
+  if not is_pv5:
+    step(review_inputs_valid=True)
+  else:
+    step()
+  assert not helper._pv5_lane_review_inputs_valid
+
+
+def test_capability_loss_discards_off_blinker_snapshot(lane_change):
+  helper, car, _, _, step = lane_change()
+  step(review_inputs_valid=True)
+  step()
+  car.leftBlinker = True
+  car.pv5LaneMarking.leftCameraCode = 0
+  step(review_inputs_valid=True)
+  assert helper.pv5_lane_review.request_direction == 0
+  assert helper.pv5_lane_review.decision == "idle"

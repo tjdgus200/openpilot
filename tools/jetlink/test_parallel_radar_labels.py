@@ -298,21 +298,35 @@ def test_aux_offer_is_after_main_launch_before_only_main_fence(engine_runtime, g
 
 
 @pytest.mark.parametrize('compressed', [False, True])
-def test_validated_session_frame_is_identical_for_both_camera_encodings(compressed):
+@pytest.mark.parametrize('lane', [False, True])
+def test_validated_session_frame_is_identical_for_both_camera_encodings(compressed, lane):
   from jetlink import block_codec, protocol as P
   from jetlink.server.session import Session
 
-  frames, replies = [], []
+  frames, replies, offers = [], [], []
   image = pair()
   flags = P.WIDE_LABELS_FLAG | (block_codec.FLAG if compressed else 0)
+  if lane:
+    flags |= P.LANE_RIGHT_FLAG
   spec = SimpleNamespace(stateful=True, warped_nbytes=image.nbytes, warped_shape=image.shape,
-                         packed_nbytes=4, packed_nelem=1)
+                         packed_nbytes=4, packed_nelem=1, output_slices={})
   def run_with_labels(engine, warped, frame, got_flags, msg):
     frames.append((frame, got_flags, bytes(warped[1])))
     return {'outputs': np.zeros(1, dtype=np.float32)}
+  def sent(kind, seq, parts):
+    status = P.unpack_infer_resp(parts[0])[1]
+    replies.append(status)
+    if status == P.Status.OK:
+      assert np.array_equal(parts[1], [0])
+      assert parts[2:] == ([P.pack_lane_result((2, 2, 1, .875))] if lane else [])
+
+  def offer(frame, request, stamp, warp, slices, raw, valid):
+    assert valid and replies == [P.Status.OK]
+    offers.append((frame, stamp, bytes(warp[0])))
+
   session = SimpleNamespace(t=SimpleNamespace(protocol_version=2), frames=0, hud_inference_timing=False,
                             _resolve_context=lambda spec, flags, ctx: (flags, ctx), run_with_labels=run_with_labels,
-                            _send=lambda kind, seq, parts: replies.append(P.unpack_infer_resp(parts[0])[1]))
+                            _send=sent, lane_review_result=lambda: (2, 2, 1, .875), lane_review_offer=offer)
   queues = SimpleNamespace(step_into=lambda *args: None, feedback=lambda _: None)
   loaded = SimpleNamespace(spec=spec, queues=queues, host_inputs={}, engine=SimpleNamespace(last_gpu_us=0))
   body = image.tobytes() + bytes(4)
@@ -321,7 +335,8 @@ def test_validated_session_frame_is_identical_for_both_camera_encodings(compress
     if body is None:
       pytest.skip('liblz4 unavailable')
   header = P.pack_infer_req(3, flags)
-  Session._infer(session, loaded, SimpleNamespace(seq=9, payload=memoryview(header + body)))
+  Session._infer(session, loaded, SimpleNamespace(seq=9, payload=memoryview(header + body), received_ns=100))
   Session._infer(session, loaded, SimpleNamespace(seq=10, payload=memoryview(header + body[:10])))
   assert frames == [(3, flags, image[1].tobytes())]
   assert replies == [P.Status.OK, P.Status.BAD_SHAPE]
+  assert offers == ([(3, 100, image[0].tobytes())] if lane else [])

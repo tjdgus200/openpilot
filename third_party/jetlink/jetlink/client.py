@@ -104,6 +104,8 @@ class JetlinkClient:
     self._infer_flags = 0
     self._stateful_v2 = False
     self.wide_labels_available = False
+    self.lane_review_available = False
+    self.last_lane_review = None
     self.wide_yolo_preview_available = False
     self._nav_u8 = False
     # Native comma measurements show LZ4 encoding costs more than USB savings.
@@ -240,6 +242,8 @@ class JetlinkClient:
     never saw end; see Session._greet."""
     self._stateful_v2 = False
     self.wide_labels_available = False
+    self.lane_review_available = False
+    self.last_lane_review = None
     self.wide_yolo_preview_available = False
     self._nav_u8 = False
     self._lz4 = False
@@ -281,6 +285,8 @@ class JetlinkClient:
     self.wide_labels_available = (selected == 2 and response.get('carrot_host') == 'jetson'
                                   and response.get(P.WIDE_LABELS_CAPABILITY) is True)
     self.wide_yolo_preview_available = self.wide_labels_available and response.get(P.WIDE_YOLO_PREVIEW_CAPABILITY) is True
+    self.lane_review_available = (self._stateful_v2 and response.get('carrot_host') == 'jetson'
+                                  and response.get(P.LANE_REVIEW_CAPABILITY) is True)
     self._projection_negotiated = (self._allow_output_projection and self._stateful_v2 and
                                   projection.matches(response.get(projection.CAPABILITY)))
     from jetlink.packed_codec import CAPABILITY
@@ -454,7 +460,7 @@ class JetlinkClient:
 
   def infer_begin(self, warped: np.ndarray, packed: np.ndarray, frame_id: int = 0,
                   reset: bool = False, want_state: bool = False, deadline: float | None = None,
-                  nav_metadata=None, wide_labels=False, wide_yolo_preview=False) -> int:
+                  nav_metadata=None, wide_labels=False, wide_yolo_preview=False, lane_review_side=0) -> int:
     """Send a frame and return immediately with its sequence number.
 
     Split from infer_end so the caller can work while the Jetson is busy;
@@ -473,6 +479,8 @@ class JetlinkClient:
       packed = _protocol3_packed(self.spec, packed)
     seq = self._next_seq()
     flags = (P.Flag.RESET_QUEUES if reset else 0) | (P.Flag.WANT_STATE if want_state else 0)
+    if not reset and lane_review_side in (1, 2) and self.lane_review_available and version == 2:
+      flags |= P.LANE_LEFT_FLAG if lane_review_side == 1 else P.LANE_RIGHT_FLAG
     if wide_labels and self.wide_labels_available and version == 2:
       flags |= P.WIDE_LABELS_FLAG
       if wide_yolo_preview and self.wide_yolo_preview_available:
@@ -560,6 +568,12 @@ class JetlinkClient:
     if msg.payload.nbytes < end:
       self.dead = True
       raise LinkError('inference response is missing model outputs')
+    self.last_lane_review = None
+    if self._infer_flags & P.LANE_MASK:
+      if msg.payload.nbytes < end + P.LANE_RESULT.size:
+        raise LinkError('incomplete negotiated lane review field')
+      self.last_lane_review = P.LANE_RESULT.unpack_from(msg.payload, end)
+      end += P.LANE_RESULT.size
     if msg.payload.nbytes > end:
       if not (self._infer_flags & P.Flag.WANT_STATE):
         self.dead = True

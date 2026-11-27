@@ -69,7 +69,7 @@ def _release_resource(release, resource) -> None:
 
 
 class TrtEngine:
-  def __init__(self, plan_path: str, log_severity=trt.Logger.WARNING, device: int | None = None):
+  def __init__(self, plan_path: str, log_severity=trt.Logger.WARNING, device: int | None = None, *, background=False):
     self.logger = trt.Logger(log_severity)
     # Absent on a TensorRT that dropped the V2 plugin family; the driving
     # models use no plugins either way.
@@ -87,7 +87,9 @@ class TrtEngine:
     # 외부로 엔진을 넘기기 전까지 획득 직후 회수 책임을 등록한다.
     with ExitStack() as cleanup:
       self.label_device = None
-      if os.environ.get('PV5_RADAR_LABELS') == '1' and os.path.isfile('/etc/nv_tegra_release'):
+      if background:
+        self.stream = cudart.background_stream_create()
+      elif (os.environ.get('PV5_RADAR_LABELS') == '1' or os.environ.get('PV5_LANE_REVIEW') == '1') and os.path.isfile('/etc/nv_tegra_release'):
         try:
           label_device = cudart.current_device()
           self.stream = cudart.priority_stream_create()
