@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-lane-review-ctv3m-20261128-debac053",
-  "source_commit": "debac053e6901bb4e02f8359fe03c49b1710e89c",
+  "profile": "jetson-pv5-lane-web-ctv3m-20261128-86f457cc",
+  "source_commit": "86f457ccb5b37260e26e8892cba52db794ad269d",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-review-ctv3m-20261128-debac053/host.tar.gz",
-    "sha256": "79c7f05d9eae81d7e8c9406565110af024658dbefa7125af638bc26e297b9825",
-    "size": 81577974
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-web-ctv3m-20261128-86f457cc/host.tar.gz",
+    "sha256": "ba56457a36f4f8e9b984e4f8bf4f2ed74aa2bd5ca5ecc12abf541c3d2ab21ba1",
+    "size": 81579726
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/84c72ed5381a64b8630890b861cddb5adf5ae8aa/f78ed37d-afad-4dbc-8050-40ea885eedde/12864/big_driving_supercombo.onnx",
