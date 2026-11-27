@@ -87,7 +87,8 @@ class TransportTests(unittest.TestCase):
                             errors=SimpleNamespace(to_dict=lambda: {}))
     events = deque([SimpleNamespace(which=lambda: 'liveTracks', valid=True, liveTracks=radar, logMonoTime=origin-20_000_000)])
     with patch.object(context, 'MARKER_ADDRESS', '\0pv5.test.labels.' + str(os.getpid())):
-      collect = context.RadarContext(lambda: events.popleft() if events else None)
+      with patch.object(context.time, 'monotonic_ns', return_value=origin-25_000_000):
+        collect = context.RadarContext(lambda: events.popleft() if events else None)
       source = context.CaptureMarker()
       self.addCleanup(collect.close)
       self.addCleanup(source.sock.close)

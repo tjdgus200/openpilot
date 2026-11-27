@@ -106,10 +106,10 @@ def test_mode_and_toggle_are_forwarded_to_the_host_at_existing_settings_poll(mon
   builder.camera_previews = lambda snapshot=None: {}
   builder.battery_snapshot = lambda _: None
   builder.steering_car_params = NS(carFingerprint='KIA_PV5', notCar=False)
-  builder.radar_context = None
+  builder.radar_context = builder.receive_radar = None
   monkeypatch.delenv('PV5_RADAR_LABELS', raising=False)
   monkeypatch.setattr(pv5_radar_label_context, 'RadarContext',
-                      lambda: NS(sample=lambda: tracks.append(True), close=lambda: None))
+                      lambda receive: NS(sample=lambda: tracks.append(True), close=lambda: None, receive_radar=receive))
   monkeypatch.setattr(protocol.time, 'monotonic', lambda: clock[0])
   record = json.loads(builder.packet())
   monkeypatch.setattr(hud, 'read_snapshot', lambda: (clock[0], record))
@@ -122,6 +122,11 @@ def test_mode_and_toggle_are_forwarded_to_the_host_at_existing_settings_poll(mon
   record = json.loads(builder.packet())
   assert host.get('ClusterHudScreenMode') == b'8'
   assert host.get('JetsonYoloEnabled') == b'1'
+  assert tracks == [True]
+  values['JetsonYoloEnabled'] = False
+  clock[0] += 1
+  record = json.loads(builder.packet())
+  assert host.get('JetsonYoloEnabled') == b'0'
   assert tracks == [True]
 
 
@@ -176,6 +181,7 @@ def test_steering_advisory_uses_current_params_and_keeps_dm_event_local(monkeypa
   builder.next_send = builder.next_params = 0.
   builder.cached, builder.settings = {}, {}
   builder.host_release = builder.nav_map = None
+  builder.radar_context = builder.receive_radar = None
   builder.params = {'IsOnroad': True, 'CarParams': cp}
   builder.network = NS(address=lambda: '')
   builder.camera_previews = lambda snapshot=None: {}

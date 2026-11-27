@@ -156,6 +156,7 @@ class SnapshotBuilder:
     self.battery = None
     self.battery_retry_at = 0.0
     self.radar_context = None
+    self.receive_radar = None
 
   def select_radar_context(self, cp, enabled=True):
     if getattr(self, 'radar_context', None) is not None:
@@ -165,7 +166,10 @@ class SnapshotBuilder:
         and os.environ.get('PV5_RADAR_LABELS', '1') == '1'):
       try:
         from openpilot.common.pv5_radar_label_context import RadarContext
-        self.radar_context = RadarContext()
+        self.radar_context = RadarContext(self.receive_radar)
+        # Closing an MSGQ subscriber does not reclaim its shared reader slot.
+        # Keep one reader for the publisher lifetime, even across YOLO toggles.
+        self.receive_radar = self.radar_context.receive_radar
       except (ImportError, OSError):
         pass
 
@@ -174,6 +178,8 @@ class SnapshotBuilder:
       self.battery.close()
     if getattr(self, 'radar_context', None) is not None:
       self.radar_context.close()
+      self.radar_context = None
+    self.receive_radar = None
     if self.camera is not None:
       self.camera.close()
     self.network.close()

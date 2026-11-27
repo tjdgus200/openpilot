@@ -84,25 +84,31 @@ class CaptureMarker:
 
 class RadarContext:
   def __init__(self, receive_radar=None):
-    if receive_radar is None:
-      from openpilot.cereal import messaging
-      receive_radar = partial(messaging.recv_one_or_none, messaging.sub_sock('liveTracks', conflate=False))
     self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     try:
       self.sock.setblocking(False)
       self.sock.bind(MARKER_ADDRESS)
-    except OSError:
+      self.started_ns = time.monotonic_ns()
+      self.receive_radar = self._radar_reader() if receive_radar is None else receive_radar
+    except Exception:
       self.sock.close()
       raise
-    self.receive_radar = receive_radar
-    self.radar_epoch = time.monotonic_ns()
+    self.radar_epoch = self.started_ns
     self.last_radar_ns = 0
     self.radar = deque(maxlen=DRAIN_LIMIT)
     self.recent = deque(maxlen=6)
 
+  @staticmethod
+  def _radar_reader():
+    from openpilot.cereal import messaging
+    try:
+      sock = messaging.sub_sock('liveTracks', conflate=False)
+    except messaging.IpcError as exc:
+      raise OSError('Unable to subscribe to liveTracks') from exc
+    return partial(messaging.recv_one_or_none, sock)
+
   def close(self):
     self.sock.close()
-    # The native SubSocket releases its queue reader when the reference drops.
     self.receive_radar = None
 
   def _forget_radar(self):
@@ -121,6 +127,8 @@ class RadarContext:
     now = time.monotonic_ns()
     for event in events:
       stamp = event.logMonoTime
+      if stamp < self.started_ns:
+        continue
       if event.which() != 'liveTracks' or stamp <= self.last_radar_ns or not 0 <= now - stamp <= MAX_MARKER_AGE_NS:
         self._forget_radar()
         continue
@@ -149,7 +157,7 @@ class RadarContext:
       if not isinstance(marker, dict) or marker.get('lens') != 'wide':
         continue
       capture = marker['capture_ns']
-      if 0 <= now - capture <= MAX_MARKER_AGE_NS:
+      if capture >= self.started_ns and 0 <= now - capture <= MAX_MARKER_AGE_NS:
         for stamp, points in reversed(self.radar):
           if 0 <= capture - stamp <= MAX_RADAR_AGE_NS:
             self.recent.append(dict(marker, radar_ns=stamp, radar_epoch=self.radar_epoch, points=points))

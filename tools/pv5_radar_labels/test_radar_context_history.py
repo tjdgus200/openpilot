@@ -19,12 +19,17 @@ class RadarContextHistoryTest(unittest.TestCase):
   def setUp(self):
     self.radar_events = deque()
     self.marker_events = deque()
+    self.radar_reads = 0
+    self.context = self.open_context(0)
+    self.addCleanup(lambda: self.context.close())
+
+  def open_context(self, age_ms):
     private_socket = Mock()
     private_socket.recv.side_effect = self.recv_marker
-    with patch.object(context.socket, 'AF_UNIX', 1, create=True), patch.object(context.socket, 'socket', return_value=private_socket):
-      self.context = context.RadarContext(self.recv_radar)
-    self.addCleanup(self.context.close)
-    self.radar_reads = 0
+    with (patch.object(context.socket, 'AF_UNIX', 1, create=True),
+          patch.object(context.socket, 'socket', return_value=private_socket),
+          patch.object(context.time, 'monotonic_ns', return_value=BASE_NS + age_ms * MS)):
+      return context.RadarContext(self.recv_radar)
 
   def recv_radar(self):
     self.radar_reads += 1
@@ -60,6 +65,20 @@ class RadarContextHistoryTest(unittest.TestCase):
     self.assertEqual([m['radar_ns'] for m in markers], [BASE_NS + 107 * MS, BASE_NS + 158 * MS])
     self.assertEqual([m['points'] for m in markers], [[[56, 20., 0., 0.]]] * 2)
     self.assertEqual(markers[0]['radar_epoch'], markers[1]['radar_epoch'])
+
+  def test_reenabled_reader_ignores_radar_and_camera_from_before_activation(self):
+    self.context.close()
+    self.radar(70)
+    self.marker(1, 80)
+    self.context = self.open_context(100)
+    self.marker(2, 110)
+    self.assertIsNone(self.sample(120))
+    self.radar(125)
+    self.marker(3, 99)
+    self.marker(4, 130)
+    markers = self.sample(135)
+    self.assertEqual([m['frame'] for m in markers], [4])
+    self.assertEqual(markers[0]['radar_ns'], BASE_NS + 125 * MS)
 
   def test_radar_fault_discards_already_paired_markers_before_recovery(self):
     self.radar(45)
