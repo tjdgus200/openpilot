@@ -16,6 +16,7 @@ from openpilot.common.performance_diagnostics import ENABLED as PERF_DIAGNOSTICS
 HUD_MESSAGE = 0x4000
 HUD_CAPABILITY = 'carrot_hud_v1'
 MAX_HUD_BYTES = 512 * 1024
+HUD_SNAPSHOT_LIMIT = 96 * 1024
 HUD_PACKET = Path('/dev/shm/carrot-jetlink-hud.packet')
 HEADER = struct.Struct('<d')
 PUBLISHER_RATE = struct.Struct('<4sB')
@@ -156,11 +157,11 @@ class SnapshotBuilder:
     self.battery_retry_at = 0.0
     self.radar_context = None
 
-  def select_radar_context(self, cp):
+  def select_radar_context(self, cp, enabled=True):
     if getattr(self, 'radar_context', None) is not None:
-      self.radar_context.sock.close()
+      self.radar_context.close()
       self.radar_context = None
-    if (cp is not None and not cp.notCar and cp.carFingerprint == 'KIA_PV5'
+    if (enabled and cp is not None and not cp.notCar and cp.carFingerprint == 'KIA_PV5'
         and os.environ.get('PV5_RADAR_LABELS', '1') == '1'):
       try:
         from openpilot.common.pv5_radar_label_context import RadarContext
@@ -172,7 +173,7 @@ class SnapshotBuilder:
     if self.battery is not None:
       self.battery.close()
     if getattr(self, 'radar_context', None) is not None:
-      self.radar_context.sock.close()
+      self.radar_context.close()
     if self.camera is not None:
       self.camera.close()
     self.network.close()
@@ -268,6 +269,7 @@ class SnapshotBuilder:
         self.cached[name] = base64.b64encode(event.to_bytes()).decode()
     if now >= self.next_params:
       previous_car_params = self.settings.get('CarParams')
+      previous_yolo_enabled = self.settings.get('JetsonYoloEnabled') != 'MA=='
       self.settings = {}
       for key in PARAMS:
         try:
@@ -294,7 +296,9 @@ class SnapshotBuilder:
               self.steering_car_params = cp.as_builder()
           except (KjException, ValueError):
             pass
-        self.select_radar_context(self.steering_car_params)
+      yolo_enabled = self.settings.get('JetsonYoloEnabled') != 'MA=='
+      if car_params != previous_car_params or yolo_enabled != previous_yolo_enabled:
+        self.select_radar_context(self.steering_car_params, yolo_enabled)
       self.next_params = now + 1
       try:
         self.requested_fps = RATES[selection(base64.b64decode(self.settings.get(FPS_PARAM, 'MA==')))]
@@ -349,9 +353,9 @@ class SnapshotBuilder:
       requested = None
     record['input_fusion'] = {'mode': fusion_selection(requested), 'parked': gate(self.sm, record['sent']),
                               'hud_fps': self.target_fps}
-    if getattr(self, 'radar_context', None) is not None and self.settings.get('JetsonYoloEnabled') != 'MA==':
+    if getattr(self, 'radar_context', None) is not None:
       try:
-        marker = self.radar_context.sample(self.sm)
+        marker = self.radar_context.sample()
         if marker is not None:
           record['radar_labels'] = marker
       except (AttributeError, ImportError, KeyError, ValueError, TypeError, OSError):
@@ -361,11 +365,32 @@ class SnapshotBuilder:
 def encode_snapshot(record):
   data = json.dumps(record, separators=(',', ':')).encode()
   size = len(data)
-  if size <= 96 * 1024:
+  if size <= HUD_SNAPSHOT_LIMIT:
     return data
   if 'radar_labels' in record:
-    record.pop('radar_labels')
-    return encode_snapshot(record)
+    radar_labels = record.pop('radar_labels')
+    data = encode_snapshot(record)
+    if not isinstance(radar_labels, (list, tuple)):
+      return data
+
+    # Preserve the existing HUD packet, then spend only its remaining space on
+    # a contiguous suffix of whole markers. Avoid re-encoding retained fields.
+    prefix = (b',' if len(data) > 2 else b'') + b'"radar_labels":['
+    remaining = HUD_SNAPSHOT_LIMIT - len(data) - len(prefix) - 1
+    markers = []
+    for marker in reversed(radar_labels):
+      comma = bool(markers)
+      if remaining < 2 + comma or not isinstance(marker, dict):
+        break
+      encoded = json.dumps(marker, separators=(',', ':')).encode()
+      if len(encoded) + comma > remaining:
+        break
+      remaining -= len(encoded) + comma
+      markers.append(encoded)
+    if markers:
+      record['radar_labels'] = radar_labels[-len(markers):]
+      return b''.join((data[:-1], prefix, b','.join(reversed(markers)), b']}'))
+    return data
 
   def value_size(value):
     return len(json.dumps(value, separators=(',', ':')).encode())
@@ -386,7 +411,7 @@ def encode_snapshot(record):
     return small_scalar(value) or (isinstance(value, dict) and len(value) <= 16
       and all(small_scalar(key) and small_scalar(item) for key, item in value.items()))
 
-  if size > 96 * 1024:
+  if size > HUD_SNAPSHOT_LIMIT:
     # Optional signal metadata must not evict an existing camera or NAV image.
     # Re-encoding the remainder is cheaper than encoding a large removed value
     # just to count its bytes. Skip this whole encode when neither key exists.
@@ -398,27 +423,27 @@ def encode_snapshot(record):
       record.pop('signal_display', None)
       data = json.dumps(record, separators=(',', ':')).encode()
       size = len(data)
-      if size <= 96 * 1024:
+      if size <= HUD_SNAPSHOT_LIMIT:
         return data
-  if size > 96 * 1024:
+  if size > HUD_SNAPSHOT_LIMIT:
     if 'cameras' in record:
       size += 2 - value_size(record['cameras'])
     else:
       size += value_size('cameras') + 3 + bool(record)
     record['cameras'] = {}
-  if size > 96 * 1024:
+  if size > HUD_SNAPSHOT_LIMIT:
     size = without_field(record, 'nav_map_preview', size)
-  if size > 96 * 1024:
+  if size > HUD_SNAPSHOT_LIMIT:
     # Own the replacement: cached service events must never be mutated.
     events = dict(record['events'].items())
     size = without_field(events, 'navRoute', size)
     record['events'] = events
-  if size > 96 * 1024 and 'parked_brightness' in record:
+  if size > HUD_SNAPSHOT_LIMIT and 'parked_brightness' in record:
     size = without_field(record, 'parked_brightness', size)
-  if size > 96 * 1024:
+  if size > HUD_SNAPSHOT_LIMIT:
     raise ValueError('HUD snapshot exceeds bounded display allocation')
   data = json.dumps(record, separators=(',', ':')).encode()
-  if len(data) > 96 * 1024:
+  if len(data) > HUD_SNAPSHOT_LIMIT:
     raise ValueError('HUD snapshot exceeds bounded display allocation')
   return data
 

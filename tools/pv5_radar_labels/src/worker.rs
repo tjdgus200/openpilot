@@ -72,6 +72,14 @@ struct Metadata {
     markers: Vec<Value>,
 }
 
+struct PairedFrame {
+    geometry: FrameGeometry,
+    radar_ns: u64,
+    radar_epoch: Option<u64>,
+    points: Vec<RadarPoint>,
+    host_capture: u64,
+}
+
 fn seconds_to_ns(seconds: f64) -> Option<u64> {
     (seconds.is_finite() && seconds > 0.0 && seconds < u64::MAX as f64 / 1e9)
         .then(|| (seconds * 1e9).round() as u64)
@@ -98,7 +106,7 @@ impl Metadata {
         })
     }
 
-    fn pair(&self, r: &Request, now: u64) -> Option<(FrameGeometry, u64, Vec<RadarPoint>, u64)> {
+    fn pair(&self, r: &Request, now: u64) -> Option<PairedFrame> {
         if !within(now, r.received, PAIR_MAX_NS)
             || !within(now, self.received, PAIR_MAX_NS)
             || self.received < r.received.saturating_sub(10_000_000)
@@ -155,12 +163,13 @@ impl Metadata {
         // sampling delay consumes part of the evidence lifetime.
         let source_age = self.sent.checked_sub(geometry.capture_ns)?;
         let host_capture = r.received.min(self.received.checked_sub(source_age)?);
-        within(now, host_capture, PAIR_MAX_NS).then_some((
+        within(now, host_capture, PAIR_MAX_NS).then_some(PairedFrame {
             geometry,
-            m["radar_ns"].as_u64()?,
+            radar_ns: m["radar_ns"].as_u64()?,
+            radar_epoch: m["radar_epoch"].as_u64().filter(|&epoch| epoch > 0),
             points,
             host_capture,
-        ))
+        })
     }
 }
 
@@ -194,9 +203,13 @@ impl Publisher {
                     .map_or(translated, |&(_, previous)| previous.min(translated));
                 next.insert(l.slot, (l.evidence_ns, expires));
                 (expires > now).then(|| {
-                    json!({"track_id":l.slot,"class_id":l.class_id,
+                    let mut row = json!({"track_id":l.slot,"class_id":l.class_id,
                            "confidence":l.confidence,"expires_monotonic_ns":expires,
-                           "point":[l.point.d_rel,l.point.y_rel,l.point.v_rel]})
+                           "point":[l.point.d_rel,l.point.y_rel,l.point.v_rel]});
+                    if l.motion_only {
+                        row["motion_only"] = json!(true);
+                    }
+                    row
                 })
             })
             .collect();
@@ -318,6 +331,7 @@ mod linux {
         let mut pending = VecDeque::<Request>::with_capacity(MAX_PENDING);
         let mut latest: Option<(u32, u64)> = None;
         let mut last_paired: Option<(u32, u64)> = None;
+        let mut last_radar_epoch: Option<u64> = None;
         let poll = Some(Duration::from_millis(5));
         save(dir, &publisher.output(0, 0, 0, 0, clock()?, &[]))?;
         loop {
@@ -377,7 +391,14 @@ mod linux {
             let now = clock()?;
             let mut newest = None;
             for (i, r) in pending.iter().enumerate() {
-                let Some((g, radar_ns, points, host_capture)) = metadata.pair(r, now) else {
+                let Some(PairedFrame {
+                    geometry: g,
+                    radar_ns,
+                    radar_epoch,
+                    points,
+                    host_capture,
+                }) = metadata.pair(r, now)
+                else {
                     continue;
                 };
                 // The auxiliary detector drops busy frames by design. One skipped
@@ -394,6 +415,12 @@ mod linux {
                     labeler = Labeler::default();
                     publisher = Publisher::default();
                 }
+                // A reset in the comma's radar history may fall between two
+                // matched camera frames. Old senders only support spatial evidence.
+                if radar_epoch.is_none() || radar_epoch != last_radar_epoch {
+                    labeler.reset_motion();
+                }
+                last_radar_epoch = radar_epoch;
                 let labels = labeler.update(&g, radar_ns, &points, Some(&r.detections));
                 last_paired = Some((r.frame, g.capture_ns));
                 newest = Some((
@@ -436,6 +463,58 @@ mod linux {
         fn one_missed_detector_offer_preserves_spatial_confirmation() {
             verify_frame_pair(3, true);
             verify_frame_pair(4, false);
+        }
+
+        #[test]
+        fn motion_confirmation_restarts_at_radar_epoch_change_and_requires_epoch() {
+            let dir = std::env::temp_dir().join(format!(
+                "rl-{}-{}",
+                std::process::id(),
+                clock().unwrap()
+            ));
+            let db = dir.clone();
+            std::thread::spawn(move || run(&db, &db.join("hud.packet")).unwrap());
+            wait_for_output(&dir, 0);
+            let sender = UnixDatagram::unbound().unwrap();
+            for (frame, epoch, associated) in [
+                (1, Some(10), false),
+                (3, Some(20), false),
+                (4, Some(20), false),
+                (5, Some(20), true),
+                (6, None, false),
+                (7, None, false),
+                (8, None, false),
+            ] {
+                let now = clock().unwrap();
+                let offset = frame as f32;
+                let mut data = crate::worker::tests::datagram(frame, now);
+                data[44..48].copy_from_slice(&(44. + offset).to_le_bytes());
+                data[52..56].copy_from_slice(&(56. + offset).to_le_bytes());
+                sender.send_to(&data, dir.join("detections.sock")).unwrap();
+                let mut marker = crate::worker::tests::marker(frame, now - 8_000_000, "wide");
+                marker["projection"] = json!([
+                    [0., 8., 0., 50.],
+                    [0., 0., 0., 42.],
+                    [0., 0., 0., 1.]
+                ]);
+                marker["points"] = json!([[56, 10., offset / 8., 0.]]);
+                if let Some(epoch) = epoch {
+                    marker["radar_epoch"] = json!(epoch);
+                }
+                let now = clock().unwrap();
+                let bytes = crate::worker::tests::packet(now, now, vec![marker]);
+                fs::write(dir.join("packet.tmp"), bytes).unwrap();
+                fs::rename(dir.join("packet.tmp"), dir.join("hud.packet")).unwrap();
+                let value = wait_for_output(&dir, frame);
+                assert!(value["radar_ns"].as_u64().unwrap() > 0, "frame {frame}");
+                if associated {
+                    assert_eq!(value["labels"][0]["track_id"], 56, "frame {frame}");
+                    assert_eq!(value["labels"][0]["motion_only"], true, "frame {frame}");
+                } else {
+                    assert_eq!(value["labels"], json!([]), "frame {frame}");
+                }
+            }
+            fs::remove_dir_all(dir).unwrap();
         }
 
         fn verify_frame_pair(second: u32, associated: bool) {
@@ -550,10 +629,16 @@ mod tests {
             assert!(m.pair(&r, received).is_none());
         }
         let m = Metadata::read(&packet(received, NOW, vec![narrow, wide]), received).unwrap();
-        let (g, radar_ns, points, host_capture) = m.pair(&r, received).unwrap();
+        let pair = m.pair(&r, received).unwrap();
         assert_eq!(
-            (g.capture_ns, radar_ns, points[0].slot, host_capture),
-            (c, c - 1, 56, c + 1)
+            (
+                pair.geometry.capture_ns,
+                pair.radar_ns,
+                pair.points[0].slot,
+                pair.host_capture,
+                pair.radar_epoch
+            ),
+            (c, c - 1, 56, c + 1, None)
         );
         assert!(m.pair(&r, NOW + PAIR_MAX_NS + 1).is_none());
     }
@@ -562,6 +647,7 @@ mod tests {
     fn repeated_radar_evidence_cannot_extend_host_expiry() {
         let label = ClassLabel {
             slot: 56,
+            motion_only: false,
             class_id: 2,
             confidence: 0.8,
             bbox: [0.; 4],

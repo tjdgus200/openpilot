@@ -89,17 +89,22 @@ def test_comma_publisher_creates_and_releases_markers_only_for_a_real_pv5(monkey
   from openpilot.common import pv5_radar_label_context as labels
   closed = []
   monkeypatch.delenv('PV5_RADAR_LABELS', raising=False)
-  monkeypatch.setattr(labels, 'RadarContext', lambda: SimpleNamespace(sock=SimpleNamespace(close=lambda: closed.append(1))))
+  monkeypatch.setattr(labels, 'RadarContext', lambda: SimpleNamespace(close=lambda: closed.append(1)))
   builder = SnapshotBuilder.__new__(SnapshotBuilder)
   builder.radar_context = None
   for vehicle in (None, SimpleNamespace(notCar=True, carFingerprint='KIA_PV5'),
                   SimpleNamespace(notCar=False, carFingerprint='OTHER')):
     builder.select_radar_context(vehicle)
     assert builder.radar_context is None
-  builder.select_radar_context(SimpleNamespace(notCar=False, carFingerprint='KIA_PV5'))
+  pv5 = SimpleNamespace(notCar=False, carFingerprint='KIA_PV5')
+  builder.select_radar_context(pv5)
+  assert builder.radar_context is not None
+  builder.select_radar_context(pv5, enabled=False)
+  assert builder.radar_context is None and closed == [1]
+  builder.select_radar_context(pv5, enabled=True)
   assert builder.radar_context is not None
   builder.select_radar_context(None)
-  assert builder.radar_context is None and closed == [1]
+  assert builder.radar_context is None and closed == [1, 1]
 
 
 def test_build_accepts_tensorrt_hostmemory_without_a_length(tmp_path, monkeypatch):

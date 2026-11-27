@@ -221,6 +221,7 @@ fn main() -> Result<()> {
             let l = worker.displayed(p.slot,now);
             let mut result = json!({"slot":p.slot,"d_rel":p.d_rel,"y_rel":p.y_rel,"class_id":l.map(|l|l.class_id),
                 "label_bbox":l.map(|l|l.bbox),"confidence":l.map(|l|l.confidence),
+                "motion_only":l.map(|l|l.motion_only),
                 "evidence_ns":l.map(|l|l.evidence_ns),"expires_ns":l.map(|l|l.expires_ns)});
             if wide {
                 result["point"] = json!(l.map(|l| [l.point.d_rel, l.point.y_rel, l.point.v_rel]));

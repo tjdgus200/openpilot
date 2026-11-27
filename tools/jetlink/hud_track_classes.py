@@ -224,6 +224,8 @@ class TrackClassReader:
     if seed:
       self.seed_signature = self.signature
       for row in packet['labels']:
+        if row.get('motion_only', False) is not False:
+          continue
         ident = row['track_id']
         confidence = row.get('confidence')
         point = row.get('point')

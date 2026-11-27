@@ -35,6 +35,8 @@ pub struct FrameGeometry {
 #[derive(Clone, Copy, Debug)]
 pub struct ClassLabel {
     pub slot: u32,
+    /// An association supported by motion alone cannot seed radar-only HUD hold.
+    pub motion_only: bool,
     pub class_id: u8,
     pub confidence: f64,
     pub bbox: [f64; 4],
@@ -63,6 +65,59 @@ struct History {
     evidence_radar_ns: u64,
     evidence: Option<ClassLabel>,
     confirmed: bool,
+    motion: [Option<MotionSample>; 2],
+}
+
+#[derive(Clone, Copy)]
+struct MotionSample {
+    stamp: u64,
+    bbox: [f64; 4],
+    pixel: [f64; 2],
+    class_id: u8,
+}
+
+impl MotionSample {
+    fn follows(self, prev: Self) -> bool {
+        if self.class_id != prev.class_id || !same_box_region(self.bbox, prev.bbox) {
+            return false;
+        }
+        (0..2).all(|axis| {
+            let old_size = prev.bbox[axis + 2] - prev.bbox[axis];
+            let size = self.bbox[axis + 2] - self.bbox[axis];
+            // Map the previous radar pixel with the box translation and scale.
+            let expected = self.bbox[axis] + (prev.pixel[axis] - prev.bbox[axis]) * size / old_size;
+            (self.pixel[axis] - expected).abs() <= (0.12 * size.min(old_size)).clamp(1., 3.)
+        })
+    }
+}
+
+fn coherent_motion(history: &mut [Option<MotionSample>; 2], sample: MotionSample) -> bool {
+    let [first, last] = *history;
+    if let Some(last) = last {
+        if sample.stamp - last.stamp <= 150_000_000 && sample.follows(last) {
+            if last.stamp == sample.stamp {
+                return false;
+            }
+            *history = [Some(last), Some(sample)];
+            return first.is_some_and(|first| {
+                if sample.stamp - first.stamp > 250_000_000 || !sample.follows(first) {
+                    return false;
+                }
+                // Require observed movement in the same direction on at least
+                // one image axis. A stationary coincidence cannot seed a class.
+                (0..2).any(|axis| {
+                    let radar_step = sample.pixel[axis] - first.pixel[axis];
+                    let box_step = (sample.bbox[axis] + sample.bbox[axis + 2]
+                        - first.bbox[axis]
+                        - first.bbox[axis + 2])
+                        * 0.5;
+                    radar_step.abs() >= 1. && box_step.abs() >= 1. && radar_step * box_step > 0.
+                })
+            });
+        }
+    }
+    *history = [None, Some(sample)];
+    false
 }
 
 #[derive(Default)]
@@ -70,6 +125,7 @@ pub struct Labeler {
     tracks: BTreeMap<u32, History>,
     last_capture: Option<u64>,
     last_radar: Option<u64>,
+    last_geometry: Option<FrameGeometry>,
 }
 
 fn recent(now: u64, past: u64, max: u64) -> bool {
@@ -116,9 +172,15 @@ fn continuous(h: History, p: RadarPoint, radar_ns: u64) -> bool {
         && (p.v_rel - h.radar.v_rel).abs() <= 2.0 + 8.0 * dt
 }
 
-// Some(true) can match; Some(false) can only veto a nearby rival. Giving a
-// competing point a modest localization margin avoids hard-boundary ID swaps.
-fn candidate(d: Detection, point: [f64; 2], g: &FrameGeometry) -> Option<bool> {
+// Each path counts competitors in a wider region than it accepts for a match.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Gate {
+    strict_candidate: bool,
+    strict_match: bool,
+    motion_match: bool,
+}
+
+fn candidate(d: Detection, point: [f64; 2], g: &FrameGeometry) -> Option<Gate> {
     let [x1, y1, x2, y2] = d.bbox;
     let (w, h) = (x2 - x1, y2 - y1);
     // Keep plausible competitors even below publication confidence. A weak
@@ -136,8 +198,12 @@ fn candidate(d: Detection, point: [f64; 2], g: &FrameGeometry) -> Option<bool> {
         return None;
     }
     let dx = ((point[0] - (x1 + x2) * 0.5) / w).abs();
-    let dy = ((point[1] - y2) / h).abs();
-    (dx <= 0.60 && dy <= 0.384).then_some(dx <= 0.50 && dy <= 0.32)
+    let above = (y2 - point[1]) / h;
+    (dx <= 0.60 && (-0.384..=0.62).contains(&above)).then_some(Gate {
+        strict_candidate: above.abs() <= 0.384,
+        strict_match: dx <= 0.50 && above.abs() <= 0.32,
+        motion_match: dx <= 0.50 && (-0.32..=0.55).contains(&above),
+    })
 }
 
 fn same_box_region(a: [f64; 4], b: [f64; 4]) -> bool {
@@ -149,6 +215,10 @@ fn same_box_region(a: [f64; 4], b: [f64; 4]) -> bool {
 }
 
 impl Labeler {
+    pub fn reset_motion(&mut self) {
+        self.last_geometry = None;
+    }
+
     /// None means skipped inference. Some(empty) is a measured miss and
     /// immediately clears the label. Returned boxes belong to evidence_ns.
     pub fn update(
@@ -173,6 +243,11 @@ impl Labeler {
             return vec![];
         }
         let mut seen = BTreeSet::new();
+        let same_view = self.last_geometry.replace(*g).is_some_and(|old| {
+            old.projection == g.projection
+                && old.image_width == g.image_width
+                && old.image_height == g.image_height
+        });
         let mut duplicates = BTreeSet::new();
         for p in points {
             if !seen.insert(p.slot) {
@@ -184,13 +259,20 @@ impl Labeler {
         let mut hits = BTreeMap::<u32, (usize, usize, bool)>::new();
         let dets = detections.unwrap_or_default();
         let mut det_degrees = vec![0; dets.len()];
+        let mut motion_hits = BTreeMap::new();
+        let mut motion_degrees = vec![0; dets.len()];
         for &p in points.iter().filter(|p| plausible(**p)) {
             if let Some(uv) = g.project(p, radar_ns) {
                 for (j, d) in dets.iter().enumerate() {
-                    if let Some(can_match) = candidate(*d, uv, g) {
-                        let degree = hits.entry(p.slot).or_insert((j, 0, can_match));
-                        degree.1 += 1;
-                        det_degrees[j] += 1;
+                    if let Some(gate) = candidate(*d, uv, g) {
+                        if gate.strict_candidate {
+                            let degree = hits.entry(p.slot).or_insert((j, 0, gate.strict_match));
+                            degree.1 += 1;
+                            det_degrees[j] += 1;
+                        }
+                        let entry = motion_hits.entry(p.slot).or_insert((j, 0, gate, uv));
+                        entry.1 += 1;
+                        motion_degrees[j] += 1;
                     }
                 }
             }
@@ -213,7 +295,35 @@ impl Labeler {
                 evidence: old_evidence,
                 evidence_radar_ns: old.map_or(0, |h| h.evidence_radar_ns),
                 confirmed: old_evidence.is_some() && old.is_some_and(|h| h.confirmed),
+                motion: [None; 2],
             };
+            let mut motion_label = None;
+            if let Some(&(j, 1, gate, pixel)) = motion_hits.get(&p.slot) {
+                let d = dets[j];
+                if gate.motion_match && motion_degrees[j] == 1 && d.confidence >= 0.50 {
+                    if same_view {
+                        h.motion = old.map_or([None; 2], |h| h.motion);
+                    }
+                    let sample = MotionSample {
+                        stamp: radar_ns,
+                        bbox: d.bbox,
+                        pixel,
+                        class_id: d.class_id,
+                    };
+                    if coherent_motion(&mut h.motion, sample) && !gate.strict_match {
+                        motion_label = Some(ClassLabel {
+                            slot: p.slot,
+                            motion_only: true,
+                            class_id: d.class_id,
+                            confidence: d.confidence,
+                            bbox: d.bbox,
+                            point: p,
+                            evidence_ns: now,
+                            expires_ns: now.saturating_add(LABEL_TTL_NS),
+                        });
+                    }
+                }
+            }
             if detections.is_some() {
                 h.evidence = None;
                 h.confirmed = false;
@@ -234,6 +344,7 @@ impl Labeler {
                             h.evidence_radar_ns = radar_ns;
                             h.evidence = Some(ClassLabel {
                                 slot: p.slot,
+                                motion_only: false,
                                 class_id: d.class_id,
                                 confidence: d.confidence,
                                 bbox: d.bbox,
@@ -245,7 +356,7 @@ impl Labeler {
                     }
                 }
             }
-            if let Some(label) = h.evidence.filter(|_| h.confirmed) {
+            if let Some(label) = h.evidence.filter(|_| h.confirmed).or(motion_label) {
                 result.push(ClassLabel { point: p, ..label });
             }
             next.insert(p.slot, h);
@@ -350,8 +461,8 @@ mod tests {
     #[test]
     fn nearby_competitor_just_outside_box_must_only_veto() {
         let g = frame(T);
-        assert_eq!(candidate(D, [56.6, 59.0], &g), Some(false));
-        assert_eq!(candidate(D, [55.9, 59.0], &g), Some(true));
+        assert!(!candidate(D, [56.6, 59.0], &g).unwrap().strict_match);
+        assert!(candidate(D, [55.9, 59.0], &g).unwrap().strict_match);
         let t = T + SAMPLE_NS * 2;
         let near_edge = RadarPoint {
             slot: 39,
@@ -457,5 +568,126 @@ mod tests {
             .project(RadarPoint { v_rel: -10., ..P }, T - 100_000_000)
             .unwrap();
         assert!((uv[0] - 10.52).abs() < 1e-8);
+    }
+
+    // Radar projects to (x, 60); bottom 77 gives a 42.5% vertical residual.
+    fn moving(x: f64) -> (RadarPoint, Detection) {
+        let p = RadarPoint {
+            y_rel: (50. - x) * 0.1152,
+            ..P
+        };
+        let d = Detection {
+            bbox: [x - 6., 37., x + 6., 77.],
+            ..D
+        };
+        (p, d)
+    }
+
+    #[test]
+    fn vertical_match_requires_three_independent_coherent_samples() {
+        let mut m = Labeler::default();
+        for (i, (x, radar_ms, expected)) in [
+            (50., 0, false),
+            (51., 50, false),
+            (51., 50, false),
+            (52., 150, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (p, d) = moving(x);
+            let labels = m.update(
+                &frame(T + i as u64 * 50_000_000),
+                T + radar_ms * 1_000_000,
+                &[p],
+                Some(&[d]),
+            );
+            assert_eq!(!labels.is_empty(), expected);
+            assert!(labels.iter().all(|label| label.motion_only));
+        }
+    }
+
+    #[test]
+    fn view_change_or_radar_reset_needs_three_new_motion_observations() {
+        for geometry_changed in [true, false] {
+            let mut m = Labeler::default();
+            for i in 0..5 {
+                let (p, d) = moving(50. + i as f64);
+                let mut g = frame(T + i * 50_000_000);
+                if geometry_changed && i >= 2 {
+                    g.projection[0][0] += 0.25;
+                } else if !geometry_changed && i == 2 {
+                    m.reset_motion();
+                }
+                let labels = m.update(&g, g.capture_ns, &[p], Some(&[d]));
+                assert_eq!(!labels.is_empty(), i == 4);
+            }
+        }
+    }
+
+    #[test]
+    fn stationary_or_diverging_pixels_do_not_confirm_vertical_match() {
+        for stationary in [true, false] {
+            let mut m = Labeler::default();
+            for i in 0..8 {
+                let step = if stationary { 0. } else { i as f64 * 0.6 };
+                let (p, _) = moving(50. + step);
+                let (_, d) = moving(50. - step);
+                let t = T + i * 50_000_000;
+                assert!(m.update(&frame(t), t, &[p], Some(&[d])).is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn ambiguity_gap_and_reused_slots_interrupt_motion_confirmation() {
+        for fault in 0..7 {
+            let mut m = Labeler::default();
+            for i in 0..4 {
+                let (mut p, d) = moving(50. + i as f64);
+                let mut t = T + i * 50_000_000;
+                if fault == 3 && i >= 2 {
+                    t += 200_000_000;
+                }
+                if fault == 4 && i >= 2 {
+                    p.slot += 1;
+                }
+                if fault == 5 && i == 2 {
+                    p.v_rel += 9.;
+                }
+                let mut points = vec![p];
+                let mut boxes = vec![d];
+                if i == 2 {
+                    match fault {
+                        0 => points.push(RadarPoint { slot: 99, ..p }),
+                        1 => boxes.push(Detection {
+                            confidence: 0.3,
+                            ..d
+                        }),
+                        2 => boxes.clear(),
+                        6 => boxes[0].class_id = 2,
+                        _ => (),
+                    }
+                }
+                assert!(m.update(&frame(t), t, &points, Some(&boxes)).is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn vertical_candidate_does_not_veto_or_claim_an_existing_strict_box() {
+        let mut m = Labeler::default();
+        for i in 0..6 {
+            let (p, d) = moving(50. + i as f64);
+            let g = frame(T + i * 50_000_000);
+            let mut strict = p;
+            strict.d_rel = 5.;
+            strict.slot = 29;
+            strict.y_rel = (50. - (50. + i as f64)) * (strict.d_rel + 1.52) / 100.;
+            let labels = m.update(&g, g.capture_ns, &[p, strict], Some(&[d]));
+            if i > 0 {
+                assert_eq!(labels.iter().map(|l| l.slot).collect::<Vec<_>>(), [29]);
+            }
+        }
     }
 }

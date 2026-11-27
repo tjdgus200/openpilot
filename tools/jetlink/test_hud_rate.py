@@ -88,6 +88,7 @@ def test_real_snapshot_builder_cadence_is_not_limited_to_model_twenty_hz(monkeyp
 def test_mode_and_toggle_are_forwarded_to_the_host_at_existing_settings_poll(monkeypatch):
   import hud
   import hud_protocol as protocol
+  from openpilot.common import pv5_radar_label_context
 
   clock = [100.]
   values = {'ClusterHudScreenMode': 9, 'JetsonYoloEnabled': False}
@@ -104,7 +105,11 @@ def test_mode_and_toggle_are_forwarded_to_the_host_at_existing_settings_poll(mon
   builder.network = NS(address=lambda: '')
   builder.camera_previews = lambda snapshot=None: {}
   builder.battery_snapshot = lambda _: None
-  builder.radar_context = NS(sample=lambda _: tracks.append(True))
+  builder.steering_car_params = NS(carFingerprint='KIA_PV5', notCar=False)
+  builder.radar_context = None
+  monkeypatch.delenv('PV5_RADAR_LABELS', raising=False)
+  monkeypatch.setattr(pv5_radar_label_context, 'RadarContext',
+                      lambda: NS(sample=lambda: tracks.append(True), close=lambda: None))
   monkeypatch.setattr(protocol.time, 'monotonic', lambda: clock[0])
   record = json.loads(builder.packet())
   monkeypatch.setattr(hud, 'read_snapshot', lambda: (clock[0], record))

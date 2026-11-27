@@ -51,9 +51,9 @@ class HudClassHoldTest(unittest.TestCase):
     now = JETSON_NS + age_ms * MS
     return self.reader.read(((now - 2 * MS) / 1e9, snapshot), now)
 
-  def seed(self, confidence=.8):
+  def seed(self, confidence=.8, **fields):
     self.publish(0, [dict(track_id=ID, class_id=CLASS, confidence=confidence,
-                         point=[20., 0., 2.], expires_monotonic_ns=JETSON_NS + 290 * MS)])
+                         point=[20., 0., 2.], expires_monotonic_ns=JETSON_NS + 290 * MS, **fields)])
     return self.observe(0, [front()])
 
   def test_explicit_empty_and_missing_camera_updates_keep_moving_radar_label(self):
@@ -127,6 +127,16 @@ class HudClassHoldTest(unittest.TestCase):
     self.assertEqual(self.seed(.79), {ID: CLASS})
     self.publish(100, [])
     self.assertEqual(self.observe(100, [front(d=20.2)]), {})
+
+  def test_motion_only_can_show_live_but_cannot_seed_radar_hold(self):
+    self.assertEqual(self.seed(.95, motion_only=True), {ID: CLASS})
+    self.publish(100, [])
+    self.assertEqual(self.observe(100, [front(d=20.2)]), {})
+    self.publish(150, [dict(track_id=ID, class_id=CLASS, confidence=.85,
+                            point=[20.3, 0., 2.], expires_monotonic_ns=JETSON_NS + 440 * MS)])
+    self.assertEqual(self.observe(150, [front(d=20.3)]), {ID: CLASS})
+    self.publish(200, [])
+    self.assertEqual(self.observe(200, [front(d=20.4)]), {ID: CLASS})
 
   def test_malformed_optional_seed_is_not_retained(self):
     for edits in ({'confidence': None}, {'confidence': '0.95'}, {'point': None},
