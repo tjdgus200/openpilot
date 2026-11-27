@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-radar-hold-fairy-tale-v1-1-20261126-38590b92",
-  "source_commit": "38590b925394bcb88caa90c88c9c47db2a4a40d7",
+  "profile": "jetson-pv5-radar-motion-fairy-tale-v1-1-20261127-30a95da0",
+  "source_commit": "30a95da0b16e017eddb7b4fbb979b6795b91f772",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-radar-hold-fairy-tale-v1-1-20261126-38590b92/host.tar.gz",
-    "sha256": "d27861706bd0094485bbdc7823059b4f711750ef0e3a0d0e2c447975e6b87fc8",
-    "size": 70151321
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-radar-motion-fairy-tale-v1-1-20261127-30a95da0/host.tar.gz",
+    "sha256": "534c7347e4a9678274c80c5806cfd42d97de4616c43bcc238ea1e3eaf7dc261d",
+    "size": 70164279
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/d6ca4432101dc1a938ae3ee3a8dbfbfdae33ccba/3f1a78e6-9a79-4d85-b796-1cd573bd5a3a/32768/big_driving_supercombo.onnx",
