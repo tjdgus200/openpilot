@@ -481,8 +481,10 @@ if __name__ == '__main__':
     raise SystemExit(0)
   if Path('/etc/nv_tegra_release').is_file():
     from blink_driver import prepare_optional
+    from pv5_lane_runtime import configure_installed as configure_lane_review
     from radar_label_runtime import configure_installed
     configure_installed()
+    configure_lane_review()
     prepare_optional()
     health_worker()
   server.Session = CarrotSession

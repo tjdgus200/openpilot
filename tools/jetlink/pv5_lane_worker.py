@@ -10,6 +10,8 @@ from pv5_lane_review import classify, road_luma
 PROCESS_SLOT = threading.Lock()
 SAMPLE_NS = 250_000_000
 RESULT_TTL_NS = 300_000_000
+# A disabled toggle and a quiet turn signal both cease offering frames.
+IDLE_RELEASE_S = 5.
 # If the current response already consumed most of a driving period, skip.
 MAX_ADMISSION_NS = 35_000_000
 
@@ -69,7 +71,7 @@ class LaneReview:
     if now < self.next_sample or not 0 <= now - stamp < MAX_ADMISSION_NS:
       return
     self.next_sample = now + SAMPLE_NS
-    if self.thread is None:
+    if self.thread is None or not self.thread.is_alive():
       if PROCESS_SLOT.acquire(blocking=False):
         try:
           self.thread = threading.Thread(target=self._work, name='pv5-lane-review', daemon=True)
@@ -79,6 +81,9 @@ class LaneReview:
           PROCESS_SLOT.release()
       return
     if not self.ready.is_set() or not self.slot.acquire(blocking=False):
+      return
+    if not self.ready.is_set():
+      self.slot.release()
       return
     try:
       if warped.shape != (2, 6, 128, 256) or warped.dtype != np.uint8:
@@ -111,7 +116,15 @@ class LaneReview:
       predictor = self.factory()
       self.ready.set()
       while not self.stop.is_set():
-        job = self.mail.get()
+        try:
+          job = self.mail.get(timeout=IDLE_RELEASE_S)
+        except queue.Empty:
+          # Serialize retirement with an offer that may already own the input slot.
+          if self.slot.acquire(blocking=False):
+            self.ready.clear()
+            self.slot.release()
+            break
+          continue
         if job is None:
           break
         generation, side, frame, stamp, luma, yz, probability = job

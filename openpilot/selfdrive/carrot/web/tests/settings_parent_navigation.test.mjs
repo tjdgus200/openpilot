@@ -188,6 +188,25 @@ test("PV5 simple authority recovery is a default-off assist toggle", () => {
   assert.match(item.edescr, /PV5 angle steering only/);
 });
 
+test("PV5 Jetson lane marking observation is a standalone, default-off toggle", async () => {
+  const { createSettingsDerivedModel } = await import("../src/features/settings/derived_model.js");
+  const catalog = JSON.parse(readFileSync(new URL("../../carrot_settings.json", root), "utf8"));
+  const keys = readFileSync(new URL("../../../common/params_keys.h", root), "utf8");
+  const pv5 = catalog.menu.find((entry) => entry.id === "PV5");
+  const assist = pv5.groups.find((entry) => entry.id === "PV5_ASSIST");
+  const items = assist.params.map((name) => catalog.params.find((entry) => entry.name === name));
+  const item = items.find((entry) => entry.name === "Pv5JetsonLaneReview");
+  const model = createSettingsDerivedModel({
+    catalog: { groups: [], categories: [], items_by_group: { PV5_ASSIST: items } },
+    language: "ko", favorites: [], profiles: [],
+  });
+
+  assert.ok(model.getItemEntriesForGroup(assist.id).some((entry) => entry.item.name === item.name));
+  assert.deepEqual([item.control, item.min, item.max, item.default], ["toggle", 0, 1, 0]);
+  assert.ok(keys.includes('{"Pv5JetsonLaneReview", {PERSISTENT, BOOL, "0"}}'));
+});
+
+
 test("PV5 CCNC settings use independent integer defaults and localized choices", () => {
   const catalog = JSON.parse(readFileSync(new URL("../../carrot_settings.json", root), "utf8"));
   const keys = readFileSync(new URL("../../../common/params_keys.h", root), "utf8");

@@ -18,14 +18,19 @@ An unobservable or ambiguous marking produces an unknown result. The next
 negotiated reply can carry the source frame, side, marking and confidence in
 ten bytes. Comma checks the frame against the capture times for this request.
 
-## Bench operation
+## CarrotWeb
 
-On a bench Jetson with a matching source bundle and the inference service
-stopped, run `python3 tools/jetlink/pv5_lane_runtime.py prepare`. The command
-builds and smoke-tests a local TensorRT plan for the bundled lane ONNX. Start
-the trial service with `PV5_LANE_REVIEW=1` to advertise the capability.
-The ordinary installation does not build the plan. The worker loads the plan
-on first eligible use and retains it in GPU memory until the session closes.
+Under **Settings → PV5 → Driving Assist**, **Jetson Lane Marking Observation
+(Experimental)** controls the persistent `Pv5JetsonLaneReview` setting. It
+defaults to off. Modeld reads it at the existing 250 ms settings poll. Switching
+it off clears the observation history and stops new lane-review requests.
+
+During a supported Jetson package update, the candidate probe prepares and
+checks a local TensorRT plan while the inference service is stopped. A Jetson
+without a validated plan does not advertise lane review. Turning on the web
+switch permits observation when the paired Jetson advertises the capability
+and the vehicle conditions above are met. Results are recorded in the driving
+log. Normal operation requires no terminal command or service environment edit.
 
 ## Offline evidence
 
@@ -45,4 +50,4 @@ transition the recorded boundary probabilities stayed below 0.5 on all three
 later labelled dashed frames, so the auxiliary network was skipped. OpenCV and
 ONNX Runtime on PC agreed on all 73 decisions. These observations do not
 establish on-device latency, GPU memory cost or a reliable visual fallback for
-automatic lane changes. Jetson package pins are unchanged.
+automatic lane changes.

@@ -145,21 +145,115 @@ class WorkerTest(unittest.TestCase):
     self.assertEqual(w.side, 0)
     self.assertIsNone(w.latest())
 
+  def test_quiet_or_disabled_requests_release_gpu_and_can_rearm(self):
+    closed = threading.Event()
+    fake = mock.Mock()
+    fake.close.side_effect = closed.set
+    now = [1_000_000_000]
+    w = LaneReview(lambda: fake, lambda: now[0])
+    output = np.ones(536, np.float32)
+    with mock.patch('pv5_lane_worker.IDLE_RELEASE_S', .05):
+      try:
+        w.set_side(0, 1)
+        w.offer(1, now[0], None, SLICES, output, True)
+        self.assertIsNone(w.thread)
+        w.set_side(1, 2)
+        w.offer(2, now[0], None, SLICES, output, True)
+        self.assertTrue(w.ready.wait(2))
+        first = w.thread
+        w.set_side(0, 3)
+        self.assertIsNone(w.latest())
+        self.assertTrue(closed.wait(2))
+        first.join(2)
+        now[0] += SAMPLE_NS
+        w.set_side(2, 4)
+        w.offer(4, now[0], None, SLICES, output, True)
+        self.assertTrue(w.ready.wait(2))
+        self.assertIsNot(w.thread, first)
+      finally:
+        w.close()
+        if w.thread:
+          w.thread.join(2)
+
 
 class InstallTest(unittest.TestCase):
-  def test_advertisement_requires_explicit_lab_setting_and_matching_validated_commit(self):
+  def test_matching_bench_plan_auto_enables_and_respects_host_override(self):
     with tempfile.TemporaryDirectory() as tmp:
       root = Path(tmp)
       (root / 'SOURCE_COMMIT').write_text('a' * 40)
       (root / runtime.PLAN).write_bytes(b'test plan')
       sha = hashlib.sha256(b'test plan').hexdigest()
       (root / 'validated.json').write_text(json.dumps({'release': 'a' * 40, 'bytes': 9, 'plan': sha, 'model': runtime.MODEL_SHA}))
-      with mock.patch.object(runtime, 'ROOT', root), mock.patch.dict(os.environ, {'PV5_LANE_REVIEW': '0'}):
-        self.assertIsNone(runtime.installed_plan(root))
-        os.environ['PV5_LANE_REVIEW'] = '1'
+      with (mock.patch.object(runtime, 'ROOT', root), mock.patch.object(runtime, 'PV5_PACKAGE', root / 'SOURCE_COMMIT'),
+            mock.patch.dict(os.environ, {'PV5_LANE_REVIEW': '0'})):
+        runtime.configure_installed(root)
+        self.assertEqual(os.environ['PV5_LANE_REVIEW'], '0')
+        del os.environ['PV5_LANE_REVIEW']
+        runtime.configure_installed(root)
+        self.assertEqual(os.environ.pop('PV5_LANE_REVIEW'), '1')
         self.assertEqual(runtime.installed_plan(root), (root / runtime.PLAN, sha))
         (root / 'SOURCE_COMMIT').write_text('b' * 40)
         self.assertIsNone(runtime.installed_plan(root))
+        runtime.configure_installed(root)
+        self.assertNotIn('PV5_LANE_REVIEW', os.environ)
+
+  def test_release_revalidates_cached_plan_and_preserves_rollback(self):
+    with tempfile.TemporaryDirectory() as tmp:
+      root = Path(tmp)
+      cache = root / 'cache'
+      commit = root / 'SOURCE_COMMIT'
+      model = root / 'lane.onnx'
+      model.write_bytes(b'lane model fixture')
+      sha = hashlib.sha256(model.read_bytes()).hexdigest()
+      stopped = mock.Mock(stdout='LoadState=loaded\nActiveState=inactive')
+      def build(onnx, path):
+        self.assertEqual(onnx, model.read_bytes())
+        path.write_bytes(b'synthetic plan')
+      def smoke(path, digest):
+        self.assertEqual(digest, hashlib.sha256(path.read_bytes()).hexdigest())
+      with (mock.patch.object(runtime, 'ROOT', root), mock.patch.object(runtime, 'MODEL', model),
+            mock.patch.object(runtime, 'MODEL_SHA', sha), mock.patch.object(runtime.subprocess, 'run', return_value=stopped),
+            mock.patch.object(runtime, '_build', side_effect=build) as builds, mock.patch.object(runtime, '_smoke', side_effect=smoke) as check):
+        commit.write_text('a' * 40)
+        runtime.prepare(cache)
+        first = runtime.installed_plan(cache)
+        self.assertIsNotNone(first)
+        self.assertEqual(first[0].read_bytes(), b'synthetic plan')
+        commit.write_text('b' * 40)
+        self.assertIsNone(runtime.installed_plan(cache))
+        runtime.prepare(cache)
+        self.assertEqual(first, runtime.installed_plan(cache))
+        builds.assert_called_once()
+        self.assertEqual(check.call_count, 2)
+        commit.write_text('c' * 40)
+        check.side_effect = ValueError('synthetic incompatible plan')
+        with self.assertRaises(ValueError):
+          runtime.prepare(cache)
+        self.assertIsNone(runtime.installed_plan(cache))
+        for revision in ('a', 'b'):
+          commit.write_text(revision * 40)
+          self.assertEqual(first, runtime.installed_plan(cache))
+
+  def test_no_build_in_live_services_or_outside_optional_time_budget(self):
+    with tempfile.TemporaryDirectory() as tmp:
+      cache = Path(tmp)
+      active = mock.Mock(stdout='LoadState=loaded\nActiveState=active')
+      stopped = mock.Mock(stdout='LoadState=loaded\nActiveState=inactive')
+      for states in ((active,), (stopped, active)):
+        with mock.patch.object(runtime.subprocess, 'run', side_effect=states), self.assertRaises(RuntimeError):
+          runtime.prepare(cache)
+      paired = cache / 'provenance.json'
+      with mock.patch.object(runtime.subprocess, 'run') as proc, mock.patch.object(runtime, 'PV5_PACKAGE', paired):
+        self.assertFalse(runtime.prepare_optional(cache, time.monotonic() + 5))
+        proc.assert_not_called()
+        paired.touch()
+        self.assertFalse(runtime.prepare_optional(cache, time.monotonic() - 1))
+        proc.assert_not_called()
+        proc.side_effect = runtime.subprocess.TimeoutExpired('optional lane check', 1)
+        self.assertFalse(runtime.prepare_optional(cache, time.monotonic() + 5))
+        cmd = proc.call_args.args[0]
+        self.assertEqual(cmd[-2:], ['prepare', str(cache / runtime.CACHE.name)])
+        self.assertLessEqual(proc.call_args.kwargs['timeout'], 5)
 
 
 if __name__ == '__main__':

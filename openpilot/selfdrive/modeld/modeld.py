@@ -494,6 +494,7 @@ def main(demo=False):
   boundary_observer = BoundaryObserver(cloudlog.event) if DH.boundary_indicator_supported else None
   lane_review_supported = (DH.pv5_oem_lane_check and use_extra_client and not (main_wide_camera or demo or SIMULATION)
                            and hasattr(model, 'lane_review_request'))
+  lane_review_enabled = False
   nav_input = MapInput()
 
 
@@ -553,6 +554,15 @@ def main(demo=False):
     wide_fov_changed = False
     if loop_start >= next_wide_fov_poll:
       next_wide_fov_poll = loop_start + 0.25
+      if lane_review_supported:
+        try:
+          enabled = params.get_bool("Pv5JetsonLaneReview")
+        except UnknownKeyName:
+          enabled = False
+        if lane_review_enabled and not enabled:
+          DH.pv5_lane_review.reset()
+          model.lane_review_request = None
+        lane_review_enabled = enabled
       if wide_yolo_supported:
         try:
           model.wide_yolo_enabled = params.get(JETSON_YOLO_ENABLED_PARAM, return_default=True) is not False
@@ -654,7 +664,9 @@ def main(demo=False):
 
     inference_started = time.monotonic()
     lane_inputs_valid = False
-    if lane_review_supported and getattr(getattr(model, 'client', None), 'lane_review_available', False):
+    if lane_review_supported:
+      model.lane_review_request = None
+    if lane_review_enabled and getattr(getattr(model, 'client', None), 'lane_review_available', False):
       radar_errors = sm['radarState'].radarErrors
       lane_inputs_valid = (not prepare_only and live_calib_seen and sm.valid['liveCalibration'] and sm.alive['liveCalibration']
                            and sm['liveCalibration'].calStatus == log.LiveCalibrationData.Status.calibrated
@@ -759,7 +771,7 @@ def main(demo=False):
                 lane_review_inputs_valid=bool(lane_inputs_valid and modelv2_send.valid and indicator_valid
                                               and getattr(model, 'active', False)
                                               and getattr(getattr(model, 'client', None), 'lane_review_available', False)))
-      if lane_review_supported and DH.pv5_lane_review.decision != 'idle':
+      if lane_review_enabled and DH.pv5_lane_review.decision != 'idle':
         modelv2_send.modelV2.meta.pv5LaneReview = DH.pv5_lane_review.decision
         modelv2_send.modelV2.meta.pv5LaneReviewSide = DH.pv5_lane_review.signal_direction
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state

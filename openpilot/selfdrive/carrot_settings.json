@@ -665,7 +665,7 @@
           "ko": "주행 보조",
           "en": "Driving Assist",
           "zh": "驾驶辅助",
-          "params": ["Pv5LaneBoundaryAssist", "Pv5SccDecelAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
+          "params": ["Pv5LaneBoundaryAssist", "Pv5JetsonLaneReview", "Pv5SccDecelAssist", "Pv5SimpleSteerRecovery", "Pv5SteerReleaseMs", "Pv5SteerRecoveryMs"]
         },
         {
           "id": "PV5_BSD_SOUND",
@@ -1076,6 +1076,23 @@
         "en": ["Stock (about 59°)", "65°", "70°", "75°", "80°"],
         "zh": ["默认（约 59°）", "65°", "70°", "75°", "80°"]
       }
+    },
+    {
+      "group": "PV5",
+      "name": "Pv5JetsonLaneReview",
+      "title": "Jetson 차선 표시 관측 (실험)",
+      "descr": "깜빡이를 켜기 직전의 점선이 순정 표시에서 사라지면, Jetson에서 주행 카메라 영상으로 해당 차선의 유형을 확인합니다. 기본은 꺼짐입니다. 이 기능을 지원하는 Jetson 패키지에서 차선 관측 서비스와 TensorRT 엔진이 준비되어 있어야 합니다. 관측 결과는 주행 로그에만 기록합니다.",
+      "egroup": "PV5",
+      "etitle": "Jetson Lane Marking Observation (Experimental)",
+      "edescr": "When the factory display hides a marking that was dashed just before the turn signal, Jetson checks its type using the road camera image. Off by default. Requires a compatible Jetson package with the lane observation service and TensorRT engine ready. Observations are recorded in driving logs only.",
+      "cgroup": "PV5",
+      "ctitle": "Jetson 车道线观测（实验）",
+      "cdescr": "如果开启转向灯前显示的虚线在原车显示中消失，Jetson 会通过前视摄像头图像检查该车道线的类型。默认关闭。需要支持此功能的 Jetson 软件包，并确保车道线观测服务和 TensorRT 引擎均已就绪。观测结果仅记录到行车日志。",
+      "control": "toggle",
+      "min": 0,
+      "max": 1,
+      "default": 0,
+      "unit": 1
     },
     {
       "group": "PV5",
