@@ -182,9 +182,11 @@ def test_status_command_never_writes(monkeypatch, capsys):
 def test_boot_launcher_applies_before_build_and_manager():
   source = (Path(__file__).resolve().parents[2] / 'launch_chffrplus.sh').read_text()
   boot = source[source.index('function launch {'):]
+  lock = source[source.index('function acquire_boot_repo_lock {'):source.index('function launch {')]
   assert boot.index('protect_jetlink_usb_input') < boot.index('agnos_init') < boot.index('bootstrap_runtime_dependencies')
   assert boot.index('protect_jetlink_usb_input') < boot.index('start_manager')
-  assert boot.index('protect_jetlink_usb_input') < boot.index('flock -w')
+  assert 'flock -E 75 -w "$wait_secs" 9' in lock
+  assert boot.index('protect_jetlink_usb_input') < boot.index('exec 9>"$CARROT_REPO_LOCK_PATH"') < boot.index('acquire_boot_repo_lock')
 
 
 @pytest.mark.parametrize('result', [0, 1])

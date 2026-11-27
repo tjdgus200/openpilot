@@ -75,6 +75,7 @@ def live_loop(fingerprint='KIA_PV5', not_car=False, dual=True):
     WIDE_MODEL_FOV_CHOICES=WIDE_MODEL_FOV_CHOICES, WIDE_MODEL_DOWN_MAX=WIDE_MODEL_DOWN_MAX,
     CP=NS(carFingerprint=fingerprint, notCar=not_car), sm=sm, params=NS(get_int=settings.__getitem__, get=settings.__getitem__),
     loop_start=10., next_wide_fov_poll=0., wide_fov_index=0, wide_model_down=0,
+    lane_review_supported=False, wide_yolo_supported=False, radar_label_marker=None,
     camera_yaw_trim_deg=0., main_wide_camera=False, use_extra_client=dual)
   exec(code, state)
   sm.updated['liveCalibration'] = False

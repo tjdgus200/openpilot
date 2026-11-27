@@ -67,6 +67,7 @@ def test_each_model_receives_live_fov_only_in_wide_transform(model_spec, selecti
                    CP=NS(carFingerprint='KIA_PV5', notCar=False), wide_model_down=0,
                    sm=sm, params=NS(get_int=setting.__getitem__, get=setting.__getitem__), loop_start=100., next_wide_fov_poll=0.,
                    wide_fov_index=0, camera_yaw_trim_deg=0., main_wide_camera=False, use_extra_client=True,
+                   lane_review_supported=False, wide_yolo_supported=False, radar_label_marker=None,
                    model=NS(vision_input_names=['img', 'big_img']))
   code = fov_loop()
   exec(code, namespace)

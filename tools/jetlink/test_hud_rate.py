@@ -6,6 +6,7 @@ import struct
 import threading
 import time
 from types import SimpleNamespace as NS
+from unittest.mock import Mock
 
 import pytest
 
@@ -152,6 +153,15 @@ def test_rate_metadata_is_private_and_reconnect_drops_old_or_oversized_packets(t
 def test_steering_advisory_uses_current_params_and_keeps_dm_event_local(monkeypatch, valid_params):
   import hud_protocol as protocol
   from openpilot.cereal import car, log
+  from openpilot.common import pv5_radar_label_context as labels
+
+  marker_socket = Mock()
+  marker_socket.recv.side_effect = BlockingIOError
+  open_socket = Mock(return_value=marker_socket)
+  receive_radar = Mock(return_value=None)
+  monkeypatch.setenv('PV5_RADAR_LABELS', '1')
+  monkeypatch.setattr(labels, 'socket', NS(AF_UNIX=1, SOCK_DGRAM=socket.SOCK_DGRAM, socket=open_socket))
+  monkeypatch.setattr(labels.RadarContext, '_radar_reader', staticmethod(lambda: receive_radar))
 
   messages = {
     'carControl': log.Event.new_message(carControl={'latActive': True}),
@@ -190,6 +200,9 @@ def test_steering_advisory_uses_current_params_and_keeps_dm_event_local(monkeypa
   packet = json.loads(builder.packet())
   assert packet['steering_warning'] == (2 if valid_params else 0)
   assert 'driverMonitoringState' not in packet['events']
+  assert open_socket.call_count == int(valid_params)
+  assert receive_radar.call_count == int(valid_params)
+  assert 'radar_labels' not in packet
 
 
 def test_idle_admission_reserves_next_request_and_backs_off_after_slow_usb():

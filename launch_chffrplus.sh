@@ -219,6 +219,14 @@ function agnos_init {
       return 1
     fi
 
+    # The updater UI imports serial via TiciLPA before the runtime bootstrap.
+    # Only use the bundled pure-Python dependency for an identified PV5.
+    if python3 "$DIR/openpilot/system/manager/pv5_build_recovery.py" && \
+       ! run_startup_command ensure_python_package serial pyserial 1; then
+      show_startup_failure "AGNOS updater dependency pyserial is unavailable"
+      return 1
+    fi
+
     if python3 -c "import jeepney" > /dev/null 2>&1; then
       echo "jeepney already installed."
     else

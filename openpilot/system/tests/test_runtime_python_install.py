@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -65,7 +66,8 @@ function python3 {
 function uv { fake_install uv "$@"; }
 '''
   script = tmp_path / "test_install.sh"
-  script.write_text(mocks + functions + '\nensure_python_package serial pyserial "$MOCK_REQUIRED" "$MOCK_DEPENDENCIES"\n', encoding="utf-8")
+  script.write_text(mocks + functions + '\nensure_python_package serial pyserial "$MOCK_REQUIRED" "$MOCK_DEPENDENCIES"\n',
+                    encoding="utf-8", newline="\n")
   env = dict(os.environ, MOCK_INSTALLER=installer, MOCK_OFFLINE_FAIL=str(int(offline_fail)), MOCK_ONLINE_FAIL=str(int(online_fail)),
              MOCK_INSTALLED=str(int(installed)), MOCK_BROKEN_IMPORT=str(int(broken_import)), MOCK_REQUIRED=str(int(required)),
              MOCK_DEPENDENCIES=str(int(dependencies)))
@@ -127,3 +129,111 @@ def test_failed_repair_blocks_only_required_packages(tmp_path, required, failure
   assert result.returncode == int(required), result.stderr
   assert "pyserial installed." not in result.stdout
   assert ("not starting openpilot" if required else "continuing without it") in result.stdout
+
+
+@pytest.fixture(scope="module")
+def isolated_python(tmp_path_factory):
+  venv = tmp_path_factory.mktemp("agnos_updater") / "venv"
+  subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True, capture_output=True, timeout=60)
+  return venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+@pytest.mark.parametrize(("version", "slot_verified", "pv5", "serial_state"), [
+  ("old", False, True, "missing"),
+  ("old", False, True, "installed"),
+  ("old", False, True, "unavailable"),
+  ("old", False, False, "unavailable"),
+  ("old", True, True, "unavailable"),
+  ("current", False, True, "unavailable"),
+])
+def test_agnos_updater_prepares_serial_only_for_pv5(tmp_path, isolated_python, version, slot_verified, pv5, serial_state):
+  root = Path(BASEDIR)
+  source = (root / "launch_chffrplus.sh").read_text(encoding="utf-8")
+  installers = source[source.index("function install_runtime_python_package {"):source.index("function bootstrap_runtime_dependencies {")]
+  agnos_init = source[source.index("function agnos_init {"):source.index("function start_carrot_recovery {")]
+  # Execute the real AGNOS branch with fixtures for the OS files and device commands.
+  installers = installers.replace("/TICI", "./mock_tici").replace("/AGNOS", "./mock_agnos")
+  agnos_init = (agnos_init.replace("/VERSION", "./mock_version")
+                .replace("/sys/firmware/devicetree/base/model", "./mock_model")
+                .replace("/data/agnos-updater-ui.log", "updater.log")
+                .replace("/data/agnos-update-confirmed", "confirmed"))
+  (tmp_path / "mock_agnos").touch()
+  (tmp_path / "mock_version").write_text(version, encoding="ascii")
+  (tmp_path / "mock_model").write_text("comma c3x", encoding="ascii")
+  (tmp_path / "confirmed").touch()
+  project = tmp_path / "project with spaces"
+  pydeps = project / "pydeps"
+  pydeps.mkdir(parents=True)
+  wheels = project / "third_party/wheels"
+  wheels.mkdir(parents=True)
+  wheel = root / "third_party/wheels/pyserial-3.5-py2.py3-none-any.whl"
+  if serial_state != "unavailable":
+    shutil.copy2(wheel, wheels / wheel.name)
+  env = {**os.environ, "BOOTSTRAP_PYTHON": isolated_python.as_posix(), "BOOTSTRAP_ROOT": project.as_posix(),
+         "PYTHONPATH": str(pydeps), "PYTHONNOUSERSITE": "1", "PIP_CONFIG_FILE": os.devnull, "PIP_NO_INDEX": "1",
+         "MOCK_SLOT_VERIFIED": str(int(slot_verified)), "MOCK_PV5": str(int(pv5))}
+  assert subprocess.run([str(isolated_python), "-c", "import serial"], env=env, capture_output=True, timeout=10).returncode != 0
+  if serial_state == "installed":
+    subprocess.run([str(isolated_python), "-m", "pip", "install", "--no-index", "--no-deps", "--target", str(pydeps), str(wheel)],
+                   env=env, check=True, capture_output=True, timeout=30)
+
+  mocks = r'''
+DIR="$BOOTSTRAP_ROOT"
+PYDEPS="$DIR/pydeps"
+AGNOS_VERSION=current
+unset AGNOS_UPDATE_CONFIRMATION_FILE
+sudo() {
+  if [[ "$1" == reboot ]]; then
+    echo REBOOT
+    exit 73
+  fi
+}
+sleep() { :; }
+run_startup_command() { "$@"; }
+show_startup_failure() { echo "STARTUP_RECOVERY: $*"; }
+show_agnos_update_failure() { echo "AGNOS_RECOVERY: $*"; }
+python3() {
+  case "$1" in
+    */agnos.py) [[ "$2" == --verify ]] || exit 99; echo VERIFY; [[ "$MOCK_SLOT_VERIFIED" == 1 ]] ;;
+    */pv5_build_recovery.py) echo CAR_IDENTITY; [[ "$MOCK_PV5" == 1 ]] ;;
+    */updater.py)
+      echo UPDATER
+      if [[ "$MOCK_PV5" == 1 ]]; then
+        "$BOOTSTRAP_PYTHON" -c 'import serial; assert serial.VERSION == "3.5"; print("UPDATER_IMPORT_OK")'
+      fi
+      ;;
+    -c)
+      if [[ "$2" == 'import jeepney' ]]; then return 0; fi
+      "$BOOTSTRAP_PYTHON" "$@"
+      ;;
+    -m) "$BOOTSTRAP_PYTHON" "$@" ;;
+    *) exit 99 ;;
+  esac
+}
+'''
+  script = tmp_path / "startup.sh"
+  script.write_text(mocks + installers + agnos_init + "\nagnos_init\n", encoding="utf-8", newline="\n")
+  result = subprocess.run([_bash(), script.name], cwd=tmp_path, env=env, text=True, capture_output=True, timeout=60)
+  lines = result.stdout.splitlines()
+  assert "online package index" not in result.stdout
+  if version == "current":
+    assert result.returncode == 0 and not lines, result.stdout + result.stderr
+    assert not (tmp_path / "confirmed").exists()
+  elif slot_verified:
+    assert result.returncode == 73, result.stdout + result.stderr
+    assert lines == ["AGNOS_PY=" + project.as_posix() + "/openpilot/system/hardware/tici/agnos.py",
+                     "MANIFEST=" + project.as_posix() + "/openpilot/system/hardware/tici/agnos.json",
+                     "MODEL=c3x", "VERIFY", "Verified AGNOS update activated; rebooting.", "REBOOT"]
+  else:
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert lines.index("VERIFY") < lines.index("CAR_IDENTITY")
+    if not pv5:
+      assert lines.count("UPDATER") == 3 and "pyserial" not in result.stdout
+    elif serial_state == "unavailable":
+      assert "STARTUP_RECOVERY: AGNOS updater dependency pyserial is unavailable" in lines
+      assert "UPDATER" not in lines
+    else:
+      assert lines.count("UPDATER_IMPORT_OK") == 3, result.stdout + result.stderr
+      prepared = "pyserial already installed." if serial_state == "installed" else "pyserial installed."
+      assert lines.index("CAR_IDENTITY") < lines.index(prepared) < lines.index("UPDATER")
+      assert ("pyserial installing from local wheel." in lines) == (serial_state == "missing")
