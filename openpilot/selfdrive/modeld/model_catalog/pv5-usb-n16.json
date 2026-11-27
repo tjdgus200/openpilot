@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-radar-motion-n16-20261127-b1427fe8",
-  "source_commit": "b1427fe8295d9cb8282145ca9bfb661c49fd9304",
+  "profile": "jetson-pv5-lane-review-n16-20261128-a8cfcaab",
+  "source_commit": "a8cfcaab3b9433d54c497fe84f93a393674c399c",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-radar-motion-n16-20261127-b1427fe8/host.tar.gz",
-    "sha256": "339a8a26225cdd003bcd47a03598d3a236316bf816c671e64be7d69be4dfc7e2",
-    "size": 70164689
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-review-n16-20261128-a8cfcaab/host.tar.gz",
+    "sha256": "95f40ef699d2852f6f3ff0855b8f752d79b86687e9ebba727f9cb8c530337f37",
+    "size": 81578150
   },
   "model": {
     "url": "https://upload.shind0.synology.me/models/comma4-big-nav-n16-96244b1f/big_driving_supercombo.onnx",

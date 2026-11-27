@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-radar-motion-light-speed-2-20261127-4b217c85",
-  "source_commit": "4b217c85c4ec06f40f3a2dc326945d03a58c1144",
+  "profile": "jetson-pv5-lane-review-light-speed-2-20261128-6e29edff",
+  "source_commit": "6e29edfffef8e57dc10f61020ff41397fe652de0",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-radar-motion-light-speed-2-20261127-4b217c85/host.tar.gz",
-    "sha256": "6ad841886f594c832eeedee7fd57ac1c72163c911604d9b2b5ee23b8b529493f",
-    "size": 70164273
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-review-light-speed-2-20261128-6e29edff/host.tar.gz",
+    "sha256": "ad8c529f297577ca70eebf7e366896044972f4c280555d7a0158511ba8ade8c5",
+    "size": 81577962
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/ea306f534159ac9a3caab0ac3bd4a5f82f9cd805/ea2f516f-f758-42be-a245-913bb818a64f/32768/big_driving_supercombo.onnx",

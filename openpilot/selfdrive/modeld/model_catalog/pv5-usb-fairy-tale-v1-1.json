@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-radar-motion-fairy-tale-v1-1-20261127-30a95da0",
-  "source_commit": "30a95da0b16e017eddb7b4fbb979b6795b91f772",
+  "profile": "jetson-pv5-lane-review-fairy-tale-v1-1-20261128-47b6b437",
+  "source_commit": "47b6b437fe77f8a5a766ca96c9aff0c08b941f48",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-radar-motion-fairy-tale-v1-1-20261127-30a95da0/host.tar.gz",
-    "sha256": "534c7347e4a9678274c80c5806cfd42d97de4616c43bcc238ea1e3eaf7dc261d",
-    "size": 70164279
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-review-fairy-tale-v1-1-20261128-47b6b437/host.tar.gz",
+    "sha256": "9a40721c29fd88a3a89d84b938762b0beaea27d0b89194a41a9b4b9933cdeb1c",
+    "size": 81577968
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/d6ca4432101dc1a938ae3ee3a8dbfbfdae33ccba/3f1a78e6-9a79-4d85-b796-1cd573bd5a3a/32768/big_driving_supercombo.onnx",
