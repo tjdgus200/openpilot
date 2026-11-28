@@ -105,6 +105,83 @@ class SidecarTests(unittest.TestCase):
     (self.park / 'conditional_trial_processes.json').write_bytes(remote.encode(audit))
     return cfg
 
+  def test_local_trial_stages_pinned_keys_and_starts_guard_without_vehicle_sources(self):
+    output = io.StringIO()
+    with (patch.object(remote, 'Source') as source, patch.object(remote, 'await_eligible') as wait,
+          patch.object(remote.subprocess, 'Popen') as child, redirect_stdout(output)):
+      remote.install(parked=True)
+    source.assert_not_called()
+    wait.assert_not_called()
+    child.assert_not_called()
+    result = json.loads(output.getvalue())
+    self.assertTrue(result['prepared'] and result['trial_started'] and result['key_auth_configured'])
+    self.assertIsNone(result['qualified_mode'])
+    self.assertFalse(result['boot_enabled'] or result['actual_PC_ssh_verified'])
+    self.assertEqual(result['maximum_trial_seconds'], 900)
+    self.assertEqual((self.park / 'conditional_authorized_keys').read_bytes(), remote.authorized_key_data(key(2)))
+    self.assertEqual((self.units / (remote.PARK_UNIT + '.d/trial.conf')).read_text(),
+                     '[Service]\nRuntimeMaxSec=900s\nRestart=no\n')
+    self.assertIn('--guard', (self.park / remote.PARK_UNIT).read_text())
+    self.assertEqual(self.lifecycle[-1], ['systemctl', 'start', remote.PARK_UNIT])
+    self.assert_home_untouched()
+
+  def test_legacy_install_and_sidecar_promotion_still_require_live_evidence(self):
+    self.policy = remote.PARK_POLICY
+    with patch.object(remote, 'PARK_SIDECAR', False):
+      for parked_trial in (False, True):
+        with (self.subTest(parked=parked_trial), patch.object(remote, 'await_eligible', side_effect=ValueError('waiting')),
+              self.assertRaisesRegex(ValueError, 'waiting')):
+          remote.install(parked=parked_trial)
+        self.assertFalse(self.cfg.exists())
+        self.assertEqual(self.lifecycle, [])
+    cfg = self.trial_evidence()
+    with (patch.object(remote, 'await_eligible', side_effect=ValueError('waiting')),
+          self.assertRaisesRegex(ValueError, 'waiting')):
+      remote.enable_home(parked=True)
+    self.assertEqual(cfg, json.loads(self.cfg.read_bytes()))
+
+  def test_trial_guard_waits_for_two_continuous_seconds_then_revokes_on_loss(self):
+    remote.install(parked=True)
+    now = 0.
+    opened, renewed, closed = [], [], []
+
+    def read():
+      sample = parked(now)
+      sample['deviceState']['memory'] = 91
+      if now < 60:
+        sample['carControl']['stamp'] = now - 1
+      elif 61 <= now < 64:
+        sample['carState']['raw_speed'] = 0.1
+      elif now >= 66.3:
+        sample['carControl']['enabled'] = True
+      return sample
+
+    def sleep(seconds):
+      nonlocal now
+      now = round(now + seconds, 5)
+      self.assertLess(now, 70, 'guard did not close after loss of eligibility')
+
+    def spawn(args, **kwargs):
+      self.assertEqual(args, [sys.executable, str(self.script), '--bridge'])
+      opened.append(now)
+      child = Mock()
+      child.poll.return_value = None
+      child.stdin.fileno.return_value = 123
+      child.stdin.close.side_effect = lambda: closed.append(now)
+      return child
+
+    with (patch.object(remote, 'Source', return_value=Mock(read=read)), patch.object(remote, 'resource_limits'),
+          patch.object(remote, 'notify'), patch.object(Path, 'glob', return_value=[]),
+          patch.object(remote.time, 'monotonic', side_effect=lambda: now), patch.object(remote.time, 'sleep', side_effect=sleep),
+          patch.object(remote.os, 'PRIO_PROCESS', 0, create=True), patch.object(remote.os, 'setpriority', create=True),
+          patch.object(remote.os, 'set_blocking'), patch.object(remote.os, 'write', side_effect=lambda *args: renewed.append(now)),
+          patch.object(remote.subprocess, 'Popen', side_effect=spawn)):
+      remote.guard()
+    self.assertEqual(opened, [66.0])
+    self.assertTrue(renewed)
+    self.assertTrue(all(66 <= tick < 66.3 for tick in renewed))
+    self.assertEqual(closed, [66.3])
+
   def test_separate_trial_enable_boot_and_permanent_reinstall_refusal(self):
     self.trial_evidence()
     remote.enable_home(parked=True)

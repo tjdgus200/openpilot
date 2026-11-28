@@ -1010,16 +1010,20 @@ def install(parked=False):
       policy = available
     elif available != PARK_POLICY:
       raise ValueError('vehicle_cpu_controller_unavailable')
-  mark('park_source' if parked else 'home_source')
-  source = Source()
-  admitted_mode = await_eligible(source, modes, registration=PARK_SIDECAR and parked)
+  # The separate Park unit starts its own gated trial. Preparing its files
+  # locally does not admit a session or need a second set of IPC readers.
+  source, admitted_mode = None, None
+  if not PARK_SIDECAR:
+    mark('park_source' if parked else 'home_source')
+    source = Source()
+    admitted_mode = await_eligible(source, modes)
 
-  def still_home():
-    if eligible(source.read(), time.monotonic(), modes, registration=PARK_SIDECAR and parked)[0] != admitted_mode:
+  def check_install_state():
+    if source is not None and eligible(source.read(), time.monotonic(), modes)[0] != admitted_mode:
       raise ValueError('home_condition_lost')
 
   mark('binary_identity')
-  identities = prerequisites(check_binaries=True, check=still_home)
+  identities = prerequisites(check_binaries=True, check=check_install_state)
   if PARK_SIDECAR:
     host_public = checked_home_identity(identities)
   else:
@@ -1039,8 +1043,7 @@ def install(parked=False):
     protected(home_keys, private=True)
     if home_keys.stat().st_size != len(auth) or home_keys.read_bytes() != auth:
       raise ValueError('qualified_home_identity_required')
-  if eligible(source.read(), time.monotonic(), modes, registration=PARK_SIDECAR and parked)[0] != admitted_mode:
-    raise ValueError('home_condition_lost')
+  check_install_state()
   mark('data_install')
   config = {'qualified_modes': modes, 'resource_policy': policy, 'trial': True, 'binaries': identities}
   if PARK_SIDECAR:

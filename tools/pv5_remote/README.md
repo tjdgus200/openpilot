@@ -298,7 +298,7 @@ The PC client release is recorded separately as `conditional_remote.client_code_
 
 Use this procedure on a PV5 whose detached-home guard is already qualified. It keeps the enrolled SSH host identity and gives Park its own Tailscale node, runtime directory, systemd unit and PC verification receipt. The PC receiver must support the Park bootstrap and qualification endpoints before registration. Keep the existing Home verification pin and configure `conditional_remote.park_code_root` on the PC to point to the matching verified release.
 
-1. In the local CarrotWeb terminal, with Park selected, raw and filtered speeds zero and driving assistance disengaged, run the release's `tools/pv5_remote/conditional_remote.py --install-park-sidecar` using the comma's openpilot Python environment and local sudo. This starts a 15-minute trial.
+1. From the local CarrotWeb terminal run the release's `tools/pv5_remote/conditional_remote.py --install-park-sidecar` using the comma's openpilot Python environment and local sudo. The installer verifies the enrolled keys and binaries and starts the 15-minute trial without waiting for vehicle signals. Its `qualified_mode` is null at this point. The guard waits for two continuous seconds of eligible vehicle data before it starts either SSH or Tailscale. Keep Park selected, both speeds zero and driving assistance disengaged for the next steps. The trial clock includes this waiting time.
 2. Authenticate the new Park node on the owner's tailnet from the local terminal. Select its socket explicitly so this operation applies only to Park.
 
    ```sh
