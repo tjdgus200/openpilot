@@ -16,7 +16,9 @@ from cluster_renderer import (ClusterUiRenderer, DESIGN_WIDTH, DESIGN_HEIGHT, OP
                               TOP_STATUS_CENTER_Y,
                               NAVI_LIVE_PANEL_X, NAVI_LIVE_PANEL_W,
                               SIDE_GAUGE_LEFT_CENTER_X, SIDE_GAUGE_COLUMN_GAP, SIDE_GAUGE_BOTTOM,
-                              SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y, SPEED_VALUE_FONT_SIZE, rl, rl_color)
+                              SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y, SPEED_VALUE_FONT_SIZE,
+                              TPMS_STATUS_CAR_CENTER_Y, TPMS_STATUS_CENTER_X, TPMS_STATUS_ICON_H, TPMS_STATUS_ICON_W,
+                              WHITE, rl, rl_color)
 
 NORMAL = (100, 225, 170)
 WARNING = (255, 205, 70)
@@ -410,6 +412,31 @@ class HealthRenderer(ClusterUiRenderer):
     self._draw_speed_panel_bg()
     self._draw_text_with_stroke('--', SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y,
                                 SPEED_VALUE_FONT_SIZE, UNKNOWN, (0, 0, 0), 3, anchor='center')
+
+  def _draw_tpms_status(self, state):
+    super()._draw_tpms_status(state)
+    if self.screen_mode != CLUSTER_SCREEN_MODE_BATTERY or state.battery is None:
+      return
+    power = state.battery.value('pack_power_kw')
+    if power is None:
+      return
+
+    # Share the TPMS transform so the reading follows the edge of either driving panel.
+    right = TPMS_STATUS_CENTER_X + TPMS_STATUS_ICON_W / 2
+    center_y = TPMS_STATUS_CAR_CENTER_Y - TPMS_STATUS_ICON_H / 2 - 8 - SPEED_VALUE_FONT_SIZE / 2
+    unit, unit_size = 'kW', 28
+    unit_width = self._measure_text(unit, unit_size)[0] + 9
+    number = f'{power:.1f}'
+    width = self._measure_text(number, SPEED_VALUE_FONT_SIZE)[0]
+    number_size = SPEED_VALUE_FONT_SIZE * min(1., (258 - unit_width) / max(width, 1.))
+    # Move left of the optional lower gauges if the driving panel displays them.
+    if state.fuel_gauge is not None or state.urea_gauge is not None:
+      right = SIDE_GAUGE_LEFT_CENTER_X - 24
+    color = (80, 235, 140) if power < 0 else WHITE
+    self._draw_text_with_stroke(number, right - unit_width, center_y, number_size,
+                                color, (0, 0, 0), 3, anchor='right')
+    self._draw_text_with_stroke(unit, right, center_y + (number_size - unit_size) * .27,
+                                unit_size, color, (0, 0, 0), 2, anchor='right')
 
   def _draw_host_telemetry(self, x, y):
     temperature, temperature_color = temperature_label(self.host_health)

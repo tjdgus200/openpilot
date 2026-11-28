@@ -119,6 +119,86 @@ def test_park_adds_partial_tpms_and_trip_in_unused_heatmap_row(monkeypatch, layo
     assert calls == ['heatmap']
 
 
+@pytest.mark.parametrize(('power', 'label', 'color'), [
+  (7.9, '7.9', hud.WHITE),
+  (0., '0.0', hud.WHITE),
+  (-16.4, '-16.4', (80, 235, 140)),
+  (-2000., '-2000.0', (80, 235, 140)),
+])
+@pytest.mark.parametrize('lower_gauge', [None, .42])
+def test_pack_power_value_and_unit_fit_above_tpms(monkeypatch, power, label, color, lower_gauge):
+  renderer = hud.HealthRenderer(screen_mode=hud.CLUSTER_SCREEN_MODE_BATTERY)
+  calls = []
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_tpms_status', lambda *_: calls.append('tpms'))
+  renderer._draw_text_with_stroke = lambda *args, **kw: calls.append((args, kw))
+  renderer._measure_text = lambda text, size: (len(text) * size * .6, size)
+  state = NS(battery=BatteryPanelData((('pack_power_kw', power, 0.),)),
+             fuel_gauge=lower_gauge, urea_gauge=None)
+
+  renderer._draw_tpms_status(state)
+
+  assert calls[0] == 'tpms'
+  (value, value_anchor), (unit, unit_anchor) = calls[1:]
+  assert [value[0], unit[0]] == [label, 'kW']
+  assert value[4] == unit[4] == color
+  assert value_anchor == unit_anchor == {'anchor': 'right'}
+  assert unit[1] == (hud.TPMS_STATUS_CENTER_X + hud.TPMS_STATUS_ICON_W / 2 if lower_gauge is None
+                     else hud.SIDE_GAUGE_LEFT_CENTER_X - 24)
+  assert value[1] < unit[1] - renderer._measure_text('kW', unit[3])[0]
+  assert value[1] - renderer._measure_text(label, value[3])[0] >= unit[1] - 258.01
+  tpms_top = hud.TPMS_STATUS_CAR_CENTER_Y - hud.TPMS_STATUS_ICON_H / 2
+  for _, _, y, size, _, _, stroke in (value, unit):
+    assert y + size / 2 + stroke < tpms_top
+  if len(label) <= 3:
+    assert value[3] == hud.SPEED_VALUE_FONT_SIZE
+
+
+def test_pack_power_shares_battery_panel_snapshot_and_expires(monkeypatch):
+  from cluster_live import standby_state
+  import hud_protocol
+
+  renderer = hud.HealthRenderer(screen_mode=hud.CLUSTER_SCREEN_MODE_BATTERY)
+  clock, records, draws = [100.], [], []
+  packet = packet_from_metrics({'pack_power_kw': (7.9, 96.), 'soc_percent': (24., 99.)}, 100.)
+  record = {'sent': 100., 'received': {'carState': 100.}, 'events': {'carState': 'present'},
+            'valid': {'carState': True}, 'alive': {'carState': True}, 'battery_hud': packet}
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: (clock[0], record))
+  monkeypatch.setattr(hud.time, 'monotonic', lambda: clock[0])
+  monkeypatch.setattr(hud, '_fresh', lambda *_: {})
+  monkeypatch.setattr(hud.ClusterUiRenderer, '_draw_tpms_status', lambda *_: draws.append('tpms'))
+  def draw_frame(self, state, *_):
+    records.append(state.battery)
+    self._draw_tpms_status(state)
+  monkeypatch.setattr(hud.ClusterUiRenderer, 'render', draw_frame)
+  renderer._draw_text_with_stroke = lambda text, *a, **kw: draws.append(text)
+  renderer._measure_text = lambda text, size: (len(text) * size * .6, size)
+  state = standby_state()
+
+  renderer.render(state)
+  assert records[-1].value('pack_power_kw') == 7.9 and draws == ['tpms', '7.9', 'kW']
+  renderer.set_screen_mode(hud.CLUSTER_SCREEN_MODE_FULLSCREEN_3D)
+  draws.clear()
+  renderer.render(state)
+  assert draws == ['tpms']
+
+  renderer.set_screen_mode(hud.CLUSTER_SCREEN_MODE_BATTERY)
+  draws.clear()
+  clock[0] = record['sent'] = 101.01
+  renderer.render(state)
+  assert records[-1].value('soc_percent') == 24.
+  assert records[-1].value('pack_power_kw') is None and draws == ['tpms']
+
+  draws.clear()
+  record['battery_hud']['fields']['pack_power_kw'] = {'value': float('nan'), 'age_s': 0.}
+  renderer.render(state)
+  assert records[-1].value('pack_power_kw') is None and draws == ['tpms']
+
+  draws.clear()
+  monkeypatch.setattr(hud_protocol, 'read_snapshot', lambda: None)
+  renderer.render(state)
+  assert records[-1].value('pack_power_kw') is None and draws == ['tpms']
+
+
 def test_reverse_replaces_forward_view_keeps_alert_order_and_releases_on_snapshot_loss(monkeypatch):
   from dataclasses import replace
   from cluster_live import standby_state
