@@ -63,6 +63,26 @@ def test_default_enabled_and_explicit_diagnostic_opt_out(monkeypatch):
   assert coherent.candidate(original, None, None, None) == (original, False)
 
 
+def test_bundled_capture_skips_serialization(monkeypatch):
+  jit = pytest.importorskip('tinygrad.engine.jit')
+  captured = jit.CapturedJit(None, None, [], [])
+  assert 'linear' in vars(captured) and '_linear' not in vars(captured)
+  original = jit.TinyJit(None, captured)
+  serialization = []
+  monkeypatch.setenv('JETLINK_COHERENT_WARP', '1')
+  monkeypatch.setitem(sys.modules, 'openpilot.selfdrive.modeld.helpers',
+                      NS(dump_oob=lambda *a: serialization.append('dump'),
+                         load_oob=lambda *a: serialization.append('load')))
+  monkeypatch.setitem(sys.modules, 'openpilot.common.swaglog',
+                      NS(cloudlog=NS(exception=lambda *a: None)))
+  transforms = {'tfm': np.ones((3, 3), np.float32)}
+  assert coherent.candidate(original, None, transforms, None) == (original, False)
+  assert not serialization
+  assert np.all(transforms['tfm'] == 1)
+  with pytest.raises(ValueError, match='unlinked capture'):
+    coherent.install(original, SHAPE)
+
+
 @pytest.mark.parametrize('fault', ['linked', 'unknown_api', 'shape', 'size', 'device', 'view'])
 def test_invalid_or_linked_buffer_is_never_retired(device, fault):
   jit = capture()
@@ -176,6 +196,7 @@ def test_candidate_validates_distinct_frames_and_falls_back_cleanly(monkeypatch,
       data = np.zeros(SHAPE, np.uint8) if fault == 'stale_pixels' else state['source'].copy()
       return NS(numpy=lambda: data)
   original, proposed = Capture(), Capture()
+  original.captured.linear = object()  # Previous ABI, already linked.
   # Only the proposed capture gets the injected stale-read fault.
   original.__class__ = type('Reference', (Capture,), {'__call__': lambda self, **kw: NS(numpy=lambda: state['source'].copy())})
   def copyin(data):

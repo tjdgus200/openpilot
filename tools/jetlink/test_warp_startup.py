@@ -56,7 +56,8 @@ def test_slow_preparation_keeps_internal_frames_and_gates_connection(monkeypatch
   m.warp = None
   pending = NS(future=Future(), close=lambda: None)
   starts = []
-  def start(*args):
+  def start(*args, use_cache, refresh_cache):
+    assert not use_cache and not refresh_cache
     starts.append(args)
     return pending
   monkeypatch.setattr(model, 'WarpPreparation', start)
@@ -71,7 +72,7 @@ def test_completed_preparation_obeys_current_join_permission(monkeypatch):
   m.warp = None
   future = Future()
   future.set_result((b'validated', 6.8))
-  m.preparation = NS(future=future)
+  m.preparation = NS(future=future, cache_status='hit')
   m.join_allowed = False
   installed = []
   def install(*args, prepared, input_buffers):
@@ -109,12 +110,13 @@ def test_failed_preparation_has_bounded_retry_and_never_enters_external_model(mo
     def fail(*a, **k): raise ValueError('invalid executable')
     monkeypatch.setattr(model, 'Warp', fail)
   closed = []
-  m.preparation = NS(future=future, close=lambda: closed.append(True))
+  m.preparation = NS(future=future, cache_status='hit' if stage == 'install' else 'disabled', close=lambda: closed.append(True))
   monkeypatch.setattr(model, 'WarpPreparation', lambda *a: pytest.fail('retry before deadline'))
   monkeypatch.setattr(model, 'ClientConnection', lambda: pytest.fail('failed preparation must keep local'))
   for _ in range(5):
     assert m.run({}, {}, {}, False) == 'local'
   assert len(closed) == 1 and m.next_join > 0 and m.warp is None and not m.active
+  assert m.refresh_warp_cache == (stage == 'install')
 
 
 @pytest.mark.parametrize('outcome', ['success', 'failure', 'cancel', 'timeout'])

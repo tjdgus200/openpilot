@@ -286,7 +286,7 @@ def test_joining_model_uses_selected_buffers_parser_and_recurrence(tmp_path, mon
   # The current destination prepares tiny NPY inputs before the model joins.
   # This test substitutes camera/GPU work; keep that preparation substituted too.
   monkeypatch.setattr(model, 'make_warp_inputs', lambda: ({}, {}))
-  monkeypatch.setattr(model, 'WarpPreparation', lambda *a: SimpleNamespace(
+  monkeypatch.setattr(model, 'WarpPreparation', lambda *a, **kw: SimpleNamespace(cache_status='disabled',
     future=SimpleNamespace(done=lambda: True, result=lambda: (b'validated', .01)),
     close=lambda: None))
   closed, requests, identified = [], [], []

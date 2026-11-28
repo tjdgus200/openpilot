@@ -464,6 +464,8 @@ def main(demo=False):
     CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   reset_parked_history = None
   if not demo and not USBGPU and pv5_parked_dashcam.supported_for(CP, SIMULATION):
+    if hasattr(model, 'pv5_warp_cache_enabled'):
+      model.pv5_warp_cache_enabled = True
     # Jetlink resets both histories. If its wrapper failed to load, reset the native model.
     reset_parked_history = getattr(model, 'reset_parked_history', None) or model.reset
   parked_pm = PubMaster(['parkedDashcamState']) if reset_parked_history is not None else None

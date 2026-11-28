@@ -46,6 +46,12 @@ def candidate(reference, nv12, transforms, inputs):
   """Validate a private unlinked copy in the non-realtime preparation process."""
   if not enabled():
     return reference, False
+  # The bundled dataclass always has a public `linear` field, even after
+  # deserialization, so install would reject it. Older captures store
+  # `_linear` and cache `linear` only when linked. Their reference may already
+  # be linked, but the deserialized copy can still qualify.
+  if not hasattr(getattr(reference, 'captured', None), '_linear'):
+    return reference, False
   from tinygrad import Tensor
   from openpilot.common.swaglog import cloudlog
   from openpilot.selfdrive.modeld.helpers import dump_oob, load_oob

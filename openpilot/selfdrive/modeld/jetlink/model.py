@@ -152,6 +152,8 @@ class Warp:
 
 
 class JoiningModel:
+  pv5_warp_cache_enabled = False
+  refresh_warp_cache = False
   daylight75 = (False, False)
   wide_yolo_enabled = True
   wide_yolo_preview = False
@@ -258,17 +260,23 @@ class JoiningModel:
       try:
         if self.preparation is None:
           cloudlog.warning('Jetlink warp preparation starting after %d internal outputs', self.small_runs)
-          self.preparation = WarpPreparation(*self.warp_size)
+          self.preparation = WarpPreparation(*self.warp_size, use_cache=self.pv5_warp_cache_enabled,
+                                            refresh_cache=self.refresh_warp_cache)
         if self.preparation.future.done():
           prepared, seconds = self.preparation.future.result()
           started = time.monotonic()
           self.warp = Warp(*self.warp_size, prepared=prepared, input_buffers=self.warp_inputs)
+          cache_status = self.preparation.cache_status
           self.preparation = None
-          cloudlog.warning('Jetlink warp prepared in %.3fs; installed in %.3fs', seconds, time.monotonic() - started)
+          self.refresh_warp_cache = False
+          cloudlog.warning('Jetlink warp prepared in %.3fs; installed in %.3fs; cache=%s',
+                           seconds, time.monotonic() - started, cache_status)
           cloudlog.warning('Jetlink warp install input/restore/cpu seconds: %s', getattr(self.warp, 'init_timings', ()))
       except Exception as exc:
         cloudlog.exception('Jetlink warp preparation failed; retaining internal model')
         if self.preparation is not None:
+          if self.preparation.cache_status == 'hit':
+            self.refresh_warp_cache = True
           self.preparation.close()
           self.preparation = None
         self.error = str(exc)
