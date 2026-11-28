@@ -2,8 +2,8 @@
   "format": 2,
   "delivery": "usb",
   "integrity": "sha256",
-  "profile": "jetson-pv5-lane-web-fairy-tale-v1-1-20261128-4f5dcc20",
-  "source_commit": "4f5dcc2018144f9bb7d8398f924686c9bcd3c2b4",
+  "profile": "jetson-pv5-hud-power-fairy-tale-v1-1-20261128-766b34b8",
+  "source_commit": "766b34b85a95a9c14938aa84f8a3698fd89efeef",
   "runtime": {
     "arch": "aarch64",
     "l4t": "36.4.7",
@@ -11,9 +11,9 @@
   },
   "storage_format": 1,
   "bundle": {
-    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-lane-web-fairy-tale-v1-1-20261128-4f5dcc20/host.tar.gz",
-    "sha256": "13915de4b62f7d9ff94c27c710060d59ecbd1a0386c1defaac83a3b1762cb2fc",
-    "size": 81579733
+    "url": "https://github.com/tjdgus200/openpilot/releases/download/jetson-pv5-hud-power-fairy-tale-v1-1-20261128-766b34b8/host.tar.gz",
+    "sha256": "c33a4e88310bde047c3217b760fbc8c3550d4c88fc5f5ba9f09c7781938d1efa",
+    "size": 81582185
   },
   "model": {
     "url": "https://huggingface.co/commaai/openpilot_driving_models/resolve/d6ca4432101dc1a938ae3ee3a8dbfbfdae33ccba/3f1a78e6-9a79-4d85-b796-1cd573bd5a3a/32768/big_driving_supercombo.onnx",
