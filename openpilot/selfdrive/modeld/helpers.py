@@ -56,6 +56,21 @@ def wait_for_vision_streams(discover, road_stream, wide_stream, use_wide_camera,
     time.sleep(0.1)
 
 
+def connect_vision_buffers(client, require_buffers):
+  # A stream can disappear between discovery and the fd handshake. VisionIPC
+  # can then report a successful connection with zero mapped buffers.
+  while True:
+    if client.connect(False) and ((client.width and client.height) or require_buffers() is False):
+      return
+    time.sleep(0.1)
+
+
+def lost_vision_buffers(*clients):
+  # recv() leaves this flag set on a timeout. A mismatched server ID or buffer
+  # index clears it: every cached view of the old mappings must be retired.
+  return any(not client.is_connected() for client in clients)
+
+
 def _default_tg_input_devices(process_name: str, usbgpu: bool):
   backend = os.getenv("DEV", "QCOM")
   defaults = {

@@ -1,3 +1,5 @@
+import os
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -98,3 +100,108 @@ def test_missing_camera_frames_still_create_a_real_gap(missing):
   wide = Camera((i, 1_000_000_000 + i * 50_000_000) for i in [0, missing + 1, missing + 2])
   selected = [receive_camera_pair(main, wide)[1].frame_id for _ in range(3)]
   assert selected == [0, missing + 1, missing + 2]
+
+
+class QueuedCamera(Camera):
+  def __init__(self, frames):
+    super().__init__(frames)
+    self.waits = []
+
+  def recv(self, timeout_ms=100):
+    self.waits.append(timeout_ms)
+    return super().recv()
+
+
+@pytest.mark.parametrize('lag', [10, 11, 18, 28])
+def test_pv5_recovers_first_aligned_pair_before_reading_next_road_frame(lag, monkeypatch):
+  # Replay a wide queue with one packet per 50 ms exposure. The main
+  # subscriber is conflated, so a fresh recv there loses the original road.
+  monkeypatch.setattr('openpilot.selfdrive.modeld.camera_sync._boot_time_ns', lambda: lag * 50_000_000 + 30_000_000)
+
+  def run(recover):
+    road = QueuedCamera([(lag, lag * 50_000_000)])
+    wide = QueuedCamera((i, i * 50_000_000) for i in range(lag + 1))
+    pair = receive_camera_pair(road, wide, recover_backlog=recover)
+    assert road.waits == [100]
+    return pair, wide.waits
+
+  assert run(False)[0] is None
+  pair, waits = run(True)
+  assert pair[1].frame_id == pair[3].frame_id == lag
+  assert waits == [100] * 11 + [0] * (lag - 10)
+
+
+@pytest.mark.parametrize('age', [-1, 250_000_000, 1_000_000_000])
+def test_pv5_queue_recovery_rejects_future_or_expired_pair(age, monkeypatch):
+  stamp = 10 * 50_000_000
+  monkeypatch.setattr('openpilot.selfdrive.modeld.camera_sync._boot_time_ns', lambda: stamp + age)
+  road = QueuedCamera([(10, stamp)])
+  wide = QueuedCamera((i, i * 50_000_000) for i in range(11))
+  assert receive_camera_pair(road, wide, recover_backlog=True) is None
+
+
+@pytest.mark.parametrize(('lag', 'old_missed'), [(0, 0), (10, 1), (18, 1), (28, 2)])
+def test_pv5_first_processed_exposure_at_20hz(lag, old_missed, monkeypatch):
+  # The road camera delivers the next exposure only when the reader tries
+  # again. Wide has lag older notifications waiting before the aligned one.
+  for recovery, expected in ((False, old_missed), (True, 0)):
+    road = QueuedCamera((i, i * 50_000_000) for i in range(lag, lag + 3))
+    wide = QueuedCamera((i, i * 50_000_000) for i in range(lag + 3))
+    monkeypatch.setattr('openpilot.selfdrive.modeld.camera_sync._boot_time_ns', lambda: road.timestamp_sof + 30_000_000)
+    for _ in range(expected):
+      assert receive_camera_pair(road, wide, recover_backlog=recovery) is None
+    pair = receive_camera_pair(road, wide, recover_backlog=recovery)
+    assert pair[1].frame_id == pair[3].frame_id == lag + expected
+
+
+def test_pv5_queue_scan_has_a_bound_and_does_not_wait_when_queue_is_empty():
+  road = QueuedCamera([(31, 31 * 50_000_000)])
+  wide = QueuedCamera((i, i * 50_000_000) for i in range(32))
+  assert receive_camera_pair(road, wide, recover_backlog=True) is None
+  assert wide.waits == [100] * 11 + [0] * 18
+  wide = QueuedCamera((i, i * 50_000_000) for i in range(11))
+  road = QueuedCamera([(31, 31 * 50_000_000)])
+  assert receive_camera_pair(road, wide, recover_backlog=True) is None
+  assert wide.waits == [100] * 11 + [0]
+
+
+@pytest.mark.parametrize('lag', [0, 12])
+def test_pv5_rejects_overwritten_camera_ring_slot(lag):
+  class Overwritten(QueuedCamera):
+    def recv(self, timeout_ms=100):
+      buf = super().recv(timeout_ms)
+      if buf is not None and buf.frame_id == lag:
+        buf.frame_id += 18
+      return buf
+
+  wide = Overwritten((i, i * 50_000_000) for i in range(lag + 1))
+  road = QueuedCamera([(lag, lag * 50_000_000)])
+  assert receive_camera_pair(road, wide, recover_backlog=True) is None
+
+
+@pytest.mark.parametrize('road_id', [0, 18])
+def test_pv5_uses_current_pixels_in_a_native_wide_backlog(road_id):
+  vipc = pytest.importorskip('msgq.visionipc', exc_type=ImportError)
+  road = vipc.VisionStreamType.VISION_STREAM_ROAD
+  wide = vipc.VisionStreamType.VISION_STREAM_WIDE_ROAD
+  name = f'pv5queue{os.getpid()}_{road_id}'
+  server = vipc.VisionIpcServer(name)
+  server.create_buffers(road, 2, 16, 16)
+  server.create_buffers(wide, 18, 16, 16)
+  server.start_listener()
+  main = vipc.VisionIpcClient(name, road, True)
+  extra = vipc.VisionIpcClient(name, wide, False)
+  assert main.connect(True) and extra.connect(True)
+  # Force reuse of the oldest wide slot before modeld consumes its packet.
+  first = time.clock_gettime_ns(time.CLOCK_BOOTTIME) - 18 * 50_000_000
+  for i in range(19):
+    sof = first + i * 50_000_000
+    pixels = bytes([i]) * (16 * 16 * 3 // 2)
+    server.send(wide, pixels, i, sof, sof + 1)
+    if i == road_id:
+      server.send(road, pixels, i, sof, sof + 1)
+  pair = receive_camera_pair(main, extra, recover_backlog=True)
+  if road_id == 0:
+    assert pair is None
+  else:
+    assert pair[1].frame_id == pair[3].frame_id == pair[0].data[0] == pair[2].data[0] == road_id

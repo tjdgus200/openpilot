@@ -37,7 +37,7 @@ from openpilot.selfdrive.modeld.camera_gap import CameraGapTrace
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.navigation.map_client import MapInput
 from openpilot.selfdrive.modeld.signal_shadow import ShadowClient
-from openpilot.selfdrive.modeld.helpers import (get_tg_input_devices, load_oob, modeld_pkl_path,
+from openpilot.selfdrive.modeld.helpers import (connect_vision_buffers, get_tg_input_devices, load_oob, lost_vision_buffers, modeld_pkl_path,
                                                 refresh_usbgpu_device_cache, usbgpu_compiled_path, usbgpu_pcie_not_ready,
                                                 usbgpu_present, wait_for_usbgpu_present, wait_for_vision_streams)
 
@@ -302,12 +302,14 @@ def main(demo=False):
 
   def requires_dual():
     nonlocal CP
-    if demo or not pv5_parked_dashcam.supported(SIMULATION):
+    if not use_wide_camera or demo or not pv5_parked_dashcam.supported(SIMULATION):
       return False
-    CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
+    waiting_for_identity = CP is None
+    if waiting_for_identity:
+      CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
     required = pv5_parked_dashcam.requires_dual_road_cameras(CP, use_wide_camera, SIMULATION)
-    if required:
-      cloudlog.warning("PV5 wide camera enabled: waiting for both road camera streams")
+    if required and waiting_for_identity:
+      cloudlog.warning("PV5 wide camera enabled: waiting for both road camera streams and buffers")
     return required
 
   vipc_client_main_stream, use_extra_client = wait_for_vision_streams(
@@ -320,10 +322,9 @@ def main(demo=False):
   vipc_client_extra = VisionIpcClient("camerad", VisionStreamType.VISION_STREAM_WIDE_ROAD, False)
   cloudlog.warning(f"vision stream set up, use_wide_camera: {use_wide_camera}, main_wide_camera: {main_wide_camera}, use_extra_client: {use_extra_client}")
 
-  while not vipc_client_main.connect(False):
-    time.sleep(0.1)
-  while use_extra_client and not vipc_client_extra.connect(False):
-    time.sleep(0.1)
+  connect_vision_buffers(vipc_client_main, requires_dual)
+  if use_extra_client:
+    connect_vision_buffers(vipc_client_extra, requires_dual)
 
   cloudlog.warning(f"connected main cam with buffer size: {vipc_client_main.buffer_len} ({vipc_client_main.width} x {vipc_client_main.height})")
   if use_extra_client:
@@ -512,7 +513,8 @@ def main(demo=False):
   camera_yaw_trim_deg = params.get_float("CameraYawTrimDeg") * 0.01
   lat_delay_dynamic = lat_smooth_seconds
   diagnostics = RuntimeDiagnostics('modeld', cloudlog.event)
-  camera_gap = CameraGapTrace(cloudlog.event)
+  recover_dual_camera = use_extra_client and requires_dual()
+  camera_gap = CameraGapTrace(cloudlog.event, recover_backlog=recover_dual_camera)
   wide_fov_index = 0
   wide_model_down = 0
   stock_transform_extra = model_transform_extra
@@ -545,6 +547,11 @@ def main(demo=False):
 
     frames = camera_gap.receive(vipc_client_main, vipc_client_extra if use_extra_client else None)
     if frames is None:
+      if recover_dual_camera and lost_vision_buffers(vipc_client_main, vipc_client_extra):
+        # Model and Jetlink warps cache tensors by address/fd. Let manager
+        # replace this process so no backend can use an unmapped camera buffer.
+        cloudlog.warning("PV5 camera buffer generation changed; restarting modeld")
+        return
       cloudlog.debug("camera pair unavailable or out of sync")
       continue
     buf_main, meta_main, buf_extra, meta_extra = frames

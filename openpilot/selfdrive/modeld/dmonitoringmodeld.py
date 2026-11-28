@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 import os
-from openpilot.selfdrive.modeld.helpers import MODELS_DIR, get_tg_input_devices
+from openpilot.selfdrive.modeld.helpers import MODELS_DIR, connect_vision_buffers, get_tg_input_devices, lost_vision_buffers
 from tinygrad.tensor import Tensor
 import time
 import pickle
+import capnp
 import numpy as np
 
-from openpilot.cereal import messaging
+from openpilot.cereal import car, messaging
 from openpilot.cereal.messaging import PubMaster, SubMaster
 from msgq.visionipc import VisionIpcClient, VisionStreamType, VisionBuf
 from openpilot.common.swaglog import cloudlog
 from openpilot.common import pv5_parked_dashcam
+from openpilot.common.params import Params
 from openpilot.common.realtime import config_realtime_process
 from openpilot.common.runtime_diagnostics import RuntimeDiagnostics
 from openpilot.common.transformations.model import dmonitoringmodel_intrinsics
@@ -111,10 +113,23 @@ def get_driverstate_packet(model_output, frame_id: int, location_ts: int, exec_t
 def main():
   config_realtime_process(7, 5)
 
+  parked_supported = pv5_parked_dashcam.supported()
+  recover_camera = None if parked_supported else False
+
+  def recover_pv5_camera():
+    # Resolve identity only on an empty handshake or confirmed invalidation.
+    nonlocal recover_camera
+    if recover_camera is None and (raw := Params().get("CarParams")):
+      try:
+        cp = messaging.log_from_bytes(raw, car.CarParams)
+        recover_camera = pv5_parked_dashcam.supported_for(cp) and cp.brand == 'hyundai'
+      except (capnp.lib.capnp.KjException, ValueError):
+        return None
+    return recover_camera
+
   cloudlog.warning("connecting to driver stream")
   vipc_client = VisionIpcClient("camerad", VisionStreamType.VISION_STREAM_DRIVER, True)
-  while not vipc_client.connect(False):
-    time.sleep(0.1)
+  connect_vision_buffers(vipc_client, recover_pv5_camera)
   assert vipc_client.is_connected()
   cloudlog.warning(f"connected with buffer size: {vipc_client.buffer_len}")
 
@@ -128,7 +143,6 @@ def main():
   model = ModelState(cam_w, cam_h)
   cloudlog.warning("models loaded, dmonitoringmodeld starting")
 
-  parked_supported = pv5_parked_dashcam.supported()
   parked_services = ['carState', 'carControl', 'selfdriveState', 'parkedDashcamState'] if parked_supported else []
   sm = SubMaster(["liveCalibration", *parked_services])
   pm = PubMaster(["driverStateV2"])
@@ -150,6 +164,9 @@ def main():
     else:
       buf = vipc_client.recv()
     if buf is None:
+      if lost_vision_buffers(vipc_client) and recover_pv5_camera():
+        cloudlog.warning("PV5 driver camera buffer generation changed; restarting dmonitoringmodeld")
+        return
       continue
     if diagnostics.enabled:
       camera_received = time.monotonic()
