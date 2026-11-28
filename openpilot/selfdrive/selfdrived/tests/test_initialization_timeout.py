@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 
-def sample_method(*, simulation=False, replay=False):
+def sample_method(*, simulation=False, replay=False, streams=('road', 'wide')):
   path = Path(__file__).resolve().parents[1] / 'selfdrived.py'
   tree = ast.parse(path.read_text(encoding='utf-8'))
   cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'SelfdriveD')
@@ -15,7 +15,7 @@ def sample_method(*, simulation=False, replay=False):
   namespace = {
     'messaging': SimpleNamespace(recv_one=lambda sock: None),
     'DT_CTRL': 0.01, 'SIMULATION': simulation, 'REPLAY': replay,
-    'VisionIpcClient': SimpleNamespace(available_streams=lambda *a, **kw: ['road', 'wide']),
+    'VisionIpcClient': SimpleNamespace(available_streams=lambda *a, **kw: streams),
     'VisionStreamType': SimpleNamespace(VISION_STREAM_ROAD='road', VISION_STREAM_WIDE_ROAD='wide'),
     'State': SimpleNamespace(enabled='enabled'), 'IGNORED_SAFETY_MODES': (),
     'cloudlog': SimpleNamespace(event=lambda name, **kw: records.append((name, kw))),
@@ -36,7 +36,7 @@ def startup(frame, *, healthy=False, can_valid=True):
   sm.frame = frame
   sm.valid = sm.alive = sm.freq_ok = {'modelV2': healthy}
   sm.ignore_alive, sm.ignore_valid = [], []
-  return SimpleNamespace(sm=sm, initialized=False, enabled=False, use_wide_camera=True,
+  return SimpleNamespace(sm=sm, initialized=False, enabled=False, use_wide_camera=True, require_dual_road_cameras=False,
                          CS_prev=SimpleNamespace(canValid=can_valid), car_state_sock=None,
                          state_machine=SimpleNamespace(state='disabled'), mismatch_counter=0)
 
@@ -85,3 +85,15 @@ def test_existing_simulation_and_replay_policy(simulation, replay, initialized):
   state = startup(601)
   sample(state)
   assert state.initialized == initialized
+
+
+@pytest.mark.parametrize('streams,missing', [(['road'], 'wideRoadCameraState'), (['wide'], 'roadCameraState')])
+@pytest.mark.parametrize('require_dual', [True, False])
+def test_missing_camera_at_initialization_timeout(streams, missing, require_dual):
+  sample, _ = sample_method(streams=streams)
+  state = startup(1001)
+  state.require_dual_road_cameras = require_dual
+  sample(state)
+  assert state.initialized and not state.enabled
+  assert (missing in state.sm.ignore_alive) == (not require_dual)
+  assert (missing in state.sm.ignore_valid) == (not require_dual)

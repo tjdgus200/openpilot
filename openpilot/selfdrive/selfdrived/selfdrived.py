@@ -99,6 +99,7 @@ class SelfdriveD:
     self.gps_packets = [self.gps_location_service]
     self.sensor_packets = ["accelerometer", "gyroscope"]
     self.use_wide_camera = bool(self.params.get("UseWideCamera", return_default=True))
+    self.require_dual_road_cameras = pv5_parked_dashcam.requires_dual_road_cameras(self.CP, self.use_wide_camera, REPLAY or SIMULATION)
     self.camera_packets = get_camera_packets(self.use_wide_camera)
 
     # TODO: de-couple selfdrived with card/conflate on carState without introducing controls mismatches
@@ -644,13 +645,14 @@ class SelfdriveD:
       # Leave room for model startup; healthy services can finish sooner.
       timed_out = self.sm.frame * DT_CTRL > 10.
       if all_valid or timed_out or (SIMULATION and not REPLAY):
-        available_streams = VisionIpcClient.available_streams("camerad", block=False)
-        if VisionStreamType.VISION_STREAM_ROAD not in available_streams:
-          self.sm.ignore_alive.append('roadCameraState')
-          self.sm.ignore_valid.append('roadCameraState')
-        if self.use_wide_camera and VisionStreamType.VISION_STREAM_WIDE_ROAD not in available_streams:
-          self.sm.ignore_alive.append('wideRoadCameraState')
-          self.sm.ignore_valid.append('wideRoadCameraState')
+        if not self.require_dual_road_cameras:
+          available_streams = VisionIpcClient.available_streams("camerad", block=False)
+          if VisionStreamType.VISION_STREAM_ROAD not in available_streams:
+            self.sm.ignore_alive.append('roadCameraState')
+            self.sm.ignore_valid.append('roadCameraState')
+          if self.use_wide_camera and VisionStreamType.VISION_STREAM_WIDE_ROAD not in available_streams:
+            self.sm.ignore_alive.append('wideRoadCameraState')
+            self.sm.ignore_valid.append('wideRoadCameraState')
 
         if REPLAY and any(ps.controlsAllowed for ps in self.sm['pandaStates']):
           self.state_machine.state = State.enabled

@@ -114,7 +114,11 @@ def test_model_loop_pauses_without_a_ready_backend_and_resets_before_resuming(je
   main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
   attach = next(i for i, node in enumerate(main.body)
                 if isinstance(node, ast.Assign) and ast.unparse(node.targets[0]) == 'reset_parked_history')
-  setup = main.body[attach:attach+5]
+  def assignment_to(node, names):
+    return isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names
+
+  publisher_init = next(i for i, node in enumerate(main.body) if assignment_to(node, {'parked_pm'}))
+  setup = main.body[attach:publisher_init+1] + [node for node in main.body if assignment_to(node, {'parked_paused', 'parked_status_at'})]
   pause = next(n for n in ast.walk(main) if isinstance(n, ast.If) and ast.unparse(n.test) == 'parked_pm is not None')
   loop = ast.parse('for frame in frames:\n  update(frame)\n  inferred.append(frame)\n').body[0]
   loop.body.insert(1, pause)

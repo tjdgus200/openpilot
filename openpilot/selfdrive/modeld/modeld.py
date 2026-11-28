@@ -38,8 +38,8 @@ from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.navigation.map_client import MapInput
 from openpilot.selfdrive.modeld.signal_shadow import ShadowClient
 from openpilot.selfdrive.modeld.helpers import (get_tg_input_devices, load_oob, modeld_pkl_path,
-                                                refresh_usbgpu_device_cache, select_vision_streams, usbgpu_compiled_path,
-                                                usbgpu_pcie_not_ready, usbgpu_present, wait_for_usbgpu_present)
+                                                refresh_usbgpu_device_cache, usbgpu_compiled_path, usbgpu_pcie_not_ready,
+                                                usbgpu_present, wait_for_usbgpu_present, wait_for_vision_streams)
 
 PROCESS_NAME = "openpilot.selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
@@ -298,18 +298,22 @@ def main(demo=False):
 
   config_realtime_process(7, 54)
 
-  # visionipc clients
-  while True:
-    available_streams = VisionIpcClient.available_streams("camerad", block=False)
-    vipc_client_main_stream, use_extra_client = select_vision_streams(
-      available_streams,
-      VisionStreamType.VISION_STREAM_ROAD,
-      VisionStreamType.VISION_STREAM_WIDE_ROAD,
-      use_wide_camera,
-    )
-    if vipc_client_main_stream is not None:
-      break
-    time.sleep(.1)
+  CP = None
+
+  def requires_dual():
+    nonlocal CP
+    if demo or not pv5_parked_dashcam.supported(SIMULATION):
+      return False
+    CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
+    required = pv5_parked_dashcam.requires_dual_road_cameras(CP, use_wide_camera, SIMULATION)
+    if required:
+      cloudlog.warning("PV5 wide camera enabled: waiting for both road camera streams")
+    return required
+
+  vipc_client_main_stream, use_extra_client = wait_for_vision_streams(
+    lambda: VisionIpcClient.available_streams("camerad", block=False),
+    VisionStreamType.VISION_STREAM_ROAD, VisionStreamType.VISION_STREAM_WIDE_ROAD, use_wide_camera, requires_dual,
+  )
 
   main_wide_camera = vipc_client_main_stream == VisionStreamType.VISION_STREAM_WIDE_ROAD
   vipc_client_main = VisionIpcClient("camerad", vipc_client_main_stream, True)
@@ -381,11 +385,12 @@ def main(demo=False):
   # A standby model must not spawn a separate experimental ONNX observer that
   # receives no live samples. Keep standby inference/warmup and fallback intact;
   # optional comparison remains available when internal inference starts active.
-  small_model, CP = None, None
+  small_model = None
   if not demo and not SIMULATION and os.path.isfile('/AGNOS'):
     from openpilot.selfdrive.modeld import internal_model
     if (candidate := internal_model.prepared_path()) is not None:
-      CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
+      if CP is None:
+        CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
       if internal_model.supported_car(CP):
         from openpilot.selfdrive.modeld.internal_model_warmup import warm_internal_model_from_camera
         vega_model = None

@@ -41,6 +41,21 @@ def select_vision_streams(available_streams: Collection[VisionStreamT], road_str
   return None, False
 
 
+def wait_for_vision_streams(discover, road_stream, wide_stream, use_wide_camera, requires_dual):
+  """Resolve vehicle identity only if a single camera would feed both model inputs."""
+  dual_required = None
+  while True:
+    main, extra = select_vision_streams(discover(), road_stream, wide_stream, use_wide_camera)
+    if main is not None:
+      if extra or not use_wide_camera or dual_required is False:
+        return main, extra
+      if dual_required is None:
+        dual_required = requires_dual()
+        # Fingerprinting can block. Always rediscover before committing to a topology.
+        continue
+    time.sleep(0.1)
+
+
 def _default_tg_input_devices(process_name: str, usbgpu: bool):
   backend = os.getenv("DEV", "QCOM")
   defaults = {

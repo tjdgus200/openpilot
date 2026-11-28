@@ -14,6 +14,10 @@ def supported_for(cp, replay=False):
   return supported(replay) and cp.carFingerprint == 'KIA_PV5' and not cp.notCar and not cp.passive
 
 
+def requires_dual_road_cameras(cp, use_wide_camera, replay=False):
+  return bool(use_wide_camera) and supported_for(cp, replay) and cp.brand == 'hyundai'
+
+
 def setting_enabled(params):
   # The saved choice takes precedence over the legacy startup flag, including an explicit OFF.
   saved = params.get(PARAM)
