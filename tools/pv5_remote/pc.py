@@ -3,6 +3,7 @@
 from collections import OrderedDict
 import base64
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -11,10 +12,36 @@ import threading
 
 from openpilot.system.pv5_incidents.archive_protocol import authenticate, encode
 from tools.pv5_remote.conditional_remote import HOME_POLICY, PARK_POLICY, PARK_MODES
+from tools.pv5_remote.connect import valid_sidecar_proof
 
 PATH = '/v1/remote/bootstrap'
 QUALIFICATION = '/v1/remote/qualification'
 PARK_QUALIFICATION = '/v1/remote/park-qualification'
+SIDECAR_BOOTSTRAP = '/v1/remote/park-sidecar-bootstrap'
+SIDECAR_QUALIFICATION = '/v1/remote/park-sidecar-qualification'
+ROUTES = (PATH, QUALIFICATION, PARK_QUALIFICATION, SIDECAR_BOOTSTRAP, SIDECAR_QUALIFICATION)
+
+
+def sidecar_qualification(folder, host, client, now):
+  path = folder / 'park-sidecar-qualification.json'
+  if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 8192:
+    raise ValueError('park_sidecar_qualification_required')
+  result = json.loads(path.read_bytes())
+  target = ipaddress.IPv4Address(result.get('target_ip'))
+  expected = hashlib.sha256(Path(__file__).with_name('conditional_remote.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+  if (
+    target not in ipaddress.ip_network('100.64.0.0/10')
+    or not valid_sidecar_proof(result, guard_digest=expected, client_digest=hashlib.sha256(client.encode('ascii')).hexdigest(),
+                               target=target, registration=True)
+    or result.get('passed') is not True or result.get('transport_closed') is not True
+    or result.get('local_pid_audit_pending') is not True or result.get('host_key') != host
+    or type(result.get('stamp')) not in (int, float) or not 0 <= now - result['stamp'] < 1800
+  ):
+    raise ValueError('park_sidecar_qualification_required')
+  return {
+    'version': 1, 'park_qualified': True, 'resource_policy': result['resource_policy'], 'guard_sha256': expected,
+    'actual_device_key_auth': True, 'local_pid_audit_required': True, 'trial_id': result['trial_id'], 'target_ip': str(target),
+  }
 
 
 def public_key(value):
@@ -37,7 +64,7 @@ class Bootstrap:
       raise ValueError('private_remote_directory_required')
 
   def ingest(self, path, values, body, now):
-    if self.enabled() is not True or path not in (PATH, QUALIFICATION, PARK_QUALIFICATION) or len(body) > 2048 or not authenticate(self.key, path, values, body, now):
+    if self.enabled() is not True or path not in ROUTES or len(body) > 2048 or not authenticate(self.key, path, values, body, now):
       raise PermissionError('unauthorized')
     value = json.loads(body)
     if not isinstance(value, dict) or set(value) != {'version', 'host_key'} or type(value['version']) is not int or value['version'] != 1:
@@ -58,7 +85,7 @@ class Bootstrap:
         if host_path.stat().st_size > 256 or host_path.read_text().strip() != host:
           raise ValueError('host_key_changed')  # Never silently accept a replacement identity.
       else:
-        if path in (QUALIFICATION, PARK_QUALIFICATION):
+        if path != PATH:
           raise ValueError('host_not_pinned')
         with host_path.open('x', encoding='ascii') as stream:
           stream.write(host + '\n')
@@ -71,8 +98,12 @@ class Bootstrap:
       if known.exists() and (known.stat().st_size > 512 or known.read_text() != text):
         raise ValueError('host_key_changed')
       if not known.exists():
+        if path in (SIDECAR_BOOTSTRAP, SIDECAR_QUALIFICATION):
+          raise ValueError('host_not_pinned')
         with known.open('x', encoding='ascii') as stream:
           stream.write(text)
+      if path == SIDECAR_QUALIFICATION:
+        return sidecar_qualification(self.folder, host, client, now)
       if path in (QUALIFICATION, PARK_QUALIFICATION):
         parked = path == PARK_QUALIFICATION
         policy = PARK_POLICY if parked else HOME_POLICY
@@ -101,7 +132,7 @@ class Bootstrap:
 def handler(base, bootstrap):
   class Handler(base):
     def do_POST(self):
-      if self.path not in (PATH, QUALIFICATION, PARK_QUALIFICATION):
+      if self.path not in ROUTES:
         return super().do_POST()
       length = self.headers.get('Content-Length', '')
       if self.headers.get('Transfer-Encoding') or not re.fullmatch(r'[0-9]{1,4}', length) or not 0 < int(length) <= 2048:

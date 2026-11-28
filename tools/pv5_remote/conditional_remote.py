@@ -5,6 +5,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import math
 import os
@@ -14,12 +15,17 @@ import re
 import select
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import threading
 import time
 
-ROOT = Path('/data/pv5-remote-access')
+ENROLLED_ROOT = Path('/data/pv5-remote-access')
+PARK_ROOT = ENROLLED_ROOT / 'park'
+PARK_UNIT = 'pv5-park-remote.service'
+PARK_SIDECAR = False
+ROOT = ENROLLED_ROOT
 SCRIPT = ROOT / 'conditional_remote.py'
 UNIT = 'pv5-conditional-remote.service'
 RUNTIME = Path('/run/pv5-conditional-remote')
@@ -27,6 +33,7 @@ RUNTIME_UNITS = Path('/run/systemd/system')
 STAGE = 'entry'
 HOME_POLICY = 'detached_home_uncapped_v1'
 PARK_POLICY = 'parked_vehicle_capped_v1'
+PARK_COMPAT_POLICY = 'parked_vehicle_memory_capped_v1'
 PARK_MODES = ['parked_vehicle']
 BOOT_HOOK = '''  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V2
   if [ -f /TICI ] && [ -f /data/pv5-remote-access/conditional_modes.json ] && [ -f /data/pv5-remote-access/conditional_remote.py ]; then
@@ -38,6 +45,9 @@ BOOT_HOOK = '''  # PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V2
     ) </dev/null >/dev/null 2>&1 &
   fi
 '''
+PARK_BOOT_HOOK = (BOOT_HOOK.replace('PV5_CONDITIONAL_REMOTE_RUNTIME_RESTORE_V2', 'PV5_PARK_REMOTE_RUNTIME_RESTORE_V1')
+                  .replace('/data/pv5-remote-access/', '/data/pv5-remote-access/park/')
+                  .replace('restore_supervisor.py"', 'restore_supervisor.py" --park-sidecar'))
 SOCKET = str(RUNTIME / 'tailscaled.sock')
 BIN = ROOT / '1.104.5'
 SERVICES = ('deviceState', 'pandaStates', 'managerState', 'carParams', 'carState', 'carControl', 'selfdriveState', 'onroadEvents')
@@ -45,6 +55,20 @@ BINARY_SHA = {
   'tailscale': 'a000d3ee4734531da8e0b2874453e01c6f841e6fea9edae8621f4b2e4e45ab48',
   'tailscaled': 'd1532cdbbe9c9a86275939b9130e837da8bb7223d2647996b7b1fabf48bc8359',
 }
+
+
+def select_park_sidecar():
+  global ROOT, SCRIPT, UNIT, RUNTIME, SOCKET, PARK_SIDECAR
+  PARK_SIDECAR = True
+  ROOT = PARK_ROOT
+  SCRIPT = ROOT / 'conditional_remote.py'
+  UNIT = PARK_UNIT
+  RUNTIME = Path('/run/pv5-park-remote')
+  SOCKET = str(RUNTIME / 'tailscaled.sock')
+
+
+if Path(__file__) == PARK_ROOT / 'conditional_remote.py':
+  select_park_sidecar()
 
 
 def encode(value):
@@ -65,6 +89,10 @@ def public_key(value):
   return value
 
 
+def authorized_key_data(key):
+  return ('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + public_key(key) + '\n').encode()
+
+
 def finite(value):
   return type(value) in (int, float) and math.isfinite(value)
 
@@ -75,8 +103,9 @@ def home_policy(config):
 
 
 def access_policy(config):
-  if config.get('resource_policy') == PARK_POLICY and config.get('qualified_modes') == PARK_MODES:
-    return PARK_POLICY
+  policy = config.get('resource_policy')
+  if policy in (PARK_POLICY, PARK_COMPAT_POLICY) and config.get('qualified_modes') == PARK_MODES:
+    return policy
   home_policy(config)
   return HOME_POLICY
 
@@ -84,9 +113,12 @@ def access_policy(config):
 def resource_limits(config, proc=Path('/proc/self/cgroup'), cgroups=Path('/sys/fs/cgroup')):
   """Read actual kernel limits, never infer enforcement from unit directives."""
   policy = access_policy(config)
+  if policy == PARK_COMPAT_POLICY and (not PARK_SIDECAR or UNIT != PARK_UNIT):
+    raise ValueError('park_sidecar_required')
   groups = [line.split(':', 2) for line in proc.read_text().splitlines()]
   group = next((v[2] for v in groups if v[0] == '0' and v[1] == ''), '')
-  if not group.endswith('/' + UNIT) or '..' in group.split('/'):
+  expected_unit = PARK_UNIT if policy == PARK_COMPAT_POLICY else UNIT
+  if not group.endswith('/' + expected_unit) or '..' in group.split('/'):
     raise ValueError('guard_cgroup_required')
   base = cgroups / group.lstrip('/')
   memory = (base / 'memory.max').read_text().strip()
@@ -97,6 +129,27 @@ def resource_limits(config, proc=Path('/proc/self/cgroup'), cgroups=Path('/sys/f
     if memory != 'max' or quota != 'max':
       raise ValueError('unexpected_home_resource_cap')
     return {'resource_policy': policy, 'memory_limit': None, 'CPU_quota_limit': None, 'CPU_controller': controller}
+  if policy == PARK_COMPAT_POLICY:
+    if memory != '268435456':
+      raise ValueError('vehicle_memory_limit_required')
+    if cpu.exists() or (base / 'pids.max').exists() or kernel_resource_support(cgroups) != policy:
+      raise ValueError('vehicle_resource_profile_changed')
+    # Check the calling guard or authenticated SSH process. PID1 directives
+    # alone do not establish the effective settings of the login process.
+    import resource
+
+    nice = os.getpriority(os.PRIO_PROCESS, 0)
+    affinity = sorted(os.sched_getaffinity(0))
+    oom_score = int((proc.parent / 'oom_score_adj').read_text())
+    no_new_privs = re.search(r'^NoNewPrivs:\s+1$', (proc.parent / 'status').read_text(), re.MULTILINE) is not None
+    nofile = resource.getrlimit(resource.RLIMIT_NOFILE)
+    core = resource.getrlimit(resource.RLIMIT_CORE)
+    if (nice != 19 or not affinity or not set(affinity) <= {0, 1, 2, 3} or oom_score != 500 or not no_new_privs
+        or nofile != (256, 256) or core != (0, 0)):
+      raise ValueError('park_process_protection_required')
+    return {'resource_policy': policy, 'memory_limit': int(memory), 'CPU_quota_limit': None, 'CPU_controller': None,
+            'tasks_limit': None, 'nice': nice, 'cpu_affinity': affinity, 'oom_score_adj': oom_score,
+            'nofile_limit': nofile[1], 'core_limit': core[1], 'no_new_privs': no_new_privs}
   if not cpu.exists():
     # Existing hybrid mount only: never mount/reconfigure the host hierarchy.
     cpu_group = next((v[2] for v in groups if 'cpu' in v[1].split(',')), '')
@@ -120,7 +173,7 @@ def resource_limits(config, proc=Path('/proc/self/cgroup'), cgroups=Path('/sys/f
           'CPU_controller': controller, 'tasks_limit': int(tasks)}
 
 
-def eligible(samples, now, modes):
+def eligible(samples, now, modes, *, registration=False):
   def fresh(name, ttl):
     value = samples.get(name, {})
     return value.get('valid') is True and finite(value.get('stamp')) and 0 <= now - value['stamp'] < ttl
@@ -145,13 +198,14 @@ def eligible(samples, now, modes):
   elif ds['started'] is False:
     return '', 'not_detached'
   else:
+    park_registration = registration is True and modes == PARK_MODES
     usage = ds.get('cpu', [])
     if (
       not usage
       or len(usage) > 32
       or not all(finite(value) and 0 <= value <= 70 for value in usage)
       or not finite(ds.get('memory'))
-      or not 0 <= ds['memory'] <= 80
+      or not 0 <= ds['memory'] <= (100 if park_registration else 80)
       or not finite(ds.get('free'))
       or not 20 <= ds['free'] <= 100
     ):
@@ -159,6 +213,8 @@ def eligible(samples, now, modes):
     if not all(fresh(name, 0.25) for name in ('carState', 'carControl', 'selfdriveState')) or not fresh('onroadEvents', 2.5):
       return '', 'vehicle_source_stale'
     cp = samples.get('carParams', {})
+    if park_registration and not fresh('carParams', 55):
+      return '', 'vehicle_source_stale'
     if cp.get('valid') is not True or cp.get('vehicle') != 'KIA_PV5' or cp.get('notCar') is not False:
       return '', 'identity'
     if cp.get('dashcam') is not True and 'parked_vehicle' not in modes:
@@ -308,13 +364,29 @@ def atomic(path, data, mode=0o600):
   temporary.replace(path)
 
 
-def prerequisites(check_binaries=False, check=lambda: None):
+def check_platform():
   if sys.platform != 'linux' or platform.machine() != 'aarch64' or os.geteuid() != 0 or not Path('/TICI').exists():
     raise ValueError('owner_comma_local_install_required')
   if Path('/proc/1/comm').read_text().strip() != 'systemd':
     raise ValueError('systemd_required')
+
+
+def sidecar_directory():
+  check_platform()
+  protected(ENROLLED_ROOT, directory=True)
+  ROOT.mkdir(mode=0o700, exist_ok=True)
+  protected(ROOT, directory=True, private=True)
+
+
+def prerequisites(check_binaries=False, check=lambda: None):
+  check_platform()
+  if PARK_SIDECAR:
+    protected(ENROLLED_ROOT, directory=True)
   protected(ROOT, directory=True)
-  protected(ROOT / 'state', directory=True)
+  if not PARK_SIDECAR or (ROOT / 'state').exists():
+    protected(ROOT / 'state', directory=True, private=PARK_SIDECAR)
+  if PARK_SIDECAR:
+    protected(BIN, directory=True)
   identities = {}
   for name, digest in BINARY_SHA.items():
     path = BIN / name
@@ -339,6 +411,83 @@ def run(args, timeout=5):
   if len(result.stdout) > 16384:
     raise ValueError('command_result_budget')
   return result.stdout
+
+
+def checked_home_identity(identities):
+  """Reuse only the established owner SSH identity, never the Home overlay state."""
+  config = ENROLLED_ROOT / 'conditional_modes.json'
+  guard = ENROLLED_ROOT / 'conditional_remote.py'
+  host = ENROLLED_ROOT / 'conditional_host_ed25519'
+  public = ENROLLED_ROOT / 'conditional_host_ed25519.pub'
+  for entry, limit, private in ((config, 4096, True), (guard, 131072, False), (host, 4096, True), (public, 512, False)):
+    protected(entry, private=private)
+    if not 0 < entry.stat().st_size <= limit:
+      raise ValueError('qualified_home_identity_required')
+  saved = json.loads(config.read_bytes())
+  home_policy(saved)
+  if (saved.get('trial') is not False or saved.get('boot_restore') is not True or saved.get('binaries') != identities
+      or saved.get('guard_sha256') != hashlib.sha256(guard.read_bytes().replace(b'\r\n', b'\n')).hexdigest()):
+    raise ValueError('qualified_home_identity_required')
+  pinned = public_key(' '.join(public.read_text().split()[:2]))
+  if public_key(' '.join(run(['/usr/bin/ssh-keygen', '-y', '-f', str(host)]).decode().split()[:2])) != pinned:
+    raise ValueError('qualified_home_identity_required')
+  return pinned
+
+
+def park_state(create=False):
+  state, receipt = ROOT / 'state', ROOT / 'conditional_state_dir.json'
+  if create:
+    state.mkdir(mode=0o700, exist_ok=True)
+  protected(state, directory=True, private=True)
+  if state.samefile(ENROLLED_ROOT / 'state'):
+    raise ValueError('separate_park_node_required')
+  info = state.stat()
+  identity = encode([info.st_dev, info.st_ino])
+  if not receipt.exists() and create:
+    if next(state.iterdir(), None) is not None:
+      raise ValueError('empty_park_state_required')
+    atomic(receipt, identity)
+  protected(receipt, private=True)
+  if receipt.stat().st_size > 128 or receipt.read_bytes() != identity:
+    raise ValueError('separate_park_node_required')
+  primary = state / 'tailscaled.state'
+  if primary.exists() or primary.is_symlink():
+    protected(primary, private=True)
+    if primary.stat().st_nlink != 1:
+      raise ValueError('separate_park_node_required')
+  # tailscaled is the only writer after the empty directory was registered.
+  return state
+
+
+def installed_policy(config):
+  policy = access_policy(config)
+  if PARK_SIDECAR:
+    if config.get('park_sidecar') is not True or policy not in (PARK_POLICY, PARK_COMPAT_POLICY):
+      raise ValueError('matching_park_layout_required')
+  elif 'park_sidecar' in config or policy == PARK_COMPAT_POLICY:
+    raise ValueError('matching_park_layout_required')
+  return policy
+
+
+def park_node(status, config):
+  node = status.get('Self') or {}
+  ident = node.get('ID')
+  network = ipaddress.ip_network('100.64.0.0/10')
+  addresses = [str(ip) for ip in map(ipaddress.ip_address, node.get('TailscaleIPs') or []) if ip in network]
+  if not isinstance(ident, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}', ident) or len(addresses) != 1:
+    raise ValueError('park_node_identity_required')
+  observed = {'id': ident, 'ip': addresses[0]}
+  path = ROOT / 'conditional_park_node.json'
+  if path.exists() or path.is_symlink():
+    protected(path, private=True)
+    if path.stat().st_size > 256 or json.loads(path.read_bytes()) != observed:
+      raise ValueError('park_node_identity_changed')
+  elif config.get('trial') is True:
+    atomic(path, encode(observed))
+  else:
+    raise ValueError('park_node_identity_required')
+  if config.get('trial') is not True and config.get('park_node') != observed:
+    raise ValueError('park_node_identity_changed')
 
 
 def exchange(host, path='/v1/remote/bootstrap'):
@@ -382,9 +531,9 @@ def ssh_config():
     [
       'ListenAddress 127.0.0.1',
       'AddressFamily inet',
-      'Port 2223',
+      'Port ' + ('2224' if PARK_SIDECAR else '2223'),
       'PidFile ' + str(RUNTIME / 'sshd.pid'),
-      'HostKey ' + str(ROOT / 'conditional_host_ed25519'),
+      'HostKey ' + str((ENROLLED_ROOT if PARK_SIDECAR else ROOT) / 'conditional_host_ed25519'),
       'AuthorizedKeysFile ' + str(RUNTIME / 'authorized_keys'),
       'StrictModes yes',
       'AllowUsers root',
@@ -412,8 +561,10 @@ def ssh_config():
 
 
 def unit_text(interpreter, policy=HOME_POLICY):
-  if policy not in (HOME_POLICY, PARK_POLICY):
+  if policy not in (HOME_POLICY, PARK_POLICY, PARK_COMPAT_POLICY):
     raise ValueError('invalid_resource_policy')
+  if policy == PARK_COMPAT_POLICY and (not PARK_SIDECAR or UNIT != PARK_UNIT):
+    raise ValueError('park_sidecar_required')
   return '\n'.join(
     [
       '[Unit]',
@@ -430,11 +581,12 @@ def unit_text(interpreter, policy=HOME_POLICY):
       'TimeoutStopSec=200ms',
       'TimeoutStartSec=30s',
       *(['CPUAccounting=yes', 'CPUQuota=10%', 'MemoryAccounting=yes', 'MemoryMax=256M', 'TasksMax=64'] if policy == PARK_POLICY else []),
+      *(['MemoryAccounting=yes', 'MemoryMax=256M', 'CPUAffinity=0 1 2 3', 'OOMScoreAdjust=500'] if policy == PARK_COMPAT_POLICY else []),
       'Nice=19',
       'IOSchedulingClass=idle',
       'LimitCORE=0',
       'LimitNOFILE=256',
-      'RuntimeDirectory=pv5-conditional-remote',
+      'RuntimeDirectory=' + RUNTIME.name,
       'RuntimeDirectoryMode=0755',
       'ProtectControlGroups=yes',
       'ProtectKernelTunables=yes',
@@ -500,16 +652,18 @@ class Permission:
     os._exit(75)  # PID1/parent observes exit and kills THIS unit's descendants.
 
 
-def wait_backend(cli, permission, deadline):
+def wait_backend(cli, permission, deadline, children=()):
   while time.monotonic() < deadline:
     permission.check()
+    if any(child.poll() is not None for child in children):
+      raise ValueError('owned_daemon_exited')
     try:
       state = json.loads(run(cli + ['status', '--json', '--peers=false'], timeout=min(2, max(0.1, deadline - time.monotonic()))))
     except subprocess.CalledProcessError:
       state = {}  # The owned socket may exist before its API is ready.
     permission.check()
     if state.get('BackendState') == 'Running':
-      return
+      return state
     time.sleep(1)
   raise ValueError('node_not_running')  # No inferred login requirement or auth URL.
 
@@ -526,9 +680,35 @@ def runtime_key():
   if not 0 < len(data) <= 512:
     raise ValueError('authorized_key_format')
   key = public_key(' '.join(data.decode().split()[-2:]))
-  if data != ('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + key + '\n').encode():
+  if data != authorized_key_data(key):
     raise ValueError('authorized_key_format')
   atomic(RUNTIME / 'authorized_keys', data)
+
+
+def listener_owned(pid, port, proc=Path('/proc')):
+  # /proc/net/tcp identifies the bound IPv4 address and the listening socket.
+  endpoint = f'0100007F:{port:04X}'
+  sockets = set()
+  for row in (proc / 'net/tcp').read_text().splitlines()[1:]:
+    values = row.split()
+    if len(values) > 9 and values[1] == endpoint and values[3] == '0A':
+      sockets.add('socket:[' + values[9] + ']')
+  for fd in (proc / str(pid) / 'fd').iterdir():
+    try:
+      if os.readlink(fd) in sockets:
+        return True
+    except FileNotFoundError:
+      continue
+  return False
+
+
+def owned_daemon_socket(pid):
+  with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+    conn.settimeout(0.25)
+    conn.connect(SOCKET)
+    peer, uid, _ = struct.unpack('3i', conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i')))
+    if peer != pid or uid != 0:
+      raise ValueError('foreign_daemon_socket')
 
 
 def bridge():
@@ -541,24 +721,49 @@ def bridge():
   try:
     runtime_key()
     permission.check()
+    state = ROOT / 'state'
+    backend = '127.0.0.1:2224' if PARK_SIDECAR else '127.0.0.1:2223'
+    sshd = ['/usr/sbin/sshd', '-D', '-e', '-f', str(ROOT / 'conditional_sshd_config')]
+    if PARK_SIDECAR:
+      config = json.loads((ROOT / 'conditional_modes.json').read_bytes())
+      installed_policy(config)
+      state = park_state()
+      if os.path.lexists(SOCKET):
+        raise ValueError('foreign_daemon_socket')
+      # An enrolled node can restore Serve immediately. Bind and verify its
+      # private target before starting the node, even on subsequent boots.
+      listener = subprocess.Popen(sshd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+      children.append(listener)
+      while not listener_owned(listener.pid, 2224):
+        permission.check()
+        if listener.poll() is not None or time.monotonic() - began > 5:
+          raise ValueError('park_listener_not_owned')
+        time.sleep(0.05)
     # This dedicated daemon is absent in normal/active driving mode.
-    children.append(
-      subprocess.Popen(
-        [str(BIN / 'tailscaled'), '--tun=userspace-networking', '--statedir=' + str(ROOT / 'state'), '--socket=' + SOCKET, '--port=0'],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-      )
+    daemon = subprocess.Popen(
+      [str(BIN / 'tailscaled'), '--tun=userspace-networking', '--statedir=' + str(state), '--socket=' + SOCKET, '--port=0'],
+      stdout=subprocess.DEVNULL,
+      stderr=subprocess.DEVNULL,
     )
+    children.append(daemon)
     while not Path(SOCKET).exists():
       permission.check()
-      if children[0].poll() is not None or time.monotonic() - began > 15:
+      if daemon.poll() is not None or time.monotonic() - began > 15:
         raise ValueError('daemon_not_ready')
       time.sleep(0.05)
     cli = [str(BIN / 'tailscale'), '--socket=' + SOCKET]
-    wait_backend(cli, permission, time.monotonic() + 15)
+    if PARK_SIDECAR:
+      owned_daemon_socket(daemon.pid)
+    # A fresh Park node can be enrolled locally during this guarded trial.
+    timeout = 660 if PARK_SIDECAR and config.get('trial') is True else 15
+    status = wait_backend(cli, permission, time.monotonic() + timeout, children if PARK_SIDECAR else ())
+    if PARK_SIDECAR:
+      if listener.poll() is not None or not listener_owned(listener.pid, 2224):
+        raise ValueError('park_listener_not_owned')
+      park_node(status, config)
     serve = json.loads(run(cli + ['serve', 'status', '--json']))
     if serve and (
-      set(serve) - {'TCP', 'AllowFunnel'} or serve.get('AllowFunnel') or serve.get('TCP') not in (None, {}, {'2222': {'TCPForward': '127.0.0.1:2223'}})
+      set(serve) - {'TCP', 'AllowFunnel'} or serve.get('AllowFunnel') or serve.get('TCP') not in (None, {}, {'2222': {'TCPForward': backend}})
     ):
       raise ValueError('foreign_serve_configuration')
     permission.check()
@@ -568,17 +773,16 @@ def bridge():
       atomic(prior, encode({'run_ssh': prefs.get('RunSSH') is True}))
     run(cli + ['set', '--ssh=false'])  # Replace repeated browser-check SSH with owner key SSH.
     permission.check()
-    children.append(
-      subprocess.Popen(['/usr/sbin/sshd', '-D', '-e', '-f', str(ROOT / 'conditional_sshd_config')], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    )
-    run(cli + ['serve', '--bg', '--tcp=2222', 'tcp://127.0.0.1:2223'])
+    if not PARK_SIDECAR:
+      children.append(subprocess.Popen(sshd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+    run(cli + ['serve', '--bg', '--tcp=2222', 'tcp://' + backend])
     while True:
       permission.check()
       if any(child.poll() is not None for child in children):
         raise ValueError('owned_daemon_exited')
       time.sleep(0.05)
   finally:
-    for child in children:
+    for child in reversed(children):
       if child.poll() is None:
         child.terminate()
 
@@ -588,13 +792,14 @@ def guard():
   protected(SCRIPT)
   protected(ROOT / 'conditional_modes.json', private=True)
   config = json.loads((ROOT / 'conditional_modes.json').read_bytes())
-  parked = access_policy(config) == PARK_POLICY
+  parked = installed_policy(config) in (PARK_POLICY, PARK_COMPAT_POLICY)
+  registration = PARK_SIDECAR and parked and config.get('trial') is True
   if parked:
     resource_limits(config)
   modes = config['qualified_modes']
   if config.get('binaries') != identities:
     raise ValueError('enrolled_binary_metadata_changed')
-  if config.get('trial') is not True and config.get('guard_sha256') != hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest():
+  if (PARK_SIDECAR or config.get('trial') is not True) and config.get('guard_sha256') != hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest():
     raise ValueError('matching_code_qualification_required')
   os.setpriority(os.PRIO_PROCESS, 0, 19)
   source, gate, child = Source(), Gate(), None
@@ -622,7 +827,7 @@ def guard():
       if config.get('trial') is True and (RUNTIME / 'stop-trial').exists():
         trial_exit('trial_requested_stop')
         return
-      mode, _reason = eligible(source.read(), time.monotonic(), modes)
+      mode, _reason = eligible(source.read(), time.monotonic(), modes, registration=registration)
       if menu_request is not None and not menu_request():
         mode = ''
       if mode and not foreign_checked:
@@ -633,7 +838,7 @@ def guard():
           except FileNotFoundError:
             continue
         foreign_checked = True
-        mode, _reason = eligible(source.read(), time.monotonic(), modes)
+        mode, _reason = eligible(source.read(), time.monotonic(), modes, registration=registration)
         if menu_request is not None and not menu_request():
           mode = ''
       now = time.monotonic()
@@ -673,11 +878,35 @@ def runtime_unit():
   return target
 
 
+def sidecar_unit_sources():
+  """Refuse foreign definitions and drop-ins before writing or starting a service."""
+  target = RUNTIME_UNITS / UNIT
+  if os.path.lexists(target) and (not target.is_symlink() or target.resolve() != ROOT / UNIT):
+    raise ValueError('foreign_unit_not_replaced')
+  fragment = run(['systemctl', 'show', UNIT, '-p', 'FragmentPath', '--value']).decode().strip()
+  if fragment and fragment not in (str(ROOT / UNIT), str(target)):
+    raise ValueError('foreign_unit_not_replaced')
+  directory = RUNTIME_UNITS / (UNIT + '.d')
+  dropin = directory / 'trial.conf'
+  if os.path.lexists(directory):
+    protected(directory, directory=True)
+    if any(entry != dropin for entry in directory.iterdir()):
+      raise ValueError('unexpected_trial_dropin')
+    if os.path.lexists(dropin):
+      protected(dropin)
+      if dropin.read_bytes() != b'[Service]\nRuntimeMaxSec=900s\nRestart=no\n':
+        raise ValueError('unexpected_trial_dropin')
+  loaded = run(['systemctl', 'show', UNIT, '-p', 'DropInPaths', '--value']).decode().split()
+  if any(path != str(dropin) for path in loaded):
+    raise ValueError('unexpected_trial_dropin')
+
+
 def require_boot_hook():
   path = Path('/data/openpilot/launch_chffrplus.sh')
   if path.is_symlink() or not path.is_file() or path.stat().st_size > 131072:
     raise ValueError('launcher_update_required')
-  if BOOT_HOOK.encode() not in path.read_bytes().replace(b'\r\n', b'\n'):
+  hook = PARK_BOOT_HOOK if PARK_SIDECAR else BOOT_HOOK
+  if hook.encode() not in path.read_bytes().replace(b'\r\n', b'\n'):
     raise ValueError('launcher_update_required')
 
 
@@ -693,7 +922,7 @@ def restore_runtime():
   config = json.loads(modes_path.read_bytes())
   if config.get('trial') is not False or config.get('boot_restore') is not True:
     return {'boot_restore_requested': False, 'reason': 'not_enabled'}
-  policy = access_policy(config)
+  policy = installed_policy(config)
   if config.get('binaries') != identities or config.get('guard_sha256') != hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest():
     raise ValueError('matching_code_qualification_required')
   protected(ROOT / UNIT)
@@ -702,6 +931,8 @@ def restore_runtime():
   trial = RUNTIME_UNITS / (UNIT + '.d/trial.conf')
   if trial.exists() or trial.is_symlink():
     raise ValueError('unexpected_trial_dropin')
+  if PARK_SIDECAR:
+    sidecar_unit_sources()
   for old in ('pv5-home-remote-access.service', 'pv5-remote-access.service'):
     if run(['systemctl', 'show', old, '-p', 'ActiveState', '--value']).strip() in (b'active', b'activating', b'reloading', b'deactivating'):
       raise ValueError('existing_session_active_nothing_stopped')
@@ -718,28 +949,28 @@ def restore_runtime():
   return {'boot_restore_requested': True, 'network_admitted': False}
 
 
-def kernel_resource_support():
+def kernel_resource_support(root=Path('/sys/fs/cgroup')):
   """Read existing controllers before modifying identities or installing files."""
-  root = Path('/sys/fs/cgroup')
   controllers = root / 'cgroup.controllers'
   available = controllers.read_text().split() if controllers.is_file() else []
   cpu = 'cpu' in available or any((root / name / 'cpu.cfs_quota_us').is_file() for name in ('cpu', 'cpu,cpuacct', 'cpuacct,cpu'))
-  if not cpu:
-    raise ValueError('vehicle_cpu_controller_unavailable')
   if 'memory' not in available:
     raise ValueError('vehicle_memory_controller_unavailable')
-  if 'pids' not in available:
-    raise ValueError('vehicle_tasks_controller_unavailable')
+  if cpu and 'pids' in available:
+    return PARK_POLICY
+  if not cpu and 'pids' not in available and not (root / 'pids/pids.max').exists():
+    return PARK_COMPAT_POLICY
+  raise ValueError('vehicle_tasks_controller_unavailable' if cpu else 'vehicle_cpu_controller_unavailable')
 
 
-def await_eligible(source, modes, *, clock=time.monotonic, pause=time.sleep):
+def await_eligible(source, modes, *, registration=False, clock=time.monotonic, pause=time.sleep):
   # card publishes CarParams every 50s; a fresh subscriber may miss the prior event.
   deadline = clock() + (55 if modes == PARK_MODES else 5)
   gate = Gate()
   while clock() < deadline:
     samples = source.read()
     now = clock()
-    mode, _ = eligible(samples, now, modes)
+    mode, _ = eligible(samples, now, modes, registration=registration)
     if gate.tick(mode, now) == 'open':
       return mode
     pause(0.1)
@@ -761,41 +992,65 @@ def install(parked=False):
       raise ValueError('existing_session_active_nothing_stopped')
   if run(['systemctl', 'show', UNIT, '-p', 'UnitFileState', '--value']).strip() in (b'enabled', b'enabled-runtime'):
     raise ValueError('auto_service_already_enabled')
+  if PARK_SIDECAR:
+    sidecar_unit_sources()
   existing = ROOT / 'conditional_modes.json'
   if existing.exists() or existing.is_symlink():
     protected(existing, private=True)
-    if access_policy(json.loads(existing.read_bytes())) != policy:
+    prior = json.loads(existing.read_bytes())
+    previous_policy = installed_policy(prior)
+    if PARK_SIDECAR and prior.get('trial') is not True:
+      raise ValueError('auto_service_already_enabled')
+    if not PARK_SIDECAR and previous_policy != policy:
       raise ValueError('other_mode_enrolled')
   if parked:
     mark('vehicle_resource_preflight')
-    kernel_resource_support()
+    available = kernel_resource_support()
+    if PARK_SIDECAR:
+      policy = available
+    elif available != PARK_POLICY:
+      raise ValueError('vehicle_cpu_controller_unavailable')
   mark('park_source' if parked else 'home_source')
   source = Source()
-  admitted_mode = await_eligible(source, modes)
+  admitted_mode = await_eligible(source, modes, registration=PARK_SIDECAR and parked)
 
   def still_home():
-    if eligible(source.read(), time.monotonic(), modes)[0] != admitted_mode:
+    if eligible(source.read(), time.monotonic(), modes, registration=PARK_SIDECAR and parked)[0] != admitted_mode:
       raise ValueError('home_condition_lost')
 
   mark('binary_identity')
   identities = prerequisites(check_binaries=True, check=still_home)
-  host = ROOT / 'conditional_host_ed25519'
-  if not host.exists():
-    run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', str(host)])
-  protected(host, private=True)
-  host_public = public_key(' '.join(Path(str(host) + '.pub').read_text().split()[:2]))
+  if PARK_SIDECAR:
+    host_public = checked_home_identity(identities)
+  else:
+    host = ROOT / 'conditional_host_ed25519'
+    if not host.exists():
+      run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', '', '-f', str(host)])
+    protected(host, private=True)
+    host_public = public_key(' '.join(Path(str(host) + '.pub').read_text().split()[:2]))
   mark('pc_bootstrap')
-  response = exchange(host_public)  # Existing private enrollment, no key through Discord.
+  response = exchange(host_public, '/v1/remote/park-sidecar-bootstrap') if PARK_SIDECAR else exchange(host_public)
   if response.get('host_key_pinned') is not True:
     raise ValueError('pc_host_pin_required')
   client = public_key(response['client_public_key'])
-  if eligible(source.read(), time.monotonic(), modes)[0] != admitted_mode:
+  auth = authorized_key_data(client)
+  if PARK_SIDECAR:
+    home_keys = ENROLLED_ROOT / 'conditional_authorized_keys'
+    protected(home_keys, private=True)
+    if home_keys.stat().st_size != len(auth) or home_keys.read_bytes() != auth:
+      raise ValueError('qualified_home_identity_required')
+  if eligible(source.read(), time.monotonic(), modes, registration=PARK_SIDECAR and parked)[0] != admitted_mode:
     raise ValueError('home_condition_lost')
   mark('data_install')
-  atomic(ROOT / 'conditional_authorized_keys', ('no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-user-rc ' + client + '\n').encode())
+  config = {'qualified_modes': modes, 'resource_policy': policy, 'trial': True, 'binaries': identities}
+  if PARK_SIDECAR:
+    park_state(create=True)
+    guard_digest = hashlib.sha256(Path(__file__).read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+    config.update(park_sidecar=True, trial_id=os.urandom(16).hex(), guard_sha256=guard_digest)
+  atomic(ROOT / 'conditional_authorized_keys', auth)
   atomic(ROOT / 'conditional_sshd_config', ssh_config().encode())
   atomic(SCRIPT, Path(__file__).read_bytes(), 0o644)
-  atomic(ROOT / 'conditional_modes.json', encode({'qualified_modes': modes, 'resource_policy': policy, 'trial': True, 'binaries': identities}))
+  atomic(ROOT / 'conditional_modes.json', encode(config))
   unit = ROOT / UNIT
   atomic(unit, unit_text(sys.executable, policy).encode(), 0o644)
   mark('runtime_unit_link')
@@ -803,6 +1058,8 @@ def install(parked=False):
   run(['systemctl', 'daemon-reload'])
   trial = RUNTIME_UNITS / (UNIT + '.d')
   trial.mkdir(exist_ok=True)
+  if PARK_SIDECAR:
+    protected(trial, directory=True)
   atomic(trial / 'trial.conf', b'[Service]\nRuntimeMaxSec=900s\nRestart=no\n', 0o644)
   run(['systemctl', 'daemon-reload'])
   mark('trial_start')
@@ -835,26 +1092,54 @@ def enable_home(parked=False):
   protected(SCRIPT)
   protected(ROOT / 'conditional_modes.json', private=True)
   prior_config = json.loads((ROOT / 'conditional_modes.json').read_bytes())
-  if access_policy(prior_config) != policy:
+  if PARK_SIDECAR:
+    policy = kernel_resource_support()
+    if prior_config.get('trial') is not True or not re.fullmatch('[0-9a-f]{32}', str(prior_config.get('trial_id', ''))):
+      raise ValueError('matching_mode_trial_required')
+  if installed_policy(prior_config) != policy:
     raise ValueError('matching_mode_trial_required')
   target = RUNTIME_UNITS / UNIT
   if not target.is_symlink() or target.resolve() != ROOT / UNIT:
     raise ValueError('unit_identity')
+  if PARK_SIDECAR:
+    sidecar_unit_sources()
   require_boot_hook()
   if run(['systemctl', 'show', UNIT, '-p', 'ActiveState', '--value']).strip() in (b'active', b'activating', b'deactivating'):
     raise ValueError('finish_trial_cancellation_check_first')
   source = Source()
-  admitted_mode = await_eligible(source, modes)
-  host = public_key(' '.join((ROOT / 'conditional_host_ed25519.pub').read_text().split()[:2]))
-  proof = exchange(host, '/v1/remote/park-qualification' if parked else '/v1/remote/qualification')
+  admitted_mode = await_eligible(source, modes, registration=PARK_SIDECAR and parked)
+  if PARK_SIDECAR:
+    host = checked_home_identity(identities)
+    proof = exchange(host, '/v1/remote/park-sidecar-qualification')
+  else:
+    host = public_key(' '.join((ROOT / 'conditional_host_ed25519.pub').read_text().split()[:2]))
+    proof = exchange(host, '/v1/remote/park-qualification' if parked else '/v1/remote/qualification')
   digest = hashlib.sha256(SCRIPT.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+  if PARK_SIDECAR:
+    protected(ROOT / UNIT)
+    if prior_config.get('guard_sha256') != digest or (ROOT / UNIT).read_bytes() != unit_text(sys.executable, policy).encode():
+      raise ValueError('matching_code_qualification_required')
   if proof.get('park_qualified' if parked else 'home_qualified') is not True or proof.get('guard_sha256') != digest or proof.get('resource_policy') != policy:
     raise ValueError('matching_actual_device_qualification_required')
   audit = ROOT / 'conditional_trial_processes.json'
   protected(audit, private=True)
   if audit.stat().st_size > 2048:
     raise ValueError('trial_pid_audit')
-  rows = json.loads(audit.read_bytes())['processes']
+  audit_data = json.loads(audit.read_bytes())
+  extra = {}
+  if PARK_SIDECAR:
+    if proof.get('trial_id') != prior_config['trial_id'] or audit_data.get('trial_id') != prior_config['trial_id']:
+      raise ValueError('matching_actual_device_qualification_required')
+    park_state()
+    node = ROOT / 'conditional_park_node.json'
+    protected(node, private=True)
+    if not 0 < node.stat().st_size <= 256:
+      raise ValueError('park_node_identity_required')
+    identity = json.loads(node.read_bytes())
+    if not identity.get('ip') or proof.get('target_ip') != identity['ip']:
+      raise ValueError('park_node_identity_required')
+    extra = {'park_sidecar': True, 'park_node': identity}
+  rows = audit_data['processes']
   if not 2 <= len(rows) <= 8:
     raise ValueError('trial_pid_audit')
   for entry in rows:
@@ -867,14 +1152,14 @@ def enable_home(parked=False):
         raise ValueError('trial_process_survived')
     except FileNotFoundError:
       pass
-  if eligible(source.read(), time.monotonic(), modes)[0] != admitted_mode:
+  if eligible(source.read(), time.monotonic(), modes, registration=PARK_SIDECAR and parked)[0] != admitted_mode:
     raise ValueError('home_condition_lost')
   trial = RUNTIME_UNITS / (UNIT + '.d/trial.conf')
   if trial.is_symlink() or trial.read_bytes() != b'[Service]\nRuntimeMaxSec=900s\nRestart=no\n':
     raise ValueError('trial_identity')
   protected(ROOT / 'conditional_modes.json', private=True)
   prior_modes = json.loads((ROOT / 'conditional_modes.json').read_bytes())
-  if access_policy(prior_modes) != policy:
+  if installed_policy(prior_modes) != policy or (PARK_SIDECAR and prior_modes != prior_config):
     raise ValueError('matching_mode_trial_required')
   if prior_modes.get('binaries') != identities:
     raise ValueError('enrolled_binary_metadata_changed')
@@ -884,6 +1169,7 @@ def enable_home(parked=False):
     encode({
       'qualified_modes': modes, 'resource_policy': policy, 'trial': False,
       'boot_restore': True, 'guard_sha256': digest, 'binaries': identities,
+      **extra,
     }),
   )
   run(['systemctl', 'daemon-reload'])
@@ -902,6 +1188,8 @@ def main():
   group = parser.add_mutually_exclusive_group(required=True)
   group.add_argument('--install-trial', action='store_true')
   group.add_argument('--install-park-trial', action='store_true')
+  group.add_argument('--install-park-sidecar', action='store_true')
+  group.add_argument('--enable-park-sidecar', action='store_true')
   group.add_argument('--enable-park-auto', action='store_true')
   group.add_argument('--enable-home-auto', action='store_true')
   group.add_argument('--restore-runtime', action='store_true')
@@ -909,9 +1197,19 @@ def main():
   group.add_argument('--bridge', action='store_true')
   args = parser.parse_args()
   try:
-    if args.install_trial or args.install_park_trial or args.enable_home_auto or args.enable_park_auto or args.restore_runtime:
+    if args.install_park_sidecar or args.enable_park_sidecar:
+      select_park_sidecar()
+    elif PARK_SIDECAR and (args.install_trial or args.install_park_trial or args.enable_park_auto or args.enable_home_auto):
+      raise ValueError('matching_park_layout_required')
+    installing = args.install_trial or args.install_park_trial or args.install_park_sidecar
+    enabling = args.enable_home_auto or args.enable_park_auto or args.enable_park_sidecar
+    if installing or enabling or args.restore_runtime:
       import fcntl
 
+      if args.install_park_sidecar:
+        if any(os.environ.get(name) for name in ('SSH_CONNECTION', 'SSH_CLIENT', 'SSH_TTY')):
+          raise ValueError('local_terminal_install_required')
+        sidecar_directory()
       lock_path = ROOT / 'conditional_install.lock'
       if lock_path.is_symlink():
         raise ValueError('unsafe_install_lock')
@@ -919,8 +1217,10 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if args.restore_runtime:
           print(json.dumps(restore_runtime()), flush=True)
+        elif installing:
+          install(args.install_park_trial or args.install_park_sidecar)
         else:
-          install(args.install_park_trial) if (args.install_trial or args.install_park_trial) else enable_home(args.enable_park_auto)
+          enable_home(args.enable_park_auto or args.enable_park_sidecar)
     elif args.guard:
       guard()
     else:

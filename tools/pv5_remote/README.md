@@ -293,3 +293,20 @@ The boot supervisor selects the absolute Python executable from the protected, a
 `python -m tools.pv5_remote.client --policy <policy>` checks the existing enrolled service with bounded retries of that read-only check. `client.command(policy)` supplies the authenticated SSH arguments for future owner operations: three initial TCP connection attempts and encrypted keepalives every 5 seconds, allowing six missed replies. Authentication and pinned host-key failures are not retried by the checker. Arbitrary commands are never replayed after a disconnect. The server's freshness, state gate, permission pipe, cgroup and watchdog are unchanged.
 
 The PC client release is recorded separately as `conditional_remote.client_code_root` / `client_source_commit`; `conditional_remote.code_root` remains the enrolled guard's verification pin. A resilient transport is not permission for access outside the enrolled modes, and no network session can survive power loss. Boot recovery and the guard reopen availability automatically when their conditions return.
+
+## Register Park access alongside an enrolled Home device
+
+Use this procedure on a PV5 whose detached-home guard is already qualified. It keeps the enrolled SSH host identity and gives Park its own Tailscale node, runtime directory, systemd unit and PC verification receipt. The PC receiver must support the Park bootstrap and qualification endpoints before registration. Keep the existing Home verification pin and configure `conditional_remote.park_code_root` on the PC to point to the matching verified release.
+
+1. In the local CarrotWeb terminal, with Park selected, raw and filtered speeds zero and driving assistance disengaged, run the release's `tools/pv5_remote/conditional_remote.py --install-park-sidecar` using the comma's openpilot Python environment and local sudo. This starts a 15-minute trial.
+2. Authenticate the new Park node on the owner's tailnet from the local terminal. Select its socket explicitly so this operation applies only to Park.
+
+   ```sh
+   sudo -n /data/pv5-remote-access/1.104.5/tailscale --socket=/run/pv5-park-remote/tailscaled.sock up --hostname=pv5-park-remote --accept-dns=false --accept-routes=false --ssh=false
+   sudo -n /data/pv5-remote-access/1.104.5/tailscale --socket=/run/pv5-park-remote/tailscaled.sock ip -4
+   ```
+
+3. Set the PC's private `conditional_remote.park_device_ip` to that node's verified address. Use a different address from Home. On the PC run `python -m tools.pv5_remote.connect --policy <policy> --verify-park-sidecar`. The check authenticates the device and owner key, verifies the trial and resource limits, and tests that stopping the Park trial disconnects its job and blocks a new session.
+4. Back in the local terminal use the same Python environment to run `tools/pv5_remote/conditional_remote.py --enable-park-sidecar`. This checks the trial receipt and audited process exits. Then enable **설정 → PV5 → 오류 제보 → P단 자동 원격 SSH** in CarrotWeb. Use `python -m tools.pv5_remote.client --policy <policy> --park-sidecar-check` on the PC to check a normal connection.
+
+During the 15-minute Park trial, the normal 80% device RAM ceiling is relaxed. Once the node is authenticated and ready, the registered owner key also opens a normal SSH shell for the eligible remainder of that trial. An active disabling event (including the low-memory event), stale vehicle state, movement, thermal and other admission checks still close access. Normal operation after registration retains the 80% ceiling. On devices exposing only the memory controller, the service must demonstrate an enforced 256 MiB memory limit and the configured low priority, CPU affinity, OOM preference and process limits for file descriptors and core dumps. CPU affinity and priority do not enforce a percentage CPU quota or a cap on the total number of processes.

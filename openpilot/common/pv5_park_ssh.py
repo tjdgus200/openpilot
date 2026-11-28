@@ -8,6 +8,7 @@ PARAM = 'PV5ParkAutoSsh'
 PREFERENCE = Path('/data/params/d') / PARAM
 MARKER_NAME = 'park-auto-qualified'
 MARKER = Path('/run/pv5-conditional-remote') / MARKER_NAME
+PARK_MARKER = Path('/run/pv5-park-remote') / MARKER_NAME
 
 
 class QualificationRequired(ValueError):
@@ -27,7 +28,9 @@ def requested(path=PREFERENCE):
     return False
 
 
-def qualified(marker=MARKER):
+def qualified(marker=None):
+  if marker is None:
+    return qualified(MARKER) or qualified(PARK_MARKER)
   try:
     root = marker.parent.lstat()
     entry = marker.lstat()

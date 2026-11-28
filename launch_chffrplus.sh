@@ -680,6 +680,16 @@ function launch {
     ) </dev/null >/dev/null 2>&1 &
   fi
 
+  # PV5_PARK_REMOTE_RUNTIME_RESTORE_V1
+  if [ -f /TICI ] && [ -f /data/pv5-remote-access/park/conditional_modes.json ] && [ -f /data/pv5-remote-access/park/conditional_remote.py ]; then
+    (
+      exec 9>&-
+      unset CARROT_BOOT_LOCK_FD
+      sudo -n env PYTHONPATH="$PYTHONPATH" PYTHONDONTWRITEBYTECODE=1 \
+        nice -n 19 python3 "$DIR/tools/pv5_remote/restore_supervisor.py" --park-sidecar >/dev/null 2>&1
+    ) </dev/null >/dev/null 2>&1 &
+  fi
+
   # hardware specific init
   if [ -f /AGNOS ]; then
     if ! agnos_init; then

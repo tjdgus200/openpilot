@@ -158,6 +158,29 @@ class RestoreSupervisorChecks(unittest.TestCase):
         with self.assertRaises(ValueError):
           s.configured()
 
+  def test_sidecar_restores_only_its_own_qualified_profile(self):
+    from tools.pv5_remote.conditional_remote import BOOT_HOOK, PARK_BOOT_HOOK
+    launcher = (Path(__file__).resolve().parents[2] / 'launch_chffrplus.sh').read_text()
+    self.assertEqual(launcher.count(BOOT_HOOK), 1)
+    self.assertEqual(launcher.count(PARK_BOOT_HOOK), 1)
+    with tempfile.TemporaryDirectory() as folder, patch.object(s, 'ROOT', Path(folder)), patch.object(s, 'protected'):
+      script = s.ROOT / 'conditional_remote.py'
+      script.write_bytes(b'fixture')
+      config = {'boot_restore': True, 'trial': False, 'park_sidecar': True, 'qualified_modes': ['parked_vehicle'],
+                'resource_policy': s.PARK_POLICY, 'guard_sha256': hashlib.sha256(script.read_bytes()).hexdigest()}
+      cfg = s.ROOT / 'conditional_modes.json'
+      cfg.write_text(json.dumps(config))
+      with self.assertRaises(ValueError):
+        s.configured()
+      with patch.object(s, 'UNIT', s.PARK_UNIT):
+        self.assertTrue(s.configured())
+        cfg.write_text(json.dumps(dict(config, resource_policy='parked_vehicle_capped_v1')))
+        self.assertTrue(s.configured())
+        for overrides in ({'qualified_modes': ['detached_home']}, {'park_sidecar': False}, {'guard_sha256': '0'*64}):
+          cfg.write_text(json.dumps(dict(config, **overrides)))
+          with self.assertRaises(ValueError):
+            s.configured()
+
   def test_single_status_file_is_replaced_without_raw_log(self):
     with tempfile.TemporaryDirectory() as folder, patch.object(s, 'ROOT', Path(folder)), \
          patch.object(s, 'protected'), patch.object(s.os, 'fchmod', create=True):

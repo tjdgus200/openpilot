@@ -1,5 +1,6 @@
 """Park mode is explicit; actual limits and host-bound cancellation are mandatory."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -149,7 +150,7 @@ class ParkChecks(unittest.TestCase):
       root.joinpath('park-qualification.json').write_text(json.dumps(proof))
       with self.assertRaises(ValueError):call(pc.PARK_QUALIFICATION,'d'*32)
 
-  @unittest.skipUnless(hasattr(__import__('os'), 'O_NOFOLLOW'), 'requires no-follow file opens')
+  @unittest.skipUnless(hasattr(os, 'O_NOFOLLOW'), 'requires no-follow file opens')
   def test_park_menu_preference_accepts_only_exact_one_in_regular_file(self):
     from openpilot.common import pv5_park_ssh
 
@@ -164,6 +165,26 @@ class ParkChecks(unittest.TestCase):
       link = path.with_name('link')
       link.symlink_to(path)
       self.assertFalse(pv5_park_ssh.requested(link))
+
+  @unittest.skipUnless(hasattr(os, 'geteuid') and os.geteuid() == 0, 'root-owned runtime marker')
+  def test_menu_recognizes_either_qualified_service(self):
+    from unittest.mock import patch
+    from openpilot.common import pv5_park_ssh as menu
+
+    with tempfile.TemporaryDirectory() as directory:
+      home = Path(directory) / 'home-marker'
+      park = Path(directory) / 'park-marker'
+      with patch.object(menu, 'MARKER', home), patch.object(menu, 'PARK_MARKER', park):
+        self.assertFalse(menu.qualified())
+        for marker in (home, park):
+          marker.touch(mode=0o644)
+          self.assertTrue(menu.qualified())
+          marker.chmod(0o666)
+          self.assertFalse(menu.qualified())
+          marker.unlink()
+        home.touch(mode=0o644)
+        park.symlink_to(home)
+        self.assertFalse(menu.qualified(park))
 
 
 if __name__ == '__main__': unittest.main()

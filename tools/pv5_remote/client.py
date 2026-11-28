@@ -9,18 +9,21 @@ import subprocess
 import time
 
 
-def connector(policy):
+def connector(policy, *, sidecar=False):
   cfg = policy['conditional_remote']
   if cfg.get('pc_enabled') is not True:
     raise ValueError('remote_pc_disabled')
-  root = Path(cfg['code_root']) / 'tools/pv5_remote'
+  setting = 'park_code_root' if sidecar else 'code_root'
+  if not cfg.get(setting):
+    raise ValueError('park_code_root_required' if sidecar else 'code_root_required')
+  root = Path(cfg[setting]) / 'tools/pv5_remote'
   # Keep the deployed, qualified guard pin independent of this PC-only client.
   return runpy.run_path(str(root / 'connect.py')), root
 
 
-def command(policy):
-  module, _ = connector(policy)
-  args = module['command'](policy)
+def command(policy, *, sidecar=False):
+  module, _ = connector(policy, sidecar=sidecar)
+  args = module['command'](policy, sidecar=True) if sidecar else module['command'](policy)
   options = {'serveraliveinterval', 'serveralivecountmax', 'connectionattempts'}
   kept, index = [], 0
   while index < len(args):
@@ -33,11 +36,15 @@ def command(policy):
                       '-o', 'ServerAliveCountMax=6'] + kept[-1:]
 
 
-def check(policy, runner=subprocess.run, sleep=time.sleep):
-  module, root = connector(policy)
-  parked = policy.get('conditional_remote', {}).get('resource_policy') == 'parked_vehicle_capped_v1'
-  args = command(policy) + [module['remote'](module['CHECK_PARK'] if parked else module['CHECK'])]
-  expected = hashlib.sha256((root / 'conditional_remote.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+def check(policy, runner=subprocess.run, sleep=time.sleep, *, sidecar=False):
+  module, root = connector(policy, sidecar=sidecar)
+  parked = sidecar or policy.get('conditional_remote', {}).get('resource_policy') == 'parked_vehicle_capped_v1'
+  if sidecar:
+    probe, proof_args = module['sidecar_probe_arguments'](policy, False)
+  else:
+    probe = module['CHECK_PARK'] if parked else module['CHECK']
+    expected = hashlib.sha256((root / 'conditional_remote.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+  args = command(policy, sidecar=sidecar) + [module['remote'](probe)]
   flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
   for attempt in range(1, 4):
     try:
@@ -46,7 +53,9 @@ def check(policy, runner=subprocess.run, sleep=time.sleep):
         if len(result.stdout) > 8192:
           raise ValueError('invalid_remote_check')
         proof = json.loads(result.stdout)
-        if proof.get('guard_sha256') != expected:
+        if sidecar and not module['valid_sidecar_proof'](proof, **proof_args):
+          raise ValueError('sidecar_probe_mismatch')
+        if not sidecar and proof.get('guard_sha256') != expected:
           raise ValueError('guard_code_identity')
         if not all(proof.get(k) is True for k in ('root_key_session', 'guard_cgroup', 'host_service_isolation')):
           raise ValueError('remote_check_failed')
@@ -68,9 +77,10 @@ def check(policy, runner=subprocess.run, sleep=time.sleep):
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--policy', type=Path, required=True)
+  parser.add_argument('--park-sidecar-check', action='store_true')
   args = parser.parse_args()
   policy = json.loads(args.policy.read_text(encoding='utf-8-sig'))
-  print(json.dumps(check(policy)))
+  print(json.dumps(check(policy, sidecar=args.park_sidecar_check)))
 
 
 if __name__ == '__main__':

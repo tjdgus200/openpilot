@@ -16,6 +16,8 @@ import time
 
 ROOT = Path('/data/pv5-remote-access')
 UNIT = 'pv5-conditional-remote.service'
+PARK_UNIT = 'pv5-park-remote.service'
+PARK_POLICY = 'parked_vehicle_memory_capped_v1'
 ATTEMPT_TIMEOUT = 25
 PERMANENT = frozenset({
   'matching_code_qualification_required', 'home_resource_policy_required',
@@ -93,7 +95,12 @@ def configured():
     return False
   home = cfg.get('qualified_modes') == ['detached_home'] and cfg.get('resource_policy') == 'detached_home_uncapped_v1'
   park = cfg.get('qualified_modes') == ['parked_vehicle'] and cfg.get('resource_policy') == 'parked_vehicle_capped_v1'
-  if not (home or park):
+  if UNIT == PARK_UNIT:
+    valid_profile = (cfg.get('park_sidecar') is True and cfg.get('qualified_modes') == ['parked_vehicle']
+                     and cfg.get('resource_policy') in (PARK_POLICY, 'parked_vehicle_capped_v1'))
+  else:
+    valid_profile = 'park_sidecar' not in cfg and (home or park)
+  if not valid_profile:
     raise ValueError('home_resource_policy_required')
   script = ROOT / 'conditional_remote.py'
   protected(script)
@@ -159,7 +166,8 @@ def qualified_interpreter():
     raise ValueError('qualified_interpreter_metadata_invalid')
   module = runpy.run_path(str(ROOT / 'conditional_remote.py'))
   cfg = json.loads((ROOT / 'conditional_modes.json').read_bytes())
-  expected = (module['unit_text'](interpreter, cfg['resource_policy']) if cfg['resource_policy'] == 'parked_vehicle_capped_v1' else module['unit_text'](interpreter))
+  expected = (module['unit_text'](interpreter) if cfg['resource_policy'] == 'detached_home_uncapped_v1'
+              else module['unit_text'](interpreter, cfg['resource_policy']))
   if data != expected.encode():
     raise ValueError('qualified_interpreter_metadata_invalid')
   executable = Path(interpreter).resolve(strict=True)
@@ -244,4 +252,10 @@ def main():
 
 
 if __name__ == '__main__':
+  if sys.argv[1:] == ['--park-sidecar']:
+    protected(ROOT, directory=True)
+    ROOT = ROOT / 'park'
+    UNIT = PARK_UNIT
+  elif sys.argv[1:]:
+    raise SystemExit(2)
   raise SystemExit(main())
