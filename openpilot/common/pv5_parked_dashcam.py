@@ -3,6 +3,7 @@ import os
 
 PARAM = 'PV5ParkedDashcamTrial'
 FRESH_NS = 250_000_000
+PEDAL_REARM_NS = 2_000_000_000
 
 
 def supported(replay=False):
@@ -66,11 +67,15 @@ class ParkedDashcamRequest:
     self.last = None
     self.requested = False
     self.resume_after = start_after
+    self.pause_again_after = 0
 
-  def update(self, allowed, now):
+  def update(self, allowed, now, *, parked_gas=False):
     discontinuity = self.last is not None and not 0 <= now - self.last < FRESH_NS
     self.last = now
-    requested = allowed and not discontinuity
+    # Keep inference running through short releases between pedal taps in Park.
+    if parked_gas:
+      self.pause_again_after = now + PEDAL_REARM_NS
+    requested = allowed and not discontinuity and now >= self.pause_again_after
     if self.requested and not requested:
       self.resume_after = max(self.resume_after, now)
     self.requested = requested

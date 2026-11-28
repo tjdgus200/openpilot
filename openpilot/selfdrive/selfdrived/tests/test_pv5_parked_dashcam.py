@@ -46,6 +46,21 @@ def test_scheduler_stall_cannot_count_as_park_evidence():
   assert not gate.block_engagement(True, first+1, first+1, True)
 
 
+def test_repeated_parked_gas_keeps_model_awake_and_does_not_delay_drive():
+  gate = park.ParkedDashcamRequest()
+  enter(gate)
+  for tick in range(2, 22):
+    gas = tick % 2 == 0
+    assert not gate.update(not gas, tick*TICK, parked_gas=gas)
+  assert gate.resume_after == 2*TICK
+  assert gate.block_engagement(True, TICK, TICK, True)
+  assert not gate.block_engagement(True, 22*TICK, 22*TICK, True)
+  for tick in range(22, 40):
+    assert not gate.update(True, tick*TICK)
+  assert not gate.update(False, 40*TICK)  # Drive at the re-arm deadline
+  assert gate.update(True, 41*TICK)
+
+
 @pytest.mark.parametrize('kwargs', [
   dict(gearShifter='drive'), dict(gearShifter='reverse'), dict(gearShifter='neutral'), dict(gearShifter='unknown'),
   dict(canValid=False), dict(canTimeout=True),
