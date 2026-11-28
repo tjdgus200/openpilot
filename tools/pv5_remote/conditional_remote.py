@@ -110,6 +110,24 @@ def access_policy(config):
   return HOME_POLICY
 
 
+def process_no_new_privs(status):
+  for line in status.splitlines():
+    if line.startswith('NoNewPrivs:'):
+      return line.partition(':')[2].strip() == '1'
+
+  # Older AGNOS kernels enforce this flag without listing it in procfs.
+  # Query the calling thread itself, just as for the affinity check below.
+  try:
+    import ctypes
+    prctl = ctypes.CDLL(None).prctl
+    prctl.argtypes = (ctypes.c_int,) + (ctypes.c_ulong,) * 4
+    prctl.restype = ctypes.c_int
+    PR_GET_NO_NEW_PRIVS = 39
+    return prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) == 1
+  except (ImportError, AttributeError, OSError):
+    return False
+
+
 def resource_limits(config, proc=Path('/proc/self/cgroup'), cgroups=Path('/sys/fs/cgroup')):
   """Read actual kernel limits, never infer enforcement from unit directives."""
   policy = access_policy(config)
@@ -141,7 +159,7 @@ def resource_limits(config, proc=Path('/proc/self/cgroup'), cgroups=Path('/sys/f
     nice = os.getpriority(os.PRIO_PROCESS, 0)
     affinity = sorted(os.sched_getaffinity(0))
     oom_score = int((proc.parent / 'oom_score_adj').read_text())
-    no_new_privs = re.search(r'^NoNewPrivs:\s+1$', (proc.parent / 'status').read_text(), re.MULTILINE) is not None
+    no_new_privs = process_no_new_privs((proc.parent / 'status').read_text())
     nofile = resource.getrlimit(resource.RLIMIT_NOFILE)
     core = resource.getrlimit(resource.RLIMIT_CORE)
     if (nice != 19 or not affinity or not set(affinity) <= {0, 1, 2, 3} or oom_score != 500 or not no_new_privs

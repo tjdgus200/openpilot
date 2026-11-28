@@ -167,6 +167,30 @@ class EffectiveCompatibilityLimits(unittest.TestCase):
     with self.assertRaisesRegex(ValueError, 'guard_cgroup_required'):
       self.read()
 
+  def test_missing_proc_field_requires_positive_kernel_proof(self):
+    status = self.proc.parent / 'status'
+    status.write_text('Name:\tpython\n')
+    with patch('ctypes.CDLL') as libc:
+      query = libc.return_value.prctl
+      for value in (1, 0, -1, 2):
+        with self.subTest(value=value):
+          query.return_value = value
+          if value == 1:
+            self.assertTrue(self.read()['no_new_privs'])
+          else:
+            with self.assertRaisesRegex(ValueError, 'park_process_protection_required'):
+              self.read()
+          query.assert_called_with(39, 0, 0, 0, 0)
+      libc.side_effect = OSError()
+      with self.assertRaisesRegex(ValueError, 'park_process_protection_required'):
+        self.read()
+      libc.reset_mock()
+      for value in ('0', '', 'unknown'):
+        status.write_text('NoNewPrivs:\t' + value + '\n')
+        with self.assertRaisesRegex(ValueError, 'park_process_protection_required'):
+          self.read()
+      libc.assert_not_called()
+
   def test_fail_closed_on_effective_process_settings(self):
     for field, value in ((self.nice, 18), (self.affinity, {4}), (self.affinity, set())):
       original = field.return_value
