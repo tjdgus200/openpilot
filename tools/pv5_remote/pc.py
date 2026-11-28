@@ -11,8 +11,8 @@ import re
 import threading
 
 from openpilot.system.pv5_incidents.archive_protocol import authenticate, encode
-from tools.pv5_remote.conditional_remote import HOME_POLICY, PARK_POLICY, PARK_MODES
-from tools.pv5_remote.connect import valid_sidecar_proof
+from .conditional_remote import HOME_POLICY, PARK_POLICY, PARK_MODES
+from .connect import valid_sidecar_proof
 
 PATH = '/v1/remote/bootstrap'
 QUALIFICATION = '/v1/remote/qualification'
