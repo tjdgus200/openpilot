@@ -17,18 +17,15 @@ def _method(path: Path, class_name: str, method_name: str) -> ast.FunctionDef:
 
 
 def _is_cluster_camera_suppressed(node: ast.expr, *, negated: bool) -> bool:
+  if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
+    return any(_is_cluster_camera_suppressed(value, negated=negated) for value in node.values)
   if negated:
     return (
       isinstance(node, ast.UnaryOp)
       and isinstance(node.op, ast.Not)
-      and _is_cluster_camera_suppressed(node.operand, negated=False)
+      and _is_attr(node.operand, "self", "_suppress_camera_for_cluster")
     )
-  return (
-    isinstance(node, ast.Attribute)
-    and isinstance(node.value, ast.Name)
-    and node.value.id == "self"
-    and node.attr == "_suppress_camera_for_cluster"
-  )
+  return _is_attr(node, "self", "_suppress_camera_for_cluster")
 
 
 def _calls(node: ast.AST, attr: str) -> bool:
@@ -128,7 +125,8 @@ def test_external_hud_skips_camera_and_model_but_retains_device_hud():
     if isinstance(node, ast.If) and _is_cluster_camera_suppressed(node.test, negated=True)
   ]
 
-  assert any(_calls(node, "draw_rectangle_rec") and _calls(ast.Module(body=node.orelse), "_render")
+  assert any(_calls(ast.Module(body=node.body, type_ignores=[]), "draw_rectangle_rec")
+             and _calls(ast.Module(body=node.orelse, type_ignores=[]), "_render")
              for node in connected)
   assert any(_calls(node, "_switch_stream_if_needed") and _calls(node, "_update_calibration")
              for node in disconnected)

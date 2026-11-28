@@ -35,6 +35,98 @@ def layer_env(monkeypatch):
   return module, app, rl, active, clock
 
 
+@pytest.fixture
+def road_view(layer_env):
+  module, app, rl, active, clock = layer_env
+  rl.unload_render_texture.side_effect = lambda _: active.__setitem__(0, 0)
+  source = Path(__file__).parents[1] / 'onroad/augmented_road_view.py'
+  tree = ast.parse(source.read_text(encoding='utf-8'))
+  cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'AugmentedRoadView')
+  cls.body = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in ('set_cluster_hud_connected', '_render')]
+
+  class CameraView:
+    def _render(self, rect):
+      self.camera(rect)
+
+  ui = SimpleNamespace(started=True, CP=None, sm={})
+  app.is_recording = lambda: False
+  namespace = {'CameraView': CameraView, 'ui_state': ui, 'gui_app': app, 'rl': rl, 'time': SimpleNamespace(monotonic=lambda: clock.now),
+               'ROAD_CAM': 0, 'WIDE_CAM': 1, 'UI_BORDER_SIZE': 12, 'render_dashboard': Mock(), 'messaging': Mock()}
+  exec(compile(ast.Module(body=[cls], type_ignores=[]), str(source), 'exec'), namespace)
+  view = namespace['AugmentedRoadView']()
+  for name in ('camera', '_refresh_plot_mode', '_switch_stream_if_needed', '_update_calibration', '_draw_border_carrot',
+               'alert_renderer', 'driver_state_renderer', '_pm', '_overlay_state', 'client'):
+    setattr(view, name, Mock())
+  view.stream_type = 0
+  view.available_streams = {0, 1}
+  view._suppress_camera_for_cluster = False
+  view._fov_preview = SimpleNamespace(active=False, update=Mock())
+  view._render_diagnostics = SimpleNamespace(enabled=False, start=Mock(), finish=Mock(), call=lambda _, draw, *args: draw(*args))
+  view._plot_mode = 0
+  view.model_renderer = SimpleNamespace(_overlay=module.OverlayLayer(0))
+  view._hud_renderer = SimpleNamespace(_overlay=module.OverlayLayer(1), set_driving_feedback_mode=Mock())
+  for renderer in (view.model_renderer, view._hud_renderer):
+    renderer.paint = Mock()
+    renderer.render = Mock(side_effect=lambda rect, r=renderer: r._overlay.draw(rect, r.paint, 'steady'))
+  return view, ui
+
+
+@pytest.mark.parametrize('show_camera,connected', ((True, True), (False, False)))
+def test_pv5_hidden_model_cache_released_and_painted_on_restore(layer_env, road_view, show_camera, connected):
+  _, app, rl, active, clock = layer_env
+  view, ui = road_view
+  ui.CP = SimpleNamespace(carFingerprint='KIA_PV5', notCar=False)
+  model = view.model_renderer
+  hud = view._hud_renderer
+  rect = rl.Rectangle(0, 0, 2160, 1080)
+  view.set_cluster_hud_connected(True, show_camera=True)
+  view._render(rect)
+  model_target, hud_target = model._overlay._target, hud._overlay._target
+  assert model_target is not None and hud_target is not None
+  rl.unload_render_texture.assert_not_called()
+
+  view.set_cluster_hud_connected(True)
+  assert model._overlay._target is None
+  rl.unload_render_texture.assert_called_once()
+  assert rl.unload_render_texture.call_args.args[0] is model_target
+  assert active[0] == app.render_framebuffer
+  for _ in range(3):
+    view.set_cluster_hud_connected(True)
+    view._render(rect)
+  assert model.render.call_count == view.camera.call_count == 1
+  assert hud.render.call_count == view.alert_renderer.render.call_count == view.driver_state_renderer.draw_onroad.call_count == 4
+  rl.unload_render_texture.assert_called_once()
+  assert rl.load_render_texture.call_count == 2
+  assert hud._overlay._target is hud_target
+
+  app.frame = 1  # The model layer's odd frame normally reuses its previous paint.
+  clock.now += .05
+  view.set_cluster_hud_connected(connected, show_camera=show_camera)
+  view._render(rect)
+  assert model.render.call_count == view.camera.call_count == model.paint.call_count == 2
+  assert model._overlay._target is not model_target
+  assert hud._overlay._target is hud_target
+  assert rl.load_render_texture.call_count == 3
+  assert active[0] == 73
+
+
+@pytest.mark.parametrize('cp', (None, SimpleNamespace(carFingerprint='KIA_PV5', notCar=True),
+                                SimpleNamespace(carFingerprint='OTHER', notCar=False)))
+def test_hidden_model_cache_retained_outside_real_pv5(layer_env, road_view, cp):
+  _, _, rl, _, _ = layer_env
+  view, ui = road_view
+  ui.CP = cp
+  rect = rl.Rectangle(0, 0, 2160, 1080)
+  view._render(rect)
+  model = view.model_renderer
+  target = model._overlay._target
+  view.set_cluster_hud_connected(True)
+  view._render(rect)
+  assert model._overlay._target is target
+  assert model.render.call_count == 1
+  rl.unload_render_texture.assert_not_called()
+
+
 def test_layers_alternate_and_composite_every_camera_frame(layer_env):
   module, app, rl, active, clock = layer_env
   layers = [module.OverlayLayer(0), module.OverlayLayer(1)]
@@ -156,6 +248,7 @@ def test_camera_and_critical_states_invalidate_both_layers(layer_env):
   spec = importlib.util.spec_from_file_location('_overlay_state_under_test', source)
   module = importlib.util.module_from_spec(spec)
   spec.loader.exec_module(module)
+  module.signal_display_status = lambda: None
   app.mouse_events = []
   cs = SimpleNamespace(leftBlindspot=False, rightBlindspot=False, vCruiseCluster=80, gearShifter=SimpleNamespace(raw=1),
                        brakePressed=False, gasPressed=False, brakeHoldActive=False, softHoldActive=False, carrotCruise=False)

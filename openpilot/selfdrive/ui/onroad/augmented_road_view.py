@@ -81,7 +81,12 @@ class AugmentedRoadView(CameraView):
       self._plot_mode = 0
 
   def set_cluster_hud_connected(self, connected: bool, show_camera: bool = False) -> None:
+    was_hidden = self._suppress_camera_for_cluster
     self._suppress_camera_for_cluster = connected and not show_camera
+    if self._suppress_camera_for_cluster and not was_hidden:
+      cp = ui_state.CP
+      if cp is not None and not cp.notCar and cp.carFingerprint == 'KIA_PV5':
+        self.model_renderer._overlay.release_during_frame()
 
   def _render(self, rect):
     # plotMode 갱신(가끔 파일 읽기)은 drawTime 창 밖에서 — total을 오염시키지 않는다

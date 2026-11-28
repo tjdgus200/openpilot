@@ -19,9 +19,9 @@ pytestmark = pytest.mark.skipif(os.getenv('CARROT_UI_GPU_TEST') != '1', reason='
 LIB = Path(__file__).parents[3] / 'system/ui/lib'
 
 
-@pytest.mark.parametrize('width,height', ((2160, 1080), (536, 240)))
+@pytest.mark.parametrize('width,height,hide_model', ((2160, 1080, False), (536, 240, False), (2160, 1080, True)))
 @pytest.mark.parametrize('recording', (False, True))
-def test_camera_and_both_layers_survive_every_window_frame(monkeypatch, width, height, recording):
+def test_camera_and_both_layers_survive_every_window_frame(monkeypatch, width, height, hide_model, recording):
   import pyray as rl
 
   rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_HIDDEN)
@@ -82,7 +82,11 @@ def test_camera_and_both_layers_survive_every_window_frame(monkeypatch, width, h
   def render(_):
     rl.draw_rectangle_rec(rect, rl.Color(20, 40, 70, 255))  # stand-in for the camera background
     urgent = app.frame in (7, 8, 17)  # bypass and re-enter caching, like warnings or touch
-    layers[0].draw(rect, model, 'model', urgent=urgent)
+    if hide_model and 20 <= i < 30:
+      if i == 20:
+        layers[0].release_during_frame()
+    else:
+      layers[0].draw(rect, model, 'model', urgent=urgent)
     layers[1].draw(rect, hud, 'hud', urgent=urgent)
 
   app._nav_stack = [SimpleNamespace(render=render)]
@@ -98,12 +102,14 @@ def test_camera_and_both_layers_survive_every_window_frame(monkeypatch, width, h
       try:
         pixels = np.frombuffer(rl.ffi.buffer(image.data, width * height * 4), dtype=np.uint8).reshape(height, width, 4)
         # Inspect both reused and repainted frames, with the background still visible.
-        assert pixels[height * 2 // 3, width // 5, :3].tolist() == list(rl.RED[:3]), i
+        expected = [20, 40, 70] if hide_model and 20 <= i < 30 else list(rl.RED[:3])
+        assert pixels[height * 2 // 3, width // 5, :3].tolist() == expected, i
         assert pixels[height * 2 // 3, width * 4 // 5, :3].tolist() == list(rl.GREEN[:3]), i
         assert pixels[height // 5, width // 2, :3].tolist() == [20, 40, 70], i
       finally:
         rl.unload_image(image)
-    assert all(20 <= count < 30 for count in paints)  # retain alternating work
+    assert (15 if hide_model else 20) <= paints[0] < 30
+    assert 20 <= paints[1] < 30
     app._window_close_requested = True
     assert list(frames) == []
   finally:

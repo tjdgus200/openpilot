@@ -31,6 +31,14 @@ class OverlayLayer:
       self._target = None
     self._ready = False
 
+  def release_during_frame(self):
+    if self._target is not None:
+      # Raylib can unbind the window or recording FBO while deleting the layer.
+      previous = gui_app.render_framebuffer
+      rl.rl_draw_render_batch_active()
+      self.close()
+      rl.rl_enable_framebuffer(previous)
+
   def draw(self, rect, callback, key, *, enabled=True, urgent=False):
     # Interactive/warning frames use the ordinary renderer, with no old layer
     # eligible for reuse afterwards. No camera frame is ever stored here.
